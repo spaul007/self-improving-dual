@@ -1,0 +1,204 @@
+[
+  {
+    "name": "query_flight_info",
+    "description": "Query flight information by origin city, destination city, and departure date (and optional seat class). Returns a JSON list of candidate flights or routes; each route may contain multiple segments. Flight-related details in the final plan must come exclusively from this tool's output.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "type": "string",
+          "description": "Origin city name."
+        },
+        "destination": {
+          "type": "string",
+          "description": "Destination city name."
+        },
+        "depDate": {
+          "type": "string",
+          "description": "Departure date, format YYYY-MM-DD."
+        },
+        "seatClassName": {
+          "type": "string",
+          "description": "Optional seat class: Economy Class, Business Class, First Class."
+        }
+      },
+      "required": [
+        "origin",
+        "destination",
+        "depDate"
+      ]
+    }
+  },
+  {
+    "name": "query_train_info",
+    "description": "Query train ticket information by origin city, destination city, and departure date (and optional seat class). Returns candidate train routes with segment details. Train-related details in the plan must come exclusively from this tool.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "type": "string",
+          "description": "Origin city name."
+        },
+        "destination": {
+          "type": "string",
+          "description": "Destination city name."
+        },
+        "depDate": {
+          "type": "string",
+          "description": "Departure date, format YYYY-MM-DD."
+        },
+        "seatClassName": {
+          "type": "string",
+          "description": "Optional seat class: First Class Seat, Second Class Seat, Business Seat."
+        }
+      },
+      "required": [
+        "origin",
+        "destination",
+        "depDate"
+      ]
+    }
+  },
+  {
+    "name": "query_hotel_info",
+    "description": "Query hotel information by destination, check-in/check-out dates, and optional star rating / brand. Returns a JSON list of matching hotels.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "destination": {
+          "type": "string",
+          "description": "Destination city or region."
+        },
+        "checkinDate": {
+          "type": "string",
+          "description": "Check-in date, format YYYY-MM-DD."
+        },
+        "checkoutDate": {
+          "type": "string",
+          "description": "Check-out date, format YYYY-MM-DD."
+        },
+        "hotelStar": {
+          "type": "string",
+          "description": "Star rating 1-5 (optional)."
+        },
+        "hotelBrands": {
+          "type": "string",
+          "description": "Optional brand name. Supported: Ji Hotel, Atour Hotel, Marriott, Hilton, Home Inn, Jinjiang Inn, Hanting Hotel, Orange Hotel."
+        }
+      },
+      "required": [
+        "destination",
+        "checkinDate",
+        "checkoutDate"
+      ]
+    }
+  },
+  {
+    "name": "query_attraction_details",
+    "description": "Query attraction details by name. Returns a formatted text block with id, name, city, address, coordinates, description, rating, opening hours, closing days, recommended visit duration, ticket price and attraction type.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "attraction_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "attraction_name"
+      ]
+    }
+  },
+  {
+    "name": "recommend_attractions",
+    "description": "Recommend attractions for a given city, optionally filtered by type. Returns a multi-line text listing attraction names, descriptions and types. All attractions in the final plan must come from this tool.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "city": {
+          "type": "string",
+          "description": "City name or keyword."
+        },
+        "attraction_type": {
+          "type": "string",
+          "description": "Optional filter. Options: 'Historical and Cultural', 'Natural Scenery', 'Art Exhibition', 'City Landmark', 'Theme Park', 'Leisure Experience'."
+        }
+      },
+      "required": [
+        "city"
+      ]
+    }
+  },
+  {
+    "name": "query_restaurant_details",
+    "description": "Look up a restaurant by exact name. Returns a JSON object with the restaurant's id, coordinates, price per person, cuisine, opening hours, nearby attraction, and rating.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "restaurant_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "restaurant_name"
+      ]
+    }
+  },
+  {
+    "name": "recommend_restaurants",
+    "description": "Recommend restaurants near a given coordinate. Latitude and longitude must be exact six-decimal values that came from another tool. Returns a JSON list of restaurants with name, coordinates, price-per-person, cuisine, opening hours, nearby attraction, and rating.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "latitude": {
+          "type": "string",
+          "description": "Latitude, 6 decimal places."
+        },
+        "longitude": {
+          "type": "string",
+          "description": "Longitude, 6 decimal places."
+        }
+      },
+      "required": [
+        "latitude",
+        "longitude"
+      ]
+    }
+  },
+  {
+    "name": "search_location",
+    "description": "Look up the latitude and longitude of a place by exact name. The place name must come from another tool's output verbatim — no abbreviations, no translation, no added words. Returns a JSON object with place_name, latitude, longitude (six decimal places).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "place_name": {
+          "type": "string",
+          "description": "Place name, exactly as it appeared in another tool's output."
+        }
+      },
+      "required": [
+        "place_name"
+      ]
+    }
+  },
+  {
+    "name": "query_road_route_info",
+    "description": "Query distance, duration, and cost between two coordinates (format 'latitude,longitude' with six decimal places). Both coordinates must come from another tool's output — manual entry or rounded values will be rejected.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "origin": {
+          "type": "string",
+          "description": "Origin coordinate, format 'latitude,longitude'."
+        },
+        "destination": {
+          "type": "string",
+          "description": "Destination coordinate, format 'latitude,longitude'."
+        }
+      },
+      "required": [
+        "origin",
+        "destination"
+      ]
+    }
+  }
+]

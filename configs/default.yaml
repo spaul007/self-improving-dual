@@ -1,0 +1,53 @@
+experiment_name: "math_default"
+
+# All project-specific assets live under projects/<project>/:
+#   projects/math/seed/        — task agent
+#   projects/math/benchmark/   — cases.jsonl + scorer.py
+#   projects/math/tools/       — immutable tools (auto-loaded)
+project: "math"
+
+loop:
+  max_rounds: 5
+  score_target: 1.0
+
+# Task-agent subprocess inherits these via env vars set by main_loop.
+# The seed workflow calls call_llm() without specifying model, so it
+# picks them up from LLM_MODEL / LLM_REASONING_EFFORT.
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hill_climbing"
+  config:
+    branch_policy: "best"
+    strategy_model: "gpt-5.4-mini"
+    strategy_reasoning_effort: "high"
+    strategy_history_window: 5
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 120
+    memory_mb: 1024
+    parallelism: 1
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "high"
+    max_attempts: 2
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "immutable_files"
+  - type: "load_test"

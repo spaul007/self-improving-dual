@@ -1,0 +1,56 @@
+experiment_name: "travel_eval20"
+
+# Sibling of configs/travel.yaml used for `evaluate.py --agent ...` runs
+# that should be capped at 20 cases. The optimization-loop fields
+# (loop, manager, editor, gatherer, validators, split) are still required
+# by the schema but are unused by evaluate.py.
+project: "travel"
+
+loop:
+  max_rounds: 1
+  score_target: 1.0
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hill_climbing"
+  config:
+    branch_policy: "best"
+    strategy_model: "gpt-5.4-mini"
+    strategy_reasoning_effort: "high"
+    strategy_history_window: 5
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    max_cases: 20
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "immutable_files"
+  - type: "load_test"

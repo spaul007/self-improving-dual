@@ -1,0 +1,40 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.Python
+build/
+dist/
+.installed.cfg
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Virtualenvs ---
+.venv/
+venv/
+env/
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# --- Local secrets / env ---
+.env
+.env.*
+!.env.example
+
+# --- Run artifacts ---
+runs/
+
+# --- Bulk data (per-sample CSVs etc., gitignored to keep the repo small) ---
+# projects/*/data/
+
+# --- Local-only working notes (do not check in) ---
+CLAUDE.md
+DEV_LOG.md

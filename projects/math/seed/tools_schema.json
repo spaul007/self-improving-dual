@@ -1,0 +1,16 @@
+[
+  {
+    "name": "calculate",
+    "description": "Evaluate a basic arithmetic expression and return the numeric result as a string.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "expression": {
+          "type": "string",
+          "description": "An arithmetic expression, e.g. '2 + 3 * 4'."
+        }
+      },
+      "required": ["expression"]
+    }
+  }
+]

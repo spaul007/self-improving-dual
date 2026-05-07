@@ -1,0 +1,79 @@
+experiment_name: "travel_default"
+
+# All project-specific assets live under projects/travel/:
+#   projects/travel/seed/        — task agent
+#   projects/travel/benchmark/   — cases.jsonl + scorer.py + _eval/
+#                                  (TravelCompositeScorer owns both per-case
+#                                  scoring and round-level aggregation;
+#                                  named in `evaluator.config.scorer` below)
+#   projects/travel/tools/       — immutable travel tools (auto-loaded)
+#   projects/travel/data/        — per-sample CSV database (gitignored)
+project: "travel"
+
+loop:
+  max_rounds: 3
+  score_target: 0.95
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hill_climbing"
+  config:
+    branch_policy: "best"
+    strategy_model: "gpt-5.4-mini"
+    strategy_reasoning_effort: "high"
+    strategy_history_window: 5
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    # `max_cases` truncates whatever set is being run. With the split
+    # block below it clips both train and eval to N each — handy for
+    # smoke runs. Leave unset (commented out) for a real run.
+    # max_cases: 10
+    # The travel composite scorer (registered by
+    # projects/travel/benchmark/scorer.py); composes commonsense and
+    # hard-constraint scores into a single number.
+    scorer: "travel_default"
+
+gatherer:
+  # The framework gatherer is project-agnostic. When the scorer (above)
+  # defines an `aggregate(per_case, trace_events)` method, the gatherer
+  # calls it and lands the result on AgentFeedback.project_metrics.
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+# Optional env-var overrides forwarded to evaluator child subprocesses.
+# Travel's database default is `projects/travel/data/database_en` (computed
+# inside `projects/travel/tools/_csv.py`); set the override here only if
+# your data lives elsewhere.
+# env:
+#   TRAVEL_DATABASE_ROOT: "/path/to/database_en"
+
+# Train/eval split: optimization sees only the train half; the eval
+# half is a sidecar metric reported per round (not fed to the
+# strategy or "best round" selection). Reproducible from `seed` alone.
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "immutable_files"
+  - type: "load_test"
