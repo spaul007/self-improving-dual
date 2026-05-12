@@ -236,5 +236,111 @@ class BaseUrlPlumbingTests(unittest.TestCase):
         self.assertIsNone(llm_calls[0]["payload"].get("base_url"))
 
 
+class ReasoningFallbackTests(unittest.TestCase):
+    """Cover the message/reasoning content extraction in
+    `_extract_output`. The wrapper should prefer message-item text when
+    it's non-empty (OpenAI path) and fall through to reasoning-item
+    text when the message is empty or whitespace-only
+    (vLLM/Qwen3.5 path — caught 2026-05-12 when Qwen put the
+    `<plan>...</plan>` answer into the reasoning item and the message
+    was just `\\n\\n`)."""
+
+    def _msg(self, text: str) -> SimpleNamespace:
+        return SimpleNamespace(
+            type="message",
+            content=[SimpleNamespace(type="output_text", text=text)],
+        )
+
+    def _reasoning(self, text: str) -> SimpleNamespace:
+        # Match the .content shape vLLM emits.
+        return SimpleNamespace(
+            type="reasoning",
+            content=[SimpleNamespace(type="reasoning_text", text=text)],
+        )
+
+    def test_message_text_wins_when_present(self) -> None:
+        # OpenAI path: real message text + a reasoning item. The
+        # reasoning item must NOT bleed into content.
+        from platform_core.llm_wrapper import _extract_output
+
+        resp = SimpleNamespace(
+            output=[
+                self._reasoning("internal thinking — should be hidden"),
+                self._msg("Final answer here."),
+            ]
+        )
+        content, _ = _extract_output(resp)
+        self.assertEqual(content, "Final answer here.")
+
+    def test_falls_back_to_reasoning_when_message_missing(self) -> None:
+        # No message item at all — reasoning becomes the visible content.
+        from platform_core.llm_wrapper import _extract_output
+
+        resp = SimpleNamespace(
+            output=[self._reasoning("<plan>do thing</plan>")]
+        )
+        content, _ = _extract_output(resp)
+        self.assertEqual(content, "<plan>do thing</plan>")
+
+    def test_falls_back_to_reasoning_when_message_whitespace_only(self) -> None:
+        # The exact Qwen3.5 failure mode: message item present but
+        # contains only `\n\n`; the real answer is in reasoning.
+        from platform_core.llm_wrapper import _extract_output
+
+        resp = SimpleNamespace(
+            output=[
+                self._reasoning("<plan>kyoto plan</plan>"),
+                self._msg("\n\n"),
+            ]
+        )
+        content, _ = _extract_output(resp)
+        self.assertIn("<plan>kyoto plan</plan>", content or "")
+
+    def test_no_reasoning_no_message_returns_none(self) -> None:
+        from platform_core.llm_wrapper import _extract_output
+
+        resp = SimpleNamespace(output=[])
+        content, tool_calls = _extract_output(resp)
+        self.assertIsNone(content)
+        self.assertEqual(tool_calls, [])
+
+    def test_function_call_extracted_alongside_reasoning_fallback(self) -> None:
+        # Edge case: reasoning + function_call but no message item.
+        # Wrapper should surface BOTH the tool call AND the reasoning
+        # text — earlier no-op (returning None content) was a footgun
+        # because the seed would lose the model's commentary.
+        from platform_core.llm_wrapper import _extract_output
+
+        resp = SimpleNamespace(
+            output=[
+                self._reasoning("I need to look up the train schedule first."),
+                SimpleNamespace(
+                    type="function_call",
+                    call_id="call_1",
+                    name="query_trains",
+                    arguments='{"origin":"Tokyo"}',
+                ),
+            ]
+        )
+        content, tool_calls = _extract_output(resp)
+        self.assertEqual(len(tool_calls), 1)
+        self.assertEqual(tool_calls[0].name, "query_trains")
+        self.assertIn("train schedule", content or "")
+
+    def test_reasoning_summary_shape_also_works(self) -> None:
+        # Some servers expose reasoning text under .summary instead of
+        # .content. The helper handles either.
+        from platform_core.llm_wrapper import _extract_output
+
+        item = SimpleNamespace(
+            type="reasoning",
+            content=None,
+            summary=[SimpleNamespace(type="summary_text", text="hi")],
+        )
+        resp = SimpleNamespace(output=[item])
+        content, _ = _extract_output(resp)
+        self.assertEqual(content, "hi")
+
+
 if __name__ == "__main__":
     unittest.main()

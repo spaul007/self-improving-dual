@@ -143,8 +143,30 @@ def _split_system(
 # ---------------------------------------------------------------------------
 
 
+def _reasoning_item_text(item: Any) -> str:
+    """Concatenate the visible text from a single ``reasoning`` output
+    item. vLLM and the OpenAI SDK both expose reasoning content as a
+    list of parts; depending on the model server the part list may live
+    under ``.content`` or ``.summary`` and each part may carry the text
+    as ``.text``, the bare string itself, or a ``str()``-able object."""
+    parts = getattr(item, "content", None)
+    if not parts:
+        parts = getattr(item, "summary", None) or []
+    chunks: list[str] = []
+    for part in parts:
+        text = getattr(part, "text", None)
+        if isinstance(text, str) and text:
+            chunks.append(text)
+        elif isinstance(part, str):
+            chunks.append(part)
+        elif part:
+            chunks.append(str(part))
+    return "\n".join(c for c in chunks if c)
+
+
 def _extract_output(response: Any) -> tuple[Optional[str], list[ToolCall]]:
     text_parts: list[str] = []
+    reasoning_parts: list[str] = []
     tool_calls: list[ToolCall] = []
     output = getattr(response, "output", None) or []
 
@@ -173,14 +195,41 @@ def _extract_output(response: Any) -> tuple[Optional[str], list[ToolCall]]:
                     arguments=args if isinstance(args, dict) else {},
                 )
             )
-        # Reasoning items are intentionally ignored — they show up in the trace
-        # via the response payload preview.
+        elif item_type == "reasoning":
+            # Captured separately and used as a fallback below. OpenAI's
+            # reasoning models always emit a real ``message`` item after
+            # the reasoning, so this fallback is a no-op for them. But
+            # vLLM-hosted open-weights models (notably Qwen3.5 with
+            # `--reasoning-parser qwen3`) sometimes put the model's
+            # entire final answer — including the seed's expected
+            # `<plan>...</plan>` block — into the reasoning item, with
+            # the message item left empty. Without this fallback the
+            # wrapper returned `content=None` and the seed extracted an
+            # empty plan, scoring 0 across the board (caught live on
+            # 2026-05-12).
+            text = _reasoning_item_text(item)
+            if text:
+                reasoning_parts.append(text)
 
     fallback_text = getattr(response, "output_text", None)
     if not text_parts and isinstance(fallback_text, str) and fallback_text:
         text_parts.append(fallback_text)
 
-    content = "\n".join(p for p in text_parts if p) if text_parts else None
+    # Use message text when present; fall through to reasoning when
+    # message text is empty or whitespace-only. Keeps the OpenAI path
+    # unchanged (which always has real message text) and rescues the
+    # vLLM/Qwen path where the answer lands in the reasoning item.
+    joined_message = "\n".join(p for p in text_parts if p)
+    if joined_message.strip():
+        content: Optional[str] = joined_message
+    elif reasoning_parts:
+        content = "\n".join(reasoning_parts)
+    elif text_parts:
+        # Whitespace-only message and no reasoning — preserve whatever
+        # whitespace we saw rather than silently dropping it.
+        content = joined_message
+    else:
+        content = None
     return content, tool_calls
 
 
