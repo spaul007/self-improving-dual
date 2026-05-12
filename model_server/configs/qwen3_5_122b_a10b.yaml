@@ -1,0 +1,19 @@
+# vLLM launch config for Qwen/Qwen3.5-122B-A10B.
+#
+# MoE: 122B total, 10B active per token. Recommended layout per the
+# model card: `--tensor-parallel-size 8` on a single 8x H100 node.
+# Weights ~245GB bf16, fits comfortably in 640GB HBM with TP=8.
+
+hf_repo: "Qwen/Qwen3.5-122B-A10B"
+port: 8000
+tensor_parallel_size: 8
+max_model_len: 262144
+gres: "gpu:h100:8"
+slurm_time: "24:00:00"
+pip_install_args:
+  - "vllm"
+venv: "/groups/AIC-MV/n.tzou/vllm_venv"
+# Model card recommends the qwen3 reasoning parser for tool-use traces.
+extra_vllm_args:
+  - "--reasoning-parser"
+  - "qwen3"

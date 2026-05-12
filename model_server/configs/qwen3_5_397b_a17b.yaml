@@ -1,0 +1,26 @@
+# vLLM launch config for Qwen/Qwen3.5-397B-A17B.
+#
+# MoE: 397B total, 17B active per token. At bf16 the weights are roughly
+# 800GB — too large for a single 8x H100 node (640GB HBM). The default
+# below keeps TP=8 on one node and enables FP8 quantization, which brings
+# weights to ~400GB and fits with headroom. If you have two nodes
+# available, drop the quantization flag and switch to a multi-node deploy
+# (vLLM's --pipeline-parallel-size or Ray serve).
+
+hf_repo: "Qwen/Qwen3.5-397B-A17B"
+port: 8000
+tensor_parallel_size: 8
+max_model_len: 262144
+gres: "gpu:h100:8"
+slurm_time: "24:00:00"
+pip_install_args:
+  - "vllm"
+venv: "/groups/AIC-MV/n.tzou/vllm_venv"
+# FP8 quantization to fit 397B on one 8xH100 node (640GB HBM).
+# Verify with `vllm serve --quantization fp8 …` actually loads; if OOM,
+# switch to fp8_e4m3 / awq / multi-node.
+extra_vllm_args:
+  - "--quantization"
+  - "fp8"
+  - "--reasoning-parser"
+  - "qwen3"

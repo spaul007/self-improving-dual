@@ -1,0 +1,25 @@
+# vLLM launch config for openai/gpt-oss-120b.
+#
+# 117B-param MoE with MXFP4 quantization on the MoE weights — fits on a
+# single 80GB H100. Set `gres: gpu:h100:1` to reserve one card; the model
+# loads in ~2-3 minutes from the HF cache once weights are downloaded.
+#
+# Note: gpt-oss needs a vLLM pre-release wheel. If you keep the server
+# venv tracking the mainline vLLM for the Qwen models, run `launch.sh`
+# against this config in a separate venv (override the `venv` field).
+
+hf_repo: "openai/gpt-oss-120b"
+port: 8001
+tensor_parallel_size: 1
+max_model_len: 131072
+gres: "gpu:h100:1"
+slurm_time: "24:00:00"
+# Per the model card: pre-release vLLM wheel for gpt-oss support.
+pip_install_args:
+  - "vllm==0.10.1+gptoss"
+  - "--extra-index-url"
+  - "https://wheels.vllm.ai/gpt-oss/"
+# Sandbox the server venv so the gpt-oss wheel doesn't conflict with the
+# mainline vLLM used for the Qwen configs.
+venv: "/groups/AIC-MV/n.tzou/vllm_venv_gptoss"
+extra_vllm_args: []
