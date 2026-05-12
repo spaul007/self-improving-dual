@@ -1,8 +1,20 @@
 # model_server
 
-vLLM-backed OpenAI-compatible inference server for the three locally
-hosted models the meta-agent can route to. Each model is loaded by a
-separate long-running SLURM job; one model is hot at a time.
+A standalone vLLM-backed OpenAI-compatible inference server. The
+meta-agent in this repo is one client; **any application that speaks
+the OpenAI API can call this server with no meta-agent code on the
+classpath**. Each model is loaded by its own long-running SLURM job;
+one model is hot at a time.
+
+The server speaks two OpenAI-compatible endpoints:
+
+  - `/v1/responses` — used by the meta-agent.
+  - `/v1/chat/completions` — vLLM's mature, well-tested path; what
+    most third-party clients reach for.
+
+Both return standard OpenAI-shaped JSON, so the official Python
+`openai` SDK, `curl`, `langchain`, `litellm`, etc. all work
+unchanged — you just point them at the server's base URL.
 
 ## Hosted models
 
@@ -72,6 +84,87 @@ trap didn't fire).
 
 Plain `scancel <jobid>` also works — the EXIT/TERM trap inside
 `launch.sh` removes the discovery file either way.
+
+## Calling the server from external applications
+
+The server is intentionally vanilla vLLM — there is no
+meta-agent-specific protocol, auth, or wrapper. Anything that speaks
+OpenAI-compatible HTTP works.
+
+### Minimum from any Python codebase
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="http://<server-node>:8000/v1",
+    api_key="EMPTY",   # vLLM ignores auth; SDK constructor needs a string
+)
+
+resp = client.chat.completions.create(
+    model="Qwen/Qwen3.5-122B-A10B",
+    messages=[{"role": "user", "content": "Plan a 2-day trip to Kyoto"}],
+    max_tokens=512,
+)
+print(resp.choices[0].message.content)
+```
+
+The Responses API works the same way (`client.responses.create(...)`)
+when you want the endpoint the meta-agent uses.
+
+### Worked examples in this repo
+
+  - `examples/simple_client.py` — drop-in Python script. Auto-discovers
+    the server via the endpoint file (or honours `--base-url` /
+    `LLM_BASE_URL`), picks the right model id, and calls either
+    `/v1/responses` or `/v1/chat/completions`. Requires only
+    `pip install openai`.
+  - `examples/curl_example.sh` — same flow with nothing but
+    `bash` + `curl` + `python3` (the python is only there to format
+    JSON). Useful for shell integrations or non-Python apps.
+
+Run them:
+
+```
+# Python — uses the discovery file when available
+python3 model_server/examples/simple_client.py --prompt "hello"
+
+# Python — explicit URL, doesn't need the shared filesystem
+python3 model_server/examples/simple_client.py \
+    --base-url http://node-7:8000/v1 --prompt "hello"
+
+# Shell + curl
+bash model_server/examples/curl_example.sh "hello"
+BASE_URL=http://node-7:8000/v1 bash model_server/examples/curl_example.sh "hello"
+```
+
+### Discovering the URL from any client
+
+Two equally-supported paths:
+
+  - **Shared filesystem.** Clients on the cluster (any user with read
+    access to `/groups/AIC-MV/n.tzou/model_server/`) can read
+    `endpoint.json` directly, or shell out to `health.py` for the
+    stale-aware version. Schema:
+    ```json
+    {"host": "...", "port": 8000, "model": "...",
+     "slurm_job_id": "...", "started_at": "...", "pid": ...}
+    ```
+  - **Out-of-band.** Anything running off-cluster doesn't see that
+    file. Grab the URL once (`python3 model_server/health.py
+    --print-base-url`) and hand it to the client however your stack
+    normally configures endpoints (env var, secret, config file).
+
+### What clients should NOT assume
+
+  - **The URL is stable.** SLURM picks a node per submit; restarting
+    the server lands on a different host. Re-read the discovery file
+    (or re-poll `health.py`) on reconnect.
+  - **Auth.** There is none. Don't expose this server beyond a trusted
+    network; treat the URL as a credential.
+  - **Tool calling.** vLLM's tool-use support varies by model. Check
+    the per-model card in `configs/` before assuming function-calling
+    works.
 
 ## Pointing the meta-agent at the server
 
