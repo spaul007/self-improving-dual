@@ -8,8 +8,13 @@ means the two entry points stay in lockstep.
 
 The framework only knows three categories of env vars:
 
-- **Task-agent settings** — ``LLM_MODEL`` / ``LLM_REASONING_EFFORT``
-  picked up by the seed's ``call_llm`` invocations.
+- **Task-agent settings** — ``LLM_MODEL`` / ``LLM_REASONING_EFFORT`` /
+  ``LLM_BASE_URL`` picked up by the seed's ``call_llm`` invocations.
+  ``LLM_BASE_URL`` lets the task-agent target a non-OpenAI endpoint
+  (e.g. a locally-hosted vLLM server). When it's set, the wrapper
+  also tolerates a missing ``OPENAI_API_KEY``; we still export
+  ``OPENAI_API_KEY=EMPTY`` here as a courtesy so subprocesses don't
+  have to know about the relaxation.
 - **Project selector** — ``META_AGENT_PROJECT`` so the immutable-tool
   registry loads the right ``projects.<name>.tools`` package.
 - **Free-form user env** — whatever the YAML's ``env:`` block declares.
@@ -25,13 +30,19 @@ from . import config as cfg_mod
 
 
 def apply_task_agent_env(spec: cfg_mod.TaskAgentSpec) -> None:
-    """Push task-agent model/reasoning settings into env vars so the seed
-    workflow (which doesn't see the YAML) can use them via the LLM wrapper.
-    The evaluator subprocess inherits this environment."""
+    """Push task-agent model/reasoning/base-url settings into env vars so
+    the seed workflow (which doesn't see the YAML) can use them via the
+    LLM wrapper. The evaluator subprocess inherits this environment."""
     if spec.model:
         os.environ["LLM_MODEL"] = spec.model
     if spec.reasoning_effort:
         os.environ["LLM_REASONING_EFFORT"] = spec.reasoning_effort
+    if spec.base_url:
+        os.environ["LLM_BASE_URL"] = spec.base_url
+        # Local OpenAI-compatible servers ignore auth, but the SDK
+        # constructor requires *some* string. Set a placeholder only when
+        # the parent doesn't already have a real key — never overwrite.
+        os.environ.setdefault("OPENAI_API_KEY", "EMPTY")
 
 
 def apply_project_tools(project_name: str) -> None:

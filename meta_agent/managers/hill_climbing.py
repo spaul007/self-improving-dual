@@ -72,12 +72,14 @@ class HillClimbingManager:
         branch_policy: Literal["best", "latest"] = "best",
         strategy_model: Optional[str] = None,
         strategy_reasoning_effort: Optional[str] = None,
+        strategy_base_url: Optional[str] = None,
         strategy_history_window: int = 5,
         strategy_temperature: float = 0.4,
     ) -> None:
         self.branch_policy = branch_policy
         self.strategy_model = strategy_model
         self.strategy_reasoning_effort = strategy_reasoning_effort
+        self.strategy_base_url = strategy_base_url
         self.strategy_history_window = strategy_history_window
         self.strategy_temperature = strategy_temperature
         self._history: list[AgentFeedback] = []
@@ -178,6 +180,8 @@ class HillClimbingManager:
             llm_kwargs["reasoning_effort"] = self.strategy_reasoning_effort
         else:
             llm_kwargs["temperature"] = self.strategy_temperature
+        if self.strategy_base_url:
+            llm_kwargs["base_url"] = self.strategy_base_url
         response = call_llm(**llm_kwargs)
 
         if out_dir is not None and verbose_log.is_enabled():

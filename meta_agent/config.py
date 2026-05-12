@@ -39,9 +39,17 @@ class LoopSpec(BaseModel):
 
 
 class LLMSpec(BaseModel):
-    """Model + reasoning settings shared by a component."""
+    """Model + reasoning settings shared by a component.
+
+    ``base_url`` lets a component target an OpenAI-compatible endpoint
+    other than OpenAI's own (e.g. a locally-hosted vLLM Responses-API
+    server). Leave as ``None`` to use the SDK default. Each component
+    type can carry its own base_url so meta-agent and task-agent calls
+    can be routed independently.
+    """
     model: Optional[str] = None
     reasoning_effort: Optional[str] = None  # "low" | "medium" | "high"
+    base_url: Optional[str] = None
 
 
 class TaskAgentSpec(LLMSpec):

@@ -68,12 +68,14 @@ class AgentEditor:
         max_attempts: int = 2,
         model: Optional[str] = None,
         reasoning_effort: Optional[str] = None,
+        base_url: Optional[str] = None,
     ) -> None:
         self.llm = llm_caller
         self.validators = list(validators)
         self.max_attempts = max_attempts
         self.model = model
         self.reasoning_effort = reasoning_effort
+        self.base_url = base_url
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -194,6 +196,8 @@ class AgentEditor:
             llm_kwargs["reasoning_effort"] = self.reasoning_effort
         else:
             llm_kwargs["temperature"] = 0.2
+        if self.base_url:
+            llm_kwargs["base_url"] = self.base_url
         response = self.llm(**llm_kwargs)
 
         if verbose_log.is_enabled():
