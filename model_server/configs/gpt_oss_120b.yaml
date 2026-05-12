@@ -19,12 +19,22 @@ tensor_parallel_size: 1
 max_model_len: 131072
 gres: "gpu:h100:1"
 slurm_time: "24:00:00"
-# Per the model card: pre-release vLLM wheel for gpt-oss support.
+# Use mainline vLLM. The original gpt-oss launch instructions pointed
+# at a pre-release wheel `vllm==0.10.1+gptoss` from
+# https://wheels.vllm.ai/gpt-oss/ that pinned a one-off torch nightly
+# (`torch==2.9.0.dev20250804+cu128`) which is no longer on PyPI —
+# `pip install` failed during the 2026-05-12 bake-off with
+# `No matching distribution found for torch==2.9.0...`. gpt-oss
+# support has since been merged into mainline vLLM, so the stable
+# release is the right target.
 pip_install_args:
-  - "vllm==0.10.1+gptoss"
-  - "--extra-index-url"
-  - "https://wheels.vllm.ai/gpt-oss/"
-# Sandbox the server venv so the gpt-oss wheel doesn't conflict with the
-# mainline vLLM used for the Qwen configs.
-venv: "/groups/AIC-MV/n.tzou/vllm_venv_gptoss"
+  - "vllm"
+# Use the same venv as the Qwen models — mainline vLLM is the same
+# package for both. Saves disk and a redundant install.
+venv: "/groups/AIC-MV/n.tzou/vllm_venv"
+# gpt-oss uses OpenAI's Harmony response format; mainline vLLM has
+# a built-in parser for it triggered automatically by model id, so
+# we don't pass `--enable-auto-tool-choice` or a parser name here.
+# If tool calls aren't parsed correctly when this runs, the live
+# trace will show it (look for num_tool_calls in trace.jsonl).
 extra_vllm_args: []
