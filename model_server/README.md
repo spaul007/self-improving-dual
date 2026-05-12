@@ -63,9 +63,10 @@ script
 ### Check
 
 ```
-python3 model_server/health.py             # full status + /v1/models
-python3 model_server/health.py --print-base-url
-# → http://<node>:<port>/v1   (or empty + exit 2 if dead/stale)
+python3 model_server/health.py                          # full status + /v1/models
+python3 model_server/health.py --print-base-url         # base URL only
+python3 model_server/health.py --name gpt_oss_120b      # per-model lookup
+python3 model_server/health.py --name gpt_oss_120b --print-base-url
 ```
 
 `health.py` reads the discovery file and shells out to `squeue` to
@@ -75,15 +76,30 @@ trap.
 ### Stop
 
 ```
-bash model_server/stop.sh
+bash model_server/stop.sh                          # single-slot endpoint.json
+bash model_server/stop.sh --name gpt_oss_120b      # per-model lookup
 ```
 
 Reads the discovery file's `slurm_job_id`, runs `scancel`, then
 verifies the file is gone (force-removes after 10s if the in-job
-trap didn't fire).
+trap didn't fire). Plain `scancel <jobid>` also works — the EXIT/TERM
+trap inside `launch.sh` removes the discovery file either way.
 
-Plain `scancel <jobid>` also works — the EXIT/TERM trap inside
-`launch.sh` removes the discovery file either way.
+### Concurrent servers
+
+Each model YAML has a `discovery_name:` field (defaults to the config
+basename). `launch.sh` writes to
+`<server_root>/endpoint_<discovery_name>.json`, so multiple servers
+can coexist without clobbering each other's files. The shipped configs
+use:
+
+  - `gpt_oss_120b`
+  - `qwen3_5_122b_a10b`
+  - `qwen3_5_397b_a17b`
+
+When running just one server, set nothing — `health.py` / `stop.sh`
+both fall back to the single-slot `endpoint.json` path the older
+documentation references.
 
 ## Calling the server from external applications
 

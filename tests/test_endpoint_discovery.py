@@ -134,6 +134,64 @@ class ResolveEndpointTests(unittest.TestCase):
             self.assertIsNone(health.resolve_endpoint(self.discovery))
 
 
+class PerNameDiscoveryTests(unittest.TestCase):
+    """Per-model discovery file lookup (concurrent-server case)."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="per_name_test_"))
+        # Redirect the default server root at the tmpdir for the
+        # duration of the test. health.py reads MODEL_SERVER_ROOT once
+        # at import time so we have to patch the module-level constant.
+        self._orig_root = health.DEFAULT_SERVER_ROOT
+        health.DEFAULT_SERVER_ROOT = self.tmp
+
+    def tearDown(self) -> None:
+        health.DEFAULT_SERVER_ROOT = self._orig_root
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_discovery_path_for_name(self) -> None:
+        self.assertEqual(
+            health.discovery_path_for("gpt_oss_120b"),
+            self.tmp / "endpoint_gpt_oss_120b.json",
+        )
+
+    def test_discovery_path_for_none_keeps_default(self) -> None:
+        # Pre-existing single-slot path stays as-is (governed by
+        # DEFAULT_DISCOVERY_PATH, not the redirected server root).
+        self.assertEqual(
+            health.discovery_path_for(None),
+            health.DEFAULT_DISCOVERY_PATH,
+        )
+
+    def test_resolve_endpoint_by_name(self) -> None:
+        _write_discovery(self.tmp / "endpoint_qwen3_5_122b_a10b.json")
+        with mock.patch.object(subprocess, "run", _fake_run("RUNNING\n")):
+            self.assertEqual(
+                health.resolve_endpoint(name="qwen3_5_122b_a10b"),
+                "http://compute-node-07:8000/v1",
+            )
+
+    def test_resolve_endpoint_by_name_missing_returns_none(self) -> None:
+        # No file for this name → None, even if other names have files.
+        _write_discovery(self.tmp / "endpoint_gpt_oss_120b.json")
+        with mock.patch.object(subprocess, "run", _fake_run("RUNNING\n")):
+            self.assertIsNone(
+                health.resolve_endpoint(name="qwen3_5_122b_a10b")
+            )
+
+    def test_explicit_path_overrides_name(self) -> None:
+        # When both name and path are passed, path wins (implementation
+        # checks discovery_path first). Useful for tests + adhoc paths.
+        custom = self.tmp / "custom.json"
+        _write_discovery(custom)
+        with mock.patch.object(subprocess, "run", _fake_run("RUNNING\n")):
+            self.assertEqual(
+                health.resolve_endpoint(custom, name="ignored"),
+                "http://compute-node-07:8000/v1",
+            )
+
+
 class MainCliTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="endpoint_main_test_"))
@@ -175,6 +233,31 @@ class MainCliTests(unittest.TestCase):
                 str(self.discovery),
             ])
         self.assertEqual(rc, 2)
+
+    def test_name_mode_prints_url(self) -> None:
+        # --name <foo> should resolve to <server_root>/endpoint_<foo>.json.
+        # Redirect the server root at our tmpdir so the test is hermetic.
+        named_file = self.tmp / "endpoint_qwen.json"
+        _write_discovery(named_file)
+        orig = health.DEFAULT_SERVER_ROOT
+        health.DEFAULT_SERVER_ROOT = self.tmp
+        try:
+            with mock.patch.object(subprocess, "run", _fake_run("RUNNING\n")), \
+                 mock.patch.object(sys, "stdout") as fake_stdout:
+                rc = health.main(["--print-base-url", "--name", "qwen"])
+            self.assertEqual(rc, 0)
+            written = "".join(c.args[0] for c in fake_stdout.write.call_args_list)
+            self.assertIn("http://compute-node-07:8000/v1", written)
+        finally:
+            health.DEFAULT_SERVER_ROOT = orig
+
+    def test_name_and_path_are_mutually_exclusive(self) -> None:
+        # argparse error exits non-zero via SystemExit; we catch it.
+        with self.assertRaises(SystemExit):
+            health.main([
+                "--name", "x",
+                "--path", str(self.discovery),
+            ])
 
 
 if __name__ == "__main__":

@@ -5,12 +5,40 @@
 # fire (shouldn't happen, but be defensive).
 #
 # Usage:
-#   bash model_server/stop.sh
+#   bash model_server/stop.sh                # single-slot endpoint.json
+#   bash model_server/stop.sh --name <name>  # per-model endpoint_<name>.json
 
 set -euo pipefail
 
 SERVER_ROOT="${MODEL_SERVER_ROOT:-/groups/AIC-MV/n.tzou/model_server}"
-DISCOVERY_FILE="$SERVER_ROOT/endpoint.json"
+NAME=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --name)
+      NAME="$2"
+      shift 2
+      ;;
+    --name=*)
+      NAME="${1#--name=}"
+      shift
+      ;;
+    -h|--help)
+      echo "Usage: $0 [--name <discovery-name>]"
+      exit 0
+      ;;
+    *)
+      echo "[stop.sh] unknown arg: $1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+if [[ -n "$NAME" ]]; then
+  DISCOVERY_FILE="$SERVER_ROOT/endpoint_${NAME}.json"
+else
+  DISCOVERY_FILE="$SERVER_ROOT/endpoint.json"
+fi
 
 if [[ ! -f "$DISCOVERY_FILE" ]]; then
   echo "[stop.sh] no discovery file at $DISCOVERY_FILE — nothing to stop" >&2

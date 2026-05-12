@@ -9,6 +9,11 @@
 # against this config in a separate venv (override the `venv` field).
 
 hf_repo: "openai/gpt-oss-120b"
+# Name used for the per-model discovery file
+# (`<server_root>/endpoint_<discovery_name>.json`). Defaults to the
+# config basename if omitted, but pinning it here keeps the contract
+# explicit when multiple servers run concurrently.
+discovery_name: "gpt_oss_120b"
 port: 8001
 tensor_parallel_size: 1
 max_model_len: 131072

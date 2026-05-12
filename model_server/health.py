@@ -33,12 +33,31 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+DEFAULT_SERVER_ROOT = Path(
+    os.environ.get(
+        "MODEL_SERVER_ROOT",
+        "/groups/AIC-MV/n.tzou/model_server",
+    )
+)
 DEFAULT_DISCOVERY_PATH = Path(
     os.environ.get(
         "MODEL_SERVER_DISCOVERY_PATH",
-        "/groups/AIC-MV/n.tzou/model_server/endpoint.json",
+        str(DEFAULT_SERVER_ROOT / "endpoint.json"),
     )
 )
+
+
+def discovery_path_for(name: Optional[str]) -> Path:
+    """Resolve the discovery-file path for a server name.
+
+    When ``name`` is given, returns ``<server_root>/endpoint_<name>.json``
+    (matching what ``launch.sh`` writes). Falls back to the
+    single-slot ``endpoint.json`` (or ``MODEL_SERVER_DISCOVERY_PATH``)
+    when no name is given, so single-server installs still work.
+    """
+    if name is None:
+        return DEFAULT_DISCOVERY_PATH
+    return DEFAULT_SERVER_ROOT / f"endpoint_{name}.json"
 
 # SLURM states we treat as "the server may still come up or be up".
 # Anything else (COMPLETED, FAILED, CANCELLED, TIMEOUT, …) means stale.
@@ -99,11 +118,21 @@ def is_alive(discovery: dict) -> bool:
 
 
 def resolve_endpoint(
-    discovery_path: Path = DEFAULT_DISCOVERY_PATH,
+    discovery_path: Optional[Path] = None,
+    *,
+    name: Optional[str] = None,
 ) -> Optional[str]:
     """Return the OpenAI-compatible base URL for the live server, or
     ``None`` if no live server is reachable. Doesn't network: trusts the
-    discovery file plus a squeue check."""
+    discovery file plus a squeue check.
+
+    Pass ``name`` to look up a per-model discovery file (matches what
+    ``launch.sh`` writes for concurrent servers); pass ``discovery_path``
+    to override the path explicitly; pass neither for the single-slot
+    default.
+    """
+    if discovery_path is None:
+        discovery_path = discovery_path_for(name)
     discovery = _read_discovery(discovery_path)
     if discovery is None:
         return None
@@ -124,21 +153,33 @@ def main(argv: Optional[list[str]] = None) -> int:
         help="Print only the base URL on stdout (for shell substitution).",
     )
     parser.add_argument(
+        "--name",
+        default=None,
+        help="Per-model server name (matches `discovery_name` in the "
+        "model YAML, or the YAML basename). Resolves to "
+        "`<server_root>/endpoint_<name>.json`. Mutually exclusive with "
+        "`--path`.",
+    )
+    parser.add_argument(
         "--path",
         type=Path,
-        default=DEFAULT_DISCOVERY_PATH,
+        default=None,
         help="Override the discovery-file location.",
     )
     args = parser.parse_args(argv)
 
-    discovery = _read_discovery(args.path)
+    if args.path is not None and args.name is not None:
+        parser.error("--path and --name are mutually exclusive")
+
+    resolved_path = args.path if args.path is not None else discovery_path_for(args.name)
+    discovery = _read_discovery(resolved_path)
     if discovery is None:
         if not args.print_base_url:
-            print(f"no discovery file at {args.path}", file=sys.stderr)
+            print(f"no discovery file at {resolved_path}", file=sys.stderr)
         return 2
 
     alive = is_alive(discovery)
-    base_url = resolve_endpoint(args.path) if alive else None
+    base_url = resolve_endpoint(resolved_path) if alive else None
 
     if args.print_base_url:
         if base_url:

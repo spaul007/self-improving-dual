@@ -8,6 +8,7 @@
 # (vLLM's --pipeline-parallel-size or Ray serve).
 
 hf_repo: "Qwen/Qwen3.5-397B-A17B"
+discovery_name: "qwen3_5_397b_a17b"
 port: 8000
 tensor_parallel_size: 8
 max_model_len: 262144

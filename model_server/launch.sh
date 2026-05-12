@@ -31,7 +31,6 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVER_ROOT="${MODEL_SERVER_ROOT:-/groups/AIC-MV/n.tzou/model_server}"
 HF_HOME_DIR="${HF_HOME:-/groups/AIC-MV/n.tzou/hf_cache}"
-DISCOVERY_FILE="$SERVER_ROOT/endpoint.json"
 
 mkdir -p "$SERVER_ROOT" "$HF_HOME_DIR"
 
@@ -40,11 +39,11 @@ mkdir -p "$SERVER_ROOT" "$HF_HOME_DIR"
 # CFG_PIP_INSTALL_ARGS / CFG_EXTRA_VLLM_ARGS as space-separated tokens
 # (each token shell-quoted so spaces are preserved inside elements).
 eval "$(python3 - <<PY
-import shlex, sys, yaml
+import os, shlex, sys, yaml
 with open("$CONFIG_PATH") as fh:
     cfg = yaml.safe_load(fh) or {}
 scalars = ["hf_repo", "port", "tensor_parallel_size", "max_model_len",
-           "gres", "slurm_time", "venv"]
+           "gres", "slurm_time", "venv", "discovery_name"]
 for k in scalars:
     v = cfg.get(k)
     if v is not None:
@@ -53,6 +52,16 @@ for k in ("pip_install_args", "extra_vllm_args"):
     items = cfg.get(k) or []
     quoted = " ".join(shlex.quote(str(x)) for x in items)
     print(f'CFG_{k.upper()}=({quoted})')
+# Default discovery_name: basename of config without .yaml extension.
+# Falls back to the basename so concurrent servers don't clobber one
+# another's endpoint files.
+if "discovery_name" not in cfg:
+    base = os.path.basename("$CONFIG_PATH")
+    if base.endswith(".yaml"):
+        base = base[:-5]
+    elif base.endswith(".yml"):
+        base = base[:-4]
+    print(f"CFG_DISCOVERY_NAME={shlex.quote(base)}")
 PY
 )"
 
@@ -60,7 +69,10 @@ PY
 : "${CFG_PORT:?missing port in $CONFIG_PATH}"
 : "${CFG_TENSOR_PARALLEL_SIZE:?missing tensor_parallel_size in $CONFIG_PATH}"
 : "${CFG_VENV:?missing venv in $CONFIG_PATH}"
+: "${CFG_DISCOVERY_NAME:?internal: discovery_name should always resolve}"
 CFG_MAX_MODEL_LEN="${CFG_MAX_MODEL_LEN:-}"
+
+DISCOVERY_FILE="$SERVER_ROOT/endpoint_${CFG_DISCOVERY_NAME}.json"
 
 # --- Venv: create if missing, then activate. ---
 if [[ ! -d "$CFG_VENV" ]]; then
