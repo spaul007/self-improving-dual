@@ -84,7 +84,9 @@ if [[ ! -d "$CFG_VENV" ]]; then
   if [[ ${#CFG_PIP_INSTALL_ARGS[@]} -gt 0 ]]; then
     pip install "${CFG_PIP_INSTALL_ARGS[@]}"
   fi
-  pip install "huggingface_hub[cli]"
+  # huggingface_hub ships the `hf` CLI directly in 1.x; the legacy
+  # `huggingface-cli` was deprecated and is a no-op there.
+  pip install huggingface_hub
 else
   # shellcheck disable=SC1091
   source "$CFG_VENV/bin/activate"
@@ -93,10 +95,8 @@ fi
 # --- Pre-download weights. ---
 export HF_HOME="$HF_HOME_DIR"
 echo "[launch.sh] pre-downloading $CFG_HF_REPO into $HF_HOME"
-huggingface-cli download "$CFG_HF_REPO" \
-  --cache-dir "$HF_HOME/hub" \
-  --quiet || {
-  echo "[launch.sh] huggingface-cli download failed; vLLM will retry on first request" >&2
+hf download "$CFG_HF_REPO" || {
+  echo "[launch.sh] hf download failed; vLLM will retry on first request" >&2
 }
 
 # --- Write discovery file. ---

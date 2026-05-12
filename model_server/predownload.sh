@@ -63,10 +63,12 @@ fi
 # shellcheck disable=SC1091
 source "$VENV_VAL/bin/activate"
 pip install --quiet --upgrade pip
-pip install --quiet "huggingface_hub[cli]"
+# huggingface_hub >=1.0 ships the new \`hf\` CLI directly; the
+# legacy \`huggingface-cli\` was deprecated and is a no-op in 1.x.
+pip install --quiet huggingface_hub
 export HF_HOME="$HF_HOME_DIR"
 echo "[predownload-job] downloading $HF_REPO_VAL into \$HF_HOME"
-huggingface-cli download "$HF_REPO_VAL" --cache-dir "\$HF_HOME/hub"
+hf download "$HF_REPO_VAL"
 echo "[predownload-job] done"
 EOF
 )
