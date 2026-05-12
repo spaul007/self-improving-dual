@@ -239,6 +239,32 @@ def _extract_plan(text: str) -> str:
     return "\n\n".join(cleaned) if cleaned else ""
 
 
+_FORCE_PLAN_PROMPT = (
+    "Stop calling tools. Based on all the information you've gathered so far, "
+    "produce the final travel plan now within <plan>...</plan> tags, "
+    "following the format requirements you were given. Do not request more "
+    "tools or ask clarifying questions — just write the plan."
+)
+
+
+def _force_final_plan(messages: list[dict]) -> str:
+    """Issue one final LLM call without tools to coax a `<plan>` block.
+
+    Some models (notably local vLLM-hosted open-weights) tend to exit
+    the tool loop with brief reasoning fragments — `"Now East Lake."`,
+    `"Good, now I have the coordinates..."` — instead of writing the
+    formal `<plan>` block. Caught on 2026-05-12 when both Qwen3.5 and
+    gpt-oss-120b consistently scored 0/10 despite the tool-call
+    parsers working correctly. The force-plan tail nudges them past
+    the early-exit and into a structured final answer. The change is
+    inert for OpenAI-class models: they normally produce a plan in the
+    natural terminal response, so the force path never fires.
+    """
+    messages = messages + [{"role": "user", "content": _FORCE_PLAN_PROMPT}]
+    forced = call_llm(messages=messages)  # no tools intentionally
+    return _extract_plan(forced.content or "")
+
+
 def run_task(task: Task) -> AgentOutput:
     wrapper = ToolWrapper()
     schema = wrapper.get_schema()
@@ -256,9 +282,29 @@ def run_task(task: Task) -> AgentOutput:
         last_text = response.content or last_text
 
         if not response.tool_calls:
+            plan = _extract_plan(response.content or "")
+            if plan:
+                return AgentOutput(
+                    result=plan,
+                    metadata={"iterations": iterations, "budget_exhausted": False},
+                )
+            # Terminal response had no <plan> block. Force one before
+            # giving up. Carry the response items into the conversation
+            # so the force-call sees the agent's last state.
+            raw = getattr(response, "raw", None)
+            raw_output = getattr(raw, "output", None) or []
+            for item in raw_output:
+                if hasattr(item, "model_dump"):
+                    messages.append(item.model_dump(exclude_none=True))
+                else:
+                    messages.append(item)
             return AgentOutput(
-                result=_extract_plan(response.content or ""),
-                metadata={"iterations": iterations, "budget_exhausted": False},
+                result=_force_final_plan(messages),
+                metadata={
+                    "iterations": iterations + 1,
+                    "budget_exhausted": False,
+                    "forced_final": True,
+                },
             )
 
         # Append every item the Responses API returned (assistant
@@ -294,8 +340,16 @@ def run_task(task: Task) -> AgentOutput:
                 "output": result,
             })
 
-    # Budget exhausted — return whatever final text we have, even if no <plan> block.
+    # Budget exhausted — extract from `last_text` first, then fall back
+    # to a force-plan call. The order matters: if the model already
+    # produced a `<plan>` mid-conversation, prefer that over forcing a
+    # new (potentially worse) one.
+    plan = _extract_plan(last_text)
+    if not plan:
+        plan = _force_final_plan(messages)
     return AgentOutput(
-        result=_extract_plan(last_text),
-        metadata={"iterations": iterations, "budget_exhausted": True},
+        result=plan,
+        metadata={"iterations": iterations + (0 if _extract_plan(last_text) else 1),
+                  "budget_exhausted": True,
+                  "forced_final": not bool(_extract_plan(last_text))},
     )
