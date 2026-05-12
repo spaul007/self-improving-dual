@@ -1,0 +1,62 @@
+# 10-case bake-off run against the local vLLM server hosting
+# Qwen/Qwen3.5-122B-A10B. Submit via:
+#
+#   bash model_server/submit_eval.sh configs/eval_local_qwen3_5_122b_a10b.yaml qwen3_5_122b_a10b
+#
+# That helper exports LLM_BASE_URL from the discovery file before
+# main_loop.py launches; this YAML deliberately omits `base_url:`
+# fields so the wrapper's env-var fallback routes every call site
+# uniformly.
+
+experiment_name: "eval_local_qwen3_5_122b_a10b"
+project: "travel"
+runs_root: "/groups/AIC-MV/n.tzou/evaluations"
+
+loop:
+  max_rounds: 3
+  score_target: 0.95
+
+task_agent:
+  model: "Qwen/Qwen3.5-122B-A10B"
+  reasoning_effort: "medium"
+
+manager:
+  type: "hill_climbing"
+  config:
+    branch_policy: "best"
+    strategy_model: "Qwen/Qwen3.5-122B-A10B"
+    strategy_reasoning_effort: "medium"
+    strategy_history_window: 5
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 8
+    max_cases: 10
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "immutable_files"
+  - type: "load_test"

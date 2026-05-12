@@ -1,0 +1,65 @@
+# 10-case bake-off run via the OpenAI API (no local server). Used as
+# the baseline for comparison against the two local-model evals.
+# Submit via:
+#
+#   bash model_server/submit_eval.sh configs/eval_openai_medium.yaml
+#
+# (no second positional arg → submit_eval.sh leaves LLM_BASE_URL unset
+# so the SDK uses OpenAI's default endpoint).
+#
+# Reasoning effort is medium across all three call sites to be
+# roughly comparable to typical local-model inference cost; the
+# stock configs/travel.yaml uses high for task_agent + strategy.
+
+experiment_name: "eval_openai_medium"
+project: "travel"
+runs_root: "/groups/AIC-MV/n.tzou/evaluations"
+
+loop:
+  max_rounds: 3
+  score_target: 0.95
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "medium"
+
+manager:
+  type: "hill_climbing"
+  config:
+    branch_policy: "best"
+    strategy_model: "gpt-5.4-mini"
+    strategy_reasoning_effort: "medium"
+    strategy_history_window: 5
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 8
+    max_cases: 10
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "immutable_files"
+  - type: "load_test"

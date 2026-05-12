@@ -202,6 +202,33 @@ Two equally-supported paths:
 
 ## Pointing the meta-agent at the server
 
+### One-shot helper: `submit_eval.sh`
+
+The cleanest path for running a meta-agent experiment against a local
+server is the `model_server/submit_eval.sh` wrapper:
+
+```
+# Hit a local server (LLM_BASE_URL resolved from per-model discovery):
+bash model_server/submit_eval.sh \
+  configs/eval_local_gpt_oss_120b.yaml gpt_oss_120b
+
+# Hit OpenAI (no discovery name → LLM_BASE_URL stays unset):
+bash model_server/submit_eval.sh configs/eval_openai_medium.yaml
+```
+
+It calls `health.py --name <name> --print-base-url`, exports
+`LLM_BASE_URL` into the SLURM job's env, and defers to
+`slurm/submit.sh` for the sbatch wrapping. Logs go to
+`$SLURM_LOG_DIR/<jobid>.{out,err}` (default
+`/groups/AIC-MV/n.tzou/server_logs/`).
+
+Three eval configs ship in this repo (`configs/eval_local_gpt_oss_120b.yaml`,
+`configs/eval_local_qwen3_5_122b_a10b.yaml`,
+`configs/eval_openai_medium.yaml`) — all 10-case smokes with
+`runs_root: /groups/AIC-MV/n.tzou/evaluations`.
+
+### Manual env + YAML wiring
+
 The meta-agent reads `LLM_BASE_URL` (env) or `base_url:` (YAML field
 on `LLMSpec`) per call site. Two equivalent flows:
 
