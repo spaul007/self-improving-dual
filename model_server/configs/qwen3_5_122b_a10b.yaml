@@ -14,7 +14,16 @@ slurm_time: "24:00:00"
 pip_install_args:
   - "vllm"
 venv: "/groups/AIC-MV/n.tzou/vllm_venv"
-# Model card recommends the qwen3 reasoning parser for tool-use traces.
+# Qwen3.5 emits tool calls in its Hermes-style XML format
+# (`<tool_call><function=NAME><parameter=KEY>VALUE</parameter>...`).
+# Without `--enable-auto-tool-choice --tool-call-parser hermes`, vLLM
+# returns those tokens as plain `output_text` and the wrapper sees
+# `num_tool_calls: 0` — exactly the bake-off failure on 2026-05-12.
+# `--reasoning-parser qwen3` is unrelated: it strips the "thinking"
+# tokens from the visible content. Both flags are needed.
 extra_vllm_args:
   - "--reasoning-parser"
   - "qwen3"
+  - "--enable-auto-tool-choice"
+  - "--tool-call-parser"
+  - "hermes"
