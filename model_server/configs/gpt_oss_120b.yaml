@@ -16,7 +16,12 @@ hf_repo: "openai/gpt-oss-120b"
 discovery_name: "gpt_oss_120b"
 port: 8001
 tensor_parallel_size: 1
-max_model_len: 131072
+# 32k context (down from 131072): the model weights at MXFP4 are
+# ~72 GB on a single 80 GB H100 — there's only a few GB of headroom
+# for activations + KV cache. At 131072 tokens the KV cache reservation
+# alone OOMs during MXFP4 swizzle (verified live on 2026-05-12).
+# 32k is still plenty of context for the travel benchmark cases.
+max_model_len: 32768
 gres: "gpu:h100:1"
 slurm_time: "24:00:00"
 # Use mainline vLLM. The original gpt-oss launch instructions pointed
@@ -37,4 +42,12 @@ venv: "/groups/AIC-MV/n.tzou/vllm_venv"
 # we don't pass `--enable-auto-tool-choice` or a parser name here.
 # If tool calls aren't parsed correctly when this runs, the live
 # trace will show it (look for num_tool_calls in trace.jsonl).
-extra_vllm_args: []
+#
+# `--gpu-memory-utilization 0.95` bumps vLLM's cap from 0.90 so it
+# can use the extra ~5 GB of PyTorch-reserved memory that's otherwise
+# unallocated. Combined with the lowered max_model_len above, this
+# gets gpt-oss-120b's MXFP4 swizzle through without OOM on one
+# 80 GB H100.
+extra_vllm_args:
+  - "--gpu-memory-utilization"
+  - "0.95"
