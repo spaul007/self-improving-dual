@@ -77,7 +77,11 @@ DISCOVERY_FILE="$SERVER_ROOT/endpoint_${CFG_DISCOVERY_NAME}.json"
 # --- Venv: create if missing, then activate. ---
 if [[ ! -d "$CFG_VENV" ]]; then
   echo "[launch.sh] creating venv at $CFG_VENV"
-  python3 -m venv "$CFG_VENV"
+  # vLLM requires Python <3.13 (the gpt-oss pre-release wheel is also
+  # 3.10/3.11/3.12 only). The cluster's default `python3` is 3.13 via
+  # the user's miniconda, so pin to `python3.10` (always present in
+  # /usr/bin on the compute images).
+  python3.10 -m venv "$CFG_VENV"
 fi
 # shellcheck disable=SC1091
 source "$CFG_VENV/bin/activate"

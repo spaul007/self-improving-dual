@@ -58,7 +58,11 @@ mkdir -p "$HF_HOME_DIR"
 CMD=$(cat <<EOF
 if [[ ! -d "$VENV_VAL" ]]; then
   echo "[predownload-job] creating venv at $VENV_VAL"
-  python3 -m venv "$VENV_VAL"
+  # vLLM (installed later by launch.sh in the same venv) requires
+  # Python <3.13, so pin to python3.10 even though predownload only
+  # needs huggingface_hub. Keeping the Python version consistent across
+  # both scripts means a fresh venv works for both phases.
+  python3.10 -m venv "$VENV_VAL"
 fi
 # shellcheck disable=SC1091
 source "$VENV_VAL/bin/activate"
