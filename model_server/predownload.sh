@@ -59,10 +59,9 @@ CMD=$(cat <<EOF
 if [[ ! -d "$VENV_VAL" ]]; then
   echo "[predownload-job] creating venv at $VENV_VAL"
   # vLLM (installed later by launch.sh in the same venv) requires
-  # Python <3.13, so pin to python3.10 even though predownload only
-  # needs huggingface_hub. Keeping the Python version consistent across
-  # both scripts means a fresh venv works for both phases.
-  python3.10 -m venv "$VENV_VAL"
+  # Python <3.13. Use python3.12 from the parallelcluster pyenv
+  # (on PATH in SLURM jobs); system python3.10 lacks ensurepip.
+  python3.12 -m venv "$VENV_VAL"
 fi
 # shellcheck disable=SC1091
 source "$VENV_VAL/bin/activate"

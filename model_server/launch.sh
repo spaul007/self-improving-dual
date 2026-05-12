@@ -79,9 +79,12 @@ if [[ ! -d "$CFG_VENV" ]]; then
   echo "[launch.sh] creating venv at $CFG_VENV"
   # vLLM requires Python <3.13 (the gpt-oss pre-release wheel is also
   # 3.10/3.11/3.12 only). The cluster's default `python3` is 3.13 via
-  # the user's miniconda, so pin to `python3.10` (always present in
-  # /usr/bin on the compute images).
-  python3.10 -m venv "$CFG_VENV"
+  # the user's miniconda. We use `python3.12` (from the parallelcluster
+  # pyenv at /opt/parallelcluster/pyenv/.../python3.12, on PATH inside
+  # SLURM jobs). System python3.10 won't work — the compute images
+  # don't ship python3.10-venv so `python3.10 -m venv` fails on
+  # `ensurepip`.
+  python3.12 -m venv "$CFG_VENV"
 fi
 # shellcheck disable=SC1091
 source "$CFG_VENV/bin/activate"
