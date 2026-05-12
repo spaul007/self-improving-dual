@@ -10,11 +10,18 @@ needing to thread config through:
 
     LLM_MODEL              default model name
     LLM_REASONING_EFFORT   "low" | "medium" | "high" (reasoning models only)
+    LLM_BASE_URL           OpenAI-compatible endpoint to target instead of
+                           the SDK default (e.g. a locally hosted vLLM
+                           Responses-API server). When set, the
+                           ``OPENAI_API_KEY`` check is relaxed because
+                           local servers ignore auth — any non-empty
+                           string ("EMPTY" by convention) is accepted.
 
 Trace events ("llm_call", "llm_response") are emitted via
 :mod:`platform_core.trace` whenever ``META_AGENT_TRACE_PATH`` is set.
 
-Required env var: ``OPENAI_API_KEY``.
+Required env var: ``OPENAI_API_KEY`` (or ``LLM_BASE_URL`` set, in which
+case any value of ``OPENAI_API_KEY`` is accepted).
 """
 from __future__ import annotations
 
@@ -40,6 +47,11 @@ def _env_default_model() -> str:
 
 def _env_default_reasoning_effort() -> Optional[str]:
     val = os.environ.get("LLM_REASONING_EFFORT")
+    return val if val else None
+
+
+def _env_default_base_url() -> Optional[str]:
+    val = os.environ.get("LLM_BASE_URL")
     return val if val else None
 
 
@@ -184,17 +196,21 @@ def call_llm(
     model: Optional[str] = None,
     temperature: float = 1.0,
     reasoning_effort: Optional[str] = None,
+    base_url: Optional[str] = None,
     max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
     **kwargs: Any,
 ) -> LLMResponse:
     """Make one Responses-API round-trip and return a normalised response.
 
-    Required env var: ``OPENAI_API_KEY``.
+    Required env var: ``OPENAI_API_KEY`` (relaxed when ``base_url`` /
+    ``LLM_BASE_URL`` is set — local servers ignore auth, so any
+    non-empty string is accepted).
 
-    ``model`` and ``reasoning_effort`` fall back to the ``LLM_MODEL`` and
-    ``LLM_REASONING_EFFORT`` environment variables, which lets the meta-agent
-    set them once for the whole run and have them propagate into every
-    evaluator subprocess without threading them through the seed code.
+    ``model``, ``reasoning_effort``, and ``base_url`` fall back to the
+    ``LLM_MODEL`` / ``LLM_REASONING_EFFORT`` / ``LLM_BASE_URL`` environment
+    variables, which lets the meta-agent set them once for the whole run
+    and have them propagate into every evaluator subprocess without
+    threading them through the seed code.
     """
     try:
         from openai import OpenAI
@@ -203,12 +219,18 @@ def call_llm(
             "openai SDK is required. Install with: pip install 'openai>=1.50'"
         ) from exc
 
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY environment variable is required")
-
     resolved_model = model or _env_default_model()
     resolved_effort = reasoning_effort or _env_default_reasoning_effort()
+    resolved_base_url = base_url or _env_default_base_url()
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        if resolved_base_url:
+            # Local OpenAI-compatible servers (vLLM, etc.) ignore the key,
+            # but the SDK constructor still requires *some* string.
+            api_key = "EMPTY"
+        else:
+            raise RuntimeError("OPENAI_API_KEY environment variable is required")
 
     instructions, chat = _split_system(messages)
     norm_tools = [_normalise_tool_schema(t) for t in (tools or [])]
@@ -220,6 +242,7 @@ def call_llm(
             "id": call_id,
             "model": resolved_model,
             "reasoning_effort": resolved_effort,
+            "base_url": resolved_base_url,
             "tool_names": [t["name"] for t in norm_tools],
             "num_messages": len(chat),
         },
@@ -235,7 +258,10 @@ def call_llm(
             },
         )
 
-    client = OpenAI(api_key=api_key)
+    client_kwargs: dict[str, Any] = {"api_key": api_key}
+    if resolved_base_url:
+        client_kwargs["base_url"] = resolved_base_url
+    client = OpenAI(**client_kwargs)
     request: dict[str, Any] = {
         "model": resolved_model,
         "input": chat,
