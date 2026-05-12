@@ -78,19 +78,20 @@ DISCOVERY_FILE="$SERVER_ROOT/endpoint_${CFG_DISCOVERY_NAME}.json"
 if [[ ! -d "$CFG_VENV" ]]; then
   echo "[launch.sh] creating venv at $CFG_VENV"
   python3 -m venv "$CFG_VENV"
-  # shellcheck disable=SC1091
-  source "$CFG_VENV/bin/activate"
-  pip install --upgrade pip
-  if [[ ${#CFG_PIP_INSTALL_ARGS[@]} -gt 0 ]]; then
-    pip install "${CFG_PIP_INSTALL_ARGS[@]}"
-  fi
-  # huggingface_hub ships the `hf` CLI directly in 1.x; the legacy
-  # `huggingface-cli` was deprecated and is a no-op there.
-  pip install huggingface_hub
-else
-  # shellcheck disable=SC1091
-  source "$CFG_VENV/bin/activate"
 fi
+# shellcheck disable=SC1091
+source "$CFG_VENV/bin/activate"
+# Always run the pip installs — they're effectively no-ops when the
+# packages are already present, and this keeps the venv consistent
+# when it was created by a sibling script (e.g. predownload.sh)
+# that only installed huggingface_hub.
+pip install --quiet --upgrade pip
+if [[ ${#CFG_PIP_INSTALL_ARGS[@]} -gt 0 ]]; then
+  pip install --quiet "${CFG_PIP_INSTALL_ARGS[@]}"
+fi
+# huggingface_hub ships the `hf` CLI directly in 1.x; the legacy
+# `huggingface-cli` was deprecated and is a no-op there.
+pip install --quiet huggingface_hub
 
 # --- Pre-download weights. ---
 export HF_HOME="$HF_HOME_DIR"
