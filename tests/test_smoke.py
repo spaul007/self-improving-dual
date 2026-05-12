@@ -764,6 +764,120 @@ class RuntimeEnvTests(unittest.TestCase):
                 os.environ["TRAVEL_DATABASE_ROOT"] = prev
 
 
+class StrategyCoercionTests(unittest.TestCase):
+    """Defensive coercion for malformed `propose_edit` tool-call args.
+
+    Local vLLM-hosted open-weights models don't always honor the tool's
+    declared JSON schema. The 2026-05-12 gpt-oss bake-off crashed
+    mid-run on a Pydantic ValidationError because the model returned
+    `target_files: "workflow.py"` (string) instead of
+    `target_files: ["workflow.py"]` (list).
+    """
+
+    def setUp(self) -> None:
+        from meta_agent.managers.hill_climbing import (
+            _coerce_target_files, _coerce_str,
+        )
+        self._coerce_target_files = _coerce_target_files
+        self._coerce_str = _coerce_str
+
+    # ---- target_files coercion ----
+
+    def test_target_files_string_becomes_list(self) -> None:
+        # The actual bug we found in the live eval.
+        self.assertEqual(
+            self._coerce_target_files("workflow.py"),
+            ["workflow.py"],
+        )
+
+    def test_target_files_proper_list_passes_through(self) -> None:
+        self.assertEqual(
+            self._coerce_target_files(["workflow.py", "tool_wrapper.py"]),
+            ["workflow.py", "tool_wrapper.py"],
+        )
+
+    def test_target_files_none_falls_back(self) -> None:
+        self.assertEqual(self._coerce_target_files(None), ["workflow.py"])
+
+    def test_target_files_empty_string_falls_back(self) -> None:
+        self.assertEqual(self._coerce_target_files(""), ["workflow.py"])
+
+    def test_target_files_unknown_values_dropped(self) -> None:
+        # The schema enum only allows the three mutable files.
+        self.assertEqual(
+            self._coerce_target_files(["workflow.py", "../platform_core/x.py"]),
+            ["workflow.py"],
+        )
+
+    def test_target_files_all_unknown_falls_back(self) -> None:
+        self.assertEqual(
+            self._coerce_target_files(["../platform_core/x.py"]),
+            ["workflow.py"],
+        )
+
+    def test_target_files_non_iterable_falls_back(self) -> None:
+        # e.g. model returns a dict or an int.
+        self.assertEqual(self._coerce_target_files(42), ["workflow.py"])
+        self.assertEqual(self._coerce_target_files({"k": "v"}), ["workflow.py"])
+
+    # ---- _coerce_str ----
+
+    def test_coerce_str_passes_through_strings(self) -> None:
+        self.assertEqual(self._coerce_str("hello"), "hello")
+        self.assertEqual(self._coerce_str(""), "")
+
+    def test_coerce_str_none_becomes_empty(self) -> None:
+        self.assertEqual(self._coerce_str(None), "")
+
+    def test_coerce_str_stringifies_non_strings(self) -> None:
+        self.assertEqual(self._coerce_str(42), "42")
+        self.assertEqual(self._coerce_str(True), "True")
+
+
+class StrategyProposalIntegrationTests(unittest.TestCase):
+    """End-to-end: a manager whose strategy LLM returns a malformed
+    propose_edit tool call (with string target_files) should still
+    produce a valid EvolutionStrategy instead of crashing on Pydantic
+    validation. Reproduces the gpt-oss-120b crash from job 140902."""
+
+    def test_string_target_files_does_not_crash_propose(self) -> None:
+        from unittest import mock
+        from meta_agent.managers.hill_climbing import (
+            HillClimbingManager,
+        )
+        from meta_agent.models import EvolutionStrategy
+        from platform_core.llm_wrapper import LLMResponse, ToolCall
+
+        mgr = HillClimbingManager()
+
+        bad_call = ToolCall(
+            id="call_1",
+            name="propose_edit",
+            arguments={
+                # The exact shape that broke gpt-oss-120b:
+                "target_files": "workflow.py",  # string, not list
+                "optimization_goal": "tighten plan extraction",
+                "proposed_changes": "do thing",
+                "rationale": "because",
+            },
+        )
+        fake_resp = LLMResponse(
+            content=None,
+            tool_calls=[bad_call],
+            stop_reason="completed",
+        )
+
+        with mock.patch(
+            "platform_core.llm_wrapper.call_llm",
+            return_value=fake_resp,
+        ):
+            strategy = mgr._propose_strategy({"workflow.py": "def run_task(task): pass"})
+
+        self.assertIsInstance(strategy, EvolutionStrategy)
+        self.assertEqual(strategy.target_files, ["workflow.py"])
+        self.assertEqual(strategy.optimization_goal, "tighten plan extraction")
+
+
 class EvaluateScriptTests(unittest.TestCase):
     def test_evaluate_help_runs(self) -> None:
         """The standalone evaluate.py CLI parses arguments without

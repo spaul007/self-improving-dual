@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from .. import verbose_log
 from ..agent_editor import AgentEditor
@@ -37,6 +37,46 @@ from ..models import (
     EvolutionStrategy,
 )
 from ..registry import register
+
+
+# Allowed values for the `target_files` array. Mirrors the enum in
+# PROPOSE_EDIT_TOOL below; lifted out so the coercion helper can use it.
+_ALLOWED_TARGET_FILES = ("workflow.py", "tool_wrapper.py", "tools_schema.json")
+
+
+def _coerce_target_files(value: Any) -> list[str]:
+    """Coerce a model's ``target_files`` response into a list[str].
+
+    Models without strict schema enforcement (notably local vLLM-hosted
+    open-weights models — caught the gpt-oss-120b eval crashing on
+    2026-05-12 when it returned the field as the bare string
+    ``"workflow.py"``) sometimes return a single string instead of a
+    single-element list. Coerce here so Pydantic validation downstream
+    succeeds. Unknown values are dropped; empty/None falls back to a
+    safe default so the round can still produce a strategy.
+    """
+    if value is None or value == "":
+        return ["workflow.py"]
+    if isinstance(value, str):
+        candidates = [value]
+    elif isinstance(value, (list, tuple)):
+        candidates = [str(v) for v in value if v]
+    else:
+        return ["workflow.py"]
+    cleaned = [c for c in candidates if c in _ALLOWED_TARGET_FILES]
+    return cleaned or ["workflow.py"]
+
+
+def _coerce_str(value: Any) -> str:
+    """Coerce a model's response field into a string. Same motivation as
+    :func:`_coerce_target_files` — guard against models returning the
+    wrong scalar type (number/bool/None) for fields the strategy expects
+    as plain text."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    return str(value)
 
 
 # Tool schema for the LLM's structured strategy proposal. Lifted out of
@@ -206,10 +246,10 @@ class HillClimbingManager:
             if call.name == "propose_edit":
                 args = call.arguments
                 return EvolutionStrategy(
-                    target_files=args.get("target_files") or ["workflow.py"],
-                    optimization_goal=args.get("optimization_goal", ""),
-                    proposed_changes=args.get("proposed_changes", ""),
-                    rationale=args.get("rationale", ""),
+                    target_files=_coerce_target_files(args.get("target_files")),
+                    optimization_goal=_coerce_str(args.get("optimization_goal")),
+                    proposed_changes=_coerce_str(args.get("proposed_changes")),
+                    rationale=_coerce_str(args.get("rationale")),
                 )
 
         # Fallback when the LLM didn't tool-call: keep the round productive.
