@@ -40,6 +40,24 @@ meta-agent (parent) process.
 
 ## Lifecycle
 
+### Pre-download (optional but recommended for slow shares)
+
+The first `launch.sh` against a fresh model pays the HF download cost
+inline before `vllm serve` runs — for the 122B and 397B models that
+means a GPU node sits idle for minutes/hours while ~250 GB / ~800 GB
+streams in. Skip that by running a CPU-only pre-download first:
+
+```
+bash model_server/predownload.sh model_server/configs/gpt_oss_120b.yaml
+```
+
+This submits a CPU sbatch that activates the model's `venv:`,
+installs the HF CLI if missing, and runs `huggingface-cli download
+<repo>` into `$HF_HOME`. Idempotent — re-running against a fully
+cached model is a no-op. Logs at
+`$SLURM_LOG_DIR/predl_<jobid>.{out,err}` (default
+`/groups/AIC-MV/n.tzou/server_logs/`).
+
 ### Start
 
 ```
