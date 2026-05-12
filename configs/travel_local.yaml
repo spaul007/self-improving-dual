@@ -1,0 +1,75 @@
+# Travel experiment routed at a locally-hosted vLLM server instead of
+# OpenAI. Sibling of configs/travel.yaml; the only differences are
+# `model:` (using the HF repo id the server loads) and `base_url:`
+# on each of the three call sites that hit `call_llm`.
+#
+# Operator flow:
+#   1. Start the server on the cluster:
+#        bash model_server/slurm_submit.sh model_server/configs/qwen3_5_122b_a10b.yaml
+#   2. Wait for `squeue` to show the job RUNNING.
+#   3. Discover the URL and run:
+#        export LLM_BASE_URL=$(python3 model_server/health.py --print-base-url)
+#        export OPENAI_API_KEY=EMPTY          # vLLM ignores auth
+#        PYTHONPATH=. python3 main_loop.py --config configs/travel_local.yaml
+#   4. Stop the server when done:
+#        bash model_server/stop.sh
+#
+# The `base_url` values below are placeholders — replace with the URL
+# printed by `health.py`, or rely on the LLM_BASE_URL env var
+# (each per-call-site `base_url:` overrides the env var, so when using
+# env-only routing leave them commented out).
+
+experiment_name: "travel_local_qwen3_5_122b"
+
+project: "travel"
+
+loop:
+  max_rounds: 3
+  score_target: 0.95
+
+task_agent:
+  model: "Qwen/Qwen3.5-122B-A10B"
+  reasoning_effort: "high"
+  # base_url: "http://<server-node>:8000/v1"
+
+manager:
+  type: "hill_climbing"
+  config:
+    branch_policy: "best"
+    strategy_model: "Qwen/Qwen3.5-122B-A10B"
+    strategy_reasoning_effort: "high"
+    strategy_history_window: 5
+    # strategy_base_url: "http://<server-node>:8000/v1"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    max_attempts: 2
+    # base_url: "http://<server-node>:8000/v1"
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "immutable_files"
+  - type: "load_test"
