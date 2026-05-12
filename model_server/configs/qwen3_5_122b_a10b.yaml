@@ -14,11 +14,13 @@ slurm_time: "24:00:00"
 pip_install_args:
   - "vllm"
 venv: "/groups/AIC-MV/n.tzou/vllm_venv"
-# Qwen3.5 emits tool calls in its Hermes-style XML format
-# (`<tool_call><function=NAME><parameter=KEY>VALUE</parameter>...`).
-# Without `--enable-auto-tool-choice --tool-call-parser hermes`, vLLM
-# returns those tokens as plain `output_text` and the wrapper sees
-# `num_tool_calls: 0` — exactly the bake-off failure on 2026-05-12.
+# Qwen3.5 emits tool calls in an XML-tag format that's distinct
+# from Hermes' JSON-in-tags form:
+#   <tool_call><function=NAME><parameter=KEY>VALUE</parameter></function></tool_call>
+# vLLM ships a dedicated parser for this — `qwen3_xml`. A first
+# attempt with `--tool-call-parser hermes` left `tool_calls: []`
+# on the response and the call text in `content` (verified live on
+# 2026-05-12). With `qwen3_xml` the parser actually fires.
 # `--reasoning-parser qwen3` is unrelated: it strips the "thinking"
 # tokens from the visible content. Both flags are needed.
 extra_vllm_args:
@@ -26,4 +28,4 @@ extra_vllm_args:
   - "qwen3"
   - "--enable-auto-tool-choice"
   - "--tool-call-parser"
-  - "hermes"
+  - "qwen3_xml"

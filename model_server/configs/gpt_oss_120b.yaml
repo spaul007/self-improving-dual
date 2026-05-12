@@ -15,14 +15,18 @@ hf_repo: "openai/gpt-oss-120b"
 # explicit when multiple servers run concurrently.
 discovery_name: "gpt_oss_120b"
 port: 8001
-tensor_parallel_size: 1
-# 32k context (down from 131072): the model weights at MXFP4 are
-# ~72 GB on a single 80 GB H100 — there's only a few GB of headroom
-# for activations + KV cache. At 131072 tokens the KV cache reservation
-# alone OOMs during MXFP4 swizzle (verified live on 2026-05-12).
-# 32k is still plenty of context for the travel benchmark cases.
+# TP=2 across two H100s. TP=1 OOMs during MXFP4 swizzle: the
+# quantized weights alone occupy ~72 GB of the 80 GB H100, leaving
+# under 1 GB free for the transient weight-conversion buffer that
+# needs 1 GB. The 2026-05-12 retry with --gpu-memory-utilization 0.95
+# + max_model_len 32768 still couldn't make it fit. Sharding the
+# weights across 2 GPUs cuts the per-GPU model footprint roughly in
+# half (~36 GB) and gives the kernel headroom for activations + KV.
+tensor_parallel_size: 2
+# 32k context is fine for travel-benchmark cases and keeps the KV
+# cache reservation modest.
 max_model_len: 32768
-gres: "gpu:h100:1"
+gres: "gpu:h100:2"
 slurm_time: "24:00:00"
 # Use mainline vLLM. The original gpt-oss launch instructions pointed
 # at a pre-release wheel `vllm==0.10.1+gptoss` from
