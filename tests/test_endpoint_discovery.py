@@ -64,8 +64,16 @@ class ResolveEndpointTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="endpoint_discovery_test_"))
         self.discovery = self.tmp / "endpoint.json"
+        # is_alive grew an HTTP probe; in tests we always pretend it
+        # succeeds. The probe-specific behaviour is exercised in
+        # HttpProbeTests below.
+        self._probe_patch = mock.patch.object(
+            health, "_http_probe", return_value=True
+        )
+        self._probe_patch.start()
 
     def tearDown(self) -> None:
+        self._probe_patch.stop()
         import shutil
 
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -144,8 +152,13 @@ class PerNameDiscoveryTests(unittest.TestCase):
         # at import time so we have to patch the module-level constant.
         self._orig_root = health.DEFAULT_SERVER_ROOT
         health.DEFAULT_SERVER_ROOT = self.tmp
+        self._probe_patch = mock.patch.object(
+            health, "_http_probe", return_value=True
+        )
+        self._probe_patch.start()
 
     def tearDown(self) -> None:
+        self._probe_patch.stop()
         health.DEFAULT_SERVER_ROOT = self._orig_root
         import shutil
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -196,8 +209,13 @@ class MainCliTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = Path(tempfile.mkdtemp(prefix="endpoint_main_test_"))
         self.discovery = self.tmp / "endpoint.json"
+        self._probe_patch = mock.patch.object(
+            health, "_http_probe", return_value=True
+        )
+        self._probe_patch.start()
 
     def tearDown(self) -> None:
+        self._probe_patch.stop()
         import shutil
 
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -258,6 +276,89 @@ class MainCliTests(unittest.TestCase):
                 "--name", "x",
                 "--path", str(self.discovery),
             ])
+
+
+class HttpProbeTests(unittest.TestCase):
+    """Cover the HTTP probe in is_alive — `launch.sh` writes the
+    discovery file before vLLM is ready, so SLURM-only checks lie."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="http_probe_test_"))
+        self.discovery = self.tmp / "endpoint.json"
+        _write_discovery(self.discovery)
+
+    def tearDown(self) -> None:
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_probe_returns_true_on_2xx(self) -> None:
+        class _FakeResp:
+            def read(self_inner):
+                return b"{}"
+
+        with mock.patch("urllib.request.urlopen", return_value=_FakeResp()):
+            self.assertTrue(health._http_probe("http://x:8000/v1"))
+
+    def test_probe_returns_true_on_4xx(self) -> None:
+        # Even a 404 means the server is listening — that's all we
+        # care about.
+        from urllib.error import HTTPError
+
+        def _raise(*_a, **_k):
+            raise HTTPError("http://x", 404, "not found", {}, None)
+
+        with mock.patch("urllib.request.urlopen", side_effect=_raise):
+            self.assertTrue(health._http_probe("http://x:8000/v1"))
+
+    def test_probe_returns_false_on_connection_refused(self) -> None:
+        # ConnectionRefusedError is a subclass of OSError.
+        with mock.patch(
+            "urllib.request.urlopen",
+            side_effect=ConnectionRefusedError(),
+        ):
+            self.assertFalse(health._http_probe("http://x:8000/v1"))
+
+    def test_probe_returns_false_on_url_error(self) -> None:
+        from urllib.error import URLError
+
+        with mock.patch(
+            "urllib.request.urlopen", side_effect=URLError("dns")
+        ):
+            self.assertFalse(health._http_probe("http://x:8000/v1"))
+
+    def test_probe_returns_false_on_timeout(self) -> None:
+        with mock.patch(
+            "urllib.request.urlopen", side_effect=TimeoutError()
+        ):
+            self.assertFalse(health._http_probe("http://x:8000/v1"))
+
+    def test_is_alive_requires_both_slurm_and_http(self) -> None:
+        discovery = json.loads(self.discovery.read_text())
+        # SLURM happy, HTTP refused → alive=False (the bug we're fixing).
+        with mock.patch.object(subprocess, "run", _fake_run("RUNNING\n")), \
+             mock.patch.object(health, "_http_probe", return_value=False):
+            self.assertFalse(health.is_alive(discovery))
+        # SLURM happy, HTTP happy → alive=True.
+        with mock.patch.object(subprocess, "run", _fake_run("RUNNING\n")), \
+             mock.patch.object(health, "_http_probe", return_value=True):
+            self.assertTrue(health.is_alive(discovery))
+
+    def test_is_alive_probe_http_false_skips_probe(self) -> None:
+        # When the caller wants the cheap SLURM-only check (e.g. for
+        # unit tests that don't want to mock urlopen), passing
+        # probe_http=False does the legacy thing.
+        discovery = json.loads(self.discovery.read_text())
+        with mock.patch.object(subprocess, "run", _fake_run("RUNNING\n")):
+            self.assertTrue(health.is_alive(discovery, probe_http=False))
+
+    def test_resolve_endpoint_returns_none_when_http_refused(self) -> None:
+        # End-to-end: discovery file present + SLURM RUNNING + HTTP
+        # connection refused → resolve_endpoint returns None. Before
+        # this fix, it would have happily returned a base URL the
+        # caller can't actually reach.
+        with mock.patch.object(subprocess, "run", _fake_run("RUNNING\n")), \
+             mock.patch.object(health, "_http_probe", return_value=False):
+            self.assertIsNone(health.resolve_endpoint(self.discovery))
 
 
 if __name__ == "__main__":

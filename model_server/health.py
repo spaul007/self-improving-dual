@@ -63,6 +63,11 @@ def discovery_path_for(name: Optional[str]) -> Path:
 # Anything else (COMPLETED, FAILED, CANCELLED, TIMEOUT, …) means stale.
 _ALIVE_STATES = {"RUNNING", "PENDING", "CONFIGURING", "RESIZING"}
 
+# Timeout for the HTTP probe in ``is_alive``. Short — `/v1/models` is a
+# cheap synchronous call once vLLM is up; if it takes >5s the server is
+# probably still loading the model and we should report not-alive.
+_HTTP_PROBE_TIMEOUT_S = 5.0
+
 
 def _read_discovery(path: Path) -> Optional[dict]:
     if not path.exists():
@@ -93,28 +98,81 @@ def _squeue_state(job_id: str) -> Optional[str]:
     return state or None
 
 
-def is_alive(discovery: dict) -> bool:
-    """True when the SLURM job recorded in ``discovery`` is in a state
-    that means the server might be reachable.
+def _http_probe(base_url: str) -> bool:
+    """GET ``<base_url>/models`` with a short timeout. Returns True when
+    we get any HTTP response (2xx, 4xx — anything means the server is
+    listening). Returns False on connection refused, timeout, or any
+    other socket error.
+
+    Why a single probe instead of e.g. checking `/health`: vLLM's
+    OpenAI-compatible server doesn't ship a `/health` endpoint on all
+    versions, but `/v1/models` is required by the OpenAI spec and
+    always present once the engine has finished initializing. Status
+    code doesn't matter — `/v1/models` returning 200 vs 404 both
+    prove the engine is past startup.
+    """
+    try:
+        from urllib.request import Request, urlopen
+        from urllib.error import HTTPError, URLError
+    except ImportError:  # pragma: no cover — stdlib always present
+        return False
+
+    url = base_url.rstrip("/") + "/models"
+    req = Request(url, method="GET")
+    try:
+        urlopen(req, timeout=_HTTP_PROBE_TIMEOUT_S).read()
+        return True
+    except HTTPError:
+        # 4xx/5xx still means the server is listening — only network
+        # errors mean it isn't.
+        return True
+    except (URLError, OSError, TimeoutError):
+        return False
+
+
+def is_alive(discovery: dict, *, probe_http: bool = True) -> bool:
+    """True when the SLURM job recorded in ``discovery`` is alive AND
+    the HTTP endpoint actually answers.
+
+    The combination matters: ``launch.sh`` writes the discovery file
+    BEFORE it `exec`s ``vllm serve``, so the file appears minutes
+    before the server is reachable. The SLURM state alone would say
+    the job is RUNNING but a client would get ``Connection refused``.
+    The HTTP probe closes that gap.
 
     A ``slurm_job_id`` prefixed with ``local-`` (set by ``launch.sh``
-    when ``SLURM_JOB_ID`` isn't in the env) is treated as alive — we
-    can't ask squeue about it, but the discovery file is the only
-    signal we have.
+    when ``SLURM_JOB_ID`` isn't in the env) skips the squeue lookup;
+    we still HTTP-probe.
 
     When squeue itself is unavailable (e.g. running from a machine
     without slurm tools on PATH), we report stale rather than
     fabricating a live URL — the operator probably wants the helper
     to refuse than to hand them a bad endpoint.
+
+    Pass ``probe_http=False`` to fall back to the legacy SLURM-only
+    behaviour (mostly useful for unit tests that don't want to mock
+    urlopen).
     """
     job_id = str(discovery.get("slurm_job_id") or "")
     if not job_id or job_id.startswith("local-"):
         # No SLURM job to query (running outside SLURM).
+        slurm_ok = True
+    else:
+        state = _squeue_state(job_id)
+        if state is None:
+            return False  # squeue ran and didn't list it → finished/stale
+        slurm_ok = state in _ALIVE_STATES
+
+    if not slurm_ok:
+        return False
+    if not probe_http:
         return True
-    state = _squeue_state(job_id)
-    if state is None:
-        return False  # squeue ran and didn't list it → finished/stale
-    return state in _ALIVE_STATES
+
+    host = discovery.get("host")
+    port = discovery.get("port")
+    if not host or not port:
+        return False
+    return _http_probe(f"http://{host}:{port}/v1")
 
 
 def resolve_endpoint(

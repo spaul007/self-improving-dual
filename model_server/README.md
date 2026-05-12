@@ -87,9 +87,13 @@ python3 model_server/health.py --name gpt_oss_120b      # per-model lookup
 python3 model_server/health.py --name gpt_oss_120b --print-base-url
 ```
 
-`health.py` reads the discovery file and shells out to `squeue` to
+`health.py` reads the discovery file, shells out to `squeue` to
 detect a stale file from a job that has finished but didn't run its
-trap.
+trap, **and** HTTP-probes `/v1/models` with a 5 s timeout — vLLM
+takes minutes to initialize after `launch.sh` writes the discovery
+file, so a SLURM-only check would falsely report alive during that
+window. Connection refused / timeout / DNS error → reported stale;
+any HTTP response (including 4xx) → reported alive.
 
 ### Stop
 
