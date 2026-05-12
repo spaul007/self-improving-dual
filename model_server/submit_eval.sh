@@ -60,13 +60,17 @@ export SLURM_GRES="${SLURM_GRES:-none}"  # CPU-only meta-agent workload
 
 mkdir -p "$SLURM_LOG_DIR"
 
-# Compose the wrapped command. We export LLM_BASE_URL + OPENAI_API_KEY
-# inline so the SLURM job inherits them; the api.sh export sets the
-# real OpenAI key when going through OpenAI's endpoint.
+# Compose the wrapped command. ALWAYS source the OpenAI API key (when
+# the file exists) — even when routing the task agent at a local
+# server, the travel scorer's plan-conversion step
+# (projects/travel/benchmark/scorer.py::_convert_plan_to_json) is
+# hardcoded to call OpenAI's gpt-5-2025-08-07 and needs a real key to
+# succeed. The local-server path then overrides LLM_BASE_URL on top;
+# the wrapper accepts any OPENAI_API_KEY value once base_url is set,
+# and vLLM ignores auth, so a real key works fine for both.
+ENV_PREAMBLE="if [ -f \"$API_SH\" ]; then source \"$API_SH\"; fi;"
 if [[ -n "${LLM_BASE_URL:-}" ]]; then
-  ENV_PREAMBLE="export LLM_BASE_URL=$(printf %q "$LLM_BASE_URL"); export OPENAI_API_KEY=EMPTY;"
-else
-  ENV_PREAMBLE="if [ -f \"$API_SH\" ]; then source \"$API_SH\"; fi;"
+  ENV_PREAMBLE+=" export LLM_BASE_URL=$(printf %q "$LLM_BASE_URL");"
 fi
 
 CMD="$ENV_PREAMBLE PYTHONPATH=. python3 main_loop.py --config $CONFIG_REL"
