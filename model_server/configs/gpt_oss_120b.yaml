@@ -41,11 +41,14 @@ pip_install_args:
 # Use the same venv as the Qwen models — mainline vLLM is the same
 # package for both. Saves disk and a redundant install.
 venv: "/groups/AIC-MV/n.tzou/vllm_venv"
-# gpt-oss uses OpenAI's Harmony response format; mainline vLLM has
-# a built-in parser for it triggered automatically by model id, so
-# we don't pass `--enable-auto-tool-choice` or a parser name here.
-# If tool calls aren't parsed correctly when this runs, the live
-# trace will show it (look for num_tool_calls in trace.jsonl).
+# gpt-oss uses OpenAI's Harmony response format. mainline vLLM has a
+# Harmony-aware parser registered as `openai` (see
+# vllm/tool_parsers/openai_tool_parser.py — uses harmony_utils.
+# parse_output_into_messages and operates on token IDs, so it must
+# be enabled at startup; auto-detection from the model id is not
+# enough). Without these flags the server returns
+# `tool_calls: []` even when the reasoning trace clearly shows the
+# model trying to call a function (verified live on 2026-05-12).
 #
 # `--gpu-memory-utilization 0.85` (default 0.9). At TP=2 the weight
 # load fits, but `--gpu-memory-utilization 0.95` was too tight: the
@@ -57,3 +60,6 @@ venv: "/groups/AIC-MV/n.tzou/vllm_venv"
 extra_vllm_args:
   - "--gpu-memory-utilization"
   - "0.85"
+  - "--enable-auto-tool-choice"
+  - "--tool-call-parser"
+  - "openai"
