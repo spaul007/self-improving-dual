@@ -434,5 +434,118 @@ class SeedStripReasoningTests(unittest.TestCase):
         self.assertEqual(wf._item_type({}), "")
 
 
+class SeedExtractPlanLenientTests(unittest.TestCase):
+    """`_extract_plan` falls back to returning the full text when no
+    `<plan>...</plan>` block matches but the content is substantive.
+    Local vLLM-served models (Qwen3.5, gpt-oss) produce plan-shaped
+    prose without the tag wrapper; the scorer's LLM-based JSON
+    conversion step can extract the plan from prose, but only when
+    it receives prose — returning "" outright closes that door.
+    Caught live 2026-05-13."""
+
+    def _wf(self):
+        import importlib.util
+        if "tool_wrapper" not in sys.modules:
+            stub = type(sys)("tool_wrapper")
+            stub.ToolWrapper = object
+            sys.modules["tool_wrapper"] = stub
+        path = REPO_ROOT / "projects" / "travel" / "seed" / "workflow.py"
+        spec = importlib.util.spec_from_file_location("travel_seed_workflow", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_plan_tags_take_priority(self) -> None:
+        # When <plan> tags are present, lenient mode does NOT kick in
+        # — only the tag contents are returned.
+        wf = self._wf()
+        plan = "<plan>\nDay 1: Tokyo\nDay 2: Kyoto\n</plan>\nextra text after"
+        self.assertEqual(
+            wf._extract_plan(plan).strip(),
+            "Day 1: Tokyo\nDay 2: Kyoto",
+        )
+
+    def test_substantive_text_returned_when_no_tags(self) -> None:
+        # No <plan> tags but the content is a plausible plan body.
+        wf = self._wf()
+        body = (
+            "**Day 1 (2025-11-12):**\n"
+            "- Arrival via flight CA1234 (departs 08:00, arrives 10:30).\n"
+            "- Check in to Lavande Hotel near city center.\n"
+            "- Lunch at Tsukiji market; afternoon at Senso-ji.\n"
+            "- Dinner in Asakusa.\n"
+            "**Day 2 (2025-11-13):**\n"
+            "- Morning at Meiji Shrine, then Harajuku.\n"
+            "- Lunch in Shibuya; afternoon shopping.\n"
+            "- Return flight CA5678 at 18:00.\n"
+        )
+        self.assertTrue(len(body) >= wf._PLAN_SUBSTANTIVE_THRESHOLD)
+        self.assertEqual(wf._extract_plan(body), body.strip())
+
+    def test_trivial_exit_fragment_still_rejected(self) -> None:
+        # The exact failure case from 2026-05-12: model emits "Now East
+        # Lake." with no <plan> tags. Must not be promoted to a plan.
+        wf = self._wf()
+        self.assertEqual(wf._extract_plan("Now East Lake."), "")
+        self.assertEqual(wf._extract_plan("Next.\n\n"), "")
+        self.assertEqual(wf._extract_plan(""), "")
+
+    def test_threshold_boundary(self) -> None:
+        wf = self._wf()
+        n = wf._PLAN_SUBSTANTIVE_THRESHOLD
+        self.assertEqual(wf._extract_plan("x" * (n - 1)), "")
+        self.assertEqual(wf._extract_plan("x" * n), "x" * n)
+
+
+class SeedForcePlanResilientTests(unittest.TestCase):
+    """`_force_final_plan` must tolerate API failures from call_llm.
+    vLLM's gpt-oss Harmony parser has been observed to 400 on certain
+    post-tool-loop input shapes. A crash here propagates as a worker
+    Traceback and the case dies; catching lets the eval complete
+    with a clean score=0."""
+
+    def _wf(self):
+        import importlib.util
+        if "tool_wrapper" not in sys.modules:
+            stub = type(sys)("tool_wrapper")
+            stub.ToolWrapper = object
+            sys.modules["tool_wrapper"] = stub
+        path = REPO_ROOT / "projects" / "travel" / "seed" / "workflow.py"
+        spec = importlib.util.spec_from_file_location("travel_seed_workflow", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+
+    def test_returns_empty_on_call_llm_exception(self) -> None:
+        from unittest import mock
+        wf = self._wf()
+
+        def boom(*_a, **_k):
+            raise RuntimeError("simulated vLLM 400 Bad Request")
+
+        with mock.patch.object(wf, "call_llm", side_effect=boom):
+            result = wf._force_final_plan(
+                messages=[{"role": "user", "content": "task"}],
+                schema=[],
+            )
+        self.assertEqual(result, "")
+
+    def test_returns_plan_when_call_llm_succeeds(self) -> None:
+        from types import SimpleNamespace
+        from unittest import mock
+        wf = self._wf()
+
+        fake = SimpleNamespace(
+            content="<plan>\nDay 1: ...\n</plan>",
+            tool_calls=[],
+        )
+        with mock.patch.object(wf, "call_llm", return_value=fake):
+            result = wf._force_final_plan(
+                messages=[{"role": "user", "content": "task"}],
+                schema=[],
+            )
+        self.assertEqual(result.strip(), "Day 1: ...")
+
+
 if __name__ == "__main__":
     unittest.main()

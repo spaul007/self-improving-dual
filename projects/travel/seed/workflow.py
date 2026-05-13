@@ -229,6 +229,15 @@ _THINK_END_RE = re.compile(r"</think>", re.IGNORECASE)
 _PLAN_RE = re.compile(r"<plan>(.*?)</plan>", re.DOTALL | re.IGNORECASE)
 
 
+# Lenient-extraction threshold. Anything shorter than this is rejected
+# as "not a plan"; anything longer is forwarded to the scorer's
+# LLM-based JSON conversion (`projects/travel/benchmark/scorer.py::
+# _convert_plan_to_json`) which can extract the plan from prose. The
+# value just needs to exclude trivial exit fragments — e.g.
+# `"Now East Lake."` (14 chars) — without rejecting a stub plan.
+_PLAN_SUBSTANTIVE_THRESHOLD = 200
+
+
 def _extract_plan(text: str) -> str:
     if not text:
         return ""
@@ -237,7 +246,21 @@ def _extract_plan(text: str) -> str:
         text = text[think_ends[-1].end():]
     matches = _PLAN_RE.findall(text)
     cleaned = [m.strip() for m in matches if m.strip()]
-    return "\n\n".join(cleaned) if cleaned else ""
+    if cleaned:
+        return "\n\n".join(cleaned)
+    # Lenient fallback: no <plan> tags found, but the response is
+    # substantive (likely a plan-shaped reply that just skipped the
+    # wrapper tags). Local vLLM-served models (Qwen3.5, gpt-oss) do
+    # this consistently — even when the SYSTEM_PROMPT asks for tags
+    # and the force-plan retry asks again. Forwarding the prose body
+    # to the scorer's LLM-based conversion step lets it salvage the
+    # plan instead of returning "agent produced no plan" outright.
+    # Inert for OpenAI: gpt-5-mini reliably wraps in <plan> tags, so
+    # this branch never fires on that path.
+    stripped = text.strip()
+    if len(stripped) >= _PLAN_SUBSTANTIVE_THRESHOLD:
+        return stripped
+    return ""
 
 
 def _item_type(item) -> str:
@@ -309,7 +332,15 @@ def _force_final_plan(messages: list[dict], schema: list) -> str:
     fails — no worse than the pre-force baseline.
     """
     messages = messages + [{"role": "user", "content": _FORCE_PLAN_PROMPT}]
-    forced = call_llm(messages=messages, tools=schema)
+    try:
+        forced = call_llm(messages=messages, tools=schema)
+    except Exception:
+        # Tolerate API failures here — vLLM's gpt-oss Harmony parser
+        # has been observed to 400 on certain post-tool-loop input
+        # shapes even after the reasoning strip. Returning "" lets the
+        # case fail gracefully (score=0) instead of crashing the
+        # runner and killing the whole eval round. Caught 2026-05-13.
+        return ""
     return _extract_plan(forced.content or "")
 
 
