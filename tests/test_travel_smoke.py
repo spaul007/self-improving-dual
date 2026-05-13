@@ -301,10 +301,30 @@ class TravelScorerAggregateTests(unittest.TestCase):
 
 class SeedStripReasoningTests(unittest.TestCase):
     """The travel seed echoes prior Responses-API output items back as
-    the next call's `input`. Reasoning items must be dropped: local
-    vLLM-served models (Qwen3.5, gpt-oss) misread the echoed
-    intermediate fragments as 'conversation almost done' and exit the
-    tool loop without writing `<plan>` (caught live 2026-05-13)."""
+    the next call's `input`. The `_strip_reasoning` helper is opt-in
+    via `META_AGENT_STRIP_REASONING=1`:
+
+    - Default OFF: pass-through. OpenAI reasoning models (gpt-5-mini
+      and o-series) need echoed reasoning items for cross-turn state
+      continuity; stripping crashes them with 400s.
+    - ON: drops `reasoning` items. Local vLLM-served models
+      (Qwen3.5, gpt-oss) misread the echoed intermediate fragments
+      as 'conversation almost done' and exit the tool loop without
+      writing `<plan>` (caught live 2026-05-13).
+    """
+
+    def setUp(self) -> None:
+        # Snapshot the env var so each test can flip it independently
+        # without leaking state to the next test.
+        import os
+        self._orig_strip = os.environ.get("META_AGENT_STRIP_REASONING")
+
+    def tearDown(self) -> None:
+        import os
+        if self._orig_strip is None:
+            os.environ.pop("META_AGENT_STRIP_REASONING", None)
+        else:
+            os.environ["META_AGENT_STRIP_REASONING"] = self._orig_strip
 
     def _load_workflow(self):
         # The seed isn't on sys.path normally — it lives at
@@ -328,7 +348,37 @@ class SeedStripReasoningTests(unittest.TestCase):
         spec.loader.exec_module(mod)
         return mod, SimpleNamespace
 
-    def test_strip_reasoning_drops_reasoning_pydantic_models(self) -> None:
+    # ---- default-off behaviour (OpenAI-compatible) ----
+
+    def test_default_off_preserves_reasoning(self) -> None:
+        import os
+        os.environ.pop("META_AGENT_STRIP_REASONING", None)
+        wf, NS = self._load_workflow()
+        items = [
+            NS(type="message"),
+            NS(type="reasoning"),
+            NS(type="function_call"),
+        ]
+        # Pass-through: reasoning items kept.
+        kept = wf._strip_reasoning(items)
+        self.assertEqual([wf._item_type(i) for i in kept],
+                         ["message", "reasoning", "function_call"])
+
+    def test_explicit_zero_preserves_reasoning(self) -> None:
+        import os
+        os.environ["META_AGENT_STRIP_REASONING"] = "0"
+        wf, NS = self._load_workflow()
+        items = [NS(type="reasoning"), NS(type="message")]
+        self.assertEqual(
+            [wf._item_type(i) for i in wf._strip_reasoning(items)],
+            ["reasoning", "message"],
+        )
+
+    # ---- on-mode behaviour (local-model eval) ----
+
+    def test_on_drops_reasoning_pydantic_models(self) -> None:
+        import os
+        os.environ["META_AGENT_STRIP_REASONING"] = "1"
         wf, NS = self._load_workflow()
         items = [
             NS(type="message", content=[]),
@@ -339,8 +389,10 @@ class SeedStripReasoningTests(unittest.TestCase):
         types = [wf._item_type(i) for i in kept]
         self.assertEqual(types, ["message", "function_call"])
 
-    def test_strip_reasoning_drops_reasoning_plain_dicts(self) -> None:
+    def test_on_drops_reasoning_plain_dicts(self) -> None:
         # When .model_dump() has already happened, items are plain dicts.
+        import os
+        os.environ["META_AGENT_STRIP_REASONING"] = "1"
         wf, _ = self._load_workflow()
         items = [
             {"type": "message", "content": []},
@@ -351,7 +403,9 @@ class SeedStripReasoningTests(unittest.TestCase):
         types = [i.get("type") for i in kept]
         self.assertEqual(types, ["message", "function_call"])
 
-    def test_strip_reasoning_handles_mixed_shapes(self) -> None:
+    def test_on_handles_mixed_shapes(self) -> None:
+        import os
+        os.environ["META_AGENT_STRIP_REASONING"] = "1"
         wf, NS = self._load_workflow()
         items = [
             NS(type="reasoning"),
@@ -364,7 +418,9 @@ class SeedStripReasoningTests(unittest.TestCase):
         self.assertEqual(wf._item_type(kept[0]), "function_call")
         self.assertEqual(wf._item_type(kept[1]), "message")
 
-    def test_strip_reasoning_passes_through_empty(self) -> None:
+    def test_passes_through_empty(self) -> None:
+        import os
+        os.environ["META_AGENT_STRIP_REASONING"] = "1"
         wf, _ = self._load_workflow()
         self.assertEqual(wf._strip_reasoning([]), [])
         self.assertEqual(wf._strip_reasoning(None), [])

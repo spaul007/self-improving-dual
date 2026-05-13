@@ -48,6 +48,15 @@ editor:
     reasoning_effort: "medium"
     max_attempts: 2
 
+# Local models (Qwen3.5, gpt-oss) misread echoed `reasoning` items in
+# the conversation history as a "wrap up" signal — they exit the tool
+# loop without writing the formal <plan> block. Strip them before the
+# next call. OpenAI configs (eval_openai_*.yaml) deliberately leave
+# this unset because gpt-5-mini requires the echoed items for
+# cross-turn state continuity (its requests 400 without them).
+env:
+  META_AGENT_STRIP_REASONING: "1"
+
 split:
   seed: 42
   train_size: 60

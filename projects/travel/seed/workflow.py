@@ -12,6 +12,7 @@ Interface contract (preserved across rounds):
 from __future__ import annotations
 
 import json
+import os
 import re
 
 from platform_core.llm_wrapper import call_llm
@@ -249,22 +250,32 @@ def _item_type(item) -> str:
 
 
 def _strip_reasoning(raw_output):
-    """Drop `reasoning` items from prior assistant output before
-    echoing them back into the next call's `input` array.
+    """Conditionally drop `reasoning` items from prior assistant
+    output before echoing them back into the next call's `input` array.
 
-    OpenAI's Responses API does NOT require the client to send these
-    items back — reasoning continuity for o-series / gpt-5 models is
-    tracked server-side via the response chain. Echoing them is a
-    no-op for OpenAI but actively harms local vLLM-served open-weights
-    models (Qwen3.5, gpt-oss): they read the echoed intermediate
-    fragments — `"Now I have hotel data. Let me get attractions."` —
-    as a signal that the conversation is almost done and exit the
-    tool loop with a brief reply instead of writing the formal
-    `<plan>...</plan>` block. The same stale state also caused
-    vLLM's gpt-oss Harmony parser to return HTTP 400 on ~20% of
-    follow-up calls. Caught 2026-05-13 — see DEV_LOG for the trace.
+    Behaviour is controlled by the `META_AGENT_STRIP_REASONING` env var
+    (set per-eval in the YAML's ``env:`` block):
+
+    - Unset / not "1" (default): no-op pass-through. OpenAI reasoning
+      models (gpt-5, o-series, gpt-5-mini) need the echoed reasoning
+      items for cross-turn state continuity — the Responses API
+      rejects the request when the reasoning chain is incomplete.
+      Stripping crashed the 2026-05-13 OpenAI baseline with 400s.
+
+    - "1": local-model mode. Local vLLM-served open-weights models
+      (Qwen3.5, gpt-oss) actively misread echoed intermediate
+      fragments — `"Now I have hotel data. Let me get attractions."`,
+      `"Good, now I have coordinates."` — as a signal that the
+      conversation is almost done and exit the tool loop without
+      writing the formal `<plan>...</plan>` block. The same stale
+      state also caused vLLM's gpt-oss Harmony parser to return
+      HTTP 400 on ~20% of follow-up calls. The eval_local_*.yaml
+      configs flip this on; the OpenAI baseline yaml leaves it off.
     """
-    return [item for item in (raw_output or []) if _item_type(item) != "reasoning"]
+    items = list(raw_output or [])
+    if os.environ.get("META_AGENT_STRIP_REASONING") != "1":
+        return items
+    return [item for item in items if _item_type(item) != "reasoning"]
 
 
 _FORCE_PLAN_PROMPT = (
