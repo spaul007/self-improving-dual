@@ -33,7 +33,8 @@ env/
 runs/
 
 # --- Bulk data (per-sample CSVs etc., gitignored to keep the repo small) ---
-# projects/*/data/
+projects/travel/data/
+projects/shopping/data/
 
 # --- Local-only working notes (do not check in) ---
 CLAUDE.md

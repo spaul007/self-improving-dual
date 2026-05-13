@@ -1,0 +1,360 @@
+[
+  {
+    "name": "search_products",
+    "description": "Handles broad, open-ended natural language queries. Performs a semantic (BM25) search on key product information (brand, color, size, material, season, demographics, and name) and returns an initial set of relevant product_ids.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "Natural language query, e.g. 'Nike running shoes' or 'orange Uniqlo T-shirt'."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Maximum number of product_ids to return (default 20)."
+        }
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "filter_by_brand",
+    "description": "Filters a list of product_ids by one or more brand names (case-insensitive, OR logic). If product_ids is omitted, filters from the entire per-case catalog.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "product_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional candidate product_ids. Defaults to the full catalog."
+        },
+        "brand_names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Brand names to match, e.g. [\"Nike\", \"ZARA\"]."
+        }
+      },
+      "required": [
+        "brand_names"
+      ]
+    }
+  },
+  {
+    "name": "filter_by_color",
+    "description": "Filters a list of product_ids by one or more colors (case-insensitive, OR logic). If product_ids is omitted, filters from the entire per-case catalog.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "product_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional candidate product_ids. Defaults to the full catalog."
+        },
+        "colors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Colors to match, e.g. [\"Black\", \"Blue\"]."
+        }
+      },
+      "required": [
+        "colors"
+      ]
+    }
+  },
+  {
+    "name": "filter_by_size",
+    "description": "Filters a list of product_ids by one or more sizes (case-insensitive, OR logic). If product_ids is omitted, filters from the entire per-case catalog.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "product_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional candidate product_ids. Defaults to the full catalog."
+        },
+        "sizes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Sizes to match, e.g. [\"M\", \"L\", \"42\"]."
+        }
+      },
+      "required": [
+        "sizes"
+      ]
+    }
+  },
+  {
+    "name": "filter_by_range",
+    "description": "Filters a list of product_ids by a numerical feature, a comparison operator, and a threshold value. condition_key can address a nested field with dot notation (e.g. 'rating.average_score'). If product_ids is omitted, filters from the entire per-case catalog.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "product_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional candidate product_ids."
+        },
+        "condition_key": {
+          "type": "string",
+          "description": "Numerical feature to filter on.",
+          "enum": [
+            "price",
+            "stock_quantity",
+            "sales_volume.monthly",
+            "sales_volume.total",
+            "rating.average_score",
+            "rating.total_reviews"
+          ]
+        },
+        "operator": {
+          "type": "string",
+          "description": "Comparison operator.",
+          "enum": [
+            ">",
+            ">=",
+            "<",
+            "<=",
+            "=="
+          ]
+        },
+        "value": {
+          "type": "number",
+          "description": "Numerical value to compare against."
+        }
+      },
+      "required": [
+        "condition_key",
+        "operator",
+        "value"
+      ]
+    }
+  },
+  {
+    "name": "filter_by_applicable_coupons",
+    "description": "Filters product_ids by applicable coupons. Returns products whose `applicable_coupons` is a superset of the requested coupon_names. If product_ids is omitted, filters from the entire per-case catalog.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "product_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional candidate product_ids."
+        },
+        "coupon_names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Coupon names; products must have ALL of them applicable."
+        }
+      },
+      "required": [
+        "coupon_names"
+      ]
+    }
+  },
+  {
+    "name": "sort_products",
+    "description": "Sorts a list of product_ids by a specified dimension. If product_ids is omitted, sorts the entire per-case catalog.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "product_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Optional candidate product_ids."
+        },
+        "sort_by": {
+          "type": "string",
+          "description": "Field to sort by (dot-paths allowed).",
+          "enum": [
+            "price",
+            "sales_volume.monthly",
+            "sales_volume.total",
+            "rating.average_score",
+            "stock_quantity",
+            "name"
+          ]
+        },
+        "order": {
+          "type": "string",
+          "description": "asc or desc (default desc).",
+          "enum": [
+            "asc",
+            "desc"
+          ]
+        }
+      },
+      "required": [
+        "sort_by"
+      ]
+    }
+  },
+  {
+    "name": "get_product_details",
+    "description": "Returns the full product record for each of the given product_ids. Missing ids are silently skipped.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "product_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Product ids to look up."
+        }
+      },
+      "required": [
+        "product_ids"
+      ]
+    }
+  },
+  {
+    "name": "calculate_transport_time",
+    "description": "Estimates delivery days for a product from its shipping origin to a destination province. Returns an integer day count, never less than 1.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "product_id": {
+          "type": "string",
+          "description": "Product to ship."
+        },
+        "destination_address": {
+          "type": "string",
+          "description": "Destination province name in pinyin (e.g. 'guangdong', 'beijing', 'shanghai')."
+        },
+        "provider": {
+          "type": "string",
+          "description": "Optional. Override the product's default shipping provider. Supported: 'sf_express', 'jd_logistics', 'yto_express', 'zto_express', 'sto_express', 'yunda_express', 'cainiao', 'china_post', 'ems', 'deppon_express', 'default'."
+        }
+      },
+      "required": [
+        "product_id",
+        "destination_address"
+      ]
+    }
+  },
+  {
+    "name": "get_user_info",
+    "description": "Returns the per-case user record (user_id, address, body profile, owned coupons, vip status, etc.). The user_id argument is optional; if provided and matches the user_id stored in the per-case record, returns it. Otherwise returns the case's default user.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "description": "Optional. The unique identifier of the user to retrieve."
+        }
+      },
+      "required": []
+    }
+  },
+  {
+    "name": "add_product_to_cart",
+    "description": "Adds a product to the cart. Validates product existence and stock availability. If the product is already in the cart, increases its quantity. Returns the updated cart.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "product_id": {
+          "type": "string",
+          "description": "Product id (must exist in the per-case catalog)."
+        },
+        "quantity": {
+          "type": "integer",
+          "description": "Optional. Positive integer; default 1."
+        }
+      },
+      "required": [
+        "product_id"
+      ]
+    }
+  },
+  {
+    "name": "delete_product_from_cart",
+    "description": "Removes a product from the cart or reduces its quantity. If the quantity to remove equals or exceeds the cart quantity, the item is fully removed. Returns the updated cart.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "product_id": {
+          "type": "string",
+          "description": "Product id (must exist and currently be in the cart)."
+        },
+        "quantity": {
+          "type": "integer",
+          "description": "Optional. Positive integer; default 1."
+        }
+      },
+      "required": [
+        "product_id"
+      ]
+    }
+  },
+  {
+    "name": "get_cart_info",
+    "description": "Returns the current shopping cart: items (each with product_id, name, quantity, price), used_coupons, and a summary object with total_items_count and total_price.",
+    "input_schema": {
+      "type": "object",
+      "properties": {},
+      "required": []
+    }
+  },
+  {
+    "name": "add_coupon_to_cart",
+    "description": "Adds a coupon to the cart. Validates: coupon name is recognized; user owns enough copies of it; VIP coupons require VIP status; the combined threshold across all used coupons is met by the cart total. Returns the updated cart with `used_coupons` and a post-discount `summary.total_price`.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "coupon_name": {
+          "type": "string",
+          "description": "Coupon name. Examples: 'Cross-store: ¥30 off every ¥300', 'Same-brand: ¥25 off every ¥200', 'VIP: ¥200 off every ¥1,000'."
+        },
+        "quantity": {
+          "type": "integer",
+          "description": "Optional. Positive integer; default 1."
+        }
+      },
+      "required": [
+        "coupon_name"
+      ]
+    }
+  },
+  {
+    "name": "delete_coupon_from_cart",
+    "description": "Removes a coupon from the cart or reduces its quantity. If the quantity to remove equals or exceeds the current cart quantity, the coupon is fully removed. Returns the updated cart with recomputed `summary.total_price`.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "coupon_name": {
+          "type": "string",
+          "description": "Coupon name (must currently be in the cart)."
+        },
+        "quantity": {
+          "type": "integer",
+          "description": "Optional. Positive integer; default 1."
+        }
+      },
+      "required": [
+        "coupon_name"
+      ]
+    }
+  }
+]

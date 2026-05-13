@@ -1,0 +1,70 @@
+experiment_name: "shopping_default"
+
+# All project-specific assets live under projects/shopping/:
+#   projects/shopping/seed/        — task agent
+#   projects/shopping/benchmark/   — cases.jsonl + scorer.py
+#                                    (ShoppingScorer registered as `shopping_default`)
+#   projects/shopping/tools/       — 15 immutable shopping tools (auto-loaded)
+#   projects/shopping/data/        — per-case databases (gitignored)
+project: "shopping"
+
+loop:
+  max_rounds: 3
+  score_target: 0.95
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "medium"
+
+manager:
+  type: "hill_climbing"
+  config:
+    branch_policy: "best"
+    strategy_model: "gpt-5.4-mini"
+    strategy_reasoning_effort: "high"
+    strategy_history_window: 5
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "shopping_default"
+
+gatherer:
+  # Reads per-case CaseResult.metrics + trace events and dispatches to
+  # ShoppingScorer.aggregate() for the round-level project_metrics.
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+# Optional env-var overrides forwarded to evaluator child subprocesses.
+# Shopping's database default is `projects/shopping/data/` (computed
+# inside `projects/shopping/tools/_db.py`); set the override here only
+# if data lives elsewhere.
+# env:
+#   SHOPPING_DATABASE_ROOT: "/path/to/database/root"
+
+# Train/eval split: optimization sees only the train half; the eval
+# half is a sidecar metric reported per round. Reproducible from
+# `seed` alone. 60 train / 60 eval; with max_cases (unset by default)
+# the full 120 are exercised.
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "immutable_files"
+  - type: "load_test"
