@@ -199,3 +199,17 @@ class ShoppingScorer:
             "level_n": {lvl: len(scores) for lvl, scores in levels.items()},
             "cases_with_ground_truth": completed,
         }
+
+
+# Default instance for the evaluator's "load scorer.py" fallback path
+# (i.e. when nothing is passed to SubprocessEvaluator(scorer=...)). The
+# in-config path runs `build_components` which constructs a fresh
+# `ShoppingScorer()` and injects it; this module-level instance is what
+# the standalone `evaluate.py` invocation uses.
+_DEFAULT_SCORER = ShoppingScorer()
+
+
+def score(case: dict[str, Any], agent_output: Any) -> dict[str, Any]:
+    """Module-level scorer entry point used by ``SubprocessEvaluator``
+    when no registered scorer instance is provided."""
+    return _DEFAULT_SCORER.score(case, agent_output)
