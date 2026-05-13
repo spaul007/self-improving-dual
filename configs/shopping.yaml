@@ -9,7 +9,7 @@ experiment_name: "shopping_default"
 project: "shopping"
 
 loop:
-  max_rounds: 3
+  max_rounds: 5
   score_target: 0.95
 
 task_agent:
