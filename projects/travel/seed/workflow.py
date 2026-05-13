@@ -247,8 +247,8 @@ _FORCE_PLAN_PROMPT = (
 )
 
 
-def _force_final_plan(messages: list[dict]) -> str:
-    """Issue one final LLM call without tools to coax a `<plan>` block.
+def _force_final_plan(messages: list[dict], schema: list) -> str:
+    """Issue one final LLM call to coax a `<plan>` block.
 
     Some models (notably local vLLM-hosted open-weights) tend to exit
     the tool loop with brief reasoning fragments — `"Now East Lake."`,
@@ -259,9 +259,18 @@ def _force_final_plan(messages: list[dict]) -> str:
     the early-exit and into a structured final answer. The change is
     inert for OpenAI-class models: they normally produce a plan in the
     natural terminal response, so the force path never fires.
+
+    The tool schema is kept on this call (rather than passing
+    ``tools=None``) because the conversation history contains
+    ``function_call`` / ``function_call_output`` items from earlier
+    turns; vLLM's Responses API rejects those input items with HTTP
+    400 when ``tools`` is absent. The prompt itself instructs the
+    model not to call any more tools. If the model ignores it and
+    calls a tool anyway, _extract_plan returns "" and the case still
+    fails — no worse than the pre-force baseline.
     """
     messages = messages + [{"role": "user", "content": _FORCE_PLAN_PROMPT}]
-    forced = call_llm(messages=messages)  # no tools intentionally
+    forced = call_llm(messages=messages, tools=schema)
     return _extract_plan(forced.content or "")
 
 
@@ -299,7 +308,7 @@ def run_task(task: Task) -> AgentOutput:
                 else:
                     messages.append(item)
             return AgentOutput(
-                result=_force_final_plan(messages),
+                result=_force_final_plan(messages, schema),
                 metadata={
                     "iterations": iterations + 1,
                     "budget_exhausted": False,
@@ -346,7 +355,7 @@ def run_task(task: Task) -> AgentOutput:
     # new (potentially worse) one.
     plan = _extract_plan(last_text)
     if not plan:
-        plan = _force_final_plan(messages)
+        plan = _force_final_plan(messages, schema)
     return AgentOutput(
         result=plan,
         metadata={"iterations": iterations + (0 if _extract_plan(last_text) else 1),
