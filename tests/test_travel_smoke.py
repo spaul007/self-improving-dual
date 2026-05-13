@@ -299,5 +299,84 @@ class TravelScorerAggregateTests(unittest.TestCase):
         self.assertAlmostEqual(m["dimension_means"]["X"], 0.5)
 
 
+class SeedStripReasoningTests(unittest.TestCase):
+    """The travel seed echoes prior Responses-API output items back as
+    the next call's `input`. Reasoning items must be dropped: local
+    vLLM-served models (Qwen3.5, gpt-oss) misread the echoed
+    intermediate fragments as 'conversation almost done' and exit the
+    tool loop without writing `<plan>` (caught live 2026-05-13)."""
+
+    def _load_workflow(self):
+        # The seed isn't on sys.path normally — it lives at
+        # projects/travel/seed/. Import via spec_from_file_location so
+        # the in-repo unit test can reach _strip_reasoning + _item_type
+        # without a heavyweight runner-style fixture.
+        import importlib.util
+        from types import SimpleNamespace
+
+        # tool_wrapper is a sibling import inside workflow.py — provide
+        # a fake module so workflow.py loads even when the seed dir
+        # isn't on sys.path.
+        if "tool_wrapper" not in sys.modules:
+            stub = type(sys)("tool_wrapper")
+            stub.ToolWrapper = object  # never instantiated in this test
+            sys.modules["tool_wrapper"] = stub
+
+        path = REPO_ROOT / "projects" / "travel" / "seed" / "workflow.py"
+        spec = importlib.util.spec_from_file_location("travel_seed_workflow", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod, SimpleNamespace
+
+    def test_strip_reasoning_drops_reasoning_pydantic_models(self) -> None:
+        wf, NS = self._load_workflow()
+        items = [
+            NS(type="message", content=[]),
+            NS(type="reasoning", content=[]),
+            NS(type="function_call", id="c1", name="query_train_info"),
+        ]
+        kept = wf._strip_reasoning(items)
+        types = [wf._item_type(i) for i in kept]
+        self.assertEqual(types, ["message", "function_call"])
+
+    def test_strip_reasoning_drops_reasoning_plain_dicts(self) -> None:
+        # When .model_dump() has already happened, items are plain dicts.
+        wf, _ = self._load_workflow()
+        items = [
+            {"type": "message", "content": []},
+            {"type": "reasoning", "content": [{"text": "internal thinking"}]},
+            {"type": "function_call", "id": "c1", "name": "query_train_info"},
+        ]
+        kept = wf._strip_reasoning(items)
+        types = [i.get("type") for i in kept]
+        self.assertEqual(types, ["message", "function_call"])
+
+    def test_strip_reasoning_handles_mixed_shapes(self) -> None:
+        wf, NS = self._load_workflow()
+        items = [
+            NS(type="reasoning"),
+            {"type": "function_call", "id": "c1"},
+            NS(type="message"),
+            {"type": "reasoning"},
+        ]
+        kept = wf._strip_reasoning(items)
+        self.assertEqual(len(kept), 2)
+        self.assertEqual(wf._item_type(kept[0]), "function_call")
+        self.assertEqual(wf._item_type(kept[1]), "message")
+
+    def test_strip_reasoning_passes_through_empty(self) -> None:
+        wf, _ = self._load_workflow()
+        self.assertEqual(wf._strip_reasoning([]), [])
+        self.assertEqual(wf._strip_reasoning(None), [])
+
+    def test_item_type_handles_both_shapes(self) -> None:
+        wf, NS = self._load_workflow()
+        self.assertEqual(wf._item_type(NS(type="message")), "message")
+        self.assertEqual(wf._item_type({"type": "function_call"}), "function_call")
+        # Missing/None type → empty string, never raises.
+        self.assertEqual(wf._item_type(NS()), "")
+        self.assertEqual(wf._item_type({}), "")
+
+
 if __name__ == "__main__":
     unittest.main()

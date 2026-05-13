@@ -239,6 +239,34 @@ def _extract_plan(text: str) -> str:
     return "\n\n".join(cleaned) if cleaned else ""
 
 
+def _item_type(item) -> str:
+    """Type tag of a Responses-API output item, robust to either a
+    Pydantic model (with `.type`) or a plain dict (with `["type"]`)."""
+    t = getattr(item, "type", None)
+    if t is None and isinstance(item, dict):
+        t = item.get("type")
+    return t or ""
+
+
+def _strip_reasoning(raw_output):
+    """Drop `reasoning` items from prior assistant output before
+    echoing them back into the next call's `input` array.
+
+    OpenAI's Responses API does NOT require the client to send these
+    items back — reasoning continuity for o-series / gpt-5 models is
+    tracked server-side via the response chain. Echoing them is a
+    no-op for OpenAI but actively harms local vLLM-served open-weights
+    models (Qwen3.5, gpt-oss): they read the echoed intermediate
+    fragments — `"Now I have hotel data. Let me get attractions."` —
+    as a signal that the conversation is almost done and exit the
+    tool loop with a brief reply instead of writing the formal
+    `<plan>...</plan>` block. The same stale state also caused
+    vLLM's gpt-oss Harmony parser to return HTTP 400 on ~20% of
+    follow-up calls. Caught 2026-05-13 — see DEV_LOG for the trace.
+    """
+    return [item for item in (raw_output or []) if _item_type(item) != "reasoning"]
+
+
 _FORCE_PLAN_PROMPT = (
     "Stop calling tools. Based on all the information you've gathered so far, "
     "produce the final travel plan now within <plan>...</plan> tags, "
@@ -302,7 +330,7 @@ def run_task(task: Task) -> AgentOutput:
             # so the force-call sees the agent's last state.
             raw = getattr(response, "raw", None)
             raw_output = getattr(raw, "output", None) or []
-            for item in raw_output:
+            for item in _strip_reasoning(raw_output):
                 if hasattr(item, "model_dump"):
                     messages.append(item.model_dump(exclude_none=True))
                 else:
@@ -316,18 +344,18 @@ def run_task(task: Task) -> AgentOutput:
                 },
             )
 
-        # Append every item the Responses API returned (assistant
-        # ``message`` items with visible content, ``reasoning`` items
-        # the API uses to maintain reasoning continuity across turns,
-        # and ``function_call`` items) so the next iteration sees the
-        # agent's own content and reasoning state. Mirrors the
-        # reference's ``messages.extend(raw_output)`` pattern in
-        # ``tools_fn_agent.py:454-457``. Items come back as OpenAI SDK
-        # Pydantic models; convert to plain dicts so the messages list
-        # stays JSON-serializable.
+        # Append the Responses API output items (assistant ``message``
+        # items with visible content and ``function_call`` items) so
+        # the next iteration sees the agent's own content + tool
+        # decisions. ``reasoning`` items are intentionally dropped
+        # via ``_strip_reasoning`` — see the helper's docstring for
+        # why. Mirrors the reference's ``messages.extend(raw_output)``
+        # pattern in ``tools_fn_agent.py:454-457`` minus the reasoning
+        # echo. Items come back as OpenAI SDK Pydantic models; convert
+        # to plain dicts so the messages list stays JSON-serializable.
         raw = getattr(response, "raw", None)
         raw_output = getattr(raw, "output", None) or []
-        for item in raw_output:
+        for item in _strip_reasoning(raw_output):
             if hasattr(item, "model_dump"):
                 messages.append(item.model_dump(exclude_none=True))
             else:
