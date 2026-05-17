@@ -412,3 +412,144 @@ Train/held-out story explained:
    branch off round 2 instead of the latest.
 
 ---
+
+## 2026-05-17 — shopping seed full-120, reasoning_effort high (143771)
+
+Job: 143771 · gpu-aic-mv-01-st-p5-node-4    Wall: 17:14
+Run dir: `runs/eval_20260517_173805_seed/`
+Config: `configs/shopping.yaml` @ commit abe5905 + in-flight diff
+        (task_agent.reasoning_effort `medium`→`high`; not yet committed)
+Models: task=gpt-5.4-mini reasoning=high  scorer=deterministic (no LLM)
+Split / scope: standalone eval — full 120 cases · parallelism 16
+
+### Results
+| Level | n | Mean | Perfect | Baseline (medium) | Δ |
+|---|---|---|---|---|---|
+| L1 (no budget)       | 50 | 0.8490 | 27 | 0.815 | +3.4pp |
+| L2 (budget)          | 50 | 0.8120 | 23 | 0.764 | +4.8pp |
+| L3 (coupon optimize) | 20 | 0.8242 | 10 | 0.694 | +13.0pp |
+| **Overall**          | 120 | **0.8294** | 60 | **0.7737** | **+5.6pp** |
+
+### Observations / diagnosis
+- Baseline: seed at `reasoning_effort: medium` = 0.7737 (job 140996,
+  2026-05-13). Standalone target ≈ 0.83 (`gpt-5.4-mini-high` config).
+- Single-knob change `medium`→`high` closes the full ~5.6pp gap; the
+  result lands on the standalone target. The earlier "temperature 1.0"
+  hypothesis was wrong — both meta-agent and standalone omit
+  temperature for reasoning models; reasoning effort was the only gap.
+- L3 (coupon-stacking optimization) gains the most (+13pp) — the
+  hardest bucket benefits most from deeper reasoning.
+- Required restoring `projects/shopping/data/` first: the gitignored
+  120-case ground-truth tree was missing in this checkout (lost in the
+  repo relocation). First attempt (job 143768) scored 0/120 in 158 s,
+  every case erroring `validation_cases.json not found`. Re-copied
+  from `/groups/AIC-MV/aounon/HGM-generic/shopping_agent/database/`.
+
+### Links
+- Baseline entry: 2026-05-13 shopping seed full-120 baseline (140996)
+- Related commits: (pending) `configs/shopping.yaml` reasoning high
+
+---
+
+## 2026-05-17 — travel seed full-benchmark, conversion prompt restored (143769)
+
+Job: 143769 · gpu-aic-mv-01-st-p5-node-4    Wall: 1:01:10
+Run dir: `runs/eval_20260517_164700_seed/`
+Config: `configs/travel.yaml` @ commit abe5905 (unchanged) + in-flight
+        diff to `projects/travel/benchmark/_eval/prompts.py` (not yet
+        committed)
+Models: task=gpt-5.4-mini reasoning=high  scorer-plan-convert=gpt-5-2025-08-07
+Split / scope: standalone eval — full 120 cases · parallelism 16
+
+### Results
+| Metric | Value |
+|---|---|
+| composite_score | **0.6833** |
+| strict-pass (composite==1.0) | 14/120 |
+| conversion-failed cases | 4/120 |
+| zero-score cases | 5/120 |
+
+Baseline meta-agent seed ≈ 0.59 (post-scorer-v2, reasoning=high; cf.
+2026-05-07 verification-pass entry r0=0.602/0.586). Standalone target
+≈ 0.63–0.65.
+
+### Observations / diagnosis
+- The travel **seed agent** was already at parity (reasoning `high`
+  matches the standalone; system prompt is a faithful copy; loop is a
+  superset). The gap was in the **scorer's plan→JSON conversion**:
+  `_eval/prompts.py` was a botched port that had dropped the entire
+  end-to-end worked example (3.2 KB vs the standalone's 8.9 KB).
+- Fix: restored `FORMAT_CONVERT_PROMPT_EN` verbatim from
+  `/users/n.tzou/cl/travel_agent/agent/prompts.py`. Result jumped
+  ~0.59 → 0.683 (+9pp); conversion failures down to 4/120.
+- 0.683 sits *above* the standalone's 0.63–0.65. The conversion model
+  was kept at `gpt-5-2025-08-07` (per user decision) rather than the
+  standalone's `gpt-4o-2024-11-20`; the full prompt + stronger
+  conversion model puts the meta-agent slightly past the standalone.
+  This is at-or-above parity — acceptable.
+
+### Links
+- Baseline entry: 2026-05-07 verification-pass pattern works (138929)
+- Related commits: (pending) `_eval/prompts.py` restore full prompt
+
+---
+
+## 2026-05-17 — seed-parity confirmation, 3×travel + 3×shopping (143805-143810)
+
+Job: 143805-143810 · gpu-aic-mv-01-st-p5-node-3    Wall: travel ~0:58, shopping ~0:19
+Run dirs: `runs/eval_20260517_2231{38,39,44}_seed/` (travel),
+          `runs/eval_20260517_2234{10,13,20}_seed/` (shopping)
+Config: `configs/travel.yaml` @ abe5905 + uncommitted `_eval/prompts.py`;
+        `configs/shopping.yaml` @ abe5905 + uncommitted `reasoning_effort: high`
+Models: task=gpt-5.4-mini reasoning=high; travel scorer-plan-convert=gpt-5-2025-08-07;
+        shopping scorer=deterministic (no LLM)
+Split / scope: standalone eval — full 120 cases each · parallelism 16
+
+Motivation: a new `travel_agent` checkout (`/users/n.tzou/cl/work/travel_agent`,
+2 commits ahead of the ported-from `/users/n.tzou/cl/travel_agent`) was
+reviewed for parity impact. The 2 commits touch only evaluation infra
+(`evaluate_plan.py` workers 8→40 + warn-instead-of-abort on conversion
+failure; `convert_report.py` conversion model gpt-4o→gpt-5-2025-08-07;
+`.gitignore`) — no `agent/` change. The meta-agent already matched all
+three (gpt-5 convert model, per-120 zero-scoring of failed conversions,
+byte-identical convert prompt). No code change followed; these 6 runs
+re-confirm seed parity under run-to-run variance.
+
+### Results
+| Project  | Job    | Composite | strict-pass | L1 / L2 / L3 |
+|---|---|---|---|---|
+| travel   | 143805 | 0.6813 | 10/120 | — |
+| travel   | 143806 | 0.6641 |  9/120 | — |
+| travel   | 143807 | 0.7073 | 11/120 | — |
+| **travel mean (n=3)** | | **0.6842** | | prior seed 0.6833 (143769) |
+| shopping | 143808 | 0.7722 | 49/120 | 0.825 / 0.731 / 0.744 |
+| shopping | 143809 | 0.8060 | 58/120 | 0.852 / 0.773 / 0.773 |
+| shopping | 143810 | 0.8342 | 62/120 | 0.878 / 0.811 / 0.783 |
+| **shopping mean (n=3)** | | **0.8041** | | prior seed 0.8294 (143771) |
+
+### Observations / diagnosis
+- **Travel — at parity, confirmed.** 3-run mean 0.6842 sits right on
+  the prior single seed run (0.6833) and comfortably above the
+  standalone target band 0.63–0.65. Range 0.664–0.707; no run dips
+  near the target floor.
+- **Shopping — workflow at parity; score variance is genuine.** Zero
+  errored cases across all 3 runs (deterministic scorer, no API-failure
+  artifacts even with 6 jobs × p=16 = 96 concurrent requests — wrapper
+  retries absorbed any rate-limiting). The 0.772–0.834 spread is real
+  gpt-5.4-mini reasoning-effort-high sampling variance. 4-run history
+  (incl. 143771) = 0.8294 / 0.7722 / 0.8060 / 0.8342, mean **0.8105**;
+  2 of 4 land at/above the ≈0.83 standalone target. L2 is the most
+  volatile bucket (0.731→0.812 across runs); L1 the steadiest.
+- The seed *workflow* is identical code at identical config knobs
+  (reasoning high) — parity holds; a single 120-case run just carries
+  ±3pp noise, so judge shopping parity on the multi-run mean, not any
+  one run.
+
+### Links
+- Diff review + parity verdict: DEV_LOG.md 2026-05-17 "new travel_agent
+  diff review" entry
+- Prior seed entries: 2026-05-17 travel (143769), 2026-05-17 shopping (143771)
+- Related commits: `configs/shopping.yaml` reasoning high,
+  `_eval/prompts.py` restore full prompt
+
+---
