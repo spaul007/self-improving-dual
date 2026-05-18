@@ -106,7 +106,11 @@ class FrameworkConfig(BaseModel):
 
     verbose: bool = False
 
-    runs_root: str = "runs"
+    # Per-experiment run folders are large (per-round task_agent copies +
+    # traces + per-case JSON). They default to the group filesystem so the
+    # small local /users disk does not fill up; a YAML may override (e.g.
+    # `runs_root: runs` for a throwaway local run).
+    runs_root: str = "/groups/AIC-MV/n.tzou/meta-agent/runs"
 
 
 @dataclass

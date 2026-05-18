@@ -15,7 +15,7 @@ Copy this when adding a new run.
 ## YYYY-MM-DD — short title (project · what changed)
 
 Job: <SLURM jobid or "local">           Wall: <HH:MM>
-Run dir: <runs/... or /groups/AIC-MV/n.tzou/evaluations/...>
+Run dir: </groups/AIC-MV/n.tzou/meta-agent/runs/... — the runs_root default>
 Config: <configs/foo.yaml @ commit short-sha>
 Models: task=<>  editor=<>  strategy=<>  scorer-plan-convert=<>
 Split / scope: <max_rounds N · train_size T · max_cases M · parallelism P>
@@ -416,7 +416,7 @@ Train/held-out story explained:
 ## 2026-05-17 — shopping seed full-120, reasoning_effort high (143771)
 
 Job: 143771 · gpu-aic-mv-01-st-p5-node-4    Wall: 17:14
-Run dir: `runs/eval_20260517_173805_seed/`
+Run dir: `/groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260517_173805_seed/`
 Config: `configs/shopping.yaml` @ commit abe5905 + in-flight diff
         (task_agent.reasoning_effort `medium`→`high`; not yet committed)
 Models: task=gpt-5.4-mini reasoning=high  scorer=deterministic (no LLM)
@@ -454,7 +454,7 @@ Split / scope: standalone eval — full 120 cases · parallelism 16
 ## 2026-05-17 — travel seed full-benchmark, conversion prompt restored (143769)
 
 Job: 143769 · gpu-aic-mv-01-st-p5-node-4    Wall: 1:01:10
-Run dir: `runs/eval_20260517_164700_seed/`
+Run dir: `/groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260517_164700_seed/`
 Config: `configs/travel.yaml` @ commit abe5905 (unchanged) + in-flight
         diff to `projects/travel/benchmark/_eval/prompts.py` (not yet
         committed)
@@ -497,8 +497,8 @@ Baseline meta-agent seed ≈ 0.59 (post-scorer-v2, reasoning=high; cf.
 ## 2026-05-17 — seed-parity confirmation, 3×travel + 3×shopping (143805-143810)
 
 Job: 143805-143810 · gpu-aic-mv-01-st-p5-node-3    Wall: travel ~0:58, shopping ~0:19
-Run dirs: `runs/eval_20260517_2231{38,39,44}_seed/` (travel),
-          `runs/eval_20260517_2234{10,13,20}_seed/` (shopping)
+Run dirs: `/groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260517_2231{38,39,44}_seed/` (travel),
+          `/groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260517_2234{10,13,20}_seed/` (shopping)
 Config: `configs/travel.yaml` @ abe5905 + uncommitted `_eval/prompts.py`;
         `configs/shopping.yaml` @ abe5905 + uncommitted `reasoning_effort: high`
 Models: task=gpt-5.4-mini reasoning=high; travel scorer-plan-convert=gpt-5-2025-08-07;
@@ -557,7 +557,7 @@ re-confirm seed parity under run-to-run variance.
 ## 2026-05-18 — shopping seed, cap-parity fixes, 3×full-120 (143820-143822)
 
 Job: 143820-143822 · gpu-aic-mv-01-st-p5-node-3    Wall: ~0:20 each
-Run dirs: `runs/eval_20260518_0038{33,35,38}_seed/`
+Run dirs: `/groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260518_0038{33,35,38}_seed/`
 Config: `configs/shopping.yaml` @ commit f4fdec8 + uncommitted seed/wrapper diff
 Models: task=gpt-5.4-mini reasoning=high; scorer=deterministic (no LLM)
 Split / scope: standalone eval — full 120 cases each · parallelism 16
@@ -607,7 +607,7 @@ Two parity fixes applied vs the standalone `/users/n.tzou/cl/shopping_agent`:
 ## 2026-05-18 — HGM travel optimization, first faithful run (143948)
 
 Job: 143948 · gpu-aic-mv-01-st-p5-node-3    Wall: 7:47:17
-Run dir: `runs/20260518_054718_travel_hgm/`
+Run dir: (deleted 2026-05-18 — superseded; was `runs/20260518_054718_travel_hgm/`)
 Config: `configs/hgm_travel.yaml` (uncommitted) — HGM manager, B=400,
         init_expansions=5, alpha=0.6, epsilon=0.25, eval_batch_size=16,
         clade_pseudo_count=10000, cool_down off
@@ -663,7 +663,7 @@ fidelity fixes. (An earlier unfaithful attempt, 143885, was cancelled.)
 ## 2026-05-18 — HGM shopping optimization, first faithful run (143949)
 
 Job: 143949 · gpu-aic-mv-01-st-p5-node-3    Wall: 2:56:37
-Run dir: `runs/20260518_054718_shopping_hgm/`
+Run dir: (deleted 2026-05-18 — superseded; was `runs/20260518_054718_shopping_hgm/`)
 Config: `configs/hgm_shopping.yaml` (uncommitted) — HGM manager, B=400,
         init_expansions=5, alpha=0.6, epsilon=0.25, eval_batch_size=16,
         clade_pseudo_count=10000, cool_down off

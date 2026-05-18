@@ -26,7 +26,7 @@ reason, including session loss, `scancel`, OOM, or wall-time.
 | CPUs per task     | 4 (smoke: 2)             | `SLURM_CPUS`       |
 | Memory            | 16 G (smoke: 4 G)        | `SLURM_MEM`        |
 | Job name          | `meta-agent`             | `SLURM_JOB_NAME`   |
-| Log directory     | `runs/slurm/`            | `SLURM_LOG_DIR`    |
+| Log directory     | `/groups/AIC-MV/n.tzou/meta-agent/slurm` | `SLURM_LOG_DIR` |
 
 The CPU partition is the right default in principle — every meta-agent
 component is CPU-bound (the heavy work is API calls to OpenAI), so
@@ -80,8 +80,9 @@ SLURM_PARTITION=gpu-aic-mv-01 SLURM_GRES=none SLURM_TIME=14:00:00 \
 `sbatch` prints `Submitted batch job 12345`. Then:
 
 ```bash
-tail -f runs/slurm/12345.out      # stdout
-tail -f runs/slurm/12345.err      # stderr
+L=/groups/AIC-MV/n.tzou/meta-agent/slurm   # SLURM_LOG_DIR default
+tail -f "$L/12345.out"            # stdout
+tail -f "$L/12345.err"            # stderr
 squeue -u "$USER"                 # job state
 sacct -j 12345 --format=JobID,State,ExitCode,Elapsed,MaxRSS
 ```
