@@ -246,7 +246,7 @@ def call_llm(
     temperature: float = 1.0,
     reasoning_effort: Optional[str] = None,
     base_url: Optional[str] = None,
-    max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
+    max_output_tokens: Optional[int] = DEFAULT_MAX_OUTPUT_TOKENS,
     **kwargs: Any,
 ) -> LLMResponse:
     """Make one Responses-API round-trip and return a normalised response.
@@ -314,8 +314,12 @@ def call_llm(
     request: dict[str, Any] = {
         "model": resolved_model,
         "input": chat,
-        "max_output_tokens": max_output_tokens,
     }
+    # Omit the key entirely when max_output_tokens is None — callers pass
+    # None to run uncapped (model's full output budget), matching agents
+    # whose reference does not send max_output_tokens at all.
+    if max_output_tokens is not None:
+        request["max_output_tokens"] = max_output_tokens
     if instructions:
         request["instructions"] = instructions
     if norm_tools:
