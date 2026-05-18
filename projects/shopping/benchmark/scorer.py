@@ -172,23 +172,26 @@ class ShoppingScorer:
     ) -> dict[str, Any]:
         """Per-level breakdown for the round-level project_metrics.
 
-        Travel's gatherer hands ``per_case`` a list of ``CaseResult``
-        objects; each has ``.score`` and ``.metrics`` mirrors the
-        ``details`` dict the scorer emitted. We bucket by level and
-        report mean composite + match count per level so the strategy
-        prompt sees signal about where the optimizer is improving.
+        The gatherer hands ``per_case`` a list of ``CaseResult`` objects.
+        Each carries ``.score`` and a ``.details`` dict — the same dict
+        ``score()`` emitted (``level``, ``expected_count``, ...). We bucket
+        by level and report mean composite + match count per level so the
+        strategy prompt sees signal about where the optimizer is improving.
         """
         levels: dict[int, list[float]] = {1: [], 2: [], 3: []}
         all_scores: list[float] = []
         completed = 0
         for r in per_case or []:
             score = float(getattr(r, "score", 0.0) or 0.0)
-            metrics = getattr(r, "metrics", {}) or {}
-            lvl = metrics.get("level")
+            # CaseResult exposes the scorer's emitted dict as ``.details``
+            # (there is no ``.metrics`` attribute — reading that left
+            # per_level / level_n / cases_with_ground_truth silently empty).
+            details = getattr(r, "details", {}) or {}
+            lvl = details.get("level")
             all_scores.append(score)
             if lvl in levels:
                 levels[lvl].append(score)
-            if metrics.get("expected_count"):
+            if details.get("expected_count"):
                 completed += 1
         return {
             "score_overall": (sum(all_scores) / len(all_scores)) if all_scores else 0.0,

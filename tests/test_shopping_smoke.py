@@ -273,15 +273,25 @@ class ShoppingScorerTests(unittest.TestCase):
         self.assertIn("error", out["details"])
 
     def test_aggregate_per_level(self) -> None:
-        from collections import namedtuple
+        # Use real CaseResult objects — the scorer's emitted dict lands on
+        # ``.details`` (CaseResult has no ``.metrics``). A fake namedtuple
+        # with a ``.metrics`` field masked the bug where aggregate read the
+        # non-existent ``.metrics`` and left per_level silently empty.
+        from meta_agent.models import CaseResult
 
-        Fake = namedtuple("Fake", ["score", "metrics"])
         scorer = self.scorer_cls()
+
+        def _case(cid: str, score: float, level: int) -> CaseResult:
+            return CaseResult(
+                case_id=cid, passed=score >= 1.0, score=score,
+                details={"level": level, "expected_count": 4},
+            )
+
         per_case = [
-            Fake(1.0, {"level": 1, "expected_count": 4}),
-            Fake(0.5, {"level": 1, "expected_count": 4}),
-            Fake(0.0, {"level": 2, "expected_count": 3}),
-            Fake(0.8, {"level": 3, "expected_count": 5}),
+            _case("L1-1", 1.0, 1),
+            _case("L1-2", 0.5, 1),
+            _case("L2-1", 0.0, 2),
+            _case("L3-1", 0.8, 3),
         ]
         agg = scorer.aggregate(per_case, trace_events=[])
         self.assertAlmostEqual(agg["score_overall"], 2.3 / 4)
