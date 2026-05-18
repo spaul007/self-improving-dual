@@ -15,7 +15,7 @@ Copy this when adding a new run.
 ## YYYY-MM-DD — short title (project · what changed)
 
 Job: <SLURM jobid or "local">           Wall: <HH:MM>
-Run dir: </groups/AIC-MV/n.tzou/meta-agent/runs/... — the runs_root default>
+Run dir: <runs/... by default, or wherever runs_root points>
 Config: <configs/foo.yaml @ commit short-sha>
 Models: task=<>  editor=<>  strategy=<>  scorer-plan-convert=<>
 Split / scope: <max_rounds N · train_size T · max_cases M · parallelism P>

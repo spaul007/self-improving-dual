@@ -16,9 +16,9 @@
 #   SLURM_CPUS        default 4
 #   SLURM_MEM         default 16G
 #   SLURM_JOB_NAME    default meta-agent
-#   SLURM_LOG_DIR     default /groups/AIC-MV/n.tzou/meta-agent/slurm
-#                     (group filesystem — keeps job logs off the small
-#                      local /users disk)
+#   SLURM_LOG_DIR     default $REPO_ROOT/runs/slurm — override to redirect
+#                     job logs to a larger filesystem (e.g.
+#                     /groups/AIC-MV/n.tzou/meta-agent/slurm)
 #
 # Example:
 #   slurm/submit.sh "PYTHONPATH=. python3 -m unittest tests.test_smoke"
@@ -39,7 +39,7 @@ TIME="${SLURM_TIME:-04:00:00}"
 CPUS="${SLURM_CPUS:-4}"
 MEM="${SLURM_MEM:-16G}"
 JOB_NAME="${SLURM_JOB_NAME:-meta-agent}"
-LOG_DIR="${SLURM_LOG_DIR:-/groups/AIC-MV/n.tzou/meta-agent/slurm}"
+LOG_DIR="${SLURM_LOG_DIR:-$REPO_ROOT/runs/slurm}"
 # Optional --gres value. Set to "none" when targeting a GPU partition for a
 # CPU-only workload, so the scheduler doesn't allocate a GPU we won't use.
 GRES="${SLURM_GRES:-}"

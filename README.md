@@ -182,7 +182,16 @@ validators: [ {type: "syntax"}, {type: "signature"}, ... ]
 task_agent: { model: "gpt-5.4-mini", reasoning_effort: "high" }
 env:        {}                        # optional: project-specific env-var overrides
 split:      { seed: 42, train_size: 60 }  # optional — see "Train/eval split" above
+runs_root:  "runs"                     # optional — where run folders go (default "runs")
 ```
+
+`runs_root` sets where per-experiment run folders are written — it
+defaults to the repo-local `runs/` directory. Run folders are large
+(per-round `task_agent/` copies + traces + per-case JSON), so on a host
+with a small local disk, point it at a bigger filesystem, e.g.
+`runs_root: /groups/AIC-MV/n.tzou/meta-agent/runs`. SLURM job logs are
+separate — redirect those with the `SLURM_LOG_DIR` env var (see
+`slurm/README.md`). `configs/default.yaml` carries a commented sample.
 
 The YAML is the source of truth — every component (`manager`,
 `evaluator`, `editor`, `gatherer`, `validators`) must declare its

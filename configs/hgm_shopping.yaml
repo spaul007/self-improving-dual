@@ -1,5 +1,10 @@
 experiment_name: "shopping_hgm"
 
+# Output location. Run folders default to repo-local `runs/`. Uncomment to
+# redirect them to a larger filesystem when the local disk is small (SLURM
+# job logs are separate — set the SLURM_LOG_DIR env var for those):
+#   runs_root: /groups/AIC-MV/n.tzou/meta-agent/runs
+
 # HGM (Huxley-Gödel Machine) tree-search optimization of the shopping agent.
 # Same project assets as configs/shopping.yaml — only the manager differs.
 project: "shopping"

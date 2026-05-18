@@ -1,5 +1,10 @@
 experiment_name: "math_default"
 
+# Output location. Run folders default to repo-local `runs/`. Uncomment to
+# redirect them to a larger filesystem when the local disk is small (SLURM
+# job logs are separate — set the SLURM_LOG_DIR env var for those):
+#   runs_root: /groups/AIC-MV/n.tzou/meta-agent/runs
+
 # All project-specific assets live under projects/<project>/:
 #   projects/math/seed/        — task agent
 #   projects/math/benchmark/   — cases.jsonl + scorer.py

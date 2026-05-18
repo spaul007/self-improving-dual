@@ -1,5 +1,10 @@
 experiment_name: "math_hgm"
 
+# Output location. Run folders default to repo-local `runs/`. Uncomment to
+# redirect them to a larger filesystem when the local disk is small (SLURM
+# job logs are separate — set the SLURM_LOG_DIR env var for those):
+#   runs_root: /groups/AIC-MV/n.tzou/meta-agent/runs
+
 # Cheap smoke target for the HGM manager — the math benchmark has a fast,
 # deterministic scorer, so a live HGM run is quick and API-light.
 project: "math"

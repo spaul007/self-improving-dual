@@ -26,11 +26,22 @@ reason, including session loss, `scancel`, OOM, or wall-time.
 | CPUs per task     | 4 (smoke: 2)             | `SLURM_CPUS`       |
 | Memory            | 16 G (smoke: 4 G)        | `SLURM_MEM`        |
 | Job name          | `meta-agent`             | `SLURM_JOB_NAME`   |
-| Log directory     | `/groups/AIC-MV/n.tzou/meta-agent/slurm` | `SLURM_LOG_DIR` |
+| Log directory     | `$REPO_ROOT/runs/slurm`  | `SLURM_LOG_DIR`    |
 
 The CPU partition is the right default in principle — every meta-agent
 component is CPU-bound (the heavy work is API calls to OpenAI), so
 allocating a GPU just to run Python wastes quota.
+
+**Output location.** SLURM job logs default to `$REPO_ROOT/runs/slurm`
+and experiment run folders to `$REPO_ROOT/runs` (the `runs_root` config
+field). On this cluster the local `/users` filesystem is small, so for
+real runs redirect both to the group filesystem — set `SLURM_LOG_DIR`
+for the job logs and `runs_root:` in the YAML for the run folders:
+
+```bash
+SLURM_LOG_DIR=/groups/AIC-MV/n.tzou/meta-agent/slurm \
+  slurm/run.sh configs/hgm_travel.yaml      # + runs_root: in the YAML
+```
 
 In practice on this cluster `cpu-prepro-queue-02` is frequently in
 `DOWN` / `DRAINED` state. The known-good fallback is `gpu-aic-mv-01`
@@ -80,9 +91,8 @@ SLURM_PARTITION=gpu-aic-mv-01 SLURM_GRES=none SLURM_TIME=14:00:00 \
 `sbatch` prints `Submitted batch job 12345`. Then:
 
 ```bash
-L=/groups/AIC-MV/n.tzou/meta-agent/slurm   # SLURM_LOG_DIR default
-tail -f "$L/12345.out"            # stdout
-tail -f "$L/12345.err"            # stderr
+tail -f runs/slurm/12345.out      # stdout (or $SLURM_LOG_DIR if overridden)
+tail -f runs/slurm/12345.err      # stderr
 squeue -u "$USER"                 # job state
 sacct -j 12345 --format=JobID,State,ExitCode,Elapsed,MaxRSS
 ```
