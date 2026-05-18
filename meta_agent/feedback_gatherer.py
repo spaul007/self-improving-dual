@@ -38,6 +38,10 @@ from .registry import register
 
 
 def persist_round_artifacts(round_dir: Path, feedback: AgentFeedback) -> None:
+    """Write the three canonical round artifacts — ``feedback.json``,
+    ``eval_result.json``, ``strategy.json`` — into ``round_dir``. The sole
+    writer of these files; called by ``DefaultFeedbackGatherer.compile`` and
+    by the managers' failed-edit synth path."""
     round_dir.mkdir(parents=True, exist_ok=True)
     (round_dir / "feedback.json").write_text(
         feedback.model_dump_json(indent=2), encoding="utf-8"
@@ -234,9 +238,15 @@ class DefaultFeedbackGatherer:
             return {}
         try:
             result = aggregate(eval_result.per_case, trace_events)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
             # Aggregation must never crash the round; the scorer's per-case
-            # results stand on their own.
+            # results stand on their own. Warn so a broken aggregate() is
+            # visible rather than silently yielding empty project_metrics.
+            print(
+                f"[gatherer] warning: scorer.aggregate() raised {exc!r}; "
+                "project_metrics left empty",
+                flush=True,
+            )
             return {}
         return dict(result or {})
 

@@ -1,10 +1,18 @@
-"""LLM-driven code editor — applies an EvolutionStrategy to a round folder.
+"""LLM-driven self-improvement step — mutates a task agent in one call.
 
-The editor copies the base round into the out dir, prompts an LLM with the
-current source of the mutable files plus the strategy + feedback, parses a
-structured "edits" payload from the response, writes the new files, and runs
-validators. Failed validation surfaces as ``EditResult.success=False`` with
-a list of error strings — the manager decides what to do with that.
+The editor copies the base round into the out dir, then makes a SINGLE LLM
+call that diagnoses what to change (from the current source + the previous
+round's feedback + an optional manager-supplied steering ``context``) and
+emits both a short strategy summary and the full file edits. It writes the
+new files and runs validators; failed validation surfaces as
+``EditResult.success=False`` with a list of error strings — the manager
+decides what to do with that.
+
+This replaced an older two-call design (a separate manager "strategy
+proposal" call feeding the editor). Collapsing to one call removes a lossy
+text hand-off: the same LLM context that diagnoses also writes the code.
+``EvolutionStrategy`` is now an *output* (carried on ``EditResult.strategy``
+for logging), not an input.
 """
 from __future__ import annotations
 
@@ -25,19 +33,71 @@ class Validator(Protocol):
     def validate(self, out_dir: Path, base_dir: Path) -> list[str]: ...
 
 
-# Tool schema for the LLM's structured edit proposal. Lifted out of
-# ``_propose_edits`` so it's reviewable in isolation and reusable from
-# tests / docs.
-APPLY_EDITS_TOOL: dict[str, Any] = {
-    "name": "apply_edits",
+# Allowed values for an ``EvolutionStrategy.target_files`` entry. Mirrors the
+# Literal in models.py. Lives here (the single home) so the coercion helpers
+# below — and the managers, via import — share one definition.
+_ALLOWED_TARGET_FILES = ("workflow.py", "tool_wrapper.py", "tools_schema.json")
+
+
+def _coerce_target_files(value: Any) -> list[str]:
+    """Coerce a model's ``target_files``-shaped value into a clean list[str].
+
+    Models without strict schema enforcement (notably local vLLM-hosted
+    open-weights models — caught gpt-oss-120b returning the bare string
+    ``"workflow.py"`` on 2026-05-12) sometimes return a single string
+    instead of a list. Unknown values are dropped; empty/None falls back to
+    ``["workflow.py"]`` so a strategy summary always validates.
+    """
+    if value is None or value == "":
+        return ["workflow.py"]
+    if isinstance(value, str):
+        candidates = [value]
+    elif isinstance(value, (list, tuple)):
+        candidates = [str(v) for v in value if v]
+    else:
+        return ["workflow.py"]
+    cleaned = [c for c in candidates if c in _ALLOWED_TARGET_FILES]
+    return cleaned or ["workflow.py"]
+
+
+def _coerce_str(value: Any) -> str:
+    """Coerce a response field into a string — guards against a model
+    returning the wrong scalar type (number/bool/None) for a text field."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
+def fallback_strategy() -> EvolutionStrategy:
+    """A constant placeholder ``EvolutionStrategy`` — used by managers when
+    an ``EditResult`` carries no summary (defensive; ``apply`` always sets
+    one, so this normally never fires)."""
+    return EvolutionStrategy(
+        target_files=["workflow.py"],
+        optimization_goal="(editor produced no strategy summary)",
+        proposed_changes="",
+        rationale="",
+    )
+
+
+# Tool schema for the single self-improvement call. The model states what it
+# is doing (optimization_goal / proposed_changes / rationale) AND does it
+# (files) in one structured call.
+SELF_IMPROVEMENT_TOOL: dict[str, Any] = {
+    "name": "submit_self_improvement",
     "description": (
-        "Apply a set of file edits to the task agent workspace. Each "
-        "entry contains the relative path and the full replacement "
-        "content for that file."
+        "Diagnose the task agent from its current code and last round's "
+        "feedback, then submit ONE focused self-improvement: a short "
+        "strategy summary plus the full file edits that implement it."
     ),
     "input_schema": {
         "type": "object",
         "properties": {
+            "optimization_goal": {"type": "string"},
+            "proposed_changes": {"type": "string"},
+            "rationale": {"type": "string"},
             "files": {
                 "type": "array",
                 "items": {
@@ -48,9 +108,9 @@ APPLY_EDITS_TOOL: dict[str, Any] = {
                     },
                     "required": ["path", "content"],
                 },
-            }
+            },
         },
-        "required": ["files"],
+        "required": ["optimization_goal", "proposed_changes", "files"],
     },
 }
 
@@ -83,39 +143,58 @@ class AgentEditor:
 
     def apply(
         self,
-        strategy: EvolutionStrategy,
         feedback: Optional[AgentFeedback],
         base_dir: Path,
         out_dir: Path,
+        *,
+        context: Optional[str] = None,
     ) -> EditResult:
+        """Produce one self-improvement of the agent in ``base_dir``.
+
+        Copies ``base_dir/task_agent`` into ``out_dir``, then runs the
+        single-call self-improvement LLM step (up to ``max_attempts`` times,
+        re-diagnosing against validator errors on each retry). ``context`` is
+        optional manager-supplied steering text (history, lineage, scores) —
+        the editor reads the actual code itself, so ``context`` carries only
+        cheap signal, never source.
+
+        Returns ``EditResult``; ``.strategy`` carries the editor's emitted
+        summary (the last attempt's, on failure).
+        """
         self._copy_workspace(base_dir, out_dir)
 
         attempt_errors: list[str] = []
+        last_strategy: Optional[EvolutionStrategy] = None
         for attempt in range(1, self.max_attempts + 1):
-            edits = self._propose_edits(
+            strategy, files = self._self_improve(
                 out_dir=out_dir,
-                strategy=strategy,
                 feedback=feedback,
+                context=context,
                 prior_errors=attempt_errors,
                 attempt=attempt,
             )
-            if not edits.get("files"):
+            last_strategy = strategy
+            if not files:
                 attempt_errors = ["editor returned no file edits"]
                 continue
 
-            written, write_errors = self._write_edits(out_dir, edits["files"])
+            written, write_errors = self._write_edits(out_dir, files)
             if write_errors:
                 attempt_errors = write_errors
                 continue
 
             errors = self._run_validators(out_dir, base_dir)
             if not errors:
-                return EditResult(success=True, edited_files=written)
+                return EditResult(
+                    success=True, edited_files=written, strategy=strategy
+                )
             attempt_errors = errors
             # Reset the workspace and try again with the validator feedback.
             self._copy_workspace(base_dir, out_dir)
 
-        return EditResult(success=False, errors=attempt_errors)
+        return EditResult(
+            success=False, errors=attempt_errors, strategy=last_strategy
+        )
 
     # ------------------------------------------------------------------ #
     # Internals
@@ -129,21 +208,31 @@ class AgentEditor:
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(src, dst)
 
-    def _propose_edits(
+    def _self_improve(
         self,
         *,
         out_dir: Path,
-        strategy: EvolutionStrategy,
         feedback: Optional[AgentFeedback],
+        context: Optional[str],
         prior_errors: list[str],
         attempt: int = 1,
-    ) -> dict:
+    ) -> tuple[EvolutionStrategy, list[dict]]:
+        """One self-improvement LLM call: diagnose + edit.
+
+        Builds the prompt from the hard rules, the optional steering
+        ``context``, the previous round's ``feedback`` digest, the agent's
+        current mutable sources, and any ``prior_errors`` from a failed
+        validation attempt. Returns ``(EvolutionStrategy, files)`` where
+        ``files`` is the raw ``[{path, content}]`` payload to write.
+        """
         agent_dir = out_dir / "task_agent"
         current = self._read_mutable_sources(agent_dir)
 
         system = (
-            "You are a code editor for a self-evolving agent. You may only "
-            "modify these files in the task_agent workspace:\n"
+            "You are the self-improvement module of a self-evolving agent. "
+            "Diagnose what to change from the feedback and the current code, "
+            "then call `submit_self_improvement`. You may only modify these "
+            "files in the task_agent workspace:\n"
             f"  - {', '.join(sorted(MUTABLE_FILES))}\n"
             f"  - any *.py file under mutable_tools/\n\n"
             "Hard rules:\n"
@@ -162,17 +251,15 @@ class AgentEditor:
             "  6. tools_schema.json: every entry's `name` must be backed by "
             "either an immutable tool OR a `mutable_tools/<name>.py` file. "
             "No collisions between immutable and mutable names.\n\n"
-            "Respond by calling the `apply_edits` tool with a list of files. "
+            "Call `submit_self_improvement` with a one-line optimization_goal, "
+            "a proposed_changes summary, a rationale, and the `files` payload. "
             "Each file is the FULL replacement content — do not produce diffs. "
             "Omit files you do not change."
         )
 
         user_parts: list[str] = []
-        user_parts.append(f"## Optimization goal\n{strategy.optimization_goal}\n")
-        if strategy.proposed_changes:
-            user_parts.append(f"## Proposed changes\n{strategy.proposed_changes}\n")
-        if strategy.rationale:
-            user_parts.append(f"## Rationale\n{strategy.rationale}\n")
+        if context:
+            user_parts.append(f"## Steering context\n{context}\n")
         if feedback is not None:
             user_parts.append(self._format_feedback(feedback))
         user_parts.append(self._format_current_sources(current))
@@ -188,7 +275,7 @@ class AgentEditor:
                 {"role": "system", "content": system},
                 {"role": "user", "content": "\n".join(user_parts)},
             ],
-            "tools": [APPLY_EDITS_TOOL],
+            "tools": [SELF_IMPROVEMENT_TOOL],
         }
         if self.model:
             llm_kwargs["model"] = self.model
@@ -221,17 +308,52 @@ class AgentEditor:
             )
 
         for call in getattr(response, "tool_calls", []) or []:
-            if call.name == "apply_edits":
-                return call.arguments
-        # Fallback: try to parse a fenced JSON block from text.
+            if call.name == "submit_self_improvement":
+                return self._parse_self_improvement(call.arguments)
+
+        # Fallback: the model didn't tool-call. Try to recover a files
+        # payload from a fenced JSON block; warn so the failure is visible.
         text = getattr(response, "content", None) or ""
+        files: list[dict] = []
         match = re.search(r"```json\s*(\{.*?\})\s*```", text, re.DOTALL)
         if match:
             try:
-                return json.loads(match.group(1))
-            except json.JSONDecodeError:
-                pass
-        return {"files": []}
+                files = json.loads(match.group(1)).get("files") or []
+            except (json.JSONDecodeError, AttributeError):
+                files = []
+        print(
+            "[editor] warning: model did not call submit_self_improvement; "
+            f"recovered {len(files)} file(s) from fenced JSON",
+            flush=True,
+        )
+        fallback = EvolutionStrategy(
+            target_files=["workflow.py"],
+            optimization_goal="(editor produced no structured proposal)",
+            proposed_changes=text[:500],
+            rationale="",
+        )
+        return fallback, files
+
+    @staticmethod
+    def _parse_self_improvement(
+        args: dict[str, Any],
+    ) -> tuple[EvolutionStrategy, list[dict]]:
+        """Split a ``submit_self_improvement`` tool call into a validated
+        ``EvolutionStrategy`` summary and the raw ``files`` payload.
+        ``target_files`` is derived from the emitted file paths."""
+        files = args.get("files") or []
+        edited = [
+            f.get("path", "") for f in files if isinstance(f, dict)
+        ]
+        strategy = EvolutionStrategy(
+            target_files=_coerce_target_files(
+                [p for p in edited if p in _ALLOWED_TARGET_FILES]
+            ),
+            optimization_goal=_coerce_str(args.get("optimization_goal")),
+            proposed_changes=_coerce_str(args.get("proposed_changes")),
+            rationale=_coerce_str(args.get("rationale")),
+        )
+        return strategy, files
 
     def _read_mutable_sources(self, agent_dir: Path) -> dict[str, str]:
         sources: dict[str, str] = {}
@@ -257,6 +379,9 @@ class AgentEditor:
         return "\n".join(parts) + "\n"
 
     def _format_feedback(self, feedback: AgentFeedback) -> str:
+        """Render the previous round's ``AgentFeedback`` into a compact
+        prompt section — score, tool usage/errors, project metrics,
+        exceptions, validator complaints, and a trace excerpt."""
         ev = feedback.eval_result
         lines = [
             "## Last round's feedback",
@@ -291,10 +416,18 @@ class AgentEditor:
     def _write_edits(
         self, out_dir: Path, files: list[dict]
     ) -> tuple[list[str], list[str]]:
+        """Write each ``{path, content}`` entry into ``out_dir/task_agent``.
+        Returns ``(written_paths, errors)`` — an entry whose path is outside
+        the mutable surface is rejected into ``errors``, not written."""
         agent_dir = out_dir / "task_agent"
         written: list[str] = []
         errors: list[str] = []
         for entry in files:
+            # A non-compliant model can return a bare string / junk instead
+            # of a {path, content} object — skip it rather than crashing.
+            if not isinstance(entry, dict):
+                errors.append(f"malformed edit entry (not an object): {entry!r}")
+                continue
             path = (entry.get("path") or "").lstrip("/")
             content = entry.get("content")
             if not path or content is None:

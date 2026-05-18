@@ -69,6 +69,11 @@ class EditResult(BaseModel):
     success: bool
     errors: list[str] = Field(default_factory=list)
     edited_files: list[str] = Field(default_factory=list)
+    # The editor's self-diagnosed summary of the change it made. Populated
+    # by AgentEditor (the single self-improvement call emits it alongside
+    # the file edits); the manager forwards it to the gatherer for
+    # strategy.json. On a failed edit it carries the last attempt's summary.
+    strategy: Optional[EvolutionStrategy] = None
 
 
 class EvolutionOutcome(BaseModel):
