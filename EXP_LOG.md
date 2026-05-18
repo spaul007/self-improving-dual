@@ -553,3 +553,53 @@ re-confirm seed parity under run-to-run variance.
   `_eval/prompts.py` restore full prompt
 
 ---
+
+## 2026-05-18 — shopping seed, cap-parity fixes, 3×full-120 (143820-143822)
+
+Job: 143820-143822 · gpu-aic-mv-01-st-p5-node-3    Wall: ~0:20 each
+Run dirs: `runs/eval_20260518_0038{33,35,38}_seed/`
+Config: `configs/shopping.yaml` @ commit f4fdec8 + uncommitted seed/wrapper diff
+Models: task=gpt-5.4-mini reasoning=high; scorer=deterministic (no LLM)
+Split / scope: standalone eval — full 120 cases each · parallelism 16
+
+Two parity fixes applied vs the standalone `/users/n.tzou/cl/shopping_agent`:
+1. `projects/shopping/seed/workflow.py` — per-phase LLM-call cap
+   `MAX_ITERATIONS` 100→400 (the reference's `run_sample.py` default is
+   400/phase, not the `run()` signature default of 100).
+2. `platform_core/llm_wrapper.py` + seed — `call_llm` now omits
+   `max_output_tokens` when passed `None`; the shopping seed passes `None`
+   so the task agent runs uncapped, matching the standalone (which never
+   sends `max_output_tokens`). Travel keeps the 32768 default.
+
+### Results
+| Job | Composite | strict-pass | L1 / L2 / L3 |
+|---|---|---|---|
+| 143820 | 0.8038 | 54/120 | 0.833 / 0.789 / 0.766 |
+| 143821 | 0.8087 | 55/120 | 0.851 / 0.800 / 0.726 |
+| 143822 | 0.8218 | 58/120 | 0.845 / 0.804 / 0.808 |
+| **mean (n=3)** | **0.8114** | | baseline 3-run 0.8041 / 4-run 0.8105 |
+
+### Observations / diagnosis
+- **Flat — fixes are correct but neither cap was binding.** 3-run mean
+  0.8114 sits on the prior baseline (0.8041–0.8105); within ±3pp
+  reasoning-model run-to-run noise. No regression, no lift.
+- **Truncation scan: zero.** All 8559 `llm_response` trace events across
+  the 3 runs returned `stop_reason: completed` — the 32768 token cap was
+  never binding even before the fix. The uncapped run confirms it.
+- **Iteration scan: zero near-cap.** ~8559 LLM calls / 360 case-runs ≈ 24
+  calls per case (both phases) — far below even the old 100/phase cap.
+- Conclusion: the 100-call and 32768-token caps were *latent* parity gaps,
+  not live score bugs. Fixing them removes the risk of a future hard case
+  silently truncating, but does not move the current seed score. The
+  shopping seed is at parity (~0.81 mean); the residual gap to the ≈0.83
+  single-run target is run-to-run variance — L3 is the volatile bucket
+  (0.726–0.808 across these 3 runs).
+
+### Links
+- Audit + plan: `/users/n.tzou/.claude/plans/prancy-hatching-wand.md`;
+  DEV_LOG.md 2026-05-18 entry
+- Baseline entry: 2026-05-17 seed-parity confirmation (143808-143810)
+- Related commits: `platform_core/llm_wrapper.py` max_output_tokens opt-out,
+  `projects/shopping/seed/workflow.py` cap 100→400 + uncapped output
+
+---
