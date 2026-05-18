@@ -9,6 +9,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import inspect
+import os
 import random
 from dataclasses import dataclass
 from pathlib import Path
@@ -107,10 +108,13 @@ class FrameworkConfig(BaseModel):
     verbose: bool = False
 
     # Where per-experiment run folders are written. Defaults to repo-local
-    # `runs/`. Set this in the YAML to redirect output to a larger
-    # filesystem when the local disk is small — e.g.
-    # `runs_root: /groups/AIC-MV/n.tzou/meta-agent/runs`.
-    runs_root: str = "runs"
+    # `runs/`. Redirect it to a larger filesystem when the local disk is
+    # small — two ways: an explicit `runs_root:` in the YAML, or the
+    # META_AGENT_RUNS_ROOT env var (handy for deploy scripts — see
+    # slurm/run_hgm.sh). An explicit YAML value wins over the env var.
+    runs_root: str = Field(
+        default_factory=lambda: os.environ.get("META_AGENT_RUNS_ROOT", "runs")
+    )
 
 
 @dataclass

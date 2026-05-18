@@ -33,14 +33,17 @@ component is CPU-bound (the heavy work is API calls to OpenAI), so
 allocating a GPU just to run Python wastes quota.
 
 **Output location.** SLURM job logs default to `$REPO_ROOT/runs/slurm`
-and experiment run folders to `$REPO_ROOT/runs` (the `runs_root` config
-field). On this cluster the local `/users` filesystem is small, so for
-real runs redirect both to the group filesystem — set `SLURM_LOG_DIR`
-for the job logs and `runs_root:` in the YAML for the run folders:
+and experiment run folders to `$REPO_ROOT/runs`. On this cluster the
+local `/users` filesystem is small, so for real runs redirect both to
+the group filesystem: `SLURM_LOG_DIR` (job logs) and
+`META_AGENT_RUNS_ROOT` (run folders — or an explicit `runs_root:` in
+the YAML, which wins). `slurm/run_hgm.sh` sets both automatically; for
+`run.sh`/`smoke.sh` pass them inline:
 
 ```bash
 SLURM_LOG_DIR=/groups/AIC-MV/n.tzou/meta-agent/slurm \
-  slurm/run.sh configs/hgm_travel.yaml      # + runs_root: in the YAML
+META_AGENT_RUNS_ROOT=/groups/AIC-MV/n.tzou/meta-agent/runs \
+  slurm/run.sh configs/travel.yaml
 ```
 
 In practice on this cluster `cpu-prepro-queue-02` is frequently in

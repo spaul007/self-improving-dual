@@ -188,10 +188,12 @@ runs_root:  "runs"                     # optional — where run folders go (defa
 `runs_root` sets where per-experiment run folders are written — it
 defaults to the repo-local `runs/` directory. Run folders are large
 (per-round `task_agent/` copies + traces + per-case JSON), so on a host
-with a small local disk, point it at a bigger filesystem, e.g.
-`runs_root: /groups/AIC-MV/n.tzou/meta-agent/runs`. SLURM job logs are
-separate — redirect those with the `SLURM_LOG_DIR` env var (see
-`slurm/README.md`). `configs/default.yaml` carries a commented sample.
+with a small local disk point them at a bigger filesystem — either set
+`runs_root:` in the YAML, or export the `META_AGENT_RUNS_ROOT` env var
+(an explicit YAML value wins over the env var). SLURM job logs are
+separate — redirect those with `SLURM_LOG_DIR`. `slurm/run_hgm.sh` sets
+both to group storage automatically; `configs/default.yaml` carries a
+commented sample.
 
 The YAML is the source of truth — every component (`manager`,
 `evaluator`, `editor`, `gatherer`, `validators`) must declare its

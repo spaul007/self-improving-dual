@@ -1,8 +1,9 @@
 experiment_name: "travel_hgm"
 
-# Output location. Run folders default to repo-local `runs/`. Uncomment to
-# redirect them to a larger filesystem when the local disk is small (SLURM
-# job logs are separate — set the SLURM_LOG_DIR env var for those):
+# Output location. Run folders default to repo-local `runs/`. Redirect them
+# to a larger filesystem when the local disk is small — either uncomment
+# runs_root here, or set the META_AGENT_RUNS_ROOT env var (SLURM job logs
+# are separate: the SLURM_LOG_DIR env var). slurm/run_hgm.sh sets both.
 #   runs_root: /groups/AIC-MV/n.tzou/meta-agent/runs
 
 # HGM (Huxley-Gödel Machine) tree-search optimization of the travel agent.

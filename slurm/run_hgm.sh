@@ -11,13 +11,14 @@
 #   slurm/run_hgm.sh shopping      # -> configs/hgm_shopping.yaml
 #   slurm/run_hgm.sh math          # -> configs/hgm_math.yaml  (quick smoke)
 #
-# Any SLURM_* env var below can be overridden on the command line, e.g.:
+# Any env var below can be overridden on the command line, e.g.:
 #   SLURM_TIME=06:00:00 slurm/run_hgm.sh shopping
 #
-# After submitting, tail the run with:
-#   tail -f runs/slurm/<jobid>.out
-# The run ends with a line: "HGM done: ... best = node K (train mean X)"
-# then "held-out eval on best node K: Y" and the Experiment dir path.
+# Output goes to the group filesystem (SLURM_LOG_DIR / META_AGENT_RUNS_ROOT
+# below) — the local /users disk is small. After submitting, tail with:
+#   tail -f /groups/AIC-MV/n.tzou/meta-agent/slurm/<jobid>.out
+# The run ends with "HGM done: ... best = node K", "held-out eval ... Y",
+# and the Experiment dir path.
 
 set -euo pipefail
 
@@ -46,6 +47,15 @@ export SLURM_CPUS="${SLURM_CPUS:-16}"
 export SLURM_MEM="${SLURM_MEM:-32G}"
 export SLURM_JOB_NAME="${SLURM_JOB_NAME:-hgm-${PROJECT}}"
 
+# HGM runs are the largest output (per-node task_agent copies + traces +
+# per-case JSON). Send run folders and SLURM job logs to the group
+# filesystem so they don't fill the small local /users disk. SLURM_LOG_DIR
+# is read by submit.sh; META_AGENT_RUNS_ROOT is read by config.py (the
+# `runs_root` default) and reaches the job via sbatch --export=ALL.
+export SLURM_LOG_DIR="${SLURM_LOG_DIR:-/groups/AIC-MV/n.tzou/meta-agent/slurm}"
+export META_AGENT_RUNS_ROOT="${META_AGENT_RUNS_ROOT:-/groups/AIC-MV/n.tzou/meta-agent/runs}"
+
 echo "[run_hgm.sh] submitting $CONFIG"
 echo "[run_hgm.sh]   partition=$SLURM_PARTITION gres=$SLURM_GRES time=$SLURM_TIME cpus=$SLURM_CPUS mem=$SLURM_MEM"
+echo "[run_hgm.sh]   run folders -> $META_AGENT_RUNS_ROOT ; job logs -> $SLURM_LOG_DIR"
 exec "$REPO_ROOT/slurm/run.sh" "$CONFIG"
