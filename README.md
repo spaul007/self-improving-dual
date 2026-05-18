@@ -29,11 +29,12 @@ evaluate.py          Standalone evaluation entry point: run a specific
                      task_agent against the full benchmark.
 ```
 
-Two projects ship with the repo: `projects/math/` (a tiny arithmetic
-benchmark + a single-shot seed) and `projects/travel/` (a multi-day
-trip-planning benchmark with a tool-loop seed). Add a new project by
-creating `projects/<name>/{seed,benchmark,tools,data?}/` and pointing a
-YAML at it via `project: "<name>"`.
+Three projects ship with the repo: `projects/math/` (a tiny arithmetic
+benchmark + a single-shot seed), `projects/travel/` (a multi-day
+trip-planning benchmark with a tool-loop seed), and `projects/shopping/`
+(a tool-loop shopping-cart benchmark). Add a new project by creating
+`projects/<name>/{seed,benchmark,tools,data?}/` and pointing a YAML at it
+via `project: "<name>"`.
 
 ## Setup
 
@@ -50,12 +51,12 @@ The framework requires Python 3.10+ (uses `type | None` syntax and Pydantic v2).
 PYTHONPATH=. python3 main_loop.py --config configs/default.yaml
 ```
 
-This evolves the math project's seed against its benchmark
-for up to 5 rounds using the `hill_climbing` manager and the `subprocess`
-evaluator — all with `gpt-5.4-mini` at reasoning effort `high`. The manager
-runs an LLM-driven proposal step internally each round (configurable via
-`strategy_model` / `strategy_reasoning_effort` / `strategy_history_window`
-on the manager).
+This evolves the math project's seed against its benchmark for up to 5
+rounds using the `hill_climbing` manager and the `subprocess` evaluator —
+all with `gpt-5.4-mini` at reasoning effort `high`. Each round the manager
+picks what to branch from, and the editor makes **one self-improvement
+call** that diagnoses *and* rewrites the agent's code in a single step
+(see "Optimization managers" below).
 
 Output lands under `runs/<timestamp>_<experiment_name>/`:
 
@@ -76,6 +77,39 @@ runs/20260504_153012_math_default/
 │   ├── task_agent/               # editor's mutation of round_000
 │   └── ...
 └── ...
+```
+
+## Optimization managers
+
+The `manager` chosen in the YAML decides the search regime. Two ship:
+
+- **`hill_climbing`** — a linear trajectory: each round branches from the
+  best round so far, the editor makes one self-improvement, evaluate, repeat
+  for `loop.max_rounds`.
+- **`hgm`** — a **Huxley-Gödel-Machine** tree search (arXiv 2510.21614):
+  keeps a *tree* of agents, decouples expansion from evaluation under an
+  adaptive schedule, picks which node to expand by Thompson sampling over
+  *clade metaproductivity*, and counts its budget in agent-task evaluations
+  (`eval_budget`) rather than rounds. `configs/hgm_{math,travel,shopping}.yaml`
+  wire it up. Before the final pick it re-evaluates the top finalists on the
+  full train split so a thinly-evaluated fluke can't win.
+
+In **both** managers a self-modification is **one editor call**: the manager
+selects what to work on and hands the editor a cheap steering `context`
+string; the editor's single `submit_self_improvement` call diagnoses the
+agent *and* rewrites its code, emitting an `EvolutionStrategy` summary
+(logged to `strategy.json`). There is no separate "propose a strategy" LLM
+call.
+
+To run HGM:
+
+```bash
+# Locally (math is a fast smoke target)
+PYTHONPATH=. python3 main_loop.py --config configs/hgm_math.yaml
+
+# On SLURM — wrapper with HGM-sized resource defaults (see slurm/README.md)
+slurm/run_hgm.sh travel        # configs/hgm_travel.yaml
+slurm/run_hgm.sh shopping      # configs/hgm_shopping.yaml
 ```
 
 ## Standalone evaluation
@@ -139,8 +173,6 @@ by name from a registry (`meta_agent/registry.py`) and uses the same
 ```yaml
 project:    "math"                  # filesystem layout: projects/math/{seed,benchmark,tools,data}/
 manager:    { type: "hill_climbing",   config: { branch_policy: "best",
-                                                 strategy_model: "gpt-5.4-mini",
-                                                 strategy_reasoning_effort: "high",
                                                  strategy_history_window: 5 } }
 evaluator:  { type: "subprocess",      config: { wall_time_s_per_case: 120, parallelism: 1, ... } }
 gatherer:   { type: "default",         config: {} }
@@ -193,12 +225,14 @@ elsewhere).
 
 ### Add a new manager (changes the optimization regime)
 
-The manager owns the round loop end-to-end: bootstrapping round 0,
-deciding what to mutate, calling the editor, evaluator, and gatherer, and
-deciding when to stop. Strategy-style proposal logic (asking an LLM what
-to edit next) lives **inside** the manager — `HillClimbingManager` is the
-reference; do whatever fits your regime (random search, beam search,
-genetic, etc.).
+The manager owns the optimization regime end-to-end: bootstrapping round
+0, deciding what to branch from, calling the editor, evaluator, and
+gatherer, and deciding when to stop. It does **not** write code or make a
+"propose a strategy" LLM call — the editor's single self-improvement call
+does the diagnosis and the rewrite; the manager just selects and hands the
+editor an optional steering `context` string. `HillClimbingManager`
+(linear) and `HGMManager` (tree search) are the references — do whatever
+fits your regime (random search, beam search, genetic, etc.).
 
 ```python
 # meta_agent/managers/random_search.py

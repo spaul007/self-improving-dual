@@ -13,6 +13,9 @@ reason, including session loss, `scancel`, OOM, or wall-time.
 - `smoke.sh` — runs `tests.test_smoke` (or any unittest suite you pass).
 - `run.sh` — runs `python3 main_loop.py --config <config>`. Sources the
   OpenAI key from `/users/n.tzou/api.sh` inside the job.
+- `run_hgm.sh` — convenience wrapper over `run.sh` for Huxley-Gödel-Machine
+  runs: `run_hgm.sh <travel|shopping|math>` picks `configs/hgm_<name>.yaml`
+  and pre-sets resource defaults sized for an HGM run (14 h wall time).
 
 ## Defaults
 
@@ -62,6 +65,14 @@ slurm/run.sh configs/travel.yaml
 
 # Bigger memory and longer time.
 SLURM_MEM=32G SLURM_TIME=12:00:00 slurm/run.sh configs/travel.yaml
+
+# HGM (Huxley-Gödel-Machine) optimization run — the wrapper applies
+# HGM-sized SLURM defaults (gpu-aic-mv-01, GRES=none, 16 CPU, 32 G, 14 h).
+slurm/run_hgm.sh travel
+slurm/run_hgm.sh shopping
+# equivalent to:
+SLURM_PARTITION=gpu-aic-mv-01 SLURM_GRES=none SLURM_TIME=14:00:00 \
+  SLURM_CPUS=16 SLURM_MEM=32G slurm/run.sh configs/hgm_travel.yaml
 ```
 
 ## Tailing job logs
