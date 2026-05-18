@@ -33,9 +33,11 @@ from platform_core.runner import AgentOutput, Task
 
 from tool_wrapper import ToolWrapper
 
-# Bound the loop. Each phase gets its own budget — matches the reference
-# (max_llm_calls=100 per phase). Most cases finish well below this.
-MAX_ITERATIONS = 100
+# Bound the loop. Each phase gets its own budget. The reference's entry
+# point (`run_sample.py`) invokes `ShoppingFnAgent.run` with
+# `--max_llm_calls` default 400, applied per phase — not the `run()`
+# signature default of 100. Most cases finish well below this.
+MAX_ITERATIONS = 400
 
 
 # --------------------------------------------------------------------- #
@@ -247,7 +249,10 @@ def _run_phase(messages: list, schema: list, wrapper: ToolWrapper) -> int:
     calls = 0
     for _ in range(MAX_ITERATIONS):
         calls += 1
-        response = call_llm(messages=messages, tools=schema)
+        # max_output_tokens=None → uncapped, matching the reference, which
+        # never sends max_output_tokens. Avoids truncating a deep-reasoning
+        # turn (the travel token-cap failure mode; see DEV_LOG 2026-05-06).
+        response = call_llm(messages=messages, tools=schema, max_output_tokens=None)
         if not response.tool_calls:
             # Model decided it's done with this phase. Still append the
             # response items so the next phase (if any) sees them.
