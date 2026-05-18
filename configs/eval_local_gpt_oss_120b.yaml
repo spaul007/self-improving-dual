@@ -24,8 +24,6 @@ manager:
   type: "hill_climbing"
   config:
     branch_policy: "best"
-    strategy_model: "openai/gpt-oss-120b"
-    strategy_reasoning_effort: "medium"
     strategy_history_window: 5
 
 evaluator:

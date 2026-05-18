@@ -96,8 +96,8 @@ class ApplyTaskAgentEnvBaseUrlTests(unittest.TestCase):
 
 
 class EditorAndManagerBaseUrlTests(unittest.TestCase):
-    """The editor + manager must accept ``base_url`` / ``strategy_base_url``
-    via constructor and pass it through to the LLM call."""
+    """The editor must accept ``base_url`` via constructor and thread it
+    through to the LLM call (the single self-improvement step)."""
 
     def test_editor_constructor_accepts_base_url(self) -> None:
         from meta_agent.agent_editor import AgentEditor
@@ -115,16 +115,6 @@ class EditorAndManagerBaseUrlTests(unittest.TestCase):
             base_url="http://editor-local:8000/v1",
         )
         self.assertEqual(editor.base_url, "http://editor-local:8000/v1")
-
-    def test_manager_constructor_accepts_strategy_base_url(self) -> None:
-        from meta_agent.managers.hill_climbing import HillClimbingManager
-
-        mgr = HillClimbingManager(
-            strategy_base_url="http://mgr-local:8000/v1"
-        )
-        self.assertEqual(
-            mgr.strategy_base_url, "http://mgr-local:8000/v1"
-        )
 
     def test_editor_threads_base_url_into_llm_kwargs(self) -> None:
         """End-to-end: editor passes base_url= through to the llm callable
@@ -146,10 +136,10 @@ class EditorAndManagerBaseUrlTests(unittest.TestCase):
             base_url="http://editor-local:8000/v1",
         )
 
-        # Call the private proposer directly with minimal scaffolding.
-        # We don't care about the result — only that base_url was forwarded.
+        # Call the single self-improvement step directly with minimal
+        # scaffolding. We don't care about the result — only that
+        # base_url was forwarded to the llm callable.
         import tempfile
-        from meta_agent.models import EvolutionStrategy
 
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = Path(tmp) / "round_001"
@@ -159,16 +149,11 @@ class EditorAndManagerBaseUrlTests(unittest.TestCase):
             )
             (out_dir / "task_agent" / "tool_wrapper.py").write_text("")
             (out_dir / "task_agent" / "tools_schema.json").write_text("[]")
-            strategy = EvolutionStrategy(
-                target_files=["workflow.py"],
-                optimization_goal="test",
-                proposed_changes="test",
-            )
             with self.assertRaises(_Stop):
-                editor._propose_edits(
+                editor._self_improve(
                     out_dir=out_dir,
-                    strategy=strategy,
                     feedback=None,
+                    context=None,
                     prior_errors=[],
                     attempt=1,
                 )

@@ -36,10 +36,7 @@ manager:
   type: "hill_climbing"
   config:
     branch_policy: "best"
-    strategy_model: "Qwen/Qwen3.5-122B-A10B"
-    strategy_reasoning_effort: "high"
     strategy_history_window: 5
-    # strategy_base_url: "http://<server-node>:8000/v1"
 
 evaluator:
   type: "subprocess"
@@ -57,7 +54,7 @@ editor:
   type: "default"
   config:
     model: "Qwen/Qwen3.5-122B-A10B"
-    reasoning_effort: "medium"
+    reasoning_effort: "high"
     max_attempts: 2
     # base_url: "http://<server-node>:8000/v1"
 

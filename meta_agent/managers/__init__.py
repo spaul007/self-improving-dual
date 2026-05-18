@@ -34,5 +34,6 @@ class EvolutionManager(Protocol):
 
 
 from . import hill_climbing  # noqa: F401,E402
+from . import hgm  # noqa: F401,E402
 
-__all__ = ["EvolutionManager", "EvolutionOutcome", "hill_climbing"]
+__all__ = ["EvolutionManager", "EvolutionOutcome", "hill_climbing", "hgm"]

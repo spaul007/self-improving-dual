@@ -1,0 +1,54 @@
+experiment_name: "math_hgm"
+
+# Cheap smoke target for the HGM manager — the math benchmark has a fast,
+# deterministic scorer, so a live HGM run is quick and API-light.
+project: "math"
+
+loop:
+  # HGM's real terminator is `manager.config.eval_budget`; max_rounds is
+  # only a hard cap on tree size (node count).
+  max_rounds: 16
+  score_target: 1.0
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 24          # agent-task evaluations (the real budget)
+    init_expansions: 2
+    alpha: 0.6
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 4       # match evaluator.parallelism below
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 120
+    memory_mb: 1024
+    parallelism: 4
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "high"
+    max_attempts: 2
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "immutable_files"
+  - type: "load_test"

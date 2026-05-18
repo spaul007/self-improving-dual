@@ -1,0 +1,62 @@
+experiment_name: "shopping_hgm"
+
+# HGM (Huxley-Gödel Machine) tree-search optimization of the shopping agent.
+# Same project assets as configs/shopping.yaml — only the manager differs.
+project: "shopping"
+
+loop:
+  # HGM's real terminator is `manager.config.eval_budget`; max_rounds is
+  # only a hard cap on tree size (node count).
+  max_rounds: 60
+  score_target: 0.95
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 400         # agent-task evaluations (the real budget)
+    init_expansions: 5
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16      # match evaluator.parallelism for SLURM throughput
+    finalize_top_k: 5    # top-k nodes re-scored on full train before final pick
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "shopping_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "high"
+    max_attempts: 2
+
+# Train/eval split: the HGM budget is spent only on the train half; the
+# eval half is run once, on the chosen best node, as a sidecar metric.
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "immutable_files"
+  - type: "load_test"

@@ -18,8 +18,6 @@ manager:
   type: "hill_climbing"
   config:
     branch_policy: "best"
-    strategy_model: "gpt-5.4-mini"
-    strategy_reasoning_effort: "high"
     strategy_history_window: 5
 
 evaluator:
@@ -39,7 +37,7 @@ editor:
   type: "default"
   config:
     model: "gpt-5.4-mini"
-    reasoning_effort: "medium"
+    reasoning_effort: "high"
     max_attempts: 2
 
 split:

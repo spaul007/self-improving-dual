@@ -683,16 +683,15 @@ class FailedEditFeedbackTests(unittest.TestCase):
         self.assertEqual(side.get("edit_errors"), ["signature broken"])
 
     def test_strategy_prompt_renders_edit_errors(self) -> None:
-        """The strategy prompt's recent-rounds section must surface
-        ``edit_errors`` so the next round's manager LLM can avoid the
-        same class of mistake."""
+        """The manager's steering context must surface ``edit_errors`` in
+        its recent-rounds section so the editor avoids the same mistake."""
         from meta_agent.managers.hill_climbing import HillClimbingManager
 
         m = HillClimbingManager()
         fb = self._make_failed_edit_feedback(
             ["run_task signature must be run_task(task) -> AgentOutput"]
         )
-        text = m._render_strategy_prompt([fb], best=fb, seed_files={})
+        text = m._render_change_context([fb], best=fb)
         self.assertIn("edit_errors", text)
         self.assertIn("run_task signature must be", text)
 
@@ -765,17 +764,18 @@ class RuntimeEnvTests(unittest.TestCase):
 
 
 class StrategyCoercionTests(unittest.TestCase):
-    """Defensive coercion for malformed `propose_edit` tool-call args.
+    """Defensive coercion for malformed self-improvement tool-call args.
 
     Local vLLM-hosted open-weights models don't always honor the tool's
     declared JSON schema. The 2026-05-12 gpt-oss bake-off crashed
     mid-run on a Pydantic ValidationError because the model returned
     `target_files: "workflow.py"` (string) instead of
-    `target_files: ["workflow.py"]` (list).
+    `target_files: ["workflow.py"]` (list). The coercion helpers now live
+    in ``meta_agent.agent_editor`` (the single self-improvement step).
     """
 
     def setUp(self) -> None:
-        from meta_agent.managers.hill_climbing import (
+        from meta_agent.agent_editor import (
             _coerce_target_files, _coerce_str,
         )
         self._coerce_target_files = _coerce_target_files
@@ -834,48 +834,50 @@ class StrategyCoercionTests(unittest.TestCase):
         self.assertEqual(self._coerce_str(True), "True")
 
 
-class StrategyProposalIntegrationTests(unittest.TestCase):
-    """End-to-end: a manager whose strategy LLM returns a malformed
-    propose_edit tool call (with string target_files) should still
-    produce a valid EvolutionStrategy instead of crashing on Pydantic
-    validation. Reproduces the gpt-oss-120b crash from job 140902."""
+class SelfImprovementParsingTests(unittest.TestCase):
+    """The editor's `submit_self_improvement` parsing must coerce malformed
+    tool-call args into a valid EvolutionStrategy instead of crashing on
+    Pydantic validation. Reproduces the gpt-oss-120b crash from job 140902
+    (now guarded inside ``AgentEditor._parse_self_improvement``)."""
 
-    def test_string_target_files_does_not_crash_propose(self) -> None:
-        from unittest import mock
-        from meta_agent.managers.hill_climbing import (
-            HillClimbingManager,
-        )
+    def test_malformed_tool_args_do_not_crash(self) -> None:
+        from meta_agent.agent_editor import AgentEditor
         from meta_agent.models import EvolutionStrategy
-        from platform_core.llm_wrapper import LLMResponse, ToolCall
 
-        mgr = HillClimbingManager()
-
-        bad_call = ToolCall(
-            id="call_1",
-            name="propose_edit",
-            arguments={
-                # The exact shape that broke gpt-oss-120b:
-                "target_files": "workflow.py",  # string, not list
-                "optimization_goal": "tighten plan extraction",
-                "proposed_changes": "do thing",
-                "rationale": "because",
-            },
+        # Non-string scalars for text fields — the shape open-weights
+        # models produce when they ignore the declared schema.
+        strategy, files = AgentEditor._parse_self_improvement(
+            {
+                "optimization_goal": 42,
+                "proposed_changes": None,
+                "rationale": True,
+                "files": [{"path": "workflow.py", "content": "x"}],
+            }
         )
-        fake_resp = LLMResponse(
-            content=None,
-            tool_calls=[bad_call],
-            stop_reason="completed",
-        )
-
-        with mock.patch(
-            "platform_core.llm_wrapper.call_llm",
-            return_value=fake_resp,
-        ):
-            strategy = mgr._propose_strategy({"workflow.py": "def run_task(task): pass"})
-
         self.assertIsInstance(strategy, EvolutionStrategy)
+        self.assertEqual(strategy.optimization_goal, "42")
+        self.assertEqual(strategy.proposed_changes, "")
         self.assertEqual(strategy.target_files, ["workflow.py"])
-        self.assertEqual(strategy.optimization_goal, "tighten plan extraction")
+        self.assertEqual(len(files), 1)
+
+    def test_target_files_derived_from_emitted_files(self) -> None:
+        """`target_files` is derived from the emitted file paths; a
+        mutable_tools/* edit is applied but not an enum value, so it is
+        dropped from the summary's `target_files`."""
+        from meta_agent.agent_editor import AgentEditor
+
+        strategy, files = AgentEditor._parse_self_improvement(
+            {
+                "optimization_goal": "g",
+                "proposed_changes": "c",
+                "files": [
+                    {"path": "tool_wrapper.py", "content": "x"},
+                    {"path": "mutable_tools/foo.py", "content": "y"},
+                ],
+            }
+        )
+        self.assertEqual(strategy.target_files, ["tool_wrapper.py"])
+        self.assertEqual(len(files), 2)
 
 
 class EvaluateScriptTests(unittest.TestCase):
