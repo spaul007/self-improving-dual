@@ -603,3 +603,107 @@ Two parity fixes applied vs the standalone `/users/n.tzou/cl/shopping_agent`:
   `projects/shopping/seed/workflow.py` cap 100→400 + uncapped output
 
 ---
+
+## 2026-05-18 — HGM travel optimization, first faithful run (143948)
+
+Job: 143948 · gpu-aic-mv-01-st-p5-node-3    Wall: 7:47:17
+Run dir: `runs/20260518_054718_travel_hgm/`
+Config: `configs/hgm_travel.yaml` (uncommitted) — HGM manager, B=400,
+        init_expansions=5, alpha=0.6, epsilon=0.25, eval_batch_size=16,
+        clade_pseudo_count=10000, cool_down off
+Models: task=gpt-5.4-mini reasoning=high  strategy/editor=gpt-5.4-mini
+        scorer-plan-convert=gpt-5-2025-08-07
+Split / scope: HGM tree search · 60 train (budget) / 60 held-out · p=16
+
+First HGM run with the implementation corrected to match the reference
+source (`metauto-ai/HGM`) — see DEV_LOG 2026-05-18 for the D1-D6
+fidelity fixes. (An earlier unfaithful attempt, 143885, was cancelled.)
+
+### Results
+| Metric | Value |
+|---|---|
+| tree | 38 nodes (1 edit-failed), 23 evaluated, 400 budget evals |
+| seed / root (full 60-train pre-eval) | **0.6646** |
+| best node by train-LCB | node 6 — train **0.781** (n=16), parent=1 |
+| **best node held-out (60 cases)** | **0.6083** (4/60 strict-pass) |
+| seed full-120 baseline (prior) | ≈0.683 |
+
+### Observations / diagnosis
+- **HGM did not beat the seed.** Best node held-out 0.608 vs seed
+  ≈0.66–0.68 — a ~7pp regression.
+- **Cause: small-sample overfitting in node selection.** node 6 was
+  lazily evaluated on only 16 of 60 train cases; its 0.781 train mean
+  is an optimistic small-sample estimate. On the 60 held-out cases it
+  scores 0.608 — a 17pp train→held-out collapse. The root, evaluated on
+  all 60, carries the honest 0.665. `lcb_select` (ε=0.25) penalizes
+  thin evidence but not enough: the 16-sample mean (0.78) is so inflated
+  that even its lower bound beats the well-evaluated root. Classic
+  max-of-noisy-estimates (winner's-curse) bias.
+- B=400 over 38 nodes ≈ 10 evals/node average; the top nodes got only
+  16. Too thin for the travel composite scorer, whose LLM plan-
+  conversion adds genuine per-case noise. HGM's design assumes enough
+  evals for the bandit estimates to converge (the paper used B=800 on
+  SWE-Verified-60, binary deterministic scoring).
+- The framework + manager are correct — 38-node tree, faithful
+  schedule, clean completion. The negative result is an experimental
+  property of HGM at this budget on this (noisy, continuous) benchmark,
+  not a code bug.
+
+### Recommendations
+- Re-evaluate finalist nodes on the FULL train split before the LCB
+  selection (de-bias the winner), or raise B so per-node evals
+  converge, or lower alpha so fewer nodes each get more evals.
+
+### Links
+- Implementation + fidelity fixes: DEV_LOG.md 2026-05-18
+- Related commits: (pending) HGM manager
+
+---
+
+## 2026-05-18 — HGM shopping optimization, first faithful run (143949)
+
+Job: 143949 · gpu-aic-mv-01-st-p5-node-3    Wall: 2:56:37
+Run dir: `runs/20260518_054718_shopping_hgm/`
+Config: `configs/hgm_shopping.yaml` (uncommitted) — HGM manager, B=400,
+        init_expansions=5, alpha=0.6, epsilon=0.25, eval_batch_size=16,
+        clade_pseudo_count=10000, cool_down off
+Models: task=gpt-5.4-mini reasoning=high  strategy/editor=gpt-5.4-mini
+        scorer=deterministic (no LLM)
+Split / scope: HGM tree search · 60 train (budget) / 60 held-out · p=16
+
+### Results
+| Metric | Value |
+|---|---|
+| tree | 37 nodes (0 edit-failed), 19 evaluated, 400 budget evals |
+| seed / root (full 60-train pre-eval) | **0.8164** |
+| best node by train-LCB | node 27 — train **0.866** (n=32), parent=21 |
+| **best node held-out (60 cases)** | **0.7470** (19/60 strict-pass) |
+| seed baseline (prior 4-run mean) | ≈0.8105 |
+
+### Observations / diagnosis
+- **Same pattern as travel — HGM did not beat the seed.** Best node
+  held-out 0.747 vs seed ≈0.81 — a ~6pp regression. node 27 was
+  evaluated on 32/60 train cases (train 0.866); held-out 0.747 is a
+  ~12pp collapse. Small-sample selection overfit.
+- **Scorer bug active during this run (now fixed):**
+  `ShoppingScorer.aggregate` read `r.metrics` but `CaseResult` exposes
+  the scorer dict as `.details` — so `per_level` / `level_n` /
+  `cases_with_ground_truth` in `project_metrics` were silently empty
+  the entire run. The shopping strategy proposer therefore had **no
+  per-level (L1/L2/L3) signal** — a real "insufficient optimization
+  information" gap. Fixed post-run (`metrics`→`details`); a shopping
+  re-run would benefit. `score_overall` was unaffected (uses `.score`).
+- Shopping's scorer is deterministic, so the per-case noise is lower
+  than travel's — yet 32 evals still overfit. The winner's-curse bias
+  is intrinsic to selecting the max over lazily-evaluated nodes.
+
+### Recommendations
+- As travel, plus: re-run after the `aggregate` fix so the optimizer
+  sees the per-level breakdown.
+
+### Links
+- Implementation + fidelity fixes: DEV_LOG.md 2026-05-18
+- Related commits: (pending) HGM manager; `projects/shopping/benchmark/
+  scorer.py` aggregate `metrics`→`details` fix
+
+---
