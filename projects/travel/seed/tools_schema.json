@@ -1,204 +1,233 @@
 [
   {
-    "name": "query_flight_info",
-    "description": "Query flight information by origin city, destination city, and departure date (and optional seat class). Returns a JSON list of candidate flights or routes; each route may contain multiple segments. Flight-related details in the final plan must come exclusively from this tool's output.",
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "origin": {
-          "type": "string",
-          "description": "Origin city name."
+    "type": "function",
+    "function": {
+      "name": "query_train_info",
+      "description": "Query train ticket information by origin, destination, date and optional filters. Returns a list of matching trains with: train number, departure/arrival time and station, journey duration, seat class, remaining seats status, and price. Supports direct and transfer routes. Direct routes return one segment; transfer routes return multiple segments. IMPORTANT: If the user requires a specific seat class, you MUST pass the seatClassName parameter to filter results — without it, the results may include trains that do not offer the required seat class or have no remaining seats in that class. After receiving results, check the 'Remaining Seats' field to confirm availability before selecting a train. When the user asks for the cheapest, earliest, latest, or shortest train, you must compare ALL returned results and select the one that best matches the criteria. All train-related information in the plan must come exactly from this tool's results and must not be fabricated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origin": {
+            "type": "string",
+            "description": "Origin city name"
+          },
+          "destination": {
+            "type": "string",
+            "description": "Destination city name"
+          },
+          "depDate": {
+            "type": "string",
+            "description": "Departure date, format: YYYY-MM-DD"
+          },
+          "seatClassName": {
+            "type": "string",
+            "description": "FILTER: When provided, only returns trains that offer this seat class. Values: 'First Class Seat', 'Second Class Seat', 'Business Seat'. Always pass this when the user specifies a seat class preference to avoid selecting a train without the required seat type."
+          }
         },
-        "destination": {
-          "type": "string",
-          "description": "Destination city name."
-        },
-        "depDate": {
-          "type": "string",
-          "description": "Departure date, format YYYY-MM-DD."
-        },
-        "seatClassName": {
-          "type": "string",
-          "description": "Optional seat class: Economy Class, Business Class, First Class."
-        }
-      },
-      "required": [
-        "origin",
-        "destination",
-        "depDate"
-      ]
+        "required": [
+          "origin",
+          "destination",
+          "depDate"
+        ]
+      }
     }
   },
   {
-    "name": "query_train_info",
-    "description": "Query train ticket information by origin city, destination city, and departure date (and optional seat class). Returns candidate train routes with segment details. Train-related details in the plan must come exclusively from this tool.",
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "origin": {
-          "type": "string",
-          "description": "Origin city name."
+    "type": "function",
+    "function": {
+      "name": "query_flight_info",
+      "description": "Query flight information by origin, destination, date and optional filters. Returns a list of matching flights with: flight number, departure/arrival time and airport, journey duration, seat class, remaining seats status, price, aircraft type (manufacturer, model). Supports direct and connecting flights. Direct flights return one segment; connecting flights return multiple segments. IMPORTANT: If the user requires a specific seat class, you MUST pass the seatClassName parameter to filter results — without it, results may include flights that do not offer the required seat class or have no remaining seats. After receiving results, check the 'Remaining Seats' field to confirm availability. When the user asks for the cheapest, shortest, or earliest flight (possibly from a specific airline or manufacturer), you must compare ALL returned results and select the one that best matches. The returned results include 'equipType' (aircraft model) and 'manufacturer' fields — use these when the user specifies an aircraft manufacturer preference. All flight-related information in the plan must come exactly from this tool's results and must not be fabricated.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origin": {
+            "type": "string",
+            "description": "Origin city name"
+          },
+          "destination": {
+            "type": "string",
+            "description": "Destination city name"
+          },
+          "depDate": {
+            "type": "string",
+            "description": "Departure date, format: YYYY-MM-DD"
+          },
+          "seatClassName": {
+            "type": "string",
+            "description": "FILTER: When provided, only returns flights that offer this seat class. Values: 'Economy Class', 'Business Class', 'First Class'. Always pass this when the user specifies a seat class preference to avoid selecting a flight without the required seat type."
+          }
         },
-        "destination": {
-          "type": "string",
-          "description": "Destination city name."
-        },
-        "depDate": {
-          "type": "string",
-          "description": "Departure date, format YYYY-MM-DD."
-        },
-        "seatClassName": {
-          "type": "string",
-          "description": "Optional seat class: First Class Seat, Second Class Seat, Business Seat."
-        }
-      },
-      "required": [
-        "origin",
-        "destination",
-        "depDate"
-      ]
+        "required": [
+          "origin",
+          "destination",
+          "depDate"
+        ]
+      }
     }
   },
   {
-    "name": "query_hotel_info",
-    "description": "Query hotel information by destination, check-in/check-out dates, and optional star rating / brand. Returns a JSON list of matching hotels.",
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "destination": {
-          "type": "string",
-          "description": "Destination city or region."
+    "type": "function",
+    "function": {
+      "name": "query_hotel_info",
+      "description": "Query hotel information with optional filters for star rating and brand. Returns ALL hotels in the database (the destination parameter is accepted but does not filter by city — you must verify the hotel is in the correct city yourself). Each result includes: name, address, latitude, longitude, decorationTime, hotelStar, price (per night), score (rating), brand, and services (list of amenities like WiFi, parking, etc.). IMPORTANT: When the user requires a specific star rating, pass hotelStar to filter. When the user requires a specific brand, pass hotelBrands to filter. You must then sort/rank the results yourself based on the user's criteria: highest-rated (sort by 'score' descending), cheapest (sort by 'price' ascending), newest decoration (sort by 'decorationTime' descending), or matching specific services. If the user requires specific hotel services (e.g., gym, pool, airport shuttle), check the 'services' list in each result. All hotel information in the plan must come exactly from this tool's results.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "destination": {
+            "type": "string",
+            "description": "Destination city or region name. Note: this parameter is accepted for context but the tool returns all hotels in the database — you must verify the hotel location yourself."
+          },
+          "checkinDate": {
+            "type": "string",
+            "description": "Check-in date, format: yyyy-MM-dd"
+          },
+          "checkoutDate": {
+            "type": "string",
+            "description": "Check-out date, format: yyyy-MM-dd"
+          },
+          "hotelStar": {
+            "type": "string",
+            "description": "FILTER: When provided, only returns hotels with this star rating. Values: '1' through '5'. Always pass this when the user specifies a star rating requirement."
+          },
+          "hotelBrands": {
+            "type": "string",
+            "description": "FILTER: When provided, only returns hotels of this brand. Supported brands: Ji Hotel, Atour Hotel, Marriott, Hilton, Home Inn, Jinjiang Inn, Hanting Hotel, Orange Hotel. Only supports a single brand value. Always pass this when the user specifies a hotel brand preference."
+          }
         },
-        "checkinDate": {
-          "type": "string",
-          "description": "Check-in date, format YYYY-MM-DD."
-        },
-        "checkoutDate": {
-          "type": "string",
-          "description": "Check-out date, format YYYY-MM-DD."
-        },
-        "hotelStar": {
-          "type": "string",
-          "description": "Star rating 1-5 (optional)."
-        },
-        "hotelBrands": {
-          "type": "string",
-          "description": "Optional brand name. Supported: Ji Hotel, Atour Hotel, Marriott, Hilton, Home Inn, Jinjiang Inn, Hanting Hotel, Orange Hotel."
-        }
-      },
-      "required": [
-        "destination",
-        "checkinDate",
-        "checkoutDate"
-      ]
+        "required": [
+          "destination",
+          "checkinDate",
+          "checkoutDate"
+        ]
+      }
     }
   },
   {
-    "name": "query_attraction_details",
-    "description": "Query attraction details by name. Returns a formatted text block with id, name, city, address, coordinates, description, rating, opening hours, closing days, recommended visit duration, ticket price and attraction type.",
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "attraction_name": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "attraction_name"
-      ]
-    }
-  },
-  {
-    "name": "recommend_attractions",
-    "description": "Recommend attractions for a given city, optionally filtered by type. Returns a multi-line text listing attraction names, descriptions and types. All attractions in the final plan must come from this tool.",
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "city": {
-          "type": "string",
-          "description": "City name or keyword."
+    "type": "function",
+    "function": {
+      "name": "query_attraction_details",
+      "description": "Query detailed information for a specific attraction by exact name. Returns: attraction ID, name, city, latitude/longitude coordinates, description, user rating, opening time, closing time, closing dates (days of the week it is closed), recommended visit duration (minimum and maximum hours), ticket price, and attraction type. IMPORTANT: Use the opening/closing times and closing dates to ensure you schedule visits during valid hours and on open days. Use the ticket price for accurate budget calculation. Use latitude/longitude for computing transfer times via query_road_route_info.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attraction_name": {
+            "type": "string",
+            "description": "Exact attraction name as returned by recommend_attractions. Must match exactly — do not abbreviate or rename."
+          }
         },
-        "attraction_type": {
-          "type": "string",
-          "description": "Optional filter. Options: 'Historical and Cultural', 'Natural Scenery', 'Art Exhibition', 'City Landmark', 'Theme Park', 'Leisure Experience'."
-        }
-      },
-      "required": [
-        "city"
-      ]
+        "required": [
+          "attraction_name"
+        ]
+      }
     }
   },
   {
-    "name": "query_restaurant_details",
-    "description": "Look up a restaurant by exact name. Returns a JSON object with the restaurant's id, coordinates, price per person, cuisine, opening hours, nearby attraction, and rating.",
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "restaurant_name": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "restaurant_name"
-      ]
-    }
-  },
-  {
-    "name": "recommend_restaurants",
-    "description": "Recommend restaurants near a given coordinate. Latitude and longitude must be exact six-decimal values that came from another tool. Returns a JSON list of restaurants with name, coordinates, price-per-person, cuisine, opening hours, nearby attraction, and rating.",
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "latitude": {
-          "type": "string",
-          "description": "Latitude, 6 decimal places."
+    "type": "function",
+    "function": {
+      "name": "recommend_attractions",
+      "description": "Search and return popular attractions for a city, optionally filtered by attraction type. Returns a list of attractions with name, rating, ticket price, coordinates, opening hours, and type. IMPORTANT: When the user asks for attractions of a specific type, pass the attraction_type parameter to filter. When the user asks for the highest-rated or must-visit attractions, sort the returned results by rating and select the top ones. When the user asks for all free attractions, filter results where ticket price is 0. All attraction names in the plan must come exactly from this tool's results — do not abbreviate or rename.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city": {
+            "type": "string",
+            "description": "City name to search attractions in"
+          },
+          "attraction_type": {
+            "type": "string",
+            "description": "FILTER: When provided, only returns attractions of this type. Options: 'Historical and Cultural', 'Natural Scenery', 'Art Exhibition', 'City Landmark', 'Theme Park', 'Leisure Experience'. Pass this when the user specifies an attraction type preference."
+          }
         },
-        "longitude": {
-          "type": "string",
-          "description": "Longitude, 6 decimal places."
-        }
-      },
-      "required": [
-        "latitude",
-        "longitude"
-      ]
+        "required": [
+          "city"
+        ]
+      }
     }
   },
   {
-    "name": "search_location",
-    "description": "Look up the latitude and longitude of a place by exact name. The place name must come from another tool's output verbatim — no abbreviations, no translation, no added words. Returns a JSON object with place_name, latitude, longitude (six decimal places).",
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "place_name": {
-          "type": "string",
-          "description": "Place name, exactly as it appeared in another tool's output."
-        }
-      },
-      "required": [
-        "place_name"
-      ]
-    }
-  },
-  {
-    "name": "query_road_route_info",
-    "description": "Query distance, duration, and cost between two coordinates (format 'latitude,longitude' with six decimal places). Both coordinates must come from another tool's output — manual entry or rounded values will be rejected.",
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "origin": {
-          "type": "string",
-          "description": "Origin coordinate, format 'latitude,longitude'."
+    "type": "function",
+    "function": {
+      "name": "search_location",
+      "description": "Query the latitude and longitude coordinates for a place name. Returns coordinates with 6 decimal places of precision. IMPORTANT: Use this to get coordinates for locations before calling query_road_route_info (which requires exact coordinates). The place name should come from other tool results (hotel names, restaurant names, attraction names, station names) and must match exactly.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "place_name": {
+            "type": "string",
+            "description": "Exact place name to query coordinates for (e.g., 'Beijing South Railway Station', 'Lao She Teahouse'). Must match a name from other tool results exactly."
+          }
         },
-        "destination": {
-          "type": "string",
-          "description": "Destination coordinate, format 'latitude,longitude'."
-        }
-      },
-      "required": [
-        "origin",
-        "destination"
-      ]
+        "required": [
+          "place_name"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "query_road_route_info",
+      "description": "Calculate road route details between two locations given their coordinates. Returns: distance in meters, estimated duration in minutes, and estimated cost in local currency. The tool automatically selects transportation mode: walking if distance <= 2km (cost = 0), driving/taxi if distance > 2km. Taxi cost is per vehicle (accommodates up to 4 people). IMPORTANT: Coordinates must come from other tool results (search_location, query_attraction_details, recommend_restaurants, etc.) and must have exactly 6 decimal places. Do NOT fabricate or round coordinates — the tool validates them against the database and will reject unknown coordinates. Use this tool to compute accurate transfer times between consecutive activities in your itinerary, and include the returned cost in your budget calculation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origin": {
+            "type": "string",
+            "description": "Origin coordinates in format 'latitude,longitude' with exactly 6 decimal places. Must come from a previous tool result (e.g., search_location, attraction details, restaurant details)."
+          },
+          "destination": {
+            "type": "string",
+            "description": "Destination coordinates in format 'latitude,longitude' with exactly 6 decimal places. Must come from a previous tool result."
+          }
+        },
+        "required": [
+          "origin",
+          "destination"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "recommend_restaurants",
+      "description": "Find nearby restaurants based on latitude and longitude coordinates. Returns a list of restaurants near that location, each with: name, latitude/longitude, price_per_person, cuisine type, opening_time, closing_time, nearby_attraction_name, rating, and tags (list of descriptive tags like cuisine style or specialty). IMPORTANT: Use the returned fields to satisfy user constraints: (1) For 'cheapest restaurant near X' — sort results by price_per_person ascending. (2) For 'restaurant with specific tag/cuisine near X' — filter results by the 'tags' or 'cuisine' field. (3) For 'closest restaurant to attraction X' — the results are already scoped to the queried coordinates; use nearby_attraction_name to verify proximity. (4) For 'highest-rated restaurant' — sort by rating descending. (5) Check opening_time and closing_time to ensure the restaurant is open when scheduled. Coordinates must come from other tool results with 6 decimal places.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "string",
+            "description": "Latitude coordinate with exactly 6 decimal places, from a previous tool result (e.g., search_location or attraction details)"
+          },
+          "longitude": {
+            "type": "string",
+            "description": "Longitude coordinate with exactly 6 decimal places, from a previous tool result"
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude"
+        ]
+      }
+    }
+  },
+  {
+    "type": "function",
+    "function": {
+      "name": "query_restaurant_details",
+      "description": "Query detailed information for a specific restaurant by exact name. Returns: restaurant name, latitude/longitude coordinates, price_per_person, cuisine type, opening_time, closing_time, nearby_attraction_name, rating, and tags. Use this to verify restaurant details (price, hours, location) before including it in the plan. The restaurant name must match exactly as returned by recommend_restaurants.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "restaurant_name": {
+            "type": "string",
+            "description": "Exact restaurant name as returned by recommend_restaurants. Must match exactly."
+          }
+        },
+        "required": [
+          "restaurant_name"
+        ]
+      }
     }
   }
 ]
