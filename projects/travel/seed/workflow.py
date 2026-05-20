@@ -301,54 +301,11 @@ def _strip_reasoning(raw_output):
     return [item for item in items if _item_type(item) != "reasoning"]
 
 
-_FORCE_PLAN_PROMPT = (
-    "Stop calling tools. Based on all the information you've gathered so far, "
-    "produce the final travel plan now within <plan>...</plan> tags, "
-    "following the format requirements you were given. Do not request more "
-    "tools or ask clarifying questions — just write the plan."
-)
-
-
-def _force_final_plan(messages: list[dict], schema: list) -> str:
-    """Issue one final LLM call to coax a `<plan>` block.
-
-    Some models (notably local vLLM-hosted open-weights) tend to exit
-    the tool loop with brief reasoning fragments — `"Now East Lake."`,
-    `"Good, now I have the coordinates..."` — instead of writing the
-    formal `<plan>` block. Caught on 2026-05-12 when both Qwen3.5 and
-    gpt-oss-120b consistently scored 0/10 despite the tool-call
-    parsers working correctly. The force-plan tail nudges them past
-    the early-exit and into a structured final answer. The change is
-    inert for OpenAI-class models: they normally produce a plan in the
-    natural terminal response, so the force path never fires.
-
-    The tool schema is kept on this call (rather than passing
-    ``tools=None``) because the conversation history contains
-    ``function_call`` / ``function_call_output`` items from earlier
-    turns; vLLM's Responses API rejects those input items with HTTP
-    400 when ``tools`` is absent. The prompt itself instructs the
-    model not to call any more tools. If the model ignores it and
-    calls a tool anyway, _extract_plan returns "" and the case still
-    fails — no worse than the pre-force baseline.
-    """
-    messages = messages + [{"role": "user", "content": _FORCE_PLAN_PROMPT}]
-    try:
-        forced = call_llm(messages=messages, tools=schema)
-    except Exception:
-        # Tolerate API failures here — vLLM's gpt-oss Harmony parser
-        # has been observed to 400 on certain post-tool-loop input
-        # shapes even after the reasoning strip. Returning "" lets the
-        # case fail gracefully (score=0) instead of crashing the
-        # runner and killing the whole eval round. Caught 2026-05-13.
-        return ""
-    return _extract_plan(forced.content or "")
-
-
 def run_task(task: Task) -> AgentOutput:
     wrapper = ToolWrapper()
     schema = wrapper.get_schema()
 
-    messages: list[dict] = [
+    messages: list = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": task.description},
     ]
@@ -360,48 +317,26 @@ def run_task(task: Task) -> AgentOutput:
         response = call_llm(messages=messages, tools=schema)
         last_text = response.content or last_text
 
-        if not response.tool_calls:
-            plan = _extract_plan(response.content or "")
-            if plan:
-                return AgentOutput(
-                    result=plan,
-                    metadata={"iterations": iterations, "budget_exhausted": False},
-                )
-            # Terminal response had no <plan> block. Force one before
-            # giving up. Carry the response items into the conversation
-            # so the force-call sees the agent's last state.
-            raw = getattr(response, "raw", None)
-            raw_output = getattr(raw, "output", None) or []
-            for item in _strip_reasoning(raw_output):
-                if hasattr(item, "model_dump"):
-                    messages.append(item.model_dump(exclude_none=True))
-                else:
-                    messages.append(item)
-            return AgentOutput(
-                result=_force_final_plan(messages, schema),
-                metadata={
-                    "iterations": iterations + 1,
-                    "budget_exhausted": False,
-                    "forced_final": True,
-                },
-            )
-
-        # Append the Responses API output items (assistant ``message``
-        # items with visible content and ``function_call`` items) so
-        # the next iteration sees the agent's own content + tool
-        # decisions. ``reasoning`` items are intentionally dropped
-        # via ``_strip_reasoning`` — see the helper's docstring for
-        # why. Mirrors the reference's ``messages.extend(raw_output)``
-        # pattern in ``tools_fn_agent.py:454-457`` minus the reasoning
-        # echo. Items come back as OpenAI SDK Pydantic models; convert
-        # to plain dicts so the messages list stays JSON-serializable.
+        # Echo the raw Responses-API output items back into the
+        # conversation. Mirrors reference ``tools_fn_agent.py:454-457``
+        # exactly: ``messages.extend(raw_output)`` with Pydantic objects
+        # preserved. Converting to dicts via ``model_dump`` drops
+        # reasoning-item state needed for cross-turn continuity on
+        # reasoning models.
         raw = getattr(response, "raw", None)
         raw_output = getattr(raw, "output", None) or []
-        for item in _strip_reasoning(raw_output):
-            if hasattr(item, "model_dump"):
-                messages.append(item.model_dump(exclude_none=True))
-            else:
-                messages.append(item)
+        messages.extend(_strip_reasoning(raw_output))
+
+        if not response.tool_calls:
+            # No tool calls — extract whatever plan is in the final
+            # message and return. Matches reference behavior: no
+            # force-plan rescue, no extra LLM call. If no plan is
+            # found, return empty and let the scorer handle it.
+            plan = _extract_plan(response.content or "")
+            return AgentOutput(
+                result=plan,
+                metadata={"iterations": iterations, "budget_exhausted": False},
+            )
 
         # Append the tool result for each function_call we just got.
         # ``function_call_output`` items are what we *emit* (the API
@@ -419,16 +354,12 @@ def run_task(task: Task) -> AgentOutput:
                 "output": result,
             })
 
-    # Budget exhausted — extract from `last_text` first, then fall back
-    # to a force-plan call. The order matters: if the model already
-    # produced a `<plan>` mid-conversation, prefer that over forcing a
-    # new (potentially worse) one.
+    # Budget exhausted — return whatever the last terminal text
+    # contained. Reference returns a literal sentinel string at this
+    # point; we return the extracted plan (or empty) for consistency
+    # with the no-tool-calls exit above.
     plan = _extract_plan(last_text)
-    if not plan:
-        plan = _force_final_plan(messages, schema)
     return AgentOutput(
         result=plan,
-        metadata={"iterations": iterations + (0 if _extract_plan(last_text) else 1),
-                  "budget_exhausted": True,
-                  "forced_final": not bool(_extract_plan(last_text))},
+        metadata={"iterations": iterations, "budget_exhausted": True},
     )

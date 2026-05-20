@@ -497,55 +497,5 @@ class SeedExtractPlanLenientTests(unittest.TestCase):
         self.assertEqual(wf._extract_plan("x" * n), "x" * n)
 
 
-class SeedForcePlanResilientTests(unittest.TestCase):
-    """`_force_final_plan` must tolerate API failures from call_llm.
-    vLLM's gpt-oss Harmony parser has been observed to 400 on certain
-    post-tool-loop input shapes. A crash here propagates as a worker
-    Traceback and the case dies; catching lets the eval complete
-    with a clean score=0."""
-
-    def _wf(self):
-        import importlib.util
-        if "tool_wrapper" not in sys.modules:
-            stub = type(sys)("tool_wrapper")
-            stub.ToolWrapper = object
-            sys.modules["tool_wrapper"] = stub
-        path = REPO_ROOT / "projects" / "travel" / "seed" / "workflow.py"
-        spec = importlib.util.spec_from_file_location("travel_seed_workflow", path)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod
-
-    def test_returns_empty_on_call_llm_exception(self) -> None:
-        from unittest import mock
-        wf = self._wf()
-
-        def boom(*_a, **_k):
-            raise RuntimeError("simulated vLLM 400 Bad Request")
-
-        with mock.patch.object(wf, "call_llm", side_effect=boom):
-            result = wf._force_final_plan(
-                messages=[{"role": "user", "content": "task"}],
-                schema=[],
-            )
-        self.assertEqual(result, "")
-
-    def test_returns_plan_when_call_llm_succeeds(self) -> None:
-        from types import SimpleNamespace
-        from unittest import mock
-        wf = self._wf()
-
-        fake = SimpleNamespace(
-            content="<plan>\nDay 1: ...\n</plan>",
-            tool_calls=[],
-        )
-        with mock.patch.object(wf, "call_llm", return_value=fake):
-            result = wf._force_final_plan(
-                messages=[{"role": "user", "content": "task"}],
-                schema=[],
-            )
-        self.assertEqual(result.strip(), "Day 1: ...")
-
-
 if __name__ == "__main__":
     unittest.main()
