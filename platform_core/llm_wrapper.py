@@ -35,10 +35,16 @@ from typing import Any, Optional
 from . import trace
 
 DEFAULT_MODEL_FALLBACK = "gpt-5.4-mini"
-# Large enough to leave room for visible content after reasoning_effort="high"
-# can consume several thousand internal tokens. 8192 was too tight: reasoning
-# alone hit the cap and the visible plan body was empty.
-DEFAULT_MAX_OUTPUT_TOKENS = 32768
+# None = let the API choose. The reference travel_agent codebase omits
+# max_output_tokens entirely from its responses.create call; mirror that
+# so reasoning-heavy cases don't hit a self-imposed cap.
+DEFAULT_MAX_OUTPUT_TOKENS: Optional[int] = None
+
+# API-error retry policy for `client.responses.create`. Mirrors the reference
+# travel_agent's `call_llm` (max_retries=30, backoff=1.5s) so transient
+# network/server errors don't kill a case.
+DEFAULT_API_MAX_RETRIES = 30
+DEFAULT_API_BACKOFF_S = 1.5
 
 
 def _env_default_model() -> str:
@@ -331,7 +337,26 @@ def call_llm(
         request["temperature"] = temperature
 
     started = time.time()
-    response = client.responses.create(**request)
+    last_err: Optional[Exception] = None
+    response = None
+    for attempt in range(DEFAULT_API_MAX_RETRIES):
+        try:
+            response = client.responses.create(**request)
+            break
+        except Exception as exc:  # noqa: BLE001 - retry on any transient error
+            last_err = exc
+            if attempt == DEFAULT_API_MAX_RETRIES - 1:
+                raise
+            trace.emit(
+                "llm_call_retry",
+                {
+                    "id": call_id,
+                    "attempt": attempt + 1,
+                    "max_retries": DEFAULT_API_MAX_RETRIES,
+                    "error": repr(exc)[:500],
+                },
+            )
+            time.sleep(DEFAULT_API_BACKOFF_S)
     elapsed = time.time() - started
 
     content, tool_calls = _extract_output(response)
