@@ -29,7 +29,7 @@ evaluator:
   config:
     wall_time_s_per_case: 1800
     memory_mb: 2048
-    parallelism: 16
+    parallelism: 40
     # `max_cases` truncates whatever set is being run. With the split
     # block below it clips both train and eval to N each — handy for
     # smoke runs. Leave unset (commented out) for a real run.
