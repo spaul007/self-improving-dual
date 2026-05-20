@@ -298,6 +298,14 @@ class SubprocessEvaluator:
             )
 
         agent_output = AgentOutput.from_dict(payload.get("output") or {})
+        # Preserve the raw plan + agent metadata (iterations, budget_exhausted)
+        # in the persisted case file. Without this, post-hoc debugging of a
+        # low-scoring case requires rerunning the whole eval — the plan and
+        # iteration count are gone after the subprocess exits.
+        agent_artifact = {
+            "raw_result": agent_output.result,
+            "agent_metadata": dict(agent_output.metadata or {}),
+        }
         try:
             scored = scorer.score(case, agent_output)
         except Exception as exc:
@@ -307,17 +315,20 @@ class SubprocessEvaluator:
                     passed=False,
                     score=0.0,
                     error=f"scorer raised: {exc!r}",
+                    details=agent_artifact,
                 ),
                 False,
                 logs_dir,
             )
 
+        details = dict(scored.get("details", {}))
+        details.update(agent_artifact)
         return self._finish(
             CaseResult(
                 case_id=case_id,
                 passed=bool(scored.get("passed", False)),
                 score=float(scored.get("score", 0.0)),
-                details=dict(scored.get("details", {})),
+                details=details,
             ),
             False,
             logs_dir,
