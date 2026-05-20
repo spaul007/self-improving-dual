@@ -23,7 +23,11 @@ from meta_agent import runtime_env
 from meta_agent.models import EvaluationResult
 
 
-def run(config_path: Path, agent_path: Path) -> EvaluationResult:
+def run(
+    config_path: Path,
+    agent_path: Path,
+    case_ids: list[str] | None = None,
+) -> EvaluationResult:
     if not agent_path.exists() or not agent_path.is_dir():
         raise FileNotFoundError(f"agent directory not found: {agent_path}")
 
@@ -41,8 +45,10 @@ def run(config_path: Path, agent_path: Path) -> EvaluationResult:
         Path(config_path).read_text(encoding="utf-8"), encoding="utf-8"
     )
 
-    # No case_ids → run every case in the benchmark.
-    result = fw.evaluator.run(round_dir, fw.benchmark_dir)
+    if case_ids:
+        result = fw.evaluator.run(round_dir, fw.benchmark_dir, case_ids=case_ids)
+    else:
+        result = fw.evaluator.run(round_dir, fw.benchmark_dir)
 
     (round_dir / "eval_result.json").write_text(
         result.model_dump_json(indent=2), encoding="utf-8"
@@ -70,5 +76,13 @@ if __name__ == "__main__":
         help="Path to a task_agent directory (e.g. task_agent_seeds/travel_baseline "
         "or runs/<exp>/round_NNN/task_agent)",
     )
+    parser.add_argument(
+        "--case-ids",
+        type=str,
+        default=None,
+        help="Optional comma-separated case ids to restrict the run "
+        "(e.g. '6,17,86'). Default: run every case in the benchmark.",
+    )
     args = parser.parse_args()
-    run(args.config, args.agent)
+    ids = [c.strip() for c in args.case_ids.split(",")] if args.case_ids else None
+    run(args.config, args.agent, case_ids=ids)
