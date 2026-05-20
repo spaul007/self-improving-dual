@@ -1233,3 +1233,103 @@ gain previously framed against 0.6772 now needs framing against 0.7347.
 - Related commits: b877e7c, 608df54
 
 ---
+
+## 2026-05-20 — seed_v3 3× full-120 (Pydantic raw echo + force-plan removed + parallelism 40) — 147238/147239/147241
+
+Job: 147238/147239/147241 · gpu-aic-mv-01-st-p5-node-1   Wall: ~31m/34m/34m each
+Run dir: `/groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260520_181559_seed_v3_r{1,2,3}/`
+Staged agent: `/groups/AIC-MV/n.tzou/meta-agent/eval_agents/seed_v3_r{1,2,3}/` (identical to repo seed post-changes)
+Config: `configs/travel.yaml` (uncommitted at submit) — `parallelism: 40`,
+no `max_cases`; standalone eval, ignores split, runs full 120 cases.
+Models: task=gpt-5.4-mini@high · scorer-plan-convert=gpt-5-2025-08-07
+Split / scope: standalone full-120 · 3 independent runs · parallelism=40
+
+### Three framework-parity changes baked into seed_v3 (vs seed_v2)
+1. `projects/travel/seed/workflow.py` — Pydantic dict echo → raw extend.
+   Replaced `for item in raw_output: model_dump(exclude_none=True)`
+   with `messages.extend(_strip_reasoning(raw_output))`. Mirrors
+   reference `tools_fn_agent.py:454-457` exactly. Preserves
+   reasoning-item `encrypted_content` for cross-turn state.
+2. `projects/travel/seed/workflow.py` — removed `_force_final_plan`
+   fallback (and `_FORCE_PLAN_PROMPT`). The extra LLM call on no-plan
+   terminal responses produced degenerate plans on hard cases.
+3. `configs/travel.yaml` — `parallelism: 16 → 40` (reference default).
+
+Bonus: `platform_core/llm_wrapper.py::_split_system` made dict-tolerant
+(non-dict `ResponseItem`s pass through unchanged) and
+`platform_core/trace.py::emit` uses `default=str` so verbose-mode JSON
+serialisation of Pydantic items doesn't crash. These were necessary
+correctness fixes — the first launch (147157/147158/147159) had
+crashed all-zero on `_split_system` calling `.get` on a Pydantic item.
+
+### Results
+| run | composite | commonsense | hard | wall |
+|---|---|---|---|---|
+| seed_v3_r1 (147238) | 0.7359 | 0.7969 | 0.6750 | ~31m |
+| seed_v3_r2 (147239) | 0.7667 | 0.7917 | 0.7417 | ~34m |
+| seed_v3_r3 (147241) | 0.7021 | 0.7875 | 0.6167 | ~34m |
+| **mean** | **0.7349** | **0.7920** | **0.6778** | |
+| **stdev** | 0.0323 | 0.0047 | 0.0625 | |
+
+### Comparison to prior baselines (full-120)
+| baseline | composite mean | composite stdev | n |
+|---|---|---|---|
+| seed_fixed (pre-fix, 145776-145785) | 0.6772 | 0.025 | 10 |
+| seed_v2 (post-3-fixes, 146880-147025) | 0.7347 | 0.0147 | 10 |
+| **seed_v3 (this run, 147238-147241)** | **0.7349** | **0.0323** | **3** |
+| reference `baseline_ci_fixed` | 0.7720 | 0.0047 | 3 |
+
+### Observations / diagnosis
+- **seed_v3 is statistically tied with seed_v2.** Mean composite
+  delta = +0.0002 (essentially zero), well within the seed_v2 stdev
+  band. None of the three framework-parity changes moved the score.
+- **Commonsense flat.** 0.7920 vs 0.7935 — within noise, no lift from
+  raw Pydantic echo. Hypothesis "preserving `encrypted_content` lifts
+  cross-turn reasoning" not supported.
+- **Hard score flat with high variance.** 0.6778 vs 0.6758. The
+  per-run hard spread (0.62-0.74) is 3× the commonsense spread
+  (0.79-0.80), so most of the composite stdev comes from `hard`.
+  Reference reports composite stdev 0.0047, so their hard variance
+  must also be very low — suggests the reference's workflow
+  consistently writes more-complete plans where hard-rubric checks
+  (transit modes, costs, intercity transfers) pass.
+- **Force-plan removal: no harm done.** seed_v2 (had force-plan)
+  and seed_v3 (no force-plan) score essentially identical. Either
+  force-plan never fired on this model, or the synthetic plans it
+  produced were already scoring zero anyway. Net: code simplification
+  without any score regression.
+- **Parallelism 16→40: no observable wall-time gain at this scale.**
+  Per-run wall (31-34 min) is similar to the seed_v2 batch
+  (mostly under 1h). The bottleneck is per-case LLM latency, not
+  worker contention.
+- **3.7pp gap to reference persists** (0.7349 vs 0.7720). With these
+  three framework-parity changes ruled out and the tool schema +
+  output-token cap + retry budget already matched, the remaining gap
+  is in the workflow/prompting/scorer-rubric path, not in our
+  infrastructure or the message-history shape.
+
+### Verdict
+The three "reference-parity" changes are score-neutral. The Pydantic
+raw-echo hypothesis is **not** the load-bearing difference between
+our seed and the reference baseline. Force-plan removal is a clean
+code simplification. The 3.7pp commonsense+hard gap requires looking
+elsewhere — likely the workflow's plan-format mechanics or the
+reference's tool-loop control logic.
+
+Per-case `raw_result` / `agent_metadata` are now persisted in each
+`logs/case_<id>.json` (the extra `meta_agent/evaluator.py` change),
+enabling post-hoc plan-content diffs vs the reference run outputs at
+`/users/n.tzou/cl/work/baseline_ci_fixed/eval_run_{1,2,3}/<id>/`.
+
+### Links
+- Run dirs: `/groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260520_181559_seed_v3_r{1,2,3}/`
+- SLURM logs: `/groups/AIC-MV/n.tzou/meta-agent/slurm/{147238,147239,147241}.{out,err}`
+- Monitor log: `scripts/monitor_seed_v3_v2.log`
+- Reference baseline: `/users/n.tzou/cl/work/baseline_ci_fixed/`
+  (`baseline_summary.json` mean 0.7720, stdev 0.0047)
+- Previous baseline: EXP_LOG 2026-05-20 "10× full-120 (seed_v2, post-fix)" (0.7347 ± 0.0147)
+- Predecessor (crashed all-zero): jobs 147157/147158/147159 — fixed
+  by tolerating non-dict items in `_split_system`
+- Related commits: pending (see next DEV_LOG entry)
+
+---
