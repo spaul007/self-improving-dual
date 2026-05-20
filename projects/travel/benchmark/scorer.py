@@ -53,7 +53,10 @@ from _eval.prompts import FORMAT_CONVERT_PROMPT_EN  # noqa: E402
 from meta_agent.registry import register  # noqa: E402
 
 CONVERT_MODEL = "gpt-5-2025-08-07"
-DEFAULT_RETRIES = 10
+# Reference travel_agent (evaluation/convert_report.py) uses max_retries=30,
+# giving 31 attempts. Match that so transient JSON-parse failures don't drop
+# cases to score=0 on the first miss.
+DEFAULT_RETRIES = 31
 JSON_BLOCK_RE = re.compile(r"<JSON>(.*?)</JSON>", re.DOTALL | re.IGNORECASE)
 
 
