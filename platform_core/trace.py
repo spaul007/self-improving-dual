@@ -29,7 +29,11 @@ def emit(kind: str, payload: dict[str, Any]) -> None:
         "kind": kind,
         "payload": payload,
     }
-    line = json.dumps(event, ensure_ascii=False)
+    # ``default=str`` so Pydantic ``BaseModel`` instances (e.g. Responses-API
+    # output items echoed back into the conversation by reasoning-model
+    # agents) serialize as their ``repr`` rather than raising — they're
+    # informational here, not part of the consumed schema.
+    line = json.dumps(event, ensure_ascii=False, default=str)
     with _lock:
         with open(path, "a", encoding="utf-8") as fh:
             fh.write(line + "\n")

@@ -127,14 +127,22 @@ def _normalise_tool_schema(tool: dict[str, Any]) -> dict[str, Any]:
 
 
 def _split_system(
-    messages: list[dict[str, Any]]
-) -> tuple[Optional[str], list[dict[str, Any]]]:
+    messages: list[Any]
+) -> tuple[Optional[str], list[Any]]:
     """Pull system messages into a single ``instructions`` string and return
-    the remaining messages."""
+    the remaining messages.
+
+    Messages may be plain dicts (system/user/function_call_output) or
+    Pydantic ``ResponseItem`` objects echoed back from
+    ``response.output`` (reasoning items, function_call items). Only dicts
+    with ``role == "system"`` are consolidated; everything else passes
+    through untouched and the Responses API accepts both shapes in
+    ``input``.
+    """
     system_parts: list[str] = []
-    rest: list[dict[str, Any]] = []
+    rest: list[Any] = []
     for msg in messages:
-        if msg.get("role") == "system":
+        if isinstance(msg, dict) and msg.get("role") == "system":
             content = msg.get("content")
             if isinstance(content, str):
                 system_parts.append(content)
