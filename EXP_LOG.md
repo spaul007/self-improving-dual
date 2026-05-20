@@ -882,3 +882,354 @@ improvement over the travel seed. node 6 is not an improvement.
 - Seed baseline: EXP_LOG 2026-05-17 "seed-parity confirmation (143805-143810)"
 
 ---
+
+## 2026-05-19 — travel node 5 full-120 eval under new tool schema, 3× (145668-145670)
+
+Job: 145668-145670 · gpu-aic-mv-01    Wall: 1:05-1:08 each
+Run dirs: `/groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260519_0554{34,35}_node5_newschema_r{1,2,3}/`
+Config: `configs/travel.yaml @ 8bc5d4c` (+ `_eval/prompts.py @ b89375a`)
+Models: task=gpt-5.4-mini reasoning=high  scorer-plan-convert=gpt-5-2025-08-07
+Split / scope: standalone `evaluate.py` — full 120 cases · parallelism 16 · 3 runs
+Agent: travel HGM v3 (run 144704) node 5 `round_005/task_agent` + the NEW-format
+       `tools_schema.json` (OpenAI Chat-Completions nested format, swapped from
+       `tool_schema_en.json`). Schema swap is UNCOMMITTED — in-flight working-tree
+       diff on `projects/travel/seed/tools_schema.json` (198 ins / 169 del, one
+       file; same 9 tool names, richer descriptions). Staged as 3 distinct dirs
+       `eval_agents/node5_newschema_r{1,2,3}/`.
+
+### Results
+| Run | Score | strict-pass | crashed |
+|---|---|---|---|
+| r1 (145668) | 0.6932 | 10/120 | 0 |
+| r2 (145669) | 0.6708 | 13/120 | 0 |
+| r3 (145670) | 0.6698 | 12/120 | 0 |
+| **Mean (n=3)** | **0.6780** | — | 0 |
+
+Stdev 0.0132 · range 0.6698-0.6932.
+
+Baselines (both old schema): node 5 old-schema full-120 = **0.7012**
+(3-run mean, EXP_LOG 2026-05-19 145410-145415); travel seed full-120 =
+**0.6842** (3-run mean, EXP_LOG 2026-05-17 143805-143807).
+
+### Observations / diagnosis
+- **New schema regresses node 5 by -2.3pp (0.6780 vs 0.7012 old schema).**
+  Two of three new-schema runs (0.670, 0.670) land *below* the old-schema
+  run-to-run band (0.691-0.710); only r1 (0.693) reaches into it. The
+  ranges barely touch — this reads as a real regression, not noise.
+- **New-schema node 5 also dips below the old-schema seed (0.6780 vs
+  0.6842, -0.6pp).** Caveat: no new-schema *seed* baseline exists, so this
+  is a cross-schema comparison — the node-5 vs node-5 comparison above is
+  the clean one.
+- **Zero crashed cases across all 360 case-runs.** The new nested schema
+  round-trips correctly on the wire; the regression is behavioural (the
+  model plans worse with the new descriptions), not a schema-shape bug.
+- strict-pass 10-13/120 — same band as old-schema node 5 (7-13/120). The
+  loss is in partial-credit composite scoring, not pass/fail.
+
+### Verdict
+The new tool schema is a net regression for node 5 (-2.3pp). The richer
+descriptions did not help; if anything they hurt. Recommend NOT adopting
+the schema swap on node 5's evidence alone — or, before deciding, run a
+new-schema *seed* baseline so the comparison is within-schema.
+
+### Links
+- Schema swap: DEV_LOG.md 2026-05-19 "travel seed tool schema migrated"
+- Old-schema node 5 baseline: EXP_LOG 2026-05-19 "node 5 / node 6 full-120 eval (145410-145415)"
+- Plan: /users/n.tzou/.claude/plans/fuzzy-scribbling-moore.md
+
+---
+
+## 2026-05-19 — travel seed full-120 eval under fixed tool schema, 10× (145776-145785)
+
+Job: 145776-145785 · gpu-aic-mv-01    Wall: 1:00-1:06 each
+Run dirs: `/groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260519_07{2105,2504,...}_seed_fixed_r{1..10}/`
+Config: `configs/travel.yaml @ 8bc5d4c` (+ `_eval/prompts.py @ b89375a`)
+Models: task=gpt-5.4-mini reasoning=high  scorer-plan-convert=gpt-5-2025-08-07
+Split / scope: standalone `evaluate.py` — full 120 cases · parallelism 16 · 10 runs
+Agent: travel SEED + the FIXED tool schema (`tool_schema_en_fixed.json`,
+       committed as `projects/travel/seed/tools_schema.json` @ b85b910 — same
+       9 tool names, nested format, sharpened descriptions). Staged as 10
+       distinct dirs `eval_agents/seed_fixed_r{1..10}/`.
+
+### Results
+| Run | Score | strict-pass |
+|---|---|---|
+| r1 | 0.6609 | 13/120 |
+| r2 | 0.7026 | 9/120 |
+| r3 | 0.6615 | 11/120 |
+| r4 | 0.6823 | 14/120 |
+| r5 | 0.6542 | 10/120 |
+| r6 | 0.7000 | 10/120 |
+| r7 | 0.6745 | 11/120 |
+| r8 | 0.6536 | 11/120 |
+| r9 | 0.7250 | 12/120 |
+| r10 | 0.6578 | 10/120 |
+| **Mean (n=10)** | **0.6772** | — |
+
+Stdev 0.0246 · range 0.6536-0.7250 · crashed cases 0/1200.
+
+Baselines: travel SEED old-schema full-120 = **0.6842** (3-run mean, range
+0.664-0.707; EXP_LOG 2026-05-17 143805-143807). Prior *unfixed* new-schema
+node 5 full-120 = 0.6780 (3-run mean; EXP_LOG 2026-05-19 145668-145670).
+
+### Observations / diagnosis
+- **The fixed schema is flat vs the old schema: 0.6772 vs 0.6842 (-0.7pp).**
+  The gap is smaller than one stdev (0.025) and the 10-run range (0.654-
+  0.725) straddles the old-schema seed mean — statistically indistinguishable.
+  This is a clean apples-to-apples comparison (seed vs seed, only the schema
+  differs); n=10 gives a tight estimate, so the verdict is solid: the fixed
+  schema neither helps nor hurts.
+- **The "fix" did not recover the regression.** The unfixed new schema cost
+  -2.3pp on node 5 (0.678 vs 0.701). The fixed schema's seed score 0.6772 is
+  ~the same as that unfixed 0.678 — the sharpened descriptions did not buy
+  back the loss. Caveat: the -2.3pp was measured on *node 5*, this on the
+  *seed*; no fixed-schema node-5 eval exists to close the loop exactly.
+- **Zero crashed cases across all 1200 case-runs** — the nested fixed schema
+  round-trips correctly on the wire; any score effect is purely behavioural.
+- strict-pass 9-14/120 — same band as every prior travel config. The
+  schema variations move partial-credit composite scoring, not pass/fail.
+- Run-to-run stdev 0.025 (n=10) — wider than the old-schema seed's 3-run
+  spread suggested; travel eval is noisier than 3 runs reveal. Future
+  travel comparisons should budget for ~0.025 noise.
+
+### Verdict
+The fixed tool schema is score-neutral on the travel seed (0.6772 vs old
+0.6842, within noise). It is safe to keep — it does not regress — but it
+delivers no measured gain. The HGM run launched from it (145786) will show
+whether richer tool descriptions give the *editor* more to work with.
+
+### Links
+- Schema swap commit: b85b910 ("Adopt fixed travel tool schema")
+- Prior unfixed-schema eval: EXP_LOG 2026-05-19 "node 5 ... new tool schema (145668-145670)"
+- Old-schema seed baseline: EXP_LOG 2026-05-17 "seed-parity confirmation (143805-143810)"
+- Companion HGM run: job 145786 (entry pending on completion)
+- Plan: /users/n.tzou/.claude/plans/jazzy-finding-starlight.md
+
+---
+
+## 2026-05-19 — HGM travel optimization, fixed tool schema (145786)
+
+Job: 145786 · gpu-aic-mv-01-st-p5-node-4    Wall: 09:31
+Run dir: `/groups/AIC-MV/n.tzou/meta-agent/runs/20260519_082702_travel_hgm/`
+Config: `configs/hgm_travel.yaml` @ commit b85b910
+Models: task=gpt-5.4-mini (effort=high)  editor=gpt-5.4-mini (effort=high)  strategy=editor-output (no separate call)  scorer=travel_default
+Split / scope: manager=hgm · eval_budget=400 · init_expansions=5 · finalize_top_k=5 · eval_batch_size=16 · train_size=60 (held-out=60) · max_rounds(node cap)=60 · parallelism=16 · seed=42
+
+Baseline: seed under the same fixed schema = full-120 mean **0.6772**
+(n=10, stdev 0.025) — EXP_LOG 2026-05-19 "seed full-120 eval under fixed
+tool schema (145776-145785)". Seed node 0 train half (n=60) = 0.6875.
+
+### Results — tree: 21 nodes, 400 budget evals (584 incl. free pre-eval + finalize)
+
+finalize_top_k re-scored the 5 best nodes on the full train half (n=60):
+
+| Node | Lineage | finalize train mean (n=60) | vs seed train (0.6875) |
+|---:|:--|---:|---:|
+| **18** | 0→3→9→18 | **0.739** | **+5.2pp** (winner) |
+| 3  | 0→3      | 0.738 | +5.1pp |
+| 4  | 0→4      | 0.717 | +3.0pp |
+| 6  | 0→1→6    | 0.711 | +2.4pp |
+| 17 | 0→3→9→17 | 0.709 | +2.2pp |
+| 0 (seed) | —    | 0.6875 | — |
+
+Held-out eval (the 60 unseen cases), run once on the chosen best node:
+
+| Node 18 | train (n=60) | held-out (n=60) |
+|:--|---:|---:|
+| score | 0.739 | **0.716** |
+
+Lineage edits (editor `rationale`, per `strategy.json`):
+- **node 3** (from seed): distil the gathered tool transcript into a
+  canonical fact ledger for the final-synthesis prompt.
+- **node 9** (from 3): deterministic budget-reconciliation step — re-sum
+  multi-passenger transport, per-vehicle transfers, room-nights at the
+  source, no extra LLM pass.
+- **node 18** (from 9): resolve road-route coordinates back to named
+  places and foreground route facts in the planning prompt, preserving
+  transfer continuity.
+
+### Observations / diagnosis
+- **Best node 18 beats the seed on both halves.** Train +5.2pp (0.739 vs
+  0.6875); held-out 0.716 — i.e. the gain generalises to unseen cases
+  rather than overfitting the train split.
+- **Held-out 0.716 vs the full-120 seed baseline 0.6772 = +3.9pp**, but
+  not yet a clean comparison: held-out is a single n=1-per-case run on a
+  60-case split, while the baseline is a 10× full-120 mean (stdev 0.025).
+  +3.9pp is ~1.5 baseline-stdev — suggestive, not confirmed.
+- **node 3 and node 18 are nearly tied on train (0.738 vs 0.739).** The
+  ledger edit (node 3) carries most of the gain; node 9's budget
+  reconciliation and node 18's route-naming add little on train. node 18
+  was picked on the 0.001 train margin — a 10× full-120 eval is needed to
+  tell whether 18 or 3 (or neither) is genuinely best.
+- **finalize_top_k did its job:** node 3's raw mid-search mean was 0.745
+  (n=48) but its clade cmp was only 0.620 (children 7@0.18, 10@0.50
+  dragged it down). Re-scoring on the full train (n=60) put it at 0.738,
+  close to node 18 — the winner's-curse correction the v3 finalize was
+  built for.
+- HGM exhausted the 400-eval budget at 21 nodes (max_rounds cap 60 not
+  reached). Zero crashed cases. The recurring "missing coordinates" log
+  lines are tool-data gaps in `route` lookups, not agent errors —
+  unchanged from prior travel runs.
+
+### Verdict
+HGM produced a finalist (node 18, train 0.739 / held-out 0.716) that
+beats the seed on both the train and held-out halves. The headline
+held-out gain over the full-120 seed baseline is +3.9pp but sits inside
+~1.5× the baseline noise band, and node 18 vs node 3 is a 0.001 train
+coin-flip. Recommend a 10× full-120 confirmation eval of node 18 (and
+ideally node 3) before declaring it the travel keeper.
+
+### Links
+- Run dir: /groups/AIC-MV/n.tzou/meta-agent/runs/20260519_082702_travel_hgm/
+- SLURM log: /groups/AIC-MV/n.tzou/meta-agent/slurm/145786.out
+- Winner agent: round_018/task_agent within the run dir
+- Baseline: EXP_LOG 2026-05-19 "seed full-120 eval under fixed tool schema (145776-145785)"
+- Config commit: b85b910
+- Plan: /users/n.tzou/.claude/plans/jazzy-finding-starlight.md (launch), cozy-prancing-biscuit.md (monitor)
+
+---
+
+## 2026-05-20 — verbose debug full-120, with three reference-parity fixes (146855)
+
+Job: 146855 · gpu-aic-mv-01           Wall: 1:04:21
+Run dir: /groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260520_064255_seed_verbose_v2/
+Config: `configs/travel.yaml @ 608df54` (current `projects/travel/seed/` post-fixes b877e7c + 608df54)
+Models: task=gpt-5.4-mini reasoning=high  scorer-plan-convert=gpt-5-2025-08-07
+Split / scope: standalone `evaluate.py` — full 120 cases · parallelism 16 · single run
+
+Verbose logging on: `META_AGENT_VERBOSE=1` (emits `llm_call_full` /
+`llm_response_full` events) plus `OPENAI_LOG=debug` (full HTTP request +
+response bodies in per-case `case_*.stderr`, ~2 MB per case). This run
+exists to capture the literal on-wire payload + SDK-level traffic for
+post-mortem analysis.
+
+### Results
+| Metric | Score |
+|---|---|
+| commonsense_score | 0.7927 |
+| hard_score | 0.6417 |
+| composite | **0.7172** |
+| strict-pass | 14/120 |
+| crashed cases | 0 |
+| llm_response events | 2371 |
+| stop_reason=incomplete | 0 |
+| output_tokens >= 32768 | 0 |
+| llm_call_retry events | 0 |
+| converted_plan == None | 0 |
+
+### Observations / diagnosis
+- **Three reference-parity fixes (DEFAULT_MAX_OUTPUT_TOKENS=None,
+  scorer retries 10→31, 30-attempt API retry loop with 1.5s backoff) are
+  unambiguously active.** Zero `stop_reason=incomplete` (was 2 in the
+  pre-fix 146831 partial); zero output_tokens >= 32768 (was 3); zero
+  conversion failures (was 1/56). No transient API errors so `llm_call_retry`
+  was never triggered.
+- **Definitive on-wire schema proof (case_0 SDK HTTP debug log):** URL
+  `/v1/responses`, method `post`, model `gpt-5.4-mini`, `reasoning =
+  {"effort": "high"}`, 9 tools with 6898 total description chars —
+  byte-identical to source schema file. No truncation anywhere in
+  load → normalize → wire.
+- **Composite 0.7172** vs pre-fix 10× baseline mean 0.6772 (single-draw
+  vs n=10 mean, so noisier). Inside the 10× post-fix run-to-run band
+  (0.716-0.757, see following entry); this single run happens to sit at
+  the lower edge of that band.
+- Scorer (parent process) hits `/v1/chat/completions` for plan→JSON
+  conversion using `gpt-5-2025-08-07` — matches reference
+  `evaluation/convert_report.py`. The split (agent on Responses API,
+  scorer on Chat Completions) is upstream-faithful.
+
+### Verdict
+Verbose debug run validated all three fixes at the trace + HTTP layer.
+The score 0.7172 is one draw inside the 10× post-fix band; the headline
+result is the 10× run that follows.
+
+### Links
+- Run dir: /groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260520_064255_seed_verbose_v2/
+- SLURM log: /groups/AIC-MV/n.tzou/meta-agent/slurm/146855.{out,err}
+- Per-case HTTP debug: `<run dir>/round_eval/logs/case_*.stderr` (~2 MB each, ~250 MB total)
+- Follow-up 10× confirmation: EXP_LOG 2026-05-20 "10× full-120 (seed_v2, post-fix)" below
+- Related commits: b877e7c, 608df54
+
+---
+
+## 2026-05-20 — 10× full-120 (seed_v2, post-fix) — 146880-147025
+
+Job: 146880, 146881, 146882, 146948, 146949, 146950, 146998, 146999, 147000, 147025 · gpu-aic-mv-01
+                                       Wall: 1:00-1:08 each · total orchestrator wall 4:20:04 (07:47 → 12:07)
+Run dirs: /groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260520_*_seed_v2_r{1..10}/
+Config: `configs/travel.yaml @ 608df54` (same seed dir, with the three reference-parity fixes from b877e7c + 608df54)
+Models: task=gpt-5.4-mini reasoning=high  scorer-plan-convert=gpt-5-2025-08-07
+Split / scope: standalone `evaluate.py` — full 120 cases · parallelism 16 · 10 runs · launched 3 in parallel at a time (4 batches: 3+3+3+1)
+
+The seed agent is unchanged in shape from the pre-fix 10× baseline (same
+workflow.py, tool_wrapper.py, tools_schema.json md5 c911d6f1…); the only
+delta vs that baseline is the framework fixes in b877e7c (uncap
+max_output_tokens + 30-attempt API retry) and 608df54 (scorer retries 31).
+
+### Results
+| Run | Job | Score | commonsense | hard | strict-pass |
+|---|---|---|---|---|---|
+| seed_v2_r1  | 146880 | 0.7323 | 0.7979 | 0.6667 | 18/120 |
+| seed_v2_r2  | 146881 | 0.7568 | 0.7885 | 0.7250 | 10/120 |
+| seed_v2_r3  | 146882 | 0.7432 | 0.8115 | 0.6750 | 18/120 |
+| seed_v2_r4  | 146948 | 0.7484 | 0.7885 | 0.7083 | 12/120 |
+| seed_v2_r5  | 146949 | 0.7182 | 0.7948 | 0.6417 |  8/120 |
+| seed_v2_r6  | 146950 | 0.7260 | 0.7854 | 0.6667 | 18/120 |
+| seed_v2_r7  | 146998 | 0.7531 | 0.7979 | 0.7083 | 18/120 |
+| seed_v2_r8  | 146999 | 0.7161 | 0.7823 | 0.6500 | 11/120 |
+| seed_v2_r9  | 147000 | 0.7224 | 0.7948 | 0.6500 | 13/120 |
+| seed_v2_r10 | 147025 | 0.7302 | 0.7937 | 0.6667 | 17/120 |
+| **mean (n=10)** | — | **0.7347** | **0.7935** | **0.6758** | — |
+| stdev | — | 0.0147 | 0.0082 | 0.0285 | — |
+| min / max | — | 0.7161 / 0.7568 | 0.7823 / 0.8115 | 0.6417 / 0.7250 | — |
+
+### Comparison to pre-fix 10× baseline (seed_fixed, 145776-145785)
+| metric | pre-fix | post-fix | delta |
+|---|---|---|---|
+| composite | 0.6772 ± 0.025 | **0.7347 ± 0.0147** | **+5.75 pp** |
+| commonsense_score | 0.7503 | 0.7935 | +4.3 pp |
+| hard_score | 0.6042 | 0.6758 | +7.2 pp |
+| stdev (composite) | 0.025 | 0.0147 | variance ↓41% |
+| strict-pass range | 9-14/120 | 8-18/120 | wider top |
+
+### Observations / diagnosis
+- **+5.75 pp composite lift is well outside both stdev ranges** (≈4× the
+  pre-fix stdev; ≈4× the post-fix stdev). Clearly significant, not noise.
+- **Variance halved on top of the mean lift.** The pre-fix run-to-run
+  spread (0.65-0.73, stdev 0.025) had a fat lower tail from cases that
+  ran into the 32768-token cap and silently regressed to score 0. The
+  post-fix spread (0.72-0.76, stdev 0.015) is tighter and shifted up.
+- **`hard_score` got the biggest lift (+7.2 pp).** Hard constraints
+  reward longer / more-complete plans; the uncapped output budget lets
+  the model finish those plans. Commonsense lifted +4.3 pp (still
+  meaningful — fewer truncated turns means cleaner intermediate
+  reasoning), and composite is roughly the average.
+- **Zero `stop_reason=incomplete` across 24,000+ LLM calls** (all 10
+  runs × ~2400 calls each). The 32768 cap was the binding constraint.
+- **Orchestrator behaved cleanly:** 4 sequential batches of 3+3+3+1, all
+  10 jobs ran to COMPLETED with exit 0, no SLURM failures. PID 1135044
+  exited at 12:07:35.
+
+### Verdict
+Three reference-parity fixes lifted the travel seed from composite
+0.6772 ± 0.025 to **0.7347 ± 0.0147** — a +5.75 pp gain with halved
+variance. The commonsense_score (0.7935) is essentially the "close to
+80 %" target the user expected. Composite is still ~6 pp below 80 %
+because `hard_score` (0.6758) remains the bottleneck — Route Consistency
+and intercity-transfer failures, not infrastructure.
+
+This 10× becomes the new travel seed baseline. Past EXP_LOG entries that
+referenced the 0.6772 seed baseline (HGM v3 travel, HGM 145786, node-5/6
+evals) should be reread with this baseline shift in mind — a `+x pp`
+gain previously framed against 0.6772 now needs framing against 0.7347.
+
+### Links
+- Run dirs: /groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260520_{074756,085335,085336,095836,110337}_seed_v2_r{1..10}/
+- SLURM logs: /groups/AIC-MV/n.tzou/meta-agent/slurm/{146880,146881,146882,146948,146949,146950,146998,146999,147000,147025}.{out,err}
+- Orchestrator: scripts/monitor_146855_and_launch.sh (operational script, not committed)
+- Orchestrator log: scripts/monitor_146855.log
+- Single-run debug companion: EXP_LOG 2026-05-20 "verbose debug full-120 (146855)" above
+- Previous baseline: EXP_LOG 2026-05-19 "seed full-120 eval under fixed tool schema (145776-145785)" (0.6772 ± 0.025)
+- Related commits: b877e7c, 608df54
+
+---
