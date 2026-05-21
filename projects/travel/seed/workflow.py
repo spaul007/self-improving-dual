@@ -54,7 +54,7 @@ Once you have collected enough information, generate your final and complete iti
 --------------------------------------------------
 I. OUTPUT FORMAT REQUIREMENTS
 --------------------------------------------------
-The final plan must be organized as a daily itinerary. Each day begins with that day's general information, followed by a chronological list of activities.
+The final plan must be organized as a daily itinerary. Each day begins with that day’s general information, followed by a chronological list of activities.
 Each line in the timeline must strictly follow the format defined for its activity type.
 Daily activity times must be continuous—the end time of one activity must equal the start time of the next. Time gaps and overlaps are not allowed. Any necessary waiting or preparation before/after intercity transportation must be represented by buffer activities.
 
@@ -107,13 +107,13 @@ Your plan will be evaluated on the following rules.
    2. Temporal Logic:
       All activities must occur sequentially and must not overlap or have gaps.
       Meal Duration: Meal activities must occur within the restaurant's open hours (opening_time-closing_time). Meal duration must be between 1 and 2 hours.
-      Attraction Duration: Attraction visits must be scheduled within the attraction's open hours, and the activity duration must comply with the min_visit_hours and max_visit_hours in the tool results. The scheduled visit duration must fall within the suggested range.
+      Attraction Duration: Attraction visits must be scheduled within the attraction’s open hours, and the activity duration must comply with the min_visit_hours and max_visit_hours in the tool results. The scheduled visit duration must fall within the suggested range.
       Buffer Time: Allocate a reasonable buffer. For example, after a flight arrives, schedule at least 30–45 minutes of buffer for deplaning and baggage claim before starting the next transportation activity. Ensure enough buffer for boarding procedures as well.
       City Transportation Duration (travel_city): The transportation duration must match the queried value as closely as possible, with a deviation no greater than 5 minutes.
       Intercity Public Transportation Duration (travel_intercity_public): Schedule duration for train or flight segments must match the tool results exactly, without adjustments.
    3. Meal Time Slots & Requirements:
       - No need to schedule breakfast; it is assumed to be eaten at the hotel.
-      - Meal Interval: Ensure at least 2 hours of rest or activities between lunch and dinner. There is flexibility for the interval, but meals must fit within the restaurant's open hours.
+      - Meal Interval: Ensure at least 2 hours of rest or activities between lunch and dinner. There is flexibility for the interval, but meals must fit within the restaurant’s open hours.
       On a full sightseeing day (not a city transfer day): lunch and dinner must both be scheduled.
       On transfer days: the number of meals depends on the actual effective stay in the destination city.
         Arrival:
@@ -124,12 +124,12 @@ Your plan will be evaluated on the following rules.
           Leave early morning (before 9:00): do not arrange meals in this city.
           Leave late morning to afternoon (9:00–15:00): lunch is optional, dinner is not scheduled.
           Leave afternoon/evening (after 15:00): at least one lunch, dinner is optional.
-
+   
    4. Daily Structure & Closure:
       Each day's itinerary must be a logically complete unit.
       Except for the final day, every day's last activity must be returning to the hotel to rest.
-      On the final day, the last activity must be arriving at the final destination's airport/railway station, marking the end of the trip.
-
+      On the final day, the last activity must be arriving at the final destination’s airport/railway station, marking the end of the trip.
+  
    5. Daily Activity Density:
       The itinerary must be reasonably tight to avoid long periods of idle time. The schedule should provide a fulfilling experience.
         - Full sightseeing day: There should be enough sightseeing content—typically at least 2 attractions, or at least 4 hours at a major attraction (including transportation).
@@ -148,7 +148,7 @@ Your plan will be evaluated on the following rules.
    2. Budget Accuracy:
       All cost-incurring activity lines (transportation, attractions, meals) must include price information.
       A complete, itemized budget summary must be provided at the end. Totals (transportation, accommodation, meals, etc.) must be the accurate sum of all plan costs. The total estimated budget must be the sum of all outlays.
-      The total cost of the plan (transportation, accommodation, meal, and ticket fees) must not exceed the total budget set by the user's request.
+      The total cost of the plan (transportation, accommodation, meal, and ticket fees) must not exceed the total budget set by the user’s request.
       Pricing units & calculation logic (CRITICAL):
         travel_city (city transportation):
           The price shown (e.g., ¥100) represents the total cost per vehicle per trip.
