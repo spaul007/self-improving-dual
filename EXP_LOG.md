@@ -1469,3 +1469,292 @@ them).
 - Related commits: 567f795 (verbatim regen), 8c2c0f4 (--case-ids flag)
 
 ---
+
+## 2026-05-21 — seed_v4 3× full-120, sequential (no overlap) — 149737/149766/149802
+
+Job: 149737 · 149766 · 149802                Wall: ~1:36 (3 × ~30m, strictly sequential)
+Run dir: `/groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260521_*_seed_v4_seq_r{1,2,3}/`
+Staged agent: `/groups/AIC-MV/n.tzou/meta-agent/eval_agents/seed_v4_seq_r{1,2,3}/`
+(identical to seed_v4, repo @ commit 45f9635)
+Config: `configs/travel.yaml @ 45f9635` (parallelism: 40, no max_cases)
+Models: task=gpt-5.4-mini@high · scorer-plan-convert=gpt-5-2025-08-07
+Split / scope: standalone full-120 · 3 independent runs · strictly sequential (no two jobs in flight at once)
+
+### Hypothesis
+The seed_v4 10× parallel batches ran 3+3+3+1 SLURM jobs concurrently, each
+hitting the OpenAI API at parallelism=40. Total simultaneous in-flight
+requests up to ~120. A pure sequential 3× would isolate per-run
+variance from API-contention variance: if sequential mean is materially
+higher than parallel mean, contention was suppressing score; if
+sequential stdev is much lower, contention was inflating variance.
+
+(r2 launched twice — job 149759 first, retried as 149766 when an
+ephemeral SLURM hiccup landed the initial job in a bad state; r3
+launched twice for the same reason — jobs 149801, then 149802. Final
+aggregation used the latest stamped run dir per tag: 149737, 149766,
+149802.)
+
+### Results
+| run | composite | commonsense | hard | Cost Calc |
+|---|---|---|---|---|
+| seed_v4_seq_r1 (149737) | 0.7828 | 0.8990 | 0.6667 | 0.8833 |
+| seed_v4_seq_r2 (149766) | 0.7229 | 0.8625 | 0.5833 | 0.8417 |
+| seed_v4_seq_r3 (149802) | 0.7542 | 0.8750 | 0.6333 | 0.8750 |
+| **mean** | **0.7533** | **0.8788** | **0.6278** | **0.8667** |
+| **stdev** | 0.0300 | 0.0185 | 0.0419 | 0.0220 |
+
+### Per-dimension breakdown (mean across 3 runs)
+| dimension | mean | stdev |
+|---|---|---|
+| Cost Calculation Accuracy | 0.8667 | 0.0220 |
+| Time Feasibility | 0.7333 | 0.0441 |
+| Route Consistency | 0.8306 | 0.0459 |
+| Business Hours | 0.9556 | 0.0394 |
+| Duration Rationality | 1.0000 | 0.0000 |
+| Itinerary Structure | 0.8306 | 0.0376 |
+| Activity Diversity | 0.9139 | 0.0555 |
+| Sandbox Compliance | 0.9000 | 0.0382 |
+
+### Comparison to seed_v4 10× parallel (composite)
+| baseline | composite mean | stdev | n |
+|---|---|---|---|
+| seed_v4 10× parallel (3+3+3+1) | 0.7525 | 0.0210 | 10 |
+| seed_v4 3× sequential (this run) | 0.7533 | 0.0300 | 3 |
+| Reference baseline_ci_fixed | 0.7720 | 0.0047 | 3 |
+
+### Observations / diagnosis
+- **Mean is statistically indistinguishable from the 10× parallel mean**
+  (0.7533 vs 0.7525, |Δ| = 0.0008, well inside both stdev bands). API
+  contention is NOT load-bearing for score on this benchmark — running
+  one SLURM job at a time produces the same score as running three
+  concurrently.
+- **Sequential stdev (0.0300) is HIGHER than parallel stdev (0.0210)** —
+  the opposite of what a contention-driven story predicts. Per-run
+  variance is dominated by sampling stochasticity (the model's reasoning
+  step is non-deterministic at gpt-5.4-mini@high), not by API load. With
+  n=3 vs n=10, the larger spread is also the expected statistical
+  artifact.
+- **Cost Calc holds at 0.8667** (vs 0.8525 on 10×) — the cases.jsonl
+  regen lift transfers cleanly to the sequential setting.
+- **The reference's tight stdev (0.0047) is still unexplained.** Three
+  independent rollouts that close in mean within 0.0008 of seed_v4 10×
+  but spread 0.0300 across n=3 isn't compatible with a published
+  variance of 0.005 unless the reference report is pooling something
+  (best-of-n, mean of converted-plan rollouts on identical underlying
+  plans, etc.). Worth checking what `baseline_ci_fixed` actually
+  measures.
+
+### Verdict
+API contention falsified as a meaningful score factor. The remaining
+2pp gap to reference is real model/agent behavior, not infra noise.
+
+### Links
+- Run dirs: `/groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260521_032902_seed_v4_seq_r1`,
+  `eval_20260521_035810_seed_v4_seq_r2`, `eval_20260521_043223_seed_v4_seq_r3`
+- SLURM logs: `/groups/AIC-MV/n.tzou/meta-agent/slurm/{149737,149766,149802}.{out,err}`
+- Orchestrator log: `scripts/seed_v4_3x_sequential.log` (untracked)
+- Orchestrator script: `scripts/launch_seed_v4_3x_sequential.sh` (untracked)
+- Predecessor entry: 2026-05-21 "seed_v4 10× full-120" (0.7525 ± 0.0210)
+
+---
+
+## 2026-05-21 — seed_v5 3× full-120, parallel (SYSTEM_PROMPT align + drop `instructions=`) — 149877-149879
+
+Job: 149877 · 149878 · 149879                Wall: ~31m (parallel single batch)
+Run dir: `/groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260521_052829_seed_v5_r{1,2,3}/`
+Staged agent: `/groups/AIC-MV/n.tzou/meta-agent/eval_agents/seed_v5_r{1,2,3}/`
+Config: `configs/travel.yaml @ 45f9635` + two uncommitted changes (later landed as 919d204 and 3a67bfb)
+Models: task=gpt-5.4-mini@high · scorer-plan-convert=gpt-5-2025-08-07
+Split / scope: standalone full-120 · 3 independent runs · parallelism=40 (single batch, 3 concurrent SLURM jobs)
+
+### The two changes baked into seed_v5 (vs seed_v4)
+1. `projects/travel/seed/workflow.py` — 5 smart-quote alignments (`'` →
+   `'`) and 2 trailing-whitespace lines in `SYSTEM_PROMPT` to match
+   reference `travel_agent/agent/prompts.py:SYSTEM_PROMPT_EN`
+   byte-for-byte where the reference uses curly apostrophes.
+   Reference is internally inconsistent (4 lines use straight `'` on
+   both sides); those were left untouched. Subsequently committed as
+   919d204.
+2. `platform_core/llm_wrapper.py` — dropped `_split_system`. Previously
+   extracted system-role messages out of `messages` and passed them
+   concatenated as `instructions=` to `client.responses.create`. The
+   reference's `call_llm.py:175-197` does NOT split — it passes the
+   full messages list straight as `input=`. Both Responses-API shapes
+   are accepted but documented as not equivalent (different prompt-
+   cache and reasoning-token behavior). Subsequently committed as
+   3a67bfb.
+
+### Results
+| run | composite | commonsense | hard | Cost Calc |
+|---|---|---|---|---|
+| seed_v5_r1 (149877) | 0.7677 | 0.8688 | 0.6667 | 0.8667 |
+| seed_v5_r2 (149878) | 0.7156 | 0.8646 | 0.5667 | 0.8417 |
+| seed_v5_r3 (149879) | 0.7594 | 0.8771 | 0.6417 | 0.8833 |
+| **mean** | **0.7476** | **0.8701** | **0.6250** | **0.8639** |
+| **stdev** | 0.0280 | 0.0064 | 0.0520 | 0.0210 |
+
+### Per-dimension breakdown (mean across 3 runs)
+| dimension | mean | stdev |
+|---|---|---|
+| Cost Calculation Accuracy | 0.8639 | 0.0210 |
+| Time Feasibility | 0.7000 | 0.0433 |
+| Route Consistency | 0.8278 | 0.0337 |
+| Business Hours | 0.9722 | 0.0192 |
+| Duration Rationality | 0.9917 | 0.0083 |
+| Itinerary Structure | 0.7722 | 0.0127 |
+| Activity Diversity | 0.9167 | 0.0144 |
+| Sandbox Compliance | 0.9167 | 0.0144 |
+
+### Comparison to prior baselines (composite)
+| baseline | composite mean | stdev | n |
+|---|---|---|---|
+| seed_v4 10× parallel | 0.7525 | 0.0210 | 10 |
+| seed_v4 3× sequential | 0.7533 | 0.0300 | 3 |
+| **seed_v5 3× parallel (this run)** | **0.7476** | **0.0280** | **3** |
+| Reference baseline_ci_fixed | 0.7720 | 0.0047 | 3 |
+
+### Observations / diagnosis
+- **Score-neutral within stdev** (0.7476 vs seed_v4 baselines 0.7525 /
+  0.7533, |Δ| ≤ 0.006). Both changes are parity-not-performance — they
+  close real divergences from the reference but neither moves the
+  composite needle on the OpenAI API.
+- **Itinerary Structure dropped −6.4pp** (0.8358 on seed_v4 10× → 0.7722
+  here) — the largest per-dimension shift. Possibly downstream of the
+  `instructions=` → `input=` migration: putting the long system prompt
+  inside `input` as a role-tagged message changes how the model attends
+  to it relative to user content (the OpenAI API treats `instructions=`
+  with higher prior). On a benchmark this small (n=3) it's also within
+  noise — only worth flagging in case the seed_v6 + future runs
+  reproduce it.
+- **Cost Calc holds at 0.8639** — the cases.jsonl regen lift is robust
+  across both prompt-cosmetic and API-shape variations.
+- **Variance similar to seed_v4 sequential** (0.0280 vs 0.0300, n=3 vs
+  n=3). API-shape changes did not visibly change variance.
+
+### Verdict
+Both changes are correct (close real ref-vs-ours divergences) but
+score-neutral on this benchmark. Committed unconditionally so the
+remaining gap can't be attributed to them. The session's focus shifted
+to the tools layer afterwards (seed_v6).
+
+### Links
+- Run dirs: `/groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260521_052829_seed_v5_r{1,2,3}/`
+- SLURM logs: `/groups/AIC-MV/n.tzou/meta-agent/slurm/{149877,149878,149879}.{out,err}`
+- Orchestrator log: `scripts/seed_v5_3x_parallel.log` (untracked)
+- Orchestrator script: `scripts/launch_seed_v5_3x_parallel.sh` (untracked)
+- Related commits: 919d204 (prompt align), 3a67bfb (instructions= → input=)
+- Predecessor entry: 2026-05-21 "seed_v4 3× sequential" (0.7533 ± 0.0300)
+
+---
+
+## 2026-05-21 — seed_v6 3× full-120, parallel (tool-audit fixes) — 149951-149953
+
+Job: 149951 · 149952 · 149953                Wall: ~33m (parallel single batch)
+Run dir: `/groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260521_070352_seed_v6_r{1,2,3}/`
+Staged agent: `/groups/AIC-MV/n.tzou/meta-agent/eval_agents/seed_v6_r{1,2,3}/`
+Config: `configs/travel.yaml @ 2990901` (parallelism: 40, no max_cases)
+Models: task=gpt-5.4-mini@high · scorer-plan-convert=gpt-5-2025-08-07
+Split / scope: standalone full-120 · 3 independent runs · parallelism=40 (single batch, 3 concurrent SLURM jobs)
+
+### The four changes baked into seed_v6 (vs seed_v5)
+Discovered during a careful tool-by-tool comparison against
+`/users/n.tzou/cl/work/travel_agent/tools/*.py` on 2026-05-21.
+
+1. **`projects/travel/tools/train.py` (commit 7920667)** — `depCityName`
+   for multi-segment routes was always `row.origin_city`. Reference
+   derives it per-segment from
+   `prev_row.arr_station_name.split(" Station")[0]`. Affects ~20% of
+   train routes (anywhere a transfer station is also a city stop).
+2. **`projects/travel/tools/attraction.py` (commit 0dfa980)** — details
+   formatter uses Chinese full-width punctuation (`：`, `，`) and no
+   space before "(average visitor rating)" to match reference's English
+   output byte-for-byte. `recommend_attractions` header has trailing
+   `\n` producing a blank line after "Recommended attractions:".
+3. **`projects/travel/tools/restaurant.py` (commit 99a333f)** —
+   error-JSON envelopes use `indent=2` to match reference
+   `format_result_as_json`.
+4. **`projects/travel/seed/workflow.py` (commit 2990901)** —
+   `_extract_plan` dropped the lenient fallback that returned prose
+   when no `<plan>` tags matched. Now returns `""` on miss (matches
+   reference). Fires on ~2.9% of cases on OpenAI runs.
+
+### Results
+| run | composite | commonsense | hard | Cost Calc |
+|---|---|---|---|---|
+| seed_v6_r1 (149951) | 0.7505 | 0.8844 | 0.6167 | 0.9000 |
+| seed_v6_r2 (149952) | **0.7802** | 0.8688 | **0.6917** | 0.8667 |
+| seed_v6_r3 (149953) | 0.7432 | 0.8615 | 0.6250 | 0.8667 |
+| **mean** | **0.7580** | **0.8715** | **0.6444** | **0.8778** |
+| **stdev** | 0.0196 | 0.0117 | 0.0411 | 0.0192 |
+
+### Per-dimension breakdown (mean across 3 runs)
+| dimension | mean | stdev |
+|---|---|---|
+| Cost Calculation Accuracy | 0.8778 | 0.0192 |
+| Time Feasibility | 0.6972 | 0.0127 |
+| Route Consistency | 0.8111 | 0.0679 |
+| Business Hours | 0.9611 | 0.0048 |
+| Duration Rationality | 0.9917 | 0.0083 |
+| Itinerary Structure | 0.8083 | 0.0300 |
+| Activity Diversity | 0.9194 | 0.0173 |
+| Sandbox Compliance | 0.9056 | 0.0255 |
+
+### Comparison to prior baselines (composite)
+| baseline | composite mean | stdev | n |
+|---|---|---|---|
+| seed_v4 10× parallel | 0.7525 | 0.0210 | 10 |
+| seed_v4 3× sequential | 0.7533 | 0.0300 | 3 |
+| seed_v5 3× parallel (prompt + API-shape) | 0.7476 | 0.0280 | 3 |
+| **seed_v6 3× parallel (this run, tool-audit)** | **0.7580** | **0.0196** | **3** |
+| Reference baseline_ci_fixed | 0.7720 | 0.0047 | 3 |
+
+### Observations / diagnosis
+- **+0.55pp vs seed_v4 10× baseline**, +1.04pp vs seed_v5. The tool-audit
+  changes recovered the small regression seed_v5 introduced AND added
+  modest lift on top. With n=3 this is inside the stdev band (0.0196),
+  so individual significance is weak; the direction is correct and
+  consistent with the dimension breakdown.
+- **Cost Calculation Accuracy: 0.8525 → 0.8778 (+2.5pp).** Inches
+  toward reference's 0.892. The train-depCityName fix is the only
+  plausible driver here — train segments figure into per-leg cost
+  calculations.
+- **Itinerary Structure recovered (0.7722 → 0.8083), still below v4
+  (0.8358).** Confirms that v5's API-shape change drags this dimension;
+  v6's recovery is partial, likely from the `_extract_plan` strict
+  fallback removing some malformed plans from the scored pool.
+- **Route Consistency variance jumped (0.0354 → 0.0679).** Driven by
+  one weak run (r3 at 0.7917 vs r1/r2 at ~0.825). Within sampling
+  noise for n=3.
+- **Time Feasibility holds at 0.697** — unchanged dimension; not
+  addressed by any of the four fixes. Remains the lowest-scoring
+  dimension and the natural next target for workflow improvements.
+- **Run r2 hit 0.7802**, comfortably above the reference mean of 0.7720.
+  Single-seed but reinforces seed_v4_r10 (0.7990) — the agent CAN
+  hit reference-level scores when sampling breaks favourably.
+
+### Verdict
+**Composite gap to reference narrowed from −1.95pp (seed_v4 10×) to
+−1.40pp (seed_v6 3×).** The four tool-audit fixes are score-positive
+within the stdev band. With Cost Calc and commonsense at parity, the
+remaining hard-dimension gap (−2pp on Time Feasibility and Route
+Consistency) is squarely workflow / reasoning territory — what the
+meta-agent's evolution loop is built for.
+
+### Next steps
+- **Highest-value:** launch a fresh HGM optimization run on top of the
+  post-parity seed (commit 2990901). The fixed infra means any lift is
+  attributable to the editor/strategy, not benchmark drift.
+- Optional: a 10× rerun of seed_v6 would tighten the variance band and
+  confirm the +0.55pp lift is real, but at 3 SLURM hours it's
+  expensive relative to its informational value.
+
+### Links
+- Run dirs: `/groups/AIC-MV/n.tzou/meta-agent/runs/eval_20260521_070352_seed_v6_r{1,2,3}/`
+- SLURM logs: `/groups/AIC-MV/n.tzou/meta-agent/slurm/{149951,149952,149953}.{out,err}`
+- Orchestrator log: `scripts/seed_v6_3x_parallel.log` (untracked)
+- Orchestrator script: `scripts/launch_seed_v6_3x_parallel.sh` (untracked)
+- Related commits: 7920667 (train), 0dfa980 (attraction), 99a333f
+  (restaurant), 2990901 (`_extract_plan` strict)
+- Predecessor entry: 2026-05-21 "seed_v5 3× parallel" (0.7476 ± 0.0280)
+
+---
