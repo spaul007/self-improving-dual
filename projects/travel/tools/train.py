@@ -37,7 +37,11 @@ SCHEMA = {
 }
 
 
-def _segment(idx: int, row: dict[str, str]) -> dict[str, Any]:
+def _segment(
+    idx: int,
+    row: dict[str, str],
+    prev_row: dict[str, str] | None,
+) -> dict[str, Any]:
     seat_status = (row.get("seat_status") or "").strip()
     if not seat_status or seat_status.lower() == "nan":
         seat_status = "Available"
@@ -45,12 +49,22 @@ def _segment(idx: int, row: dict[str, str]) -> dict[str, Any]:
         duration = int(float(row.get("duration") or 0))
     except ValueError:
         duration = 0
+    # Match reference train_query_tool.py:108 — for segment 2+, derive
+    # depCityName from the previous segment's arr_station_name (with the
+    # " Station" suffix stripped). The CSV's origin_city always reports
+    # the route's starting city, so without this derivation segment 2+
+    # would falsely claim to depart from the original origin.
+    if idx == 1 or prev_row is None:
+        dep_city = row.get("origin_city", "")
+    else:
+        prev_arr = prev_row.get("arr_station_name", "")
+        dep_city = prev_arr.split(" Station")[0]
     return {
         f"Segment {idx}": {
             "arrCityName": row.get("destination_city", ""),
             "arrStationCode": row.get("arr_station_code", ""),
             "arrStationName": row.get("arr_station_name", ""),
-            "depCityName": row.get("origin_city", ""),
+            "depCityName": dep_city,
             "depStationCode": row.get("dep_station_code", ""),
             "depStationName": row.get("dep_station_name", ""),
             "duration": duration,
@@ -94,13 +108,15 @@ def run(origin: str, destination: str, depDate: str, seatClassName: str = "") ->
         )
         route: dict[str, Any] = {}
         price: float | None = None
+        prev_row: dict[str, str] | None = None
         for i, row in enumerate(segments, start=1):
-            route.update(_segment(i, row))
+            route.update(_segment(i, row, prev_row))
             if i == 1:
                 try:
                     price = float(row.get("price") or 0)
                 except ValueError:
                     price = None
+            prev_row = row
         route["price"] = price if price is not None else 0
         # Reference returns `routes.append([route_data])` — wrap in a one-item list
         # to preserve the expected output shape.
