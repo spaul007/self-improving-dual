@@ -434,14 +434,16 @@ class SeedStripReasoningTests(unittest.TestCase):
         self.assertEqual(wf._item_type({}), "")
 
 
-class SeedExtractPlanLenientTests(unittest.TestCase):
-    """`_extract_plan` falls back to returning the full text when no
-    `<plan>...</plan>` block matches but the content is substantive.
-    Local vLLM-served models (Qwen3.5, gpt-oss) produce plan-shaped
-    prose without the tag wrapper; the scorer's LLM-based JSON
-    conversion step can extract the plan from prose, but only when
-    it receives prose — returning "" outright closes that door.
-    Caught live 2026-05-13."""
+class SeedExtractPlanStrictTests(unittest.TestCase):
+    """`_extract_plan` requires `<plan>...</plan>` tags — there is no
+    lenient fallback. Matches the reference's
+    travel_agent/agent/tools_fn_agent.py::_extract_plan_content exactly.
+
+    Previously we had a length-threshold fallback that returned the full
+    text when no <plan> tags were found and the body was ≥200 chars; that
+    branch fired on 2.9 % of seed_v4 / seed_v5 cases and was a real
+    divergence from the reference (which returns "" in that situation).
+    Dropped on 2026-05-21 for strict parity."""
 
     def _wf(self):
         import importlib.util
@@ -455,9 +457,7 @@ class SeedExtractPlanLenientTests(unittest.TestCase):
         spec.loader.exec_module(mod)
         return mod
 
-    def test_plan_tags_take_priority(self) -> None:
-        # When <plan> tags are present, lenient mode does NOT kick in
-        # — only the tag contents are returned.
+    def test_plan_tags_extracted(self) -> None:
         wf = self._wf()
         plan = "<plan>\nDay 1: Tokyo\nDay 2: Kyoto\n</plan>\nextra text after"
         self.assertEqual(
@@ -465,36 +465,33 @@ class SeedExtractPlanLenientTests(unittest.TestCase):
             "Day 1: Tokyo\nDay 2: Kyoto",
         )
 
-    def test_substantive_text_returned_when_no_tags(self) -> None:
-        # No <plan> tags but the content is a plausible plan body.
+    def test_no_tags_returns_empty(self) -> None:
+        # No <plan> tags — the reference returns "" even when the body
+        # is long and plan-shaped. We now match that strict behaviour.
         wf = self._wf()
         body = (
             "**Day 1 (2025-11-12):**\n"
             "- Arrival via flight CA1234 (departs 08:00, arrives 10:30).\n"
             "- Check in to Lavande Hotel near city center.\n"
             "- Lunch at Tsukiji market; afternoon at Senso-ji.\n"
-            "- Dinner in Asakusa.\n"
-            "**Day 2 (2025-11-13):**\n"
-            "- Morning at Meiji Shrine, then Harajuku.\n"
-            "- Lunch in Shibuya; afternoon shopping.\n"
-            "- Return flight CA5678 at 18:00.\n"
+            "- Dinner in Asakusa.\n" * 5
         )
-        self.assertTrue(len(body) >= wf._PLAN_SUBSTANTIVE_THRESHOLD)
-        self.assertEqual(wf._extract_plan(body), body.strip())
+        self.assertGreater(len(body), 200)
+        self.assertEqual(wf._extract_plan(body), "")
 
-    def test_trivial_exit_fragment_still_rejected(self) -> None:
-        # The exact failure case from 2026-05-12: model emits "Now East
-        # Lake." with no <plan> tags. Must not be promoted to a plan.
+    def test_trivial_inputs_return_empty(self) -> None:
         wf = self._wf()
         self.assertEqual(wf._extract_plan("Now East Lake."), "")
         self.assertEqual(wf._extract_plan("Next.\n\n"), "")
         self.assertEqual(wf._extract_plan(""), "")
 
-    def test_threshold_boundary(self) -> None:
+    def test_think_tag_stripped_before_plan_search(self) -> None:
         wf = self._wf()
-        n = wf._PLAN_SUBSTANTIVE_THRESHOLD
-        self.assertEqual(wf._extract_plan("x" * (n - 1)), "")
-        self.assertEqual(wf._extract_plan("x" * n), "x" * n)
+        text = "<think>let me plan</think>\n<plan>Day 1: Tokyo</plan>"
+        self.assertEqual(wf._extract_plan(text), "Day 1: Tokyo")
+        # And: <plan> tags appearing INSIDE the think block are ignored.
+        text2 = "<think>scratch <plan>noise</plan></think>\n<plan>real plan</plan>"
+        self.assertEqual(wf._extract_plan(text2), "real plan")
 
 
 if __name__ == "__main__":

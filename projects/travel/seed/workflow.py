@@ -229,16 +229,16 @@ _THINK_END_RE = re.compile(r"</think>", re.IGNORECASE)
 _PLAN_RE = re.compile(r"<plan>(.*?)</plan>", re.DOTALL | re.IGNORECASE)
 
 
-# Lenient-extraction threshold. Anything shorter than this is rejected
-# as "not a plan"; anything longer is forwarded to the scorer's
-# LLM-based JSON conversion (`projects/travel/benchmark/scorer.py::
-# _convert_plan_to_json`) which can extract the plan from prose. The
-# value just needs to exclude trivial exit fragments — e.g.
-# `"Now East Lake."` (14 chars) — without rejecting a stub plan.
-_PLAN_SUBSTANTIVE_THRESHOLD = 200
-
-
 def _extract_plan(text: str) -> str:
+    """Mirror reference tools_fn_agent.py::_extract_plan_content exactly.
+
+    Strip everything up to and including the last ``</think>`` tag, then
+    return the joined contents of all ``<plan>...</plan>`` blocks. If no
+    plan tags are present, return ``""`` — the reference does NOT fall
+    back to returning the prose, and matching that behaviour was the
+    last remaining divergence in our agent loop (fired on 2.9 % of
+    cases on seed_v4 / seed_v5 full-120 runs).
+    """
     if not text:
         return ""
     think_ends = list(_THINK_END_RE.finditer(text))
@@ -246,21 +246,7 @@ def _extract_plan(text: str) -> str:
         text = text[think_ends[-1].end():]
     matches = _PLAN_RE.findall(text)
     cleaned = [m.strip() for m in matches if m.strip()]
-    if cleaned:
-        return "\n\n".join(cleaned)
-    # Lenient fallback: no <plan> tags found, but the response is
-    # substantive (likely a plan-shaped reply that just skipped the
-    # wrapper tags). Local vLLM-served models (Qwen3.5, gpt-oss) do
-    # this consistently — even when the SYSTEM_PROMPT asks for tags
-    # and the force-plan retry asks again. Forwarding the prose body
-    # to the scorer's LLM-based conversion step lets it salvage the
-    # plan instead of returning "agent produced no plan" outright.
-    # Inert for OpenAI: gpt-5-mini reliably wraps in <plan> tags, so
-    # this branch never fires on that path.
-    stripped = text.strip()
-    if len(stripped) >= _PLAN_SUBSTANTIVE_THRESHOLD:
-        return stripped
-    return ""
+    return "\n\n".join(cleaned) if cleaned else ""
 
 
 def _item_type(item) -> str:
