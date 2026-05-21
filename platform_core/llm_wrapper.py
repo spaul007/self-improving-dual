@@ -126,32 +126,6 @@ def _normalise_tool_schema(tool: dict[str, Any]) -> dict[str, Any]:
     raise ValueError(f"Unrecognised tool schema shape: keys={sorted(tool)}")
 
 
-def _split_system(
-    messages: list[Any]
-) -> tuple[Optional[str], list[Any]]:
-    """Pull system messages into a single ``instructions`` string and return
-    the remaining messages.
-
-    Messages may be plain dicts (system/user/function_call_output) or
-    Pydantic ``ResponseItem`` objects echoed back from
-    ``response.output`` (reasoning items, function_call items). Only dicts
-    with ``role == "system"`` are consolidated; everything else passes
-    through untouched and the Responses API accepts both shapes in
-    ``input``.
-    """
-    system_parts: list[str] = []
-    rest: list[Any] = []
-    for msg in messages:
-        if isinstance(msg, dict) and msg.get("role") == "system":
-            content = msg.get("content")
-            if isinstance(content, str):
-                system_parts.append(content)
-        else:
-            rest.append(msg)
-    instructions = "\n\n".join(p for p in system_parts if p) or None
-    return instructions, rest
-
-
 # ---------------------------------------------------------------------------
 # Output parsing
 # ---------------------------------------------------------------------------
@@ -295,7 +269,6 @@ def call_llm(
         else:
             raise RuntimeError("OPENAI_API_KEY environment variable is required")
 
-    instructions, chat = _split_system(messages)
     norm_tools = [_normalise_tool_schema(t) for t in (tools or [])]
 
     call_id = uuid.uuid4().hex[:12]
@@ -307,7 +280,7 @@ def call_llm(
             "reasoning_effort": resolved_effort,
             "base_url": resolved_base_url,
             "tool_names": [t["name"] for t in norm_tools],
-            "num_messages": len(chat),
+            "num_messages": len(messages),
         },
     )
     if os.environ.get("META_AGENT_VERBOSE") == "1":
@@ -315,8 +288,7 @@ def call_llm(
             "llm_call_full",
             {
                 "id": call_id,
-                "instructions": instructions,
-                "messages": chat,
+                "messages": messages,
                 "tools": norm_tools,
             },
         )
@@ -327,15 +299,13 @@ def call_llm(
     client = OpenAI(**client_kwargs)
     request: dict[str, Any] = {
         "model": resolved_model,
-        "input": chat,
+        "input": messages,
     }
     # Omit the key entirely when max_output_tokens is None — callers pass
     # None to run uncapped (model's full output budget), matching agents
     # whose reference does not send max_output_tokens at all.
     if max_output_tokens is not None:
         request["max_output_tokens"] = max_output_tokens
-    if instructions:
-        request["instructions"] = instructions
     if norm_tools:
         request["tools"] = norm_tools
     if resolved_effort:
