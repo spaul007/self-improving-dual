@@ -113,6 +113,9 @@ DETAILS_SCHEMA = {
 
 
 def details_run(restaurant_name: str) -> str:
+    # Reference restaurant_query_tool.py:153-169 returns error envelopes
+    # via format_result_as_json (which uses ensure_ascii=False, indent=2).
+    # Match that shape so error responses look identical to success ones.
     rows, path = _csv.load_for_tool("restaurants/restaurants.csv")
     if not rows:
         if path is None:
@@ -122,6 +125,7 @@ def details_run(restaurant_name: str) -> str:
                     "restaurant_name": restaurant_name,
                 },
                 ensure_ascii=False,
+                indent=2,
             )
         return json.dumps(
             {
@@ -129,6 +133,7 @@ def details_run(restaurant_name: str) -> str:
                 "restaurant_name": restaurant_name,
             },
             ensure_ascii=False,
+            indent=2,
         )
 
     matched = [r for r in rows if r.get("restaurant_name") == restaurant_name]
@@ -139,6 +144,7 @@ def details_run(restaurant_name: str) -> str:
                 "restaurant_name": restaurant_name,
             },
             ensure_ascii=False,
+            indent=2,
         )
     row = matched[0]
     result: dict[str, Any] = {
