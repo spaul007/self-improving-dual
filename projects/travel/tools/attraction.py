@@ -63,26 +63,31 @@ def details_run(attraction_name: str) -> str:
 
     opening = row.get("opening_time", "") or ""
     closing = row.get("closing_time", "") or ""
+    # Reference attraction_query_tool.py:96-116 uses full-width colon "："
+    # (U+FF1A) between the field label and value — even in the English
+    # language path — and full-width comma "，" (U+FF0C) between latitude
+    # and longitude. The rating line has no separator at all between the
+    # numeric value and the "(average visitor rating)" suffix.
     hours_line = (
-        f"Opening Hours: {opening}"
+        f"Opening Hours：{opening}"
         if opening == closing
-        else f"Opening Hours: {opening} to {closing}"
+        else f"Opening Hours：{opening} to {closing}"
     )
 
     lines = [
-        f"Attraction ID: {row.get('attraction_id', '')}",
-        f"Attraction Name: {row.get('attraction_name', attraction_name)}",
-        f"City: {row.get('city', '')}",
-        f"Address: {row.get('address', '')}",
-        f"Coordinates: Latitude {row.get('latitude', '')}, Longitude {row.get('longitude', '')}",
-        f"Description: {row.get('description', '')}",
-        f"Rating: {rating_val if rating_val is not None else ''} (average visitor rating)",
+        f"Attraction ID：{row.get('attraction_id', '')}",
+        f"Attraction Name：{row.get('attraction_name', attraction_name)}",
+        f"City：{row.get('city', '')}",
+        f"Address：{row.get('address', '')}",
+        f"Coordinates：Latitude {row.get('latitude', '')}，Longitude {row.get('longitude', '')}",
+        f"Description：{row.get('description', '')}",
+        f"Rating：{rating_val if rating_val is not None else ''}(average visitor rating)",
         hours_line,
-        f"Closed Dates: {row.get('closing_dates', '')}",
-        f"Minimum Visit Duration: {min_h if min_h is not None else ''} hours",
-        f"Maximum Visit Duration: {max_h if max_h is not None else ''} hours",
-        f"Ticket Price: {ticket if ticket is not None else 0} RMB",
-        f"Attraction Type: {row.get('attraction_type', '')}",
+        f"Closed Dates：{row.get('closing_dates', '')}",
+        f"Minimum Visit Duration：{min_h if min_h is not None else ''} hours",
+        f"Maximum Visit Duration：{max_h if max_h is not None else ''} hours",
+        f"Ticket Price：{ticket if ticket is not None else 0} RMB",
+        f"Attraction Type：{row.get('attraction_type', '')}",
     ]
     return "\n".join(lines)
 
@@ -133,7 +138,10 @@ def recommend_run(city: str, attraction_type: str = "") -> str:
     if not rows:
         return "No attraction recommendations found"
 
-    out = ["Recommended attractions:"]
+    # Reference attraction_query_tool.py:188,240,251 — the recommendations
+    # header itself ends with "\n", which then becomes a blank line after
+    # the "\n".join. Match that shape.
+    out = ["Recommended attractions:\n"]
     for r in rows:
         name = r.get("attraction_name", "")
         desc = r.get("description", "")
