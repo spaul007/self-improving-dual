@@ -245,7 +245,7 @@ class ConfigLoaderTests(unittest.TestCase):
         self.assertEqual(type(fw.evaluator).__name__, "SubprocessEvaluator")
         self.assertEqual(type(fw.gatherer).__name__, "DefaultFeedbackGatherer")
         self.assertEqual(type(fw.editor).__name__, "AgentEditor")
-        self.assertEqual(len(fw.validators), 7)
+        self.assertEqual(len(fw.validators), 8)
         self.assertTrue(fw.seed_dir.exists())
         self.assertTrue(fw.benchmark_dir.exists())
 

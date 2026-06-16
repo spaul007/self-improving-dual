@@ -33,6 +33,12 @@ from typing import Any, Optional
 DB_ROOT_ENV = "SHOPPING_DATABASE_ROOT"
 LEVEL_ENV = "SHOPPING_LEVEL"
 SAMPLE_ID_ENV = "SHOPPING_SAMPLE_ID"
+# Generic per-evaluation scratch dir provided by the meta-agent evaluator
+# (canonical definition: platform_core.trace.SCRATCH_DIR_ENV). Read by its
+# string name so this module stays decoupled from platform_core. When set,
+# the mutable cart lives under here instead of the shared read-only data
+# tree, so concurrent evaluations of the same case never race on cart.json.
+SCRATCH_DIR_ENV = "META_AGENT_SCRATCH_DIR"
 
 # Module-level caches: products and user_info are read-only and
 # expensive to deserialize; cart.json is mutated so it's never cached.
@@ -182,11 +188,32 @@ def _empty_cart(user: Optional[dict] = None) -> dict:
     }
 
 
-def load_cart() -> dict:
+def cart_path() -> Optional[Path]:
+    """Resolve the mutable cart.json path.
+
+    When the evaluator's per-run scratch dir is set (``$META_AGENT_SCRATCH_DIR``)
+    the cart lives under it, mirroring the ``database_level{L}/case_{S}``
+    layout so the (otherwise concurrent) cases of one run stay separated and
+    two concurrent runs never collide. Read-only data (products, user,
+    validation) is unaffected — it always comes from ``case_dir()``.
+
+    Falls back to ``case_dir()/cart.json`` when no scratch dir is set
+    (standalone/manual use, and the validator's import-only load test, where
+    ``case_dir()`` is ``None`` so the cart funcs degrade to no-ops).
+    """
+    scratch = os.environ.get(SCRATCH_DIR_ENV)
+    lvl = level()
+    sid = sample_id()
+    if scratch and lvl and sid:
+        return Path(scratch) / f"database_level{lvl}" / f"case_{sid}" / "cart.json"
     cd = case_dir()
-    if cd is None:
+    return (cd / "cart.json") if cd is not None else None
+
+
+def load_cart() -> dict:
+    path = cart_path()
+    if path is None:
         return _empty_cart()
-    path = cd / "cart.json"
     if not path.exists():
         return _empty_cart(load_user())
     try:
@@ -205,11 +232,10 @@ def load_cart() -> dict:
 
 
 def write_cart(cart: dict) -> None:
-    cd = case_dir()
-    if cd is None:
+    path = cart_path()
+    if path is None:
         return
-    cd.mkdir(parents=True, exist_ok=True)
-    path = cd / "cart.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(cart, fh, ensure_ascii=False, indent=2)
 

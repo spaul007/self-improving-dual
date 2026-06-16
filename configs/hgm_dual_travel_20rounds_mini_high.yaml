@@ -1,0 +1,79 @@
+experiment_name: "travel_hgm_dual_20rounds_mini_high"
+
+# Sibling of hgm_dual_travel_20rounds_medium.yaml. Identical setup; the only
+# delta is the meta-agent model: editor and summarizer use gpt-5.4-mini with
+# reasoning_effort=high. Task agent stays on gpt-5.4-mini/high (same as the
+# medium sibling — kept identical so any differences in agent quality are
+# attributable to the meta-agent's choices, not the task-agent's).
+project: "travel"
+
+loop:
+  max_rounds: 30
+  score_target: 0.95
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hgm_dual"
+  config:
+    eval_budget: 2000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16        # matches original HGM
+    finalize_top_k: 3
+    full_eval_top_k: 3         # top-3 finalists each scored on all 120 cases
+    seed: 42
+
+    # Dual-optimization knobs.
+    num_variants: 2
+    intra_expand_eval_size: 16
+    variant_parallelism: 2
+    select_metric: "mean"
+    categorizer_max_representative_errors: 5
+    min_remaining_budget_for_dual: 16
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+    category_selection: "balanced_by_type"     # 1 commonsense + 1 hard per expansion when both available
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 10
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "high"
+    max_attempts: 2
+
+summarizer:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "high"
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

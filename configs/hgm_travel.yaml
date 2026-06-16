@@ -10,6 +10,12 @@ experiment_name: "travel_hgm"
 # Same project assets as configs/travel.yaml — only the manager differs.
 project: "travel"
 
+# Evaluation visibility for the meta-agent editor: "blackbox" (default — sees
+# the agent's code, tool implementations, DB schema, and behavioral failure
+# examples, but NOT the scoring code) or "whitebox" (also injects the scorer
+# source). Ground-truth data is never exposed in either mode.
+eval_visibility: "blackbox"
+
 loop:
   # HGM's real terminator is `manager.config.eval_budget`; max_rounds is
   # only a hard cap on tree size (node count).
@@ -31,6 +37,8 @@ manager:
     clade_pseudo_count: 10000
     eval_batch_size: 16      # match evaluator.parallelism for SLURM throughput
     finalize_top_k: 5    # top-k nodes re-scored on full train before final pick
+    # snapshot_tree: true  # write snapshots/tree_snapshots.jsonl (best-at-budget
+    #                      # time series for analysis; see snapshot_eval.py)
     seed: 42
 
 evaluator:
@@ -43,7 +51,11 @@ evaluator:
 
 gatherer:
   type: "default"
-  config: {}
+  config:
+    # Reuse the project error categorizer to drive the example-driven failure
+    # report (top failure categories + representative query/plan/what-failed).
+    # Omit to fall back to hardest-cases-only (still generic).
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
 
 editor:
   type: "default"
@@ -64,5 +76,6 @@ validators:
   - type: "imports"
   - type: "schema_wrapper_consistency"
   - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
   - type: "immutable_files"
   - type: "load_test"

@@ -31,11 +31,15 @@ env/
 
 # --- Run artifacts ---
 runs/
+tmp/
 
 # --- Bulk data (per-sample CSVs etc., gitignored to keep the repo small) ---
 projects/travel/data/
 projects/shopping/data/
+docs/
 
 # --- Local-only working notes (do not check in) ---
 CLAUDE.md
 DEV_LOG.md
+api.sh
+nohup.out

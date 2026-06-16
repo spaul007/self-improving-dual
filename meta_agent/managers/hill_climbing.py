@@ -38,6 +38,7 @@ from ..models import (
     EvolutionStrategy,
 )
 from ..registry import register
+from ..tree_snapshot import NodeSnapshot, TreeSnapshotWriter
 
 
 @register("manager", "hill_climbing")
@@ -47,12 +48,19 @@ class HillClimbingManager:
         *,
         branch_policy: Literal["best", "latest"] = "best",
         strategy_history_window: int = 5,
+        snapshot_tree: bool = False,
     ) -> None:
         self.branch_policy = branch_policy
         self.strategy_history_window = strategy_history_window
+        # Opt-in time-series snapshots of the round history, written after
+        # every round, so the best agent at any budget level can be recovered
+        # and re-evaluated later. See meta_agent/tree_snapshot.py and
+        # snapshot_eval.py. Off by default — zero behavior change.
+        self.snapshot_tree = snapshot_tree
         self._history: list[AgentFeedback] = []
         self._train_case_ids: Optional[list[str]] = None
         self._eval_case_ids: Optional[list[str]] = None
+        self._snapshotter: Optional[TreeSnapshotWriter] = None
 
     # ------------------------------------------------------------------ #
     # Public API (EvolutionManager protocol)
@@ -74,9 +82,13 @@ class HillClimbingManager:
         self._history = []
         self._train_case_ids = train_case_ids
         self._eval_case_ids = eval_case_ids
+        self._snapshotter = TreeSnapshotWriter(
+            experiment_dir, enabled=self.snapshot_tree
+        )
 
         # Round 0 — copy the seed verbatim and evaluate it.
         self._run_round_zero(seed_dir, evaluator, gatherer, benchmark_dir, experiment_dir)
+        self._snapshot("seed")
         if self._target_reached(score_target):
             return self._outcome()
 
@@ -109,6 +121,7 @@ class HillClimbingManager:
 
             self._history.append(feedback)
             self._run_eval_split(round_num, out_dir, evaluator, benchmark_dir, feedback)
+            self._snapshot("evaluate")
             if self._target_reached(score_target):
                 break
 
@@ -215,6 +228,47 @@ class HillClimbingManager:
 
     def _best_round(self) -> AgentFeedback:
         return max(self._history, key=lambda f: f.eval_result.score)
+
+    def _snapshot(self, event: str) -> None:
+        """Append a full-history snapshot keyed by cumulative cases evaluated
+        (so the budget axis is comparable to HGM's). A no-op unless
+        ``snapshot_tree`` is enabled. Records every round as a node and a
+        pointer to the current best-by-score round."""
+        if self._snapshotter is None or not self._snapshotter.enabled:
+            return
+        nodes: list[NodeSnapshot] = []
+        budget_spent = 0
+        for fb in self._history:
+            ev = fb.eval_result
+            n_evals = ev.passed + ev.failed
+            budget_spent += n_evals
+            nodes.append(
+                NodeSnapshot(
+                    node_id=fb.round_number,
+                    parent_id=fb.base_round,
+                    round_dir=f"round_{fb.round_number:03d}",
+                    edit_failed=bool(fb.edit_errors),
+                    n_evals=n_evals,
+                    mean_utility=ev.score,
+                    n_success=float(ev.passed),
+                    n_failure=float(ev.failed),
+                    cmp=None,
+                )
+            )
+        best = self._best_round() if self._history else None
+        best_id = best.round_number if best is not None else None
+        self._snapshotter.record(
+            event=event,
+            manager=type(self).__name__,
+            budget_spent=budget_spent,
+            node_evals_spent=budget_spent,
+            nodes=nodes,
+            best_node_id=best_id,
+            best_mean_utility=best.eval_result.score if best is not None else None,
+            best_round_dir=(
+                f"round_{best_id:03d}" if best_id is not None else None
+            ),
+        )
 
     def _target_reached(self, score_target: float | None) -> bool:
         if score_target is None or not self._history:

@@ -1,0 +1,75 @@
+experiment_name: "shopping_hgm_dual_50"
+
+# 50-budget run. Task agent gpt-5.4-mini @ high; editor (code) + summarizer
+# gpt-5.4 @ medium. No held-out eval; snapshots + verbose prompts captured.
+project: "shopping"
+
+eval_visibility: "blackbox"
+verbose: true
+
+loop:
+  max_rounds: 8
+  score_target: 0.99
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hgm_dual"
+  config:
+    eval_budget: 50
+    init_expansions: 1
+    alpha: 0.6
+    eval_batch_size: 16
+    finalize_top_k: 1
+    seed: 42
+    num_variants: 2
+    intra_expand_eval_size: 8
+    variant_parallelism: 2
+    select_metric: "mean"
+    categorizer_max_representative_errors: 3
+    min_remaining_budget_for_dual: 8
+    snapshot_tree: true
+    error_categorizer: "projects.shopping.shopping_error_categorizer:categorize_errors"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 600
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "shopping_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.shopping.shopping_error_categorizer:categorize_errors"
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+summarizer:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+
+split:
+  seed: 42
+  train_size: 16
+  eval_size: 0
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

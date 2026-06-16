@@ -1,0 +1,78 @@
+experiment_name: "shopping_hgm_dual_8000"
+
+# 8000-budget HGM-dual run on a PREDETERMINED 60-case optimization set
+# (configs/shopping_train_ids.json: 25 L1 / 25 L2 / 10 L3). Same ids as the
+# vanilla hgm shopping run for a fair comparison. No held-out eval — use
+# snapshots (snapshots/tree_snapshots.jsonl) + snapshot_eval.py for the
+# budget-vs-performance curve.
+project: "shopping"
+
+eval_visibility: "blackbox"
+
+loop:
+  max_rounds: 1000          # loose cap; eval_budget is the real terminator
+  score_target: 0.99
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hgm_dual"
+  config:
+    eval_budget: 8000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 3
+    seed: 42
+    num_variants: 2
+    intra_expand_eval_size: 16
+    variant_parallelism: 2
+    select_metric: "mean"
+    categorizer_max_representative_errors: 5
+    min_remaining_budget_for_dual: 16
+    snapshot_tree: true
+    error_categorizer: "projects.shopping.shopping_error_categorizer:categorize_errors"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "shopping_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.shopping.shopping_error_categorizer:categorize_errors"
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+summarizer:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+
+split:
+  train_ids_path: "configs/shopping_train_ids.json"   # 60 predetermined cases; no held-out eval
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

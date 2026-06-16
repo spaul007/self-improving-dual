@@ -112,9 +112,10 @@ class ImportValidator:
     WORKFLOW_ALLOWED = (
         "platform_core.llm_wrapper",
         "platform_core.runner",
+        "platform_core.trace",
         "tool_wrapper",
     )
-    WRAPPER_ALLOWED = ("platform_core.tools", "platform_core", "mutable_tools")
+    WRAPPER_ALLOWED = ("platform_core.tools", "platform_core.trace", "platform_core", "mutable_tools")
 
     def validate(self, out_dir: Path, base_dir: Path) -> list[str]:
         errors: list[str] = []
@@ -196,7 +197,7 @@ class SchemaWrapperConsistencyValidator:
 
 @register("validator", "mutable_tool_imports")
 class MutableToolImportValidator:
-    ALLOWED_PREFIXES = ("platform_core.tools", "mutable_tools")
+    ALLOWED_PREFIXES = ("platform_core.tools", "platform_core.trace", "mutable_tools")
 
     def validate(self, out_dir: Path, base_dir: Path) -> list[str]:
         errors: list[str] = []
@@ -220,6 +221,90 @@ class MutableToolImportValidator:
                         f"sibling mutable_tools.*, or stdlib)"
                     )
         return errors
+
+
+@register("validator", "mutable_tool_routing")
+class MutableToolRoutingValidator:
+    """``tool_wrapper.py`` must dispatch mutable tools via
+    ``platform_core.tools.call_mutable_tool`` — never by importing
+    ``mutable_tools.<name>`` and calling its ``run()`` directly.
+
+    Routing through ``call_mutable_tool`` is what records mutable-tool calls in
+    the trace (``tool_call``/``tool_result``), so the feedback gatherer and the
+    behavior summarizer can see editor-added tools. This validator hard-enforces
+    editor hard-rule #5 so a wrapper rewrite can't silently lose that tracing.
+
+    Heuristic (low false-positive): if the wrapper does any *direct* mutable
+    dispatch — ``importlib.import_module("mutable_tools…")`` or
+    ``import``/``from`` of a ``mutable_tools`` submodule — it must ALSO call
+    ``call_mutable_tool``. A wrapper that doesn't dispatch mutable tools
+    directly (the seed routes entirely through ``call_mutable_tool``) passes.
+    """
+
+    @staticmethod
+    def _is_mutable_str(node: ast.AST) -> bool:
+        """True if ``node`` is a string (or f-string) starting 'mutable_tools'."""
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            return node.value.startswith("mutable_tools")
+        if isinstance(node, ast.JoinedStr) and node.values:
+            first = node.values[0]
+            return (
+                isinstance(first, ast.Constant)
+                and isinstance(first.value, str)
+                and first.value.startswith("mutable_tools")
+            )
+        return False
+
+    def _dispatches_mutable_directly(self, tree: ast.AST) -> bool:
+        for node in ast.walk(tree):
+            # importlib.import_module("mutable_tools...") / import_module(f"mutable_tools.{x}")
+            if isinstance(node, ast.Call):
+                func = node.func
+                is_import_module = (
+                    isinstance(func, ast.Attribute) and func.attr == "import_module"
+                ) or (isinstance(func, ast.Name) and func.id == "import_module")
+                if is_import_module and node.args and self._is_mutable_str(node.args[0]):
+                    return True
+            # from mutable_tools[.x] import ...
+            elif isinstance(node, ast.ImportFrom):
+                mod = node.module or ""
+                if mod == "mutable_tools" or mod.startswith("mutable_tools."):
+                    return True
+            # import mutable_tools.x  (a specific submodule, not the bare package)
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.startswith("mutable_tools."):
+                        return True
+        return False
+
+    @staticmethod
+    def _calls_call_mutable_tool(tree: ast.AST) -> bool:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                func = node.func
+                if isinstance(func, ast.Attribute) and func.attr == "call_mutable_tool":
+                    return True
+                if isinstance(func, ast.Name) and func.id == "call_mutable_tool":
+                    return True
+        return False
+
+    def validate(self, out_dir: Path, base_dir: Path) -> list[str]:
+        path = out_dir / "task_agent" / "tool_wrapper.py"
+        if not path.exists():
+            return []  # ImportValidator reports the missing file
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:
+            return []  # SyntaxValidator covers it
+        if self._dispatches_mutable_directly(tree) and not self._calls_call_mutable_tool(tree):
+            return [
+                "tool_wrapper.py dispatches a mutable tool directly (importing "
+                "mutable_tools.<name> and calling run()) without routing through "
+                "platform_core.tools.call_mutable_tool. Route mutable tools via "
+                "call_mutable_tool(tool_name, **kwargs) so their calls are recorded "
+                "in the trace (editor hard-rule #5)."
+            ]
+        return []
 
 
 @register("validator", "immutable_files")
@@ -340,6 +425,7 @@ DEFAULT_VALIDATOR_NAMES = [
     "imports",
     "schema_wrapper_consistency",
     "mutable_tool_imports",
+    "mutable_tool_routing",
     "immutable_files",
     "load_test",
 ]

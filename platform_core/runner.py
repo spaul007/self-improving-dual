@@ -101,12 +101,21 @@ def _invoke_workflow(task: Task) -> AgentOutput:
     as ``python -m platform_core.runner`` loads it under both ``__main__``
     and ``platform_core.runner``, giving two distinct ``AgentOutput`` class
     objects. The workflow imports the latter; we run as the former.
+
+    Wraps the call in ``platform_core.trace.case_scope`` so every event
+    emitted during this case (``tool_call``, ``tool_result``, ``llm_call``,
+    ``mutable_log``, ``error``) automatically carries the case_id. The
+    BehaviorSummarizer uses that tag to cross-tab verifier/branch firings
+    against per-case pass/fail outcomes.
     """
+    from . import trace
+
     workflow = importlib.import_module("workflow")
     fn = getattr(workflow, "run_task", None)
     if fn is None:
         raise RuntimeError("workflow.py does not define run_task(task)")
-    out = fn(task)
+    with trace.case_scope(task.case_id):
+        out = fn(task)
     if hasattr(out, "result") and hasattr(out, "metadata"):
         return AgentOutput(
             result=out.result,
@@ -183,8 +192,9 @@ def _standalone_mode(args: argparse.Namespace) -> int:
         task = Task.from_dict(json.loads(args.task_file.read_text(encoding="utf-8")))
     elif args.benchmark and args.case_id:
         case = _load_case(args.benchmark.resolve(), args.case_id)
-        # Apply per-case env overrides (e.g. TRAVEL_SAMPLE_ID) before the
-        # workflow imports run, mirroring what SubprocessEvaluator does.
+        # Apply per-case env overrides (whatever keys the case's ``env`` block
+        # carries, e.g. a project's ``*_SAMPLE_ID``) before the workflow
+        # imports run, mirroring what SubprocessEvaluator does.
         for k, v in (case.get("env") or {}).items():
             os.environ[str(k)] = str(v)
         task = _task_from_case(case)

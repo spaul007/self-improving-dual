@@ -24,6 +24,45 @@ from typing import Any
 from meta_agent.registry import register
 
 
+# Map a requirement-feature ``field`` (as it appears in validation_cases.json's
+# meta_info[*].features) to a readable error category. Defined from the field
+# names present in the shopping data (brand/color/rating.*/sales_volume.*/...),
+# NOT copied from any external categorizer. Used only to enrich diagnostics in
+# ``details["missing_feature_categories"]`` — it never affects the score.
+_FIELD_TO_CATEGORY = {
+    "brand": "brand",
+    "color": "color",
+    "name": "name",
+    "size": "size",
+    "stock_quantity": "stock",
+    "suitable_season": "season",
+    "target_demographic": "demographic",
+    "transport_time": "delivery_time",
+    "price": "price",
+    "rating.average_score": "rating_score",
+    "rating.total_reviews": "review_count",
+    "sales_volume.monthly": "sales_volume",
+    "sales_volume.total": "sales_volume",
+}
+
+
+def _field_to_category(field: str) -> str:
+    """Readable category for a requirement-feature field. Prefix rules cover
+    the star-distribution / rating / sales families; unknown fields degrade to
+    a slugified field name so nothing is silently dropped."""
+    if not field:
+        return "unknown"
+    if field in _FIELD_TO_CATEGORY:
+        return _FIELD_TO_CATEGORY[field]
+    if field.startswith("rating.distribution."):
+        return "review_distribution"
+    if field.startswith("sales_volume."):
+        return "sales_volume"
+    if field.startswith("rating."):
+        return "rating_score"
+    return field.replace(".", "_")
+
+
 def _parse_cart(agent_output: Any) -> dict[str, Any]:
     """``agent_output`` may be an ``AgentOutput`` (with a JSON-string
     ``result``), a raw JSON string, or a dict. Return a dict."""
@@ -149,6 +188,75 @@ class ShoppingScorer:
         extra_coupons = list(cart_coupon_names - gt_coupon_names)
         missing_coupons = list(gt_coupon_names - matched_coupon_names)
 
+        # Feature-level categorization of misses — diagnostics only, does NOT
+        # change the score. meta_info[idx].features (index-aligned with
+        # ground_truth_products) tells us which *kind* of requirement each gold
+        # product encodes. We emit two views, both read only from the project's
+        # own validation data (degrades to "unknown" if meta_info is missing):
+        #   * gold_feature_categories: {category: [all gold pids needing it]} —
+        #     the per-category trial set used by category_significance.
+        #   * missing_feature_categories: {category: {sub_queries, fields,
+        #     predicates, product_ids}} for the *missing* gold products — the
+        #     rich steering signal the HGM-dual categorizer reports on.
+        meta_info = validation.get("meta_info") or []
+        pid_to_idx = {
+            p.get("product_id"): i
+            for i, p in enumerate(gt_products)
+            if p.get("product_id")
+        }
+
+        def _pid_categories(pid: str) -> tuple[str, dict[str, list[dict[str, Any]]]]:
+            """(sub_query, {category: [predicate dicts]}) for one gold pid."""
+            idx = pid_to_idx.get(pid)
+            req = (
+                meta_info[idx]
+                if isinstance(idx, int)
+                and idx < len(meta_info)
+                and isinstance(meta_info[idx], dict)
+                else {}
+            )
+            by_cat: dict[str, list[dict[str, Any]]] = {}
+            for ft in req.get("features") or []:
+                if not isinstance(ft, dict):
+                    continue
+                field = str(ft.get("field") or "")
+                if not field:
+                    continue
+                by_cat.setdefault(_field_to_category(field), []).append(
+                    {
+                        "field": field,
+                        "operator": ft.get("operator"),
+                        "operator_value": ft.get("operator_value"),
+                    }
+                )
+            if not by_cat:
+                by_cat = {"unknown": []}
+            return str(req.get("sub_query") or ""), by_cat
+
+        gold_feature_categories: dict[str, list[str]] = {}
+        for pid in gt_pids:
+            _, by_cat = _pid_categories(pid)
+            for cat in by_cat:
+                gold_feature_categories.setdefault(cat, []).append(pid)
+
+        missing_feature_categories: dict[str, dict[str, Any]] = {}
+        for pid in missing_products:
+            sub_q, by_cat = _pid_categories(pid)
+            for cat, preds in by_cat.items():
+                slot = missing_feature_categories.setdefault(
+                    cat,
+                    {"sub_queries": [], "fields": [], "predicates": [], "product_ids": []},
+                )
+                if sub_q and sub_q not in slot["sub_queries"]:
+                    slot["sub_queries"].append(sub_q)
+                if pid not in slot["product_ids"]:
+                    slot["product_ids"].append(pid)
+                for p in preds:
+                    if p["field"] not in slot["fields"]:
+                        slot["fields"].append(p["field"])
+                    if p not in slot["predicates"]:
+                        slot["predicates"].append(p)
+
         details: dict[str, Any] = {
             "composite_score": composite,
             "case_score": 1.0 if passed else 0.0,
@@ -161,6 +269,8 @@ class ShoppingScorer:
             "coupon_details": coupon_details,
             "extra_coupons": extra_coupons,
             "missing_coupons": missing_coupons,
+            "missing_feature_categories": missing_feature_categories,
+            "gold_feature_categories": gold_feature_categories,
             "level": (case.get("meta_info") or {}).get("level"),
         }
         return {"score": composite, "passed": passed, "details": details}

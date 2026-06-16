@@ -1,0 +1,88 @@
+experiment_name: "travel_hgm_dual_10samples"
+
+# HGM Dual on travel, narrow 10-sample train split. The held-out eval split
+# is the remaining 110 cases (sidecar metric only, not part of the budget).
+# At the end, the top `full_eval_top_k` finalists are re-evaluated on all 120
+# cases for head-to-head comparison — purely a sidecar audit, not used for
+# LCB selection.
+project: "travel"
+
+loop:
+  # HGM's real terminator is manager.config.eval_budget; max_rounds is just
+  # a hard cap on tree size. At ~30 evals/dual expansion we expect ~10 nodes,
+  # so 60 is a safe ceiling.
+  max_rounds: 60
+  score_target: 0.95
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hgm_dual"
+  config:
+    # HGM knobs.
+    eval_budget: 320
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 10        # full train per evaluate step
+    finalize_top_k: 3          # top-3 topped up on full train before LCB
+    full_eval_top_k: 0         # sidecar audit: top-3 finalists each scored on all 120 cases
+    seed: 42
+
+    # Dual-optimization knobs.
+    num_variants: 2                                   # 2 specialists/expansion (top-2 categories)
+    intra_expand_eval_size: 10                        # full 10-case train per intra-expand eval
+    variant_parallelism: 2                            # full parallel
+    select_metric: "mean"                             # tie-break by lower variance
+    categorizer_max_representative_errors: 5
+    min_remaining_budget_for_dual: 10
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 10                                   # one worker per train case
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "high"
+    max_attempts: 2
+
+# Per-round behavior summarizer. Writes behavior_memory.md +
+# behavior_aggregate.json + behavior_summarizer_prompt.txt per round,
+# and feeds the memory into descendants' steering contexts (both Stage A
+# and Stage B specialists). Same model/effort as the editor.
+summarizer:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "high"
+
+# Deterministic train/eval split from `seed`: 10 train cases for HGM,
+# remaining 110 as held-out eval. See compute_split in meta_agent/config.py.
+split:
+  seed: 42
+  train_size: 10
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

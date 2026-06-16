@@ -1,0 +1,78 @@
+experiment_name: "travel_hgm_dual"
+
+# HGM with Dual Optimization. Same project assets as configs/hgm_travel.yaml
+# — only the manager differs. Each EXPAND first edits the parent (Stage A),
+# then spawns one error-conditioned variant per failure category (Stage B),
+# evaluates each on a shared intra-expand sample, and keeps the highest-mean
+# winner as the actual HGM tree child.
+project: "travel"
+
+loop:
+  max_rounds: 60
+  score_target: 0.95
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hgm_dual"
+  config:
+    # Inherited HGM knobs (same defaults as hgm_travel.yaml).
+    eval_budget: 400
+    init_expansions: 5
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 5
+    # snapshot_tree: true  # write snapshots/tree_snapshots.jsonl (best-at-budget
+    #                      # time series for analysis; see snapshot_eval.py)
+    seed: 42
+
+    # New dual-optimization knobs.
+    num_variants: 3                                    # max Stage B variants per expansion
+    intra_expand_eval_size: 8                          # cases used for Stage A + each variant
+    variant_parallelism: 3                             # parallel; set to 1 for sequential fallback
+    select_metric: "mean"                              # tie-break: lower variance
+    categorizer_max_representative_errors: 5           # examples per category in the prompt
+    min_remaining_budget_for_dual: 12                  # below this, skip Stage B (vanilla HGM)
+    # Project-specific categorizer, dynamically imported. Swap when porting.
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config:
+    # Same categorizer the manager uses — drives the example-driven failure
+    # report (top categories + representative query/plan/what-failed).
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "high"
+    max_attempts: 2
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

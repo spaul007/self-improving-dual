@@ -1,0 +1,75 @@
+experiment_name: "shopping_hgm_dual_smoke"
+
+# Tiny smoke run: 2 init expansions × (1 Stage A eval + ~2 Stage B variants)
+# × 4 cases ≈ 24 evals, well under eval_budget=40. Verifies the full
+# Stage A → categorize → Stage B → select → register flow end-to-end on a
+# 16-case train split. Behavior summarizer is intentionally NOT enabled here
+# (kept off for the initial shopping bring-up).
+project: "shopping"
+
+# Dump per-edit prompts/contexts to verbose_*/ so the Stage A vs Stage B
+# steering (and the categorization error report) can be inspected — also used
+# for the GT-leak boundary spot-check.
+verbose: true
+
+loop:
+  max_rounds: 8
+  score_target: 0.95
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "low"
+
+manager:
+  type: "hgm_dual"
+  config:
+    eval_budget: 40
+    init_expansions: 2
+    alpha: 0.5
+    eval_batch_size: 4
+    finalize_top_k: 2
+    seed: 42
+
+    num_variants: 2
+    intra_expand_eval_size: 4
+    variant_parallelism: 2
+    select_metric: "mean"
+    categorizer_max_representative_errors: 3
+    min_remaining_budget_for_dual: 8
+    error_categorizer: "projects.shopping.shopping_error_categorizer:categorize_errors"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 600
+    memory_mb: 2048
+    parallelism: 4
+    scorer: "shopping_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "low"
+    max_attempts: 2
+
+# Shopping data is local at projects/shopping/data — _db.database_root() falls
+# back to it when SHOPPING_DATABASE_ROOT is unset, so no env override is needed.
+
+split:
+  seed: 42
+  train_size: 16
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

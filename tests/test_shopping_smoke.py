@@ -374,5 +374,125 @@ class ShoppingDbResetCartTests(unittest.TestCase):
         self.assertEqual(cart.get("user_id"), "u-7")
 
 
+class ShoppingCartIsolationTests(unittest.TestCase):
+    """The mutable cart must live under the evaluator's per-run scratch dir
+    (``META_AGENT_SCRATCH_DIR``) when set, so concurrent evaluations of the
+    same case never collide on a shared cart.json. Read-only data stays in
+    the shared data root. When the scratch var is unset, behavior falls back
+    to ``case_dir()/cart.json`` (standalone / load-test path)."""
+
+    def setUp(self) -> None:
+        import os
+        from projects.shopping.tools import _db
+
+        self._db = _db
+        self.data_root = Path(tempfile.mkdtemp(prefix="shopping_cart_data_"))
+        # Read-only data for (level=1, sample=7): user_info only.
+        case_dir = self.data_root / "database_level1" / "case_7"
+        case_dir.mkdir(parents=True)
+        (case_dir / "user_info.json").write_text(
+            json.dumps({"user_id": "u-7", "username": "tester"}), encoding="utf-8"
+        )
+        self.scratch_a = Path(tempfile.mkdtemp(prefix="shopping_cart_scratchA_"))
+        self.scratch_b = Path(tempfile.mkdtemp(prefix="shopping_cart_scratchB_"))
+
+        self._orig_env = {
+            k: os.environ.get(k)
+            for k in (
+                "SHOPPING_DATABASE_ROOT",
+                "SHOPPING_LEVEL",
+                "SHOPPING_SAMPLE_ID",
+                "META_AGENT_SCRATCH_DIR",
+            )
+        }
+        os.environ["SHOPPING_DATABASE_ROOT"] = str(self.data_root)
+        os.environ["SHOPPING_LEVEL"] = "1"
+        os.environ["SHOPPING_SAMPLE_ID"] = "7"
+        os.environ.pop("META_AGENT_SCRATCH_DIR", None)
+        self._db._PRODUCTS_CACHE.clear()
+        self._db._USER_CACHE.clear()
+        self._db._VALIDATION_CACHE.clear()
+
+    def tearDown(self) -> None:
+        import os
+
+        for k, v in self._orig_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        self._db._PRODUCTS_CACHE.clear()
+        self._db._USER_CACHE.clear()
+        self._db._VALIDATION_CACHE.clear()
+        shutil.rmtree(self.data_root, ignore_errors=True)
+        shutil.rmtree(self.scratch_a, ignore_errors=True)
+        shutil.rmtree(self.scratch_b, ignore_errors=True)
+
+    def test_cart_written_under_scratch_not_data_root(self) -> None:
+        import os
+
+        os.environ["META_AGENT_SCRATCH_DIR"] = str(self.scratch_a)
+        self._db.write_cart(
+            {"items": [{"product_id": "X", "quantity": 1}], "used_coupons": []}
+        )
+        expected = self.scratch_a / "database_level1" / "case_7" / "cart.json"
+        self.assertTrue(expected.exists(), "cart must land under the scratch dir")
+        # The shared read-only data root must NOT receive a cart.json.
+        self.assertFalse(
+            (self.data_root / "database_level1" / "case_7" / "cart.json").exists(),
+            "cart must not be written into the shared data tree",
+        )
+
+    def test_two_scratch_dirs_are_isolated(self) -> None:
+        import os
+
+        os.environ["META_AGENT_SCRATCH_DIR"] = str(self.scratch_a)
+        self._db.write_cart(
+            {"items": [{"product_id": "X", "quantity": 1}], "used_coupons": []}
+        )
+        # A second concurrent "run" with its own scratch sees an empty cart.
+        os.environ["META_AGENT_SCRATCH_DIR"] = str(self.scratch_b)
+        self.assertEqual(self._db.load_cart().get("items"), [])
+        # The first run's cart is untouched by the second.
+        os.environ["META_AGENT_SCRATCH_DIR"] = str(self.scratch_a)
+        self.assertEqual(
+            self._db.load_cart().get("items"), [{"product_id": "X", "quantity": 1}]
+        )
+
+    def test_within_run_cases_do_not_collide(self) -> None:
+        import os
+
+        # One scratch dir shared by all cases of a run; distinct (level,sample)
+        # must map to distinct files.
+        os.environ["META_AGENT_SCRATCH_DIR"] = str(self.scratch_a)
+        os.environ["SHOPPING_LEVEL"] = "1"
+        os.environ["SHOPPING_SAMPLE_ID"] = "7"
+        self._db.write_cart({"items": [{"product_id": "A"}], "used_coupons": []})
+        os.environ["SHOPPING_LEVEL"] = "2"
+        os.environ["SHOPPING_SAMPLE_ID"] = "3"
+        self._db.write_cart({"items": [{"product_id": "B"}], "used_coupons": []})
+
+        p1 = self.scratch_a / "database_level1" / "case_7" / "cart.json"
+        p2 = self.scratch_a / "database_level2" / "case_3" / "cart.json"
+        self.assertTrue(p1.exists() and p2.exists())
+        self.assertEqual(json.loads(p1.read_text())["items"], [{"product_id": "A"}])
+        self.assertEqual(json.loads(p2.read_text())["items"], [{"product_id": "B"}])
+
+    def test_fallback_to_case_dir_when_scratch_unset(self) -> None:
+        import os
+
+        os.environ.pop("META_AGENT_SCRATCH_DIR", None)
+        expected = self.data_root / "database_level1" / "case_7" / "cart.json"
+        self.assertEqual(self._db.cart_path(), expected)
+
+    def test_cart_path_none_without_level_or_sample(self) -> None:
+        import os
+
+        os.environ.pop("META_AGENT_SCRATCH_DIR", None)
+        os.environ.pop("SHOPPING_LEVEL", None)
+        os.environ.pop("SHOPPING_SAMPLE_ID", None)
+        self.assertIsNone(self._db.cart_path())
+
+
 if __name__ == "__main__":
     unittest.main()

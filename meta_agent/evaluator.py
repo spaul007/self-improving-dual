@@ -138,6 +138,17 @@ class SubprocessEvaluator:
 
         cwd = round_dir / "task_agent"
         env = self._child_env(trace_path)
+        # Per-evaluation isolated scratch dir, exported to every case
+        # subprocess (see platform_core.trace.SCRATCH_DIR_ENV). Generic:
+        # projects that keep mutable on-disk state write it under here so two
+        # concurrent run() calls (e.g. dual-optimization variants over the
+        # same case ids) never collide. Distinct round_dir per concurrent
+        # run() makes the scratch roots inherently distinct. Set only on this
+        # local env dict — never os.environ — so it stays child-only and
+        # thread-isolated between concurrent run() calls.
+        scratch_dir = logs_dir / "scratch"
+        scratch_dir.mkdir(parents=True, exist_ok=True)
+        env["META_AGENT_SCRATCH_DIR"] = str(scratch_dir)
 
         started = time.time()
         results: list[CaseResult] = []
@@ -302,7 +313,12 @@ class SubprocessEvaluator:
         # in the persisted case file. Without this, post-hoc debugging of a
         # low-scoring case requires rerunning the whole eval — the plan and
         # iteration count are gone after the subprocess exits.
+        # ``query`` is the task input (``case["input"]``) — not ground truth.
+        # Carrying it on the per-case result lets the (generic) feedback
+        # gatherer build "query + plan + what failed" examples without ever
+        # reading the benchmark/cases file itself.
         agent_artifact = {
+            "query": case.get("input"),
             "raw_result": agent_output.result,
             "agent_metadata": dict(agent_output.metadata or {}),
         }
