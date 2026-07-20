@@ -91,10 +91,28 @@ def _convert_plan_to_json(plan_text: str, *, retries: int = DEFAULT_RETRIES) -> 
     except ImportError as exc:  # pragma: no cover - openai is a hard dep
         return None, f"openai sdk not importable: {exc}"
 
-    if not os.environ.get("OPENAI_API_KEY"):
-        return None, "OPENAI_API_KEY not set"
+    # Route conversion at a local OpenAI-compatible server (e.g. vLLM) when
+    # one is configured, using its model id. Falls back to OpenAI's
+    # CONVERT_MODEL when no base_url is set — the original behaviour is
+    # unchanged for the OpenAI path. base_url defaults to the same
+    # LLM_BASE_URL the task-agent uses (set from task_agent.base_url by
+    # meta_agent/runtime_env.py); TRAVEL_CONVERT_MODEL / TRAVEL_CONVERT_BASE_URL
+    # override it independently if conversion should use a different endpoint.
+    base_url = os.environ.get("TRAVEL_CONVERT_BASE_URL") or os.environ.get("LLM_BASE_URL")
+    convert_model = (
+        os.environ.get("TRAVEL_CONVERT_MODEL")
+        or (os.environ.get("LLM_MODEL") if base_url else None)
+        or CONVERT_MODEL
+    )
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        if base_url:
+            # Local servers ignore auth, but the SDK constructor needs a string.
+            api_key = "EMPTY"
+        else:
+            return None, "OPENAI_API_KEY not set"
 
-    client = OpenAI()
+    client = OpenAI(api_key=api_key, base_url=base_url) if base_url else OpenAI()
     messages = [
         {"role": "system", "content": FORMAT_CONVERT_PROMPT_EN},
         {"role": "user", "content": plan_text},
@@ -105,7 +123,7 @@ def _convert_plan_to_json(plan_text: str, *, retries: int = DEFAULT_RETRIES) -> 
         try:
             # gpt-5-2025-08-07 is a reasoning model — do not pass max_tokens.
             resp = client.chat.completions.create(
-                model=CONVERT_MODEL,
+                model=convert_model,
                 messages=messages,
             )
             content = resp.choices[0].message.content or ""

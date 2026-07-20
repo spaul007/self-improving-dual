@@ -1,0 +1,80 @@
+# 10-case smoke evaluation of the travel baseline seed against the local
+# vLLM server hosting Qwen/Qwen3.6-35B-A3B. Run with evaluate.py:
+#
+#   PYTHONPATH=. python3 evaluate.py \
+#       --config configs/eval_local_qwen3_6_35b.yaml \
+#       --agent projects/travel/seed
+#
+# Unlike configs/eval_local_qwen3_5_122b_a10b.yaml (which relies on
+# submit_eval.sh exporting LLM_BASE_URL from the discovery file), this
+# config hard-wires the server URL in task_agent.base_url so evaluate.py
+# can be run directly with no discovery/SLURM plumbing. The travel scorer's
+# plan->JSON conversion is routed to the same server + model via the env
+# block below (TRAVEL_CONVERT_MODEL) plus the LLM_BASE_URL that
+# task_agent.base_url exports (see meta_agent/runtime_env.py).
+
+experiment_name: "eval_local_qwen3_6_35b"
+project: "travel"
+# runs_root omitted -> repo-local ./runs
+
+loop:
+  max_rounds: 1
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.6-35B-A3B"
+  reasoning_effort: "medium"
+  base_url: "http://gpu-aic-mv-02-st-p5-node-7:8000/v1"
+
+manager:
+  type: "hill_climbing"
+  config:
+    branch_policy: "best"
+    strategy_history_window: 5
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    # A single 35B server saturates fast: parallelism 8 produced ~140
+    # APIConnectionError retries and 0/10. Keep concurrency low so the
+    # server isn't overwhelmed by 8 simultaneous tool-loop agents. Raise
+    # only if the server is scaled up (more replicas / GPUs).
+    parallelism: 2
+    max_cases: 10
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.6-35B-A3B"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+# Local models (Qwen3.x, gpt-oss) misread echoed `reasoning` items in the
+# conversation history as a "wrap up" signal — they exit the tool loop
+# without writing the formal <plan> block. Strip them before the next call.
+# TRAVEL_CONVERT_MODEL routes the travel scorer's plan->JSON conversion at
+# the same Qwen model (base_url comes from task_agent.base_url -> LLM_BASE_URL).
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.6-35B-A3B"
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"
