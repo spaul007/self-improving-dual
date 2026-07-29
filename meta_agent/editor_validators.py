@@ -30,6 +30,24 @@ MUTABLE_FILES = {"workflow.py", "tool_wrapper.py", "tools_schema.json"}
 MUTABLE_DIRS = {"mutable_tools"}
 
 
+def is_excluded(rel_path: str, excludes: list[str]) -> bool:
+    """Prefix-match ``rel_path`` (POSIX-style, relative to the seed dir)
+    against an exclude list (see ``config.FrameworkConfig.mutable_exclude``).
+    An entry matches either the exact path or anything under it as a
+    directory (``"environment/"`` or ``"environment"`` both exclude
+    ``environment/anomaly_injection.py``, but not a sibling file that merely
+    shares the prefix like ``environment_notes.md``). Shared by
+    ``agent_editor.py`` and ``ImmutableFilesValidator`` below so the editor's
+    idea of "excluded" and the validator's enforcement of it can never
+    drift apart."""
+    rel_path = rel_path.replace("\\", "/")
+    for entry in excludes:
+        e = entry.replace("\\", "/").rstrip("/")
+        if rel_path == e or rel_path.startswith(e + "/"):
+            return True
+    return False
+
+
 def _stdlib_names() -> set[str]:
     return set(getattr(sys, "stdlib_module_names", ()))
 
@@ -76,17 +94,33 @@ class SyntaxValidator:
 
 @register("validator", "signature")
 class SignatureValidator:
-    """workflow.py must define run_task(task) -> AgentOutput.
+    """<workflow_filename> must define run_task(task) -> AgentOutput.
 
     The runner accepts either an AgentOutput return or a bare value (which
     it wraps), so the return type is not AST-enforced here. The argument
     must be a single positional arg named ``task``.
+
+    ``workflow_filename`` (default ``"workflow.py"``, every existing project
+    relies on this) overrides which file gets the AST check -- set it when
+    the framework-mandated ``workflow.py`` (required verbatim by
+    ``platform_core.runner``'s hardcoded ``import workflow``) is kept as a
+    trivial, permanently-excluded re-export, and the real
+    `def run_task(task): ...` implementation lives in a separate,
+    also-excluded file instead (e.g. db_mas's `workflow_adapter.py`) -- a
+    bare `from workflow_adapter import run_task` in workflow.py is an
+    `ast.ImportFrom` node, not a `FunctionDef`, so it would never satisfy
+    this check on `workflow.py` itself; redirecting the check to the file
+    that actually defines the function is the fix, not requiring
+    workflow.py to also contain a wrapper function.
     """
 
+    def __init__(self, *, workflow_filename: str = "workflow.py") -> None:
+        self.workflow_filename = workflow_filename
+
     def validate(self, out_dir: Path, base_dir: Path) -> list[str]:
-        path = out_dir / "task_agent" / "workflow.py"
+        path = out_dir / "task_agent" / self.workflow_filename
         if not path.exists():
-            return ["workflow.py is missing"]
+            return [f"{self.workflow_filename} is missing"]
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError:
@@ -101,7 +135,7 @@ class SignatureValidator:
                         "run_task signature must be run_task(task) -> AgentOutput"
                     ]
                 return []
-        return ["workflow.py does not define run_task at module level"]
+        return [f"{self.workflow_filename} does not define run_task at module level"]
 
 
 @register("validator", "imports")
@@ -307,11 +341,32 @@ class MutableToolRoutingValidator:
         return []
 
 
+_ALWAYS_IGNORE_DIRS = {"__pycache__", "results"}
+
+
 @register("validator", "immutable_files")
 class ImmutableFilesValidator:
-    """Every file in out_dir/task_agent that is *not* a mutable file or under a
-    mutable directory must be byte-identical to the corresponding file in
-    base_dir/task_agent."""
+    """Every file in out_dir/task_agent that is *not* mutable must be
+    byte-identical to the corresponding file in base_dir/task_agent.
+
+    Two modes, mirroring ``AgentEditor``: ``mutable_exclude=None`` (default)
+    is the legacy include-list — mutable means "in MUTABLE_FILES or under
+    MUTABLE_DIRS". Setting ``mutable_exclude`` (see
+    ``config.FrameworkConfig.mutable_exclude``) flips to an exclude-list —
+    mutable means "NOT matched by ``is_excluded``". Either way, `results/`
+    (generated runtime output, e.g. db-mas's own per-task JSON writes) and
+    `__pycache__` are always skipped entirely -- neither mutable nor
+    immutable, just ignored.
+    """
+
+    def __init__(self, mutable_exclude: list[str] | None = None) -> None:
+        self.mutable_exclude = mutable_exclude
+
+    def _is_mutable(self, rel: Path) -> bool:
+        if self.mutable_exclude is not None:
+            return not is_excluded(rel.as_posix(), self.mutable_exclude)
+        top = rel.parts[0]
+        return top in MUTABLE_FILES or top in MUTABLE_DIRS
 
     def validate(self, out_dir: Path, base_dir: Path) -> list[str]:
         errors: list[str] = []
@@ -321,11 +376,10 @@ class ImmutableFilesValidator:
             return errors  # round 0; nothing to compare against
 
         for path in out_root.rglob("*"):
-            if path.is_dir() or "__pycache__" in path.parts:
+            if path.is_dir() or set(path.parts) & _ALWAYS_IGNORE_DIRS:
                 continue
             rel = path.relative_to(out_root)
-            top = rel.parts[0]
-            if top in MUTABLE_FILES or top in MUTABLE_DIRS:
+            if self._is_mutable(rel):
                 continue
             base_path = base_root / rel
             if not base_path.exists():
@@ -333,11 +387,10 @@ class ImmutableFilesValidator:
             elif not filecmp.cmp(path, base_path, shallow=False):
                 errors.append(f"forbidden modification: {rel} differs from base round")
         for path in base_root.rglob("*"):
-            if path.is_dir() or "__pycache__" in path.parts:
+            if path.is_dir() or set(path.parts) & _ALWAYS_IGNORE_DIRS:
                 continue
             rel = path.relative_to(base_root)
-            top = rel.parts[0]
-            if top in MUTABLE_FILES or top in MUTABLE_DIRS:
+            if self._is_mutable(rel):
                 continue
             if not (out_root / rel).exists():
                 errors.append(f"forbidden deletion: {rel} (outside MUTABLE region)")

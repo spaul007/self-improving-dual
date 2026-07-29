@@ -5,11 +5,15 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 
-MutableFileName = Literal["workflow.py", "tool_wrapper.py", "tools_schema.json"]
-
-
 class EvolutionStrategy(BaseModel):
-    target_files: list[MutableFileName] = Field(default_factory=list)
+    # Informational only (logging/rendering) -- not a gate; see
+    # agent_editor.py's _is_path_allowed/_write_edits for the actual
+    # write-time enforcement. Plain str rather than a fixed Literal because
+    # projects using an exclude-list mutable surface (see
+    # config.FrameworkConfig.mutable_exclude) can report arbitrary edited
+    # paths, not just the legacy {workflow.py, tool_wrapper.py,
+    # tools_schema.json} include-list.
+    target_files: list[str] = Field(default_factory=list)
     optimization_goal: str
     proposed_changes: str
     rationale: str = ""

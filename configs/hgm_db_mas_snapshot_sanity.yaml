@@ -1,0 +1,208 @@
+# Small sanity-check HGM run against db_mas_snapshot (5 parallel specialist
+# investigators -> 1 terminal lead-DBA database RCA MAS, vendored at
+# projects/db_mas_snapshot/db_mas/ -- a snapshot-replay variant of the
+# already-integrated projects/db_mas/ project: no Docker/live Postgres at
+# inference time, every query_db call replays from a pre-recorded per-task
+# DB-state snapshot instead).
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_db_mas_snapshot_sanity.yaml
+#
+# Deliberately small: eval_budget=6 (+ up to 6 more from finalize_top_k=1,
+# bounded to the same 6-case train split, not charged to eval_budget) is
+# meant to confirm the whole pipeline works end to end -- db_mas_snapshot
+# runs under the framework's evaluator, the editor can see/edit the real
+# harness (not a shim), the db_mas_snapshot-named scorer/gatherer/summarizer
+# produce output, and a real EXPAND/edit cycle happens -- not to produce a
+# meaningfully optimized agent. train_size=6 matches math_mas's own sanity
+# config precedent (big enough that an all-zero seed is unlikely -- score
+# here is `recall`, taking values in {0, 0.5, 1.0} for the 2-gold-label
+# tasks and {0, 1.0} for the 1-gold-label tasks, a similar risk profile to
+# math_mas's binary exact-match).
+#
+# Two models, two roles (same convention as every other project this
+# session):
+#   - task agent (this project's own 5-investigator + lead-DBA LLM tool
+#     calls, via its own llm_client.py / MAS_* env vars -- NOT
+#     platform_core.llm_wrapper, see projects/db_mas_snapshot/db_mas/config.py):
+#     Qwen3.5-35B-A3B.
+#   - meta-agent (the editor's self-improvement call + the behavior
+#     summarizer, via platform_core.llm_wrapper.call_llm): Qwen3.5-122B-A10B.
+# `task_agent:` (the YAML block that exports LLM_MODEL/LLM_BASE_URL) is
+# irrelevant here -- this project's own code never reads those env vars --
+# so the 35B endpoint is set via `env:` (MAS_MODEL/MAS_BASE_URL/MAS_API_KEY)
+# instead, matching config.py's own env-var names. Same MAS_* naming
+# convention as math_mas/wikihop_mas (the other, already-integrated
+# projects/db_mas/ uses VLLM_* instead) -- confirmed a non-issue either way:
+# separate project directories, separate YAML `env:` blocks, never loaded
+# into the same process.
+
+experiment_name: "db_mas_snapshot_hgm_sanity"
+
+project: "db_mas_snapshot"
+seed_dir_name: "db_mas"
+
+# The editor's exclude-list mutable surface (see meta_agent/config.py's
+# FrameworkConfig.mutable_exclude). Everything under db_mas/ is editable
+# except:
+mutable_exclude:
+  # The benchmark's environment/answer-extraction contract: query_db.py
+  # (snapshot-replay tool -- rewriting it could change what evidence exists,
+  # not just how well agents use it) and label_extraction.py (the "FINAL:"
+  # line parser -- the literal answer-extraction contract).
+  - "tools/immutable/"
+  # eval/metrics.py -- the actual grader adapter/scorer_impl.py imports
+  # directly (score_record/summarize). Editing it would let the editor
+  # redefine its own grading function -- same measurement-integrity
+  # rationale as every other project this session.
+  - "eval/"
+  # The recorded DB-state snapshots (data/marble-db/db_cache/*.json) and the
+  # flattened task definitions (database_tasks.jsonl) query_db replays from
+  # -- a MEASUREMENT-INTEGRITY boundary specific to this project: if the
+  # editor could rewrite these, it could fabricate favorable "database
+  # evidence" for any label it wants, a far more severe integrity violation
+  # than a normal environment exclusion.
+  - "data/"
+  # Offline-only, Docker/MARBLE-package-dependent data-prep scripts, never
+  # reachable from run_task/run_many (confirmed via direct code read) --
+  # excluded so the editor doesn't waste attention on code that imports a
+  # package (`marble`) and infra (Docker) that don't exist in this
+  # environment and aren't part of the MAS's actual runtime behavior.
+  - "snapshot/"
+  # Holds MAX_CONCURRENT_TASKS/LLM_CONCURRENCY alongside the LLM
+  # model/endpoint config -- excluded (unlike the precedent of leaving
+  # config.py editable in db_mas/math_mas/wikihop_mas) specifically because
+  # an edit here could raise concurrency limits in ways that overload the
+  # shared vLLM host, a risk class the other 3 projects' config.py files
+  # don't carry in quite the same way. llm_client.py/agents/base.py remain
+  # editable, matching precedent.
+  - "config.py"
+  # The framework-mandated entry point -- excluded so the editor never even
+  # sees it; already satisfies SignatureValidator's AST check as a real
+  # `def run_task(task):` function.
+  - "workflow.py"
+  # Structurally unreachable already (sibling of db_mas/, never copied into
+  # the editor's workspace) -- named explicitly anyway for defense in depth.
+  - "benchmark/"
+
+# This project's tool-defining code (tools/mutable/compress.py, agents/*'s
+# workflow.py) is spread across a shared folder plus per-agent folders
+# rather than one projects/db_mas_snapshot/tools/ package -- see
+# meta_agent/config.py's FrameworkConfig.tool_source_dirs. None of this
+# project's own tool files call the framework's register_tool() (it defines
+# its own OpenAI-function-calling tool schema for query_db directly, not
+# via the framework's native tool-registration mechanism), so this scan
+# currently registers nothing at runtime; included for parity/
+# future-readiness, same rationale as every other project.
+tool_source_dirs:
+  - "tools"
+  - "agents"
+
+loop:
+  # HGM's real terminator is manager.config.eval_budget; max_rounds is only
+  # a hard cap on tree size -- bumped to 3 so the schedule has room for more
+  # than one EXPAND if the bandit favors it.
+  max_rounds: 3
+  score_target: 1.0
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 6
+    init_expansions: 1
+    alpha: 0.6
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 1
+    finalize_top_k: 1        # bounded to train_size (6) below, cheap either way
+    full_eval_top_k: 0       # disabled -- no full-benchmark sidecar audit
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    # No Docker/container startup at inference time (this project's biggest
+    # structural difference from the already-integrated projects/db_mas/) --
+    # each case is 5 concurrent investigator tool-loops (up to
+    # MAS_TOOL_MAX_ROUNDS=5 rounds each) + 5 concurrent compress() calls +
+    # 1 terminal lead-DBA call, all pure in-process asyncio/openai. Same
+    # starting value as math_mas's sanity config; revisit after Step 6's
+    # live single-case timing measurement.
+    wall_time_s_per_case: 600
+    # Plain asyncio + openai client process, no Docker/thread-pool-heavy
+    # anomaly injection like the OTHER db_mas project needs -- math_mas's
+    # 1024 is the right comparison, not the other db_mas's 8192.
+    memory_mb: 1024
+    # Deliberately LOWER than math_mas's/wikihop_mas's sanity-config
+    # parallelism=2, despite having no Docker: each case here internally
+    # fans out ~11 concurrent LLM calls (5 investigators + 5 compress + 1
+    # lead), so real host-side concurrency is (evaluator parallelism) x
+    # ~11, not x1 like math_mas -- start at 1 for this first pass and
+    # re-tune from measured contention behavior, don't default to 2.
+    parallelism: 1
+    scorer: "db_mas_snapshot_default"
+
+# n_hard_cases trimmed to 2, matching every other project's sanity config --
+# the failure_summary.md narrative carries the cross-case synthesis; these
+# are just 1-2 grounding examples now, not the sole evidence.
+gatherer:
+  type: "db_mas_snapshot_default"
+  config:
+    n_hard_cases: 2
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "db_mas_snapshot_default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+# LLM-synthesized cross-case failure summary -- see
+# meta_agent/failure_summarizer.py. Opted in here matching every other
+# project this session's sanity config.
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+# This project's own llm_client.py reads these directly (see
+# projects/db_mas_snapshot/db_mas/config.py) -- this is the actual
+# task-agent model, used for every investigator's/the lead DBA's real LLM
+# calls. Re-check this endpoint is still live before launching -- it
+# rotates (see memory: vllm_endpoint.md).
+env:
+  MAS_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  MAS_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-1:8000/v1"
+  MAS_API_KEY: "dummy"
+
+# Bound total cost: restrict optimization to a 6-case train pool (matching
+# eval_budget -- big enough to make an all-zero seed unlikely, still small
+# enough to stay a sanity check) and disable the held-out eval pass
+# entirely (eval_size: 0 -- otherwise it would run the best node against
+# all ~94 remaining cases once at the end, far beyond a sanity check).
+split:
+  seed: 42
+  train_size: 6
+  eval_size: 0
+
+# schema_wrapper_consistency / mutable_tool_imports / mutable_tool_routing /
+# imports omitted on purpose: all hardcode expectations from the legacy
+# tool_wrapper.py/tools_schema.json/mutable_tools/ convention this project
+# doesn't use. syntax/signature still apply generically (workflow.py's own
+# AST); immutable_files/load_test are the two most load-bearing checks for
+# this project specifically.
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "immutable_files"
+  - type: "load_test"

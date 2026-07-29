@@ -1,0 +1,102 @@
+# Config for wikihop_mas_2k -- a 2000-case RANDOM sample of the full
+# 2WikiMultihopQA dev split (12,576 rows), built to test whether larger
+# train/eval samples actually reduce sampling variance enough to trust
+# generalization claims (see aristotle_analysis.md). Same vendored MAS code
+# and adapter glue as projects/wikihop_mas/, reused via symlink -- only
+# benchmark/cases.jsonl differs (see
+# projects/wikihop_mas_2k/benchmark/generate_cases.py for the derivation).
+#
+# This config's manager/eval_budget/alpha are NOT yet tuned for a real HGM
+# run against this larger dataset -- they're placeholders (copied from
+# configs/hgm_wikihop_mas_x20_y50.yaml) so `build_components` has a valid
+# config to assemble. This file's initial purpose is just to drive
+# evaluate_task_agent.py for the sampling-variance check (train_size/
+# eval_size=1000/1000, matching that experiment's actual split). Re-size
+# eval_budget/alpha properly (see size_eval_budget.py) before launching any
+# real HGM search against this project.
+
+experiment_name: "wikihop_mas_2k_hgm"
+
+project: "wikihop_mas_2k"
+seed_dir_name: "wikihop_mas"
+
+mutable_exclude:
+  - "tools/immutable/"
+  - "eval/"
+  - "workflow.py"
+  - "benchmark/"
+
+tool_source_dirs:
+  - "tools"
+  - "agents"
+
+loop:
+  max_rounds: 40
+  score_target: 1.0
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 1000
+    init_expansions: 1
+    alpha: 0.4337
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 25
+    finalize_top_k: 3
+    full_eval_top_k: 3
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 900
+    memory_mb: 1024
+    parallelism: 16
+    scorer: "wikihop_mas_default"
+
+gatherer:
+  type: "wikihop_mas_default"
+  config:
+    n_hard_cases: 2
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "wikihop_mas_default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+env:
+  MAS_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  MAS_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-1:8000/v1"
+  MAS_API_KEY: "dummy"
+
+# 1000/1000 -- matches the sampling-variance experiment's own split, not
+# necessarily what a real HGM search against this project should use.
+split:
+  seed: 42
+  train_size: 1000
+  eval_size: 1000
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "immutable_files"
+  - type: "load_test"

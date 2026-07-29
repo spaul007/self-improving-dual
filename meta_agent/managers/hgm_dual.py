@@ -894,6 +894,14 @@ class HGMDualManager(HGMManager):
         train_case_ids: Optional[list[str]] = None,
         eval_case_ids: Optional[list[str]] = None,
         summarizer: Any = None,
+        # Accepted so main_loop.py's unconditional kwarg doesn't crash this
+        # manager (see meta_agent/failure_summarizer.py); forwarded to
+        # HGMManager.evolve() below so self._failure_summarizer gets set the
+        # same way self._summarizer already does. Dual's own Stage A/B
+        # EXPAND/EVALUATE paths aren't specifically wired to call it though
+        # (out of scope for now — this manager's variant logic differs
+        # enough from vanilla HGM's _evaluate that it wasn't verified here).
+        failure_summarizer: Any = None,
     ) -> Any:
         # Stash the evaluator so _expand can call _evaluate_candidate
         # without changing the HGMManager._expand signature.
@@ -922,4 +930,5 @@ class HGMDualManager(HGMManager):
             train_case_ids=train_case_ids,
             eval_case_ids=eval_case_ids,
             summarizer=summarizer,
+            failure_summarizer=failure_summarizer,
         )

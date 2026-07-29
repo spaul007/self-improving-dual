@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional, Protocol
 
 from . import verbose_log
-from .editor_validators import MUTABLE_DIRS, MUTABLE_FILES
+from .editor_validators import MUTABLE_DIRS, MUTABLE_FILES, is_excluded
 from .failure_report import render_failure_report
 from .feedback_gatherer import render_metrics
 from .models import AgentFeedback, EditResult, EvolutionStrategy
@@ -40,7 +40,9 @@ class Validator(Protocol):
 _ALLOWED_TARGET_FILES = ("workflow.py", "tool_wrapper.py", "tools_schema.json")
 
 
-def _coerce_target_files(value: Any) -> list[str]:
+def _coerce_target_files(
+    value: Any, valid: Optional[Callable[[str], bool]] = None
+) -> list[str]:
     """Coerce a model's ``target_files``-shaped value into a clean list[str].
 
     Models without strict schema enforcement (notably local vLLM-hosted
@@ -48,6 +50,13 @@ def _coerce_target_files(value: Any) -> list[str]:
     ``"workflow.py"`` on 2026-05-12) sometimes return a single string
     instead of a list. Unknown values are dropped; empty/None falls back to
     ``["workflow.py"]`` so a strategy summary always validates.
+
+    ``valid`` overrides what counts as a "known" path. Default (``None``)
+    preserves the exact legacy behavior — membership in
+    ``_ALLOWED_TARGET_FILES`` — for projects using the include-list mutable
+    surface. Projects using an exclude-list surface (see
+    ``config.FrameworkConfig.mutable_exclude``) pass a predicate instead,
+    since their editable paths aren't a fixed 3-name set.
     """
     if value is None or value == "":
         return ["workflow.py"]
@@ -57,7 +66,8 @@ def _coerce_target_files(value: Any) -> list[str]:
         candidates = [str(v) for v in value if v]
     else:
         return ["workflow.py"]
-    cleaned = [c for c in candidates if c in _ALLOWED_TARGET_FILES]
+    check = valid if valid is not None else (lambda c: c in _ALLOWED_TARGET_FILES)
+    cleaned = [c for c in candidates if check(c)]
     return cleaned or ["workflow.py"]
 
 
@@ -131,12 +141,17 @@ class AgentEditor:
         reasoning_effort: Optional[str] = None,
         base_url: Optional[str] = None,
         # Static project context injected by build_components (read from the
-        # project folder by convention). tools_source + db_schema are shown in
-        # BOTH modes (the agent's own tooling/data shape, not ground truth);
-        # scorer_source is shown only when eval_visibility == "whitebox".
+        # project folder by convention). tools_source + db_schema are shown
+        # in BOTH modes (the agent's own tooling/data shape, not ground
+        # truth); scorer_source is shown only when eval_visibility == "whitebox".
         tools_source: Optional[str] = None,
         db_schema: Optional[str] = None,
         scorer_source: Optional[str] = None,
+        # `None` (default) = legacy include-list mode (MUTABLE_FILES/
+        # MUTABLE_DIRS). A list = exclude-list mode: everything under the
+        # seed dir is editable except these paths. See
+        # config.FrameworkConfig.mutable_exclude.
+        mutable_exclude: Optional[list[str]] = None,
     ) -> None:
         self.llm = llm_caller
         self.validators = list(validators)
@@ -147,6 +162,7 @@ class AgentEditor:
         self.tools_source = tools_source
         self.db_schema = db_schema
         self.scorer_source = scorer_source
+        self.mutable_exclude = mutable_exclude
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -239,54 +255,142 @@ class AgentEditor:
         agent_dir = out_dir / "task_agent"
         current = self._read_mutable_sources(agent_dir)
 
-        system = (
-            "You are the self-improvement module of a self-evolving agent. "
-            "Diagnose what to change from the feedback and the current code, "
-            "then call `submit_self_improvement`.\n"
-            "First understand the task: read the agent's system prompt in "
-            "workflow.py, and (when provided below) the tool implementations, "
-            "database schema, and evaluation scoring code — together they show "
-            "what each tool does, what the data looks like, and how output is "
-            "graded. Target edits at the failures that most affect the score.\n"
-            "You may only modify these "
-            "files in the task_agent workspace:\n"
-            f"  - {', '.join(sorted(MUTABLE_FILES))}\n"
-            f"  - any *.py file under mutable_tools/\n\n"
-            "Hard rules:\n"
-            "  1. workflow.py MUST define "
-            "`def run_task(task: Task) -> AgentOutput`. The single arg must "
-            "be named `task` (the validator enforces this).\n"
-            "  2. workflow.py may import only: "
-            "platform_core.llm_wrapper.call_llm, platform_core.runner "
-            "(Task, AgentOutput), tool_wrapper, plus stdlib.\n"
-            "  3. tool_wrapper.py may import only: platform_core.tools, "
-            "mutable_tools.*, plus stdlib.\n"
-            "  4. Mutable tools (mutable_tools/*.py) may import only: "
-            "platform_core.tools, sibling mutable_tools.*, plus stdlib.\n"
-            "  5. Reach capabilities only via `platform_core.tools`: "
-            "`call_tool(name, **kwargs)` for immutable tools, and "
-            "`call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never "
-            "invoke a mutable tool's `run()` directly — routing through "
-            "`call_mutable_tool` keeps its calls recorded in the trace.\n"
-            "  6. tools_schema.json: every entry's `name` must be backed by "
-            "either an immutable tool OR a `mutable_tools/<name>.py` file. "
-            "No collisions between immutable and mutable names.\n"
-            "  7. Instrument your edits for the behavior summarizer. When you "
-            "add a verifier, helper, or decision branch in workflow.py or a "
-            "mutable_tools/*.py file, call "
-            "`platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', "
-            "name='specific_check_name', **context)` at the decision point. "
-            "Conventions: pick a stable `label` (e.g. 'verifier_fired', "
-            "'decision_branch'); use `name` to disambiguate within a label; "
-            "set `verdict` to `pass`, `fail`, or `skip`. The summarizer "
-            "cross-tabs these logs against case outcomes so the next editor "
-            "knows which of your additions helped, which didn't, and why. "
-            "Skip instrumentation only for trivial edits (renames, docstrings).\n\n"
-            "Call `submit_self_improvement` with a one-line optimization_goal, "
-            "a proposed_changes summary, a rationale, and the `files` payload. "
-            "Each file is the FULL replacement content — do not produce diffs. "
-            "Omit files you do not change."
-        )
+        if self.mutable_exclude is not None:
+            excl = ", ".join(sorted(self.mutable_exclude)) or "(nothing)"
+            system = (
+                "You are the self-improvement module of a self-evolving agent. "
+                "Diagnose what to change from the feedback and the current code, "
+                "then call `submit_self_improvement`.\n"
+                "First understand the task: read the agent's own code, and "
+                "(when provided below) the tool implementations, database "
+                "schema, and evaluation scoring code — together they show what "
+                "the system does, what the data looks like, and how output is "
+                "graded. Target edits at the failures that most affect the score.\n"
+                "You may edit ANY file in the task_agent workspace EXCEPT:\n"
+                f"  - {excl}\n"
+                "This includes prompt/config text AND the actual orchestration "
+                "code (workflow logic, tool implementations, retry/decision "
+                "branches, control flow) — not just one or the other. If the "
+                "failure pattern points to a structural or logical problem "
+                "(e.g. how evidence is gathered, when a retry fires, how a "
+                "decision is made), change the code that implements it; don't "
+                "default to a prompt-only wording tweak just because it is the "
+                "easiest edit to make. Pick whichever kind of change actually "
+                "fixes the diagnosed failure, or both together.\n\n"
+                "Hard rules:\n"
+                "  1. The workspace MUST keep exposing "
+                "`def run_task(task: Task) -> AgentOutput` from its top-level "
+                "`workflow.py` (the single arg must be named `task` — the "
+                "validator enforces this); it may delegate to any other file "
+                "you're allowed to edit.\n\n"
+                "If this workspace uses, or you introduce, a `tool_wrapper.py` + "
+                "`tools_schema.json` + `mutable_tools/` pattern (the framework's "
+                "generic tool-calling convention), these additional rules apply "
+                "to that pattern specifically — irrelevant otherwise:\n"
+                "  2. workflow.py may import only: "
+                "platform_core.llm_wrapper.call_llm, platform_core.runner "
+                "(Task, AgentOutput), tool_wrapper, plus stdlib.\n"
+                "  3. tool_wrapper.py may import only: platform_core.tools, "
+                "mutable_tools.*, plus stdlib.\n"
+                "  4. Mutable tools (mutable_tools/*.py) may import only: "
+                "platform_core.tools, sibling mutable_tools.*, plus stdlib.\n"
+                "  5. Reach capabilities only via `platform_core.tools`: "
+                "`call_tool(name, **kwargs)` for immutable tools, and "
+                "`call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never "
+                "invoke a mutable tool's `run()` directly — routing through "
+                "`call_mutable_tool` keeps its calls recorded in the trace.\n"
+                "  6. tools_schema.json: every entry's `name` must be backed by "
+                "either an immutable tool OR a `mutable_tools/<name>.py` file. "
+                "No collisions between immutable and mutable names.\n\n"
+                "  7. Instrument your edits for the behavior summarizer. When "
+                "you add a verifier, helper, or decision branch, call "
+                "`platform_core.trace.log(label='your_label', "
+                "verdict='pass'|'fail'|'skip', name='specific_check_name', "
+                "**context)` at the decision point. Conventions: pick a stable "
+                "`label` (e.g. 'verifier_fired', 'decision_branch'); use `name` "
+                "to disambiguate within a label; set `verdict` to `pass`, "
+                "`fail`, or `skip`. The summarizer cross-tabs these logs "
+                "against case outcomes so the next editor knows which of your "
+                "additions helped, which didn't, and why. Skip instrumentation "
+                "only for trivial edits (renames, docstrings).\n\n"
+                "  8. Double-check your own rationale before submitting. Every "
+                "factual claim in `rationale`/`proposed_changes` (e.g. \"the tag "
+                "is malformed\", \"case X failed because of Y\") must be verified "
+                "against the actual current source shown above or the "
+                "feedback/metrics below — re-read the specific line or field "
+                "you are citing and confirm it really says what you're about "
+                "to claim. Do not invent a plausible-sounding diagnosis you "
+                "have not checked. If a claim doesn't hold up on re-reading, "
+                "drop it or soften it (e.g. \"possibly\", \"this may "
+                "contribute\") rather than stating it as settled fact — a "
+                "correct edit with an honest, hedged rationale is better than "
+                "a confident but unverified one.\n\n"
+                "Call `submit_self_improvement` with a one-line optimization_goal, "
+                "a proposed_changes summary, a rationale, and the `files` payload. "
+                "Each file is the FULL replacement content — do not produce diffs. "
+                "Omit files you do not change."
+            )
+        else:
+            system = (
+                "You are the self-improvement module of a self-evolving agent. "
+                "Diagnose what to change from the feedback and the current code, "
+                "then call `submit_self_improvement`.\n"
+                "First understand the task: read the agent's system prompt in "
+                "workflow.py, and (when provided below) the tool implementations, "
+                "database schema, and evaluation scoring code — together they show "
+                "what each tool does, what the data looks like, and how output is "
+                "graded. Target edits at the failures that most affect the score.\n"
+                "You may only modify these "
+                "files in the task_agent workspace:\n"
+                f"  - {', '.join(sorted(MUTABLE_FILES))}\n"
+                f"  - any *.py file under mutable_tools/\n\n"
+                "Hard rules:\n"
+                "  1. workflow.py MUST define "
+                "`def run_task(task: Task) -> AgentOutput`. The single arg must "
+                "be named `task` (the validator enforces this).\n"
+                "  2. workflow.py may import only: "
+                "platform_core.llm_wrapper.call_llm, platform_core.runner "
+                "(Task, AgentOutput), tool_wrapper, plus stdlib.\n"
+                "  3. tool_wrapper.py may import only: platform_core.tools, "
+                "mutable_tools.*, plus stdlib.\n"
+                "  4. Mutable tools (mutable_tools/*.py) may import only: "
+                "platform_core.tools, sibling mutable_tools.*, plus stdlib.\n"
+                "  5. Reach capabilities only via `platform_core.tools`: "
+                "`call_tool(name, **kwargs)` for immutable tools, and "
+                "`call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never "
+                "invoke a mutable tool's `run()` directly — routing through "
+                "`call_mutable_tool` keeps its calls recorded in the trace.\n"
+                "  6. tools_schema.json: every entry's `name` must be backed by "
+                "either an immutable tool OR a `mutable_tools/<name>.py` file. "
+                "No collisions between immutable and mutable names.\n"
+                "  7. Instrument your edits for the behavior summarizer. When you "
+                "add a verifier, helper, or decision branch in workflow.py or a "
+                "mutable_tools/*.py file, call "
+                "`platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', "
+                "name='specific_check_name', **context)` at the decision point. "
+                "Conventions: pick a stable `label` (e.g. 'verifier_fired', "
+                "'decision_branch'); use `name` to disambiguate within a label; "
+                "set `verdict` to `pass`, `fail`, or `skip`. The summarizer "
+                "cross-tabs these logs against case outcomes so the next editor "
+                "knows which of your additions helped, which didn't, and why. "
+                "Skip instrumentation only for trivial edits (renames, docstrings).\n\n"
+                "  8. Double-check your own rationale before submitting. Every "
+                "factual claim in `rationale`/`proposed_changes` (e.g. \"the tag "
+                "is malformed\", \"case X failed because of Y\") must be verified "
+                "against the actual current source shown above or the "
+                "feedback/metrics below — re-read the specific line or field "
+                "you are citing and confirm it really says what you're about "
+                "to claim. Do not invent a plausible-sounding diagnosis you "
+                "have not checked. If a claim doesn't hold up on re-reading, "
+                "drop it or soften it (e.g. \"possibly\", \"this may "
+                "contribute\") rather than stating it as settled fact — a "
+                "correct edit with an honest, hedged rationale is better than "
+                "a confident but unverified one.\n\n"
+                "Call `submit_self_improvement` with a one-line optimization_goal, "
+                "a proposed_changes summary, a rationale, and the `files` payload. "
+                "Each file is the FULL replacement content — do not produce diffs. "
+                "Omit files you do not change."
+            )
 
         user_parts: list[str] = []
         if context:
@@ -366,9 +470,8 @@ class AgentEditor:
         )
         return fallback, files
 
-    @staticmethod
     def _parse_self_improvement(
-        args: dict[str, Any],
+        self, args: dict[str, Any]
     ) -> tuple[EvolutionStrategy, list[dict]]:
         """Split a ``submit_self_improvement`` tool call into a validated
         ``EvolutionStrategy`` summary and the raw ``files`` payload.
@@ -377,18 +480,42 @@ class AgentEditor:
         edited = [
             f.get("path", "") for f in files if isinstance(f, dict)
         ]
+        if self.mutable_exclude is not None:
+            valid = lambda p: not is_excluded(p, self.mutable_exclude)  # noqa: E731
+        else:
+            valid = None
+            edited = [p for p in edited if p in _ALLOWED_TARGET_FILES]
         strategy = EvolutionStrategy(
-            target_files=_coerce_target_files(
-                [p for p in edited if p in _ALLOWED_TARGET_FILES]
-            ),
+            target_files=_coerce_target_files(edited, valid=valid),
             optimization_goal=_coerce_str(args.get("optimization_goal")),
             proposed_changes=_coerce_str(args.get("proposed_changes")),
             rationale=_coerce_str(args.get("rationale")),
         )
         return strategy, files
 
+    # Noise directories skipped regardless of mode -- generated/scratch
+    # output (e.g. db-mas's own `results/raw/*.json` writes) and Python's
+    # own cache, never source the editor should read or be judged against.
+    _ALWAYS_IGNORE_DIRS = {"__pycache__", "results"}
+
     def _read_mutable_sources(self, agent_dir: Path) -> dict[str, str]:
-        sources: dict[str, str] = {}
+        if self.mutable_exclude is not None:
+            sources: dict[str, str] = {}
+            for path in sorted(agent_dir.rglob("*")):
+                if path.is_dir() or path.name == "__init__.py":
+                    continue
+                if set(path.relative_to(agent_dir).parts) & self._ALWAYS_IGNORE_DIRS:
+                    continue
+                rel = path.relative_to(agent_dir).as_posix()
+                if is_excluded(rel, self.mutable_exclude):
+                    continue
+                try:
+                    sources[rel] = path.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+            return sources
+
+        sources = {}
         for fname in sorted(MUTABLE_FILES):
             path = agent_dir / fname
             if path.exists():
@@ -404,9 +531,10 @@ class AgentEditor:
 
     def _format_project_context(self) -> list[str]:
         """Static project reference the editor needs to reason about tool calls
-        and the metric: immutable tool implementations, the database schema, and
-        (whitebox only) the evaluation scoring code. Each is injected by
-        ``build_components`` from the project folder; absent ones are skipped."""
+        and the metric: immutable tool implementations, the database schema,
+        and (whitebox only) the evaluation scoring code. Each is injected by
+        ``build_components``
+        from the project folder; absent ones are skipped."""
         parts: list[str] = []
         if self.tools_source:
             parts.append(
@@ -512,10 +640,16 @@ class AgentEditor:
                 errors.append(f"malformed edit entry: {entry!r}")
                 continue
             if not self._is_path_allowed(path):
-                errors.append(
-                    f"forbidden edit path: {path!r} "
-                    f"(must be one of {sorted(MUTABLE_FILES)} or under mutable_tools/)"
-                )
+                if self.mutable_exclude is not None:
+                    errors.append(
+                        f"forbidden edit path: {path!r} "
+                        f"(excluded: {sorted(self.mutable_exclude)})"
+                    )
+                else:
+                    errors.append(
+                        f"forbidden edit path: {path!r} "
+                        f"(must be one of {sorted(MUTABLE_FILES)} or under mutable_tools/)"
+                    )
                 continue
             target = agent_dir / path
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -524,9 +658,19 @@ class AgentEditor:
         return written, errors
 
     def _is_path_allowed(self, rel_path: str) -> bool:
+        parts = Path(rel_path).parts
+        if ".." in parts or Path(rel_path).is_absolute():
+            return False
+        if set(parts) & self._ALWAYS_IGNORE_DIRS:
+            # Generated/scratch output (e.g. db-mas's own results/raw/*.json
+            # writes) and __pycache__ -- never a legitimate edit target,
+            # mode-independent. Matches what _read_mutable_sources already
+            # never shows the editor in the first place.
+            return False
+        if self.mutable_exclude is not None:
+            return not is_excluded(Path(rel_path).as_posix(), self.mutable_exclude)
         if rel_path in MUTABLE_FILES:
             return True
-        parts = Path(rel_path).parts
         if len(parts) == 2 and parts[0] in MUTABLE_DIRS and parts[1].endswith(".py"):
             return True
         return False

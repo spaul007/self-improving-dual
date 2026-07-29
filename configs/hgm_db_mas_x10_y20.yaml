@@ -1,0 +1,171 @@
+# An HGM run against db_mas sized by target tree shape, not directly by
+# wall-clock time: "I want roughly X good-enough agents, each evaluated on
+# roughly Y examples on average" -- X=10, Y=20 here.
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_db_mas_x10_y20.yaml
+#
+# --- How eval_budget and alpha were derived ---
+#
+# B = X*Y = 10*20 = 200 (total budget).
+# alpha solved from B**alpha == X (matches hgm_tree.py::schedule_favors_expand
+# exactly -- "budget_spent**alpha >= n_real_nodes - 1" -- so at
+# budget_spent==B, the schedule has allowed ~X nodes to exist, each having
+# received ~Y evals on average by construction):
+#   alpha = ln(X)/ln(B) = ln(10)/ln(200) = 0.4346
+#
+#   python3 size_eval_budget.py --t-case 180 --target-agents 10 \
+#     --evals-per-agent 20 --eval-batch-size 5 --fixed-unbudgeted-evals 60 \
+#     --max-rounds 30 --t-editor 60
+#   -> eval_budget=200, alpha=0.4346, projected ~13.7h total.
+#
+# t_case=180s is a MEAN, not a measured aggregate throughput like math_mas's
+# 2.528s/case -- db_mas is a real Docker/Postgres container + 5 parallel
+# specialist LLM calls + coordinator per case, run serially at
+# parallelism=1 (see rationale below), with a long right tail from shared-
+# host contention (measured from prior sanity runs' case log timestamps:
+# median 78s, mean 166s, up to 740s outliers -- 180s used as a round,
+# slightly conservative planning number). Real wall-clock for this run will
+# likely vary more than math_mas's did.
+#
+# X=20/Y=20 was considered first (eval_budget=400, ~24.3h projected) but
+# judged too long a single commitment at parallelism=1; X=10/Y=20 halves
+# eval_budget to 200 (~13.7h) while keeping Y (and therefore train_size,
+# see below) unchanged, so each surviving agent still gets a real 20-case
+# evaluation, just with a smaller target tree (10 agents, not 20).
+#
+# Only 100 total cases exist in projects/db_mas/benchmark/cases.jsonl (vs.
+# math_mas's 500) -- train_size=Y=20 (same convention as math_mas: no
+# single node can exceed the per-agent evaluation budget this run is framed
+# around) + eval_size=20 leaves 60 of the 100 cases unused by this run,
+# which is fine, not a problem to fix.
+#
+# finalize_top_k=2 / full_eval_top_k=1 chosen to match the
+# --fixed-unbudgeted-evals=60 assumption above exactly: seed pre-eval
+# (train_size=20) + finalize top-up worst case (1 extra candidate needing
+# up to train_size=20 more evals to reach full train coverage) + the
+# full_eval_top_k=1 held-out audit pass (eval_size=20) = 60.
+
+experiment_name: "db_mas_hgm_x10_y20"
+
+project: "db_mas"
+seed_dir_name: "db-mas"
+
+# Same exclude-list as configs/hgm_db_mas_sanity.yaml -- see that file for
+# the full rationale on each entry (score.py excluded for measurement
+# integrity, workflow.py excluded as the framework-mandated entry point,
+# benchmark/ excluded as defense-in-depth even though it's structurally
+# unreachable already).
+mutable_exclude:
+  - "environment/"
+  - "common_tools/immutable/"
+  - "score.py"
+  - "workflow.py"
+  - "benchmark/"
+
+tool_source_dirs:
+  - "common_tools"
+  - "agents"
+
+loop:
+  # ~3x the X=10 target node count -- generous without being open-ended,
+  # since eval_budget/alpha are what's actually expected to bound growth.
+  max_rounds: 30
+  score_target: 1.0
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 200
+    init_expansions: 1
+    # Derived, not the framework default (0.6) -- see the sizing note above.
+    alpha: 0.4346
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    # Small batches -- each EVALUATE step is expensive (real Docker
+    # containers, serial), so a small eval_batch_size keeps the manager
+    # able to widen/narrow its choices frequently rather than committing a
+    # large chunk of budget to one node before reassessing.
+    eval_batch_size: 5
+    # See the sizing note above -- chosen to match the
+    # fixed_unbudgeted_evals=60 assumption exactly.
+    finalize_top_k: 2
+    full_eval_top_k: 1
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    # Same as configs/hgm_db_mas_sanity.yaml -- a timeout here still
+    # SIGKILLs the child and can leak a Docker container (confirmed,
+    # unaddressed risk -- see design_doc.md / integrating.md). 3600s gives
+    # generous headroom over the observed worst-case single-case latency
+    # (~740s) under host contention.
+    wall_time_s_per_case: 3600
+    memory_mb: 8192
+    # Kept at 1, matching the established, tested db_mas convention: each
+    # case is a real Docker/Postgres container on a shared host. Raising
+    # this was explicitly considered and deferred (untested at higher
+    # concurrency for db_mas) -- this run accepts the longer wall-clock
+    # instead of taking on that risk.
+    parallelism: 1
+    scorer: "db_mas_default"
+
+# n_hard_cases trimmed to 2, matching math_mas's x20_y100 config -- the
+# failure_summary.md narrative carries the cross-case synthesis; these are
+# just grounding examples now.
+gatherer:
+  type: "db_mas_default"
+  config:
+    n_hard_cases: 2
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "db_mas_default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+# LLM-synthesized cross-case failure summary (meta_agent/failure_summarizer.py)
+# -- not present in hgm_db_mas_sanity.yaml (predates this component), added
+# here for parity with math_mas's x20_y100 config. Factored into the
+# eval_budget sizing above via --t-summarizer-pair (default 15s, covers
+# behavior_summarizer + failure_summarizer combined).
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+# db-mas's own llm_client.py reads these directly -- this is the actual
+# task-agent model, used for the specialists'/coordinator's real LLM
+# tool-calling. Re-check this endpoint is still live before launching -- it
+# rotates (see memory: vllm_endpoint.md).
+env:
+  VLLM_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  VLLM_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-1:8000/v1"
+  VLLM_API_KEY: "dummy"
+
+split:
+  seed: 42
+  train_size: 20
+  eval_size: 20
+
+# Same validator set as configs/hgm_db_mas_sanity.yaml -- the
+# tool_wrapper.py/tools_schema.json/mutable_tools/ convention
+# (schema_wrapper_consistency/mutable_tool_imports/mutable_tool_routing/
+# imports) doesn't apply to db_mas at all.
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "immutable_files"
+  - type: "load_test"

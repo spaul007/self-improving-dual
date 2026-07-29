@@ -1,0 +1,150 @@
+# An HGM run against wikihop_mas sized by target tree shape, not directly by
+# wall-clock time: "I want roughly X good-enough agents, each evaluated on
+# roughly Y examples on average" -- X=20, Y=50 here.
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_wikihop_mas_x20_y50.yaml
+#
+# --- How eval_budget and alpha were derived ---
+#
+# B = X*Y = 20*50 = 1000 (total budget).
+# alpha solved from B**alpha == X (matches hgm_tree.py::schedule_favors_expand
+# exactly -- "budget_spent**alpha >= n_real_nodes - 1" -- so at
+# budget_spent==B, the schedule has allowed ~X nodes to exist, each having
+# received ~Y evals on average by construction):
+#   alpha = ln(X)/ln(B) = ln(20)/ln(1000) = 0.4337
+#
+# t_case=1.92s/case is a REAL measured aggregate throughput at
+# parallelism=16 (not extrapolated from the sanity config's parallelism=2
+# sample) -- a 40-case timed probe against the pristine seed via
+# evaluate_task_agent.py:
+#   wall_time_s=76.8 / 40 cases = 1.92s/case (mean_elapsed_s=15.165 under
+#   real 16-way contention; score=0.669 f1, no crashes -- see
+#   runs/adhoc_eval/throughput_probe_first_40/summary.json).
+# Even faster than math_mas's own measured 2.528s/case, despite wikihop_mas
+# doing more sequential LLM calls per case (Decomposer -> per-hop
+# Retriever/Extractor -> Concluder, up to ~8 calls with retries) -- this
+# vLLM deployment handles the extra calls well at this concurrency.
+#
+#   python3 size_eval_budget.py --t-case 1.92 --target-agents 20 \
+#     --evals-per-agent 50 --eval-batch-size 25 --fixed-unbudgeted-evals 300 \
+#     --max-rounds 40 --t-editor 30 --t-summarizer-pair 15
+#   -> eval_budget=1000, alpha=0.4337, projected ~1.2h total.
+#
+# 200 total cases exist in projects/wikihop_mas/benchmark/cases.jsonl --
+# train_size=Y=50 (same convention as math_mas/db_mas: no single node can
+# exceed the per-agent evaluation budget this run is framed around) +
+# eval_size=50 leaves 100 of the 200 cases unused by this run, which is
+# fine, not a problem to fix.
+#
+# finalize_top_k=3 / full_eval_top_k=3 matches math_mas's x20_y100 config
+# exactly (same target-agent count, same rationale); fixed_unbudgeted_evals
+# in the sizing command above (300) approximates seed(50) + finalize
+# top-up worst case (2*50=100) + full_eval_top_k audit (3*50=150) = 300.
+
+experiment_name: "wikihop_mas_hgm_x20_y50"
+
+project: "wikihop_mas"
+seed_dir_name: "wikihop_mas"
+
+# Same exclude-list as configs/hgm_wikihop_mas_sanity.yaml -- see that
+# file's comments for the full rationale on each entry.
+mutable_exclude:
+  - "tools/immutable/"
+  - "eval/"
+  - "workflow.py"
+  - "benchmark/"
+
+tool_source_dirs:
+  - "tools"
+  - "agents"
+
+loop:
+  # ~2x the X=20 target node count -- generous without being open-ended,
+  # since eval_budget/alpha are what's actually expected to bound growth.
+  max_rounds: 40
+  score_target: 1.0
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 1000
+    init_expansions: 1
+    # Derived, not the framework default (0.6) -- see the sizing note above.
+    alpha: 0.4337
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    # Half of train_size (50), matching math_mas's x20_y100 convention --
+    # keeps the number of summarizer-triggering EVALUATE steps
+    # (eval_budget / eval_batch_size = 40) from dominating the run.
+    eval_batch_size: 25
+    finalize_top_k: 3
+    full_eval_top_k: 3
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    # Same as configs/hgm_wikihop_mas_sanity.yaml -- absorbs
+    # decomposer/per-hop retriever+extractor/concluder chains plus a
+    # possible grounding retry, and shared-host contention.
+    wall_time_s_per_case: 900
+    memory_mb: 1024
+    # Bumped from the sanity config's conservative 2 -> 16, matching
+    # math_mas's real-run value: same in-process (no Docker) architecture,
+    # same shared vLLM host, and the throughput probe above confirms it
+    # scales cleanly at this concurrency (76.8s for 40 cases, no crashes,
+    # no errors).
+    parallelism: 16
+    scorer: "wikihop_mas_default"
+
+# n_hard_cases trimmed to 2, matching math_mas's x20_y100 config -- the
+# failure_summary.md narrative carries the cross-case synthesis.
+gatherer:
+  type: "wikihop_mas_default"
+  config:
+    n_hard_cases: 2
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "wikihop_mas_default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+# wikihop_mas's own llm_client.py reads these directly -- this is the
+# actual task-agent model, used for every agent's real LLM calls.
+# Re-check this endpoint is still live before launching -- it rotates.
+env:
+  MAS_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  MAS_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-1:8000/v1"
+  MAS_API_KEY: "dummy"
+
+split:
+  seed: 42
+  train_size: 50
+  eval_size: 50
+
+# Same validator set as configs/hgm_wikihop_mas_sanity.yaml -- the legacy
+# tool_wrapper.py/tools_schema.json/mutable_tools/ convention doesn't apply
+# to wikihop_mas.
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "immutable_files"
+  - type: "load_test"

@@ -19,12 +19,34 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Iterable, Optional, Protocol
+
+_UNSAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9_.-]")
+
+
+def _safe_case_filename(case_id: str) -> str:
+    """Sanitize a case_id for use as a filename component -- ONLY for the
+    two per-case debug-artifact filenames below (``case_<id>.json``/
+    ``.stderr``). The real ``case_id`` string is never touched anywhere
+    else (scoring, matching, gatherer, etc.).
+
+    Confirmed for real with math_mas: its case_ids are literal dataset
+    paths like ``test/algebra/101.json``. An unsanitized
+    ``f"case_{case_id}.json"`` gets treated by ``Path`` as nested
+    subdirectories that never exist. The ``.json`` write (``_finish``) is
+    guarded (``except OSError: pass``) so it just silently produced no
+    file; the ``.stderr`` write was NOT guarded and fires on ANY non-empty
+    subprocess stderr (not just failures) -- an uncaught ``FileNotFoundError``
+    there would have propagated through the thread pool and crashed the
+    whole ``evaluator.run()`` call the first time any case printed
+    anything to stderr or timed out."""
+    return _UNSAFE_FILENAME_RE.sub("_", case_id)
 
 from .models import CaseResult, EvaluationResult
 from .registry import register
@@ -226,7 +248,7 @@ class SubprocessEvaluator:
         from platform_core.runner import AgentOutput, Task
 
         case_id = str(case.get("id") or case.get("case_id") or len(case))
-        stderr_path = logs_dir / f"case_{case_id}.stderr"
+        stderr_path = logs_dir / f"case_{_safe_case_filename(case_id)}.stderr"
 
         # Per-case env overrides from ``case["env"]`` (anything project
         # tools need to scope their behaviour to this case).
@@ -252,10 +274,14 @@ class SubprocessEvaluator:
                 preexec_fn=self._preexec if os.name == "posix" else None,
             )
         except subprocess.TimeoutExpired as exc:
-            stderr_path.write_text(
-                f"TIMEOUT after {self.wall_time_s}s\n{(exc.stderr or '') if hasattr(exc, 'stderr') else ''}",
-                encoding="utf-8",
-            )
+            try:
+                stderr_path.write_text(
+                    f"TIMEOUT after {self.wall_time_s}s\n{(exc.stderr or '') if hasattr(exc, 'stderr') else ''}",
+                    encoding="utf-8",
+                )
+            except OSError:
+                # Persistence is observability -- never fail the case for it.
+                pass
             return self._finish(
                 CaseResult(
                     case_id=case_id,
@@ -268,7 +294,11 @@ class SubprocessEvaluator:
             )
 
         if proc.stderr:
-            stderr_path.write_text(proc.stderr, encoding="utf-8")
+            try:
+                stderr_path.write_text(proc.stderr, encoding="utf-8")
+            except OSError:
+                # Persistence is observability -- never fail the case for it.
+                pass
 
         if proc.returncode != 0:
             return self._finish(
@@ -362,7 +392,7 @@ class SubprocessEvaluator:
         case_id, distinct paths) so no locking is needed.
         """
         try:
-            (logs_dir / f"case_{result.case_id}.json").write_text(
+            (logs_dir / f"case_{_safe_case_filename(result.case_id)}.json").write_text(
                 result.model_dump_json(indent=2), encoding="utf-8"
             )
         except OSError:

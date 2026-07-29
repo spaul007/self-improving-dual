@@ -1,0 +1,182 @@
+# Small sanity-check HGM run against db_mas (Coordinator + 5-Specialist
+# Postgres root-cause-diagnosis MAS, vendored at projects/db_mas/db-mas/).
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_db_mas_sanity.yaml
+#
+# Deliberately small: eval_budget=6 (+ up to 6 more from finalize_top_k=1,
+# bounded to the same 6-case train split, not charged to eval_budget) is
+# meant to confirm the whole pipeline actually works end to end -- db_mas
+# runs under the framework's evaluator, the editor can see/edit the real
+# harness (not a shim), the db_mas-named gatherer/summarizer produce
+# output -- not to produce a meaningfully optimized agent.
+#
+# Two models, two roles (per direct request):
+#   - task agent (db-mas's own specialists+coordinator LLM tool-calling,
+#     via its own llm_client.py / VLLM_* env vars -- NOT
+#     platform_core.llm_wrapper, see projects/db_mas/db-mas/config.py):
+#     Qwen3.5-35B-A3B.
+#   - meta-agent (the editor's self-improvement call + the behavior
+#     summarizer, via platform_core.llm_wrapper.call_llm): Qwen3.5-122B-A10B.
+# `task_agent:` (the YAML block that exports LLM_MODEL/LLM_BASE_URL) is
+# irrelevant here -- db-mas's own code never reads those env vars -- so the
+# 35B endpoint is set via `env:` (VLLM_MODEL/VLLM_BASE_URL/VLLM_API_KEY)
+# instead, matching db-mas/config.py's own env-var names.
+
+experiment_name: "db_mas_hgm_sanity"
+
+project: "db_mas"
+seed_dir_name: "db-mas"
+
+# The editor's exclude-list mutable surface (see meta_agent/config.py's
+# FrameworkConfig.mutable_exclude): everything under db-mas/ is editable
+# except fixed infra (environment/), the shared immutable tool
+# (common_tools/immutable/), the scoring code the framework's own scorer
+# imports directly (score.py -- editing it would let the editor redefine
+# its own grading function), workflow.py (the framework-mandated entry
+# point -- Task/AgentOutput translation + the sole call into
+# mas_workflow.run_task; excluded so the editor never touches or even sees
+# it, matching the "editor's root = raw agent code only" design -- it
+# already satisfies SignatureValidator's AST check as a real `def
+# run_task(task):` function, this exclusion is purely about editor
+# visibility/mutability, not validator compliance), and benchmark/ (already
+# unreachable in practice -- benchmark/ is a sibling of db-mas/, never
+# copied into the editor's workspace -- named explicitly anyway per user
+# request, defense in depth against a same-named subfolder appearing
+# inside the copy). NOTE: exact-path matching, not basename -- every OTHER
+# workflow.py in the tree (agents/coordinator/workflow.py, each
+# specialist's workflow.py) stays fully visible and editable; only this
+# exact top-level path is excluded.
+mutable_exclude:
+  - "environment/"
+  - "common_tools/immutable/"
+  - "score.py"
+  - "workflow.py"
+  - "benchmark/"
+
+# db_mas's tool-defining code (query_db.py, report_findings.py,
+# coordinator's ask_specialist/submit_verdict schemas) is spread across a
+# shared folder plus a per-agent folder rather than one projects/db_mas/tools/
+# package -- see meta_agent/config.py's FrameworkConfig.tool_source_dirs and
+# platform_core/tools/__init__.py's load_paths. None of db_mas's own tool
+# files call register_tool() (this is db-mas's own, independent LLM
+# tool-calling loop -- see agents/base.py::run_tool_loop -- unrelated to
+# this framework's call_tool/register_tool tracing wrapper), so this scan
+# currently registers nothing at runtime; it's here so the mechanism is
+# exercised and ready if/when that changes, not because anything depends on
+# it today.
+tool_source_dirs:
+  - "common_tools"
+  - "agents"
+
+loop:
+  # HGM's real terminator is manager.config.eval_budget; max_rounds is only
+  # a hard cap on tree size (node count) -- kept small too for this check.
+  max_rounds: 2
+  score_target: 1.0
+
+manager:
+  type: "hgm"
+  config:
+    # Re-check after the adapter-visibility fix (config._read_adapter_source
+    # + agent_editor.py's rule 1 / read-only reference section): does the
+    # editor still try to reinvent adapter.task_translation from scratch on
+    # a real expansion? Shrunk hard from the first sanity run (was
+    # eval_budget=6/train_size=6) -- we already proved the harness itself
+    # works end to end; this pass only needs to exercise ONE real editor
+    # call and see what it does with workflow.py.
+    eval_budget: 2
+    init_expansions: 1
+    alpha: 0.6
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 1
+    finalize_top_k: 1        # bounded to train_size (2) below, cheap either way
+    full_eval_top_k: 0       # disabled -- no full-benchmark sidecar audit
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    # Bumped from 1200s -> 3600s: the sanity run's case 43 hit the 1200s cap
+    # exactly (confirmed: round_001/eval_result.json's per_case error was
+    # literally "timeout after 1200.0s"), and it leaked a Postgres container
+    # (db_mas_43-postgres_db-1) on the way out, confirming the SIGKILL/leak
+    # risk noted below is real, not theoretical. Real db_mas cases take ~2-3
+    # min normally but a shared vLLM server under contention has stalled
+    # ~8 min in prior live testing this session -- 3600s gives ~6x headroom
+    # over that observed worst case. NOTE: a timeout here still SIGKILLs the
+    # child -- any Docker container it brought up still leaks (confirmed,
+    # unaddressed risk, see design_doc.md / this plan's Addendum 3) --
+    # a bigger timeout only reduces how often that path gets hit, doesn't
+    # eliminate it.
+    wall_time_s_per_case: 3600
+    # Found live: 2048 was too tight and broke every case near-instantly.
+    # RLIMIT_AS (set from this value, see SubprocessEvaluator._preexec)
+    # constrains the WHOLE child process's virtual address space, including
+    # environment/anomaly_injection.py's concurrent_execute_sql, which spins
+    # up a 100-thread ThreadPool for INSERT_LARGE_DATA-style anomalies (each
+    # thread has its own stack + a live psycopg2 connection) on top of the
+    # interpreter + openai SDK + the full db-mas/adapter/framework module
+    # tree. Under the too-tight cap, every case failed in 3-13s with
+    # "'DummyProcess' object has no attribute 'terminate'" (a ThreadPool
+    # abnormal-teardown symptom) instead of a clean OOM, AND the container
+    # teardown in mas_workflow.run_task's `finally:` silently failed too,
+    # leaking two Postgres containers. 8192 gives real headroom; revisit if
+    # it's still not enough.
+    memory_mb: 8192
+    # Keep concurrency low: each case is a real Docker/Postgres container
+    # (heavier than a plain tool-loop agent) AND this vLLM host is shared
+    # with other users' concurrent jobs (confirmed earlier this session).
+    parallelism: 1
+    scorer: "db_mas_default"
+
+gatherer:
+  type: "db_mas_default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "db_mas_default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+# db-mas's own llm_client.py reads these directly (see
+# projects/db_mas/db-mas/config.py) -- this is the actual task-agent model,
+# used for the specialists'/coordinator's real LLM tool-calling.
+env:
+  VLLM_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  VLLM_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-1:8000/v1"
+  VLLM_API_KEY: "dummy"
+
+# Bound total cost: restrict optimization to a 2-case train pool (matching
+# eval_budget -- this run only needs to trigger ONE real editor expansion,
+# not re-verify the harness broadly) and disable the held-out eval pass
+# entirely (eval_size: 0 -- otherwise it would run the best node against
+# all ~98 remaining cases once at the end, far beyond a sanity check).
+split:
+  seed: 42
+  train_size: 2
+  eval_size: 0
+
+# schema_wrapper_consistency / mutable_tool_imports / mutable_tool_routing
+# omitted on purpose: all three hardcode expectations from the
+# tool_wrapper.py/tools_schema.json/mutable_tools/ pattern (travel/shopping/
+# math's convention) that db_mas doesn't use at all -- `imports` too (it
+# unconditionally requires tool_wrapper.py to exist). syntax/signature still
+# apply generically (workflow.py's own AST); immutable_files/load_test are
+# the two most load-bearing checks for this addendum specifically.
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "immutable_files"
+  - type: "load_test"

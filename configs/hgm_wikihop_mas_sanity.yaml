@@ -1,0 +1,164 @@
+# Small sanity-check HGM run against wikihop_mas (Decomposer/Retriever/
+# Extractor/Concluder 2WikiMultihopQA multi-hop QA MAS, vendored at
+# projects/wikihop_mas/wikihop_mas/).
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_wikihop_mas_sanity.yaml
+#
+# Mirrors configs/hgm_math_mas_sanity.yaml's structure/reasoning closely;
+# see that file's comments for shared rationale. wikihop_mas-specific
+# differences are called out below.
+
+experiment_name: "wikihop_mas_hgm_sanity"
+
+project: "wikihop_mas"
+seed_dir_name: "wikihop_mas"
+
+# Exclude-list mutable surface (meta_agent/config.py's
+# FrameworkConfig.mutable_exclude). Everything under wikihop_mas/ is
+# editable EXCEPT:
+mutable_exclude:
+  # The benchmark's environment/answer-extraction contract: search_context.py
+  # (BM25 index + the closed-book "only these ~10 paragraphs" corpus
+  # definition), compare_values.py (date/number comparator tool),
+  # grounding_check.py (deterministic quote-verification -- the signal that
+  # drives the retry trigger), answer_extraction.py (final_answer > <answer>
+  # tag > empty precedence, the literal "what counts as the MAS's answer"
+  # rule). wikihop_mas's own tools/immutable/ naming convention, given real
+  # enforcement here (same rationale as math_mas).
+  - "tools/immutable/"
+  # eval/metrics.py -- the actual grader adapter/scorer_impl.py imports
+  # directly (normalize_answer/exact_match/f1_prec_recall/sp_prf/joint_f1).
+  # Editing it would let the editor redefine its own grading function --
+  # same measurement-integrity rationale as math_mas/db_mas.
+  - "eval/"
+  # The framework-mandated entry point (Step 2) -- excluded so the editor
+  # never touches or even sees it. Already satisfies SignatureValidator's
+  # AST check as a real `def run_task(task):` function; this exclusion is
+  # purely about editor visibility/mutability.
+  - "workflow.py"
+  # Structurally unreachable already (sibling of wikihop_mas/, never
+  # copied into the editor's workspace) -- named explicitly anyway for
+  # defense in depth, matching math_mas/db_mas's config.
+  - "benchmark/"
+
+# wikihop_mas's tool-defining code (tools/{immutable,mutable}/*.py,
+# agents/*/workflow.py) is spread across a shared folder plus per-agent
+# folders rather than one projects/wikihop_mas/tools/ package -- see
+# meta_agent/config.py's FrameworkConfig.tool_source_dirs. None of it calls
+# platform_core's register_tool() -- wikihop_mas defines its own
+# OpenAI-function-calling tool schemas as plain dicts
+# (SEARCH_CONTEXT_TOOL/COMPARE_VALUES_TOOL) rather than using the
+# framework's native tool-registration mechanism -- so this scan currently
+# registers nothing at runtime; included for parity/future-readiness, same
+# rationale as math_mas's identical entry.
+tool_source_dirs:
+  - "tools"
+  - "agents"
+
+loop:
+  # HGM's real terminator is manager.config.eval_budget; max_rounds is only
+  # a hard cap on tree size.
+  max_rounds: 3
+  score_target: 1.0
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 8
+    init_expansions: 1
+    alpha: 0.6
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 1
+    finalize_top_k: 1
+    full_eval_top_k: 0
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    # wikihop_mas does more sequential LLM calls per case than math_mas:
+    # Decomposer (1 call) -> per hop (1 or 2 hops) Retriever tool-loop (up
+    # to RETRIEVER_MAX_ROUNDS=3 rounds) + Extractor (1 call) -> Concluder
+    # tool-loop (up to CONCLUDER_MAX_ROUNDS=3 rounds), doubled if a
+    # grounding retry fires (config.MAX_HOP_RETRIES=1). Bumped from
+    # math_mas's 600s to absorb that plus shared vLLM host contention.
+    wall_time_s_per_case: 900
+    # Same as math_mas -- plain in-process LLM calls, no Docker-scale
+    # memory needs.
+    memory_mb: 1024
+    # Kept modest, same as math_mas -- shared vLLM host with other users.
+    parallelism: 2
+    scorer: "wikihop_mas_default"
+
+# n_hard_cases trimmed to 2 (matching math_mas) now that failure_summarizer
+# below carries the cross-case narrative synthesis.
+gatherer:
+  type: "wikihop_mas_default"
+  config:
+    n_hard_cases: 2
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "wikihop_mas_default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+# Opt-in (off by default framework-wide) -- reuses the same rationale as
+# math_mas's config: gives the editor a synthesized cross-case narrative
+# instead of relying only on the 2 raw examples above.
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+# wikihop_mas's own llm_client.py reads these directly (see
+# projects/wikihop_mas/wikihop_mas/config.py) -- this is the actual
+# task-agent model, used for every agent's real LLM calls. Same env-var
+# NAMES as math_mas's `env:` block (wikihop_mas's config.py was
+# deliberately built mirroring math_mas's), but a DIFFERENT YAML block
+# instance -- these are not shared with any other project's run.
+# `task_agent:` (the YAML block that exports LLM_MODEL/LLM_BASE_URL) is
+# irrelevant here for the same reason it was irrelevant for math_mas --
+# wikihop_mas's own code never reads those env vars.
+env:
+  MAS_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  MAS_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-1:8000/v1"
+  MAS_API_KEY: "dummy"
+
+# 8-case train pool (vs. math_mas's 6) -- sized up slightly for
+# wikihop_mas's higher per-case cost variance (multi-hop + bounded retry),
+# even though an all-zero seed is arguably already LESS likely here than
+# it was for math_mas: score is answer_f1 (continuous, see
+# adapter/scorer_impl.py), so a token-overlapping-but-not-exact answer
+# still contributes positive utility, unlike math_mas's strict binary EM
+# score. eval_size: 0 disables the held-out pass (would otherwise run the
+# best node against the full remaining cases.jsonl pool once at the end).
+split:
+  seed: 42
+  train_size: 8
+  eval_size: 0
+
+# schema_wrapper_consistency / mutable_tool_imports / mutable_tool_routing /
+# imports omitted on purpose: all hardcode expectations from the legacy
+# tool_wrapper.py/tools_schema.json/mutable_tools/ convention wikihop_mas
+# doesn't use. syntax/signature still apply generically (workflow.py's own
+# AST); immutable_files/load_test are the two most load-bearing checks for
+# this project specifically.
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "immutable_files"
+  - type: "load_test"

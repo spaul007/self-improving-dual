@@ -1,4 +1,4 @@
-experiment_name: "travel_hgm_dual_1000_qwen122b_node2"
+experiment_name: "travel_hgm_dual_1000_qwen122b_node2_vivek"
 
 # previous name was experiment_name: "travel_hgm_dual_4000_qwen122b_node6", so some info might be saved there
 
@@ -35,7 +35,7 @@ task_agent:
 manager:
   type: "hgm_dual"
   config:
-    eval_budget: 1000
+    eval_budget: 50
     init_expansions: 3
     alpha: 0.5
     epsilon: 0.25

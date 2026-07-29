@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 from . import verbose_log
-from .editor_validators import MUTABLE_DIRS, MUTABLE_FILES
+from .editor_validators import MUTABLE_DIRS, MUTABLE_FILES, is_excluded
 from .models import EvaluationResult, CaseResult
 from .registry import register
 
@@ -69,6 +69,14 @@ class BehaviorSummarizer:
         reasoning_effort: ``"low"`` | ``"medium"`` | ``"high"`` — passed
             through to the LLM call. ``None`` falls back to ``temperature``.
         base_url: optional alternate OpenAI-compatible endpoint.
+        mutable_exclude: same list as ``config.FrameworkConfig.mutable_exclude``
+            / ``AgentEditor``/``ImmutableFilesValidator``. ``None`` (default)
+            keeps the legacy include-list diff scope (``MUTABLE_FILES``/
+            ``MUTABLE_DIRS`` only — every existing project). Set it so the
+            diff/changed-files summary recursively covers the same exclude-list
+            mutable surface the editor actually operates on, instead of only
+            ever noticing edits to a file literally named ``workflow.py``,
+            ``tool_wrapper.py``, ``tools_schema.json``, or ``mutable_tools/*.py``.
     """
 
     def __init__(
@@ -79,11 +87,13 @@ class BehaviorSummarizer:
         reasoning_effort: Optional[str] = None,
         base_url: Optional[str] = None,
         domain_label: Optional[str] = None,
+        mutable_exclude: Optional[list[str]] = None,
     ) -> None:
         self.llm = llm_caller
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.base_url = base_url
+        self.mutable_exclude = mutable_exclude
         # Domain noun for the summarizer prompt — keeps the framework
         # project-agnostic. Precedence: explicit config value, then the active
         # project name (exported as ``META_AGENT_PROJECT`` by
@@ -265,6 +275,11 @@ class BehaviorSummarizer:
             "per_case": per_case,
         }
 
+    # Same noise set agent_editor.py's exclude-mode scan skips: generated/
+    # scratch output (e.g. db-mas's own per-task JSON writes) and Python's
+    # own cache -- never source, never worth diffing either way.
+    _ALWAYS_IGNORE_DIRS = {"__pycache__", "results"}
+
     def _changed_mutable_files(
         self, parent_round_dir: Path, round_dir: Path
     ) -> list[str]:
@@ -277,15 +292,33 @@ class BehaviorSummarizer:
             return out
 
         candidates: set[str] = set()
-        for name in MUTABLE_FILES:
-            candidates.add(name)
-        for sub in MUTABLE_DIRS:
-            for src in (parent_root / sub, child_root / sub):
-                if src.exists():
-                    for p in src.glob("*.py"):
-                        if p.name == "__init__.py":
-                            continue
-                        candidates.add(f"{sub}/{p.name}")
+        if self.mutable_exclude is not None:
+            # Exclude-mode: recursively cover the same mutable surface the
+            # editor actually operates on, not just the legacy 3 filenames +
+            # mutable_tools/ -- otherwise edits to e.g. agents/coordinator/
+            # workflow.py would never show up here at all.
+            for root in (parent_root, child_root):
+                if not root.is_dir():
+                    continue
+                for p in root.rglob("*"):
+                    if p.is_dir() or p.name == "__init__.py":
+                        continue
+                    if set(p.relative_to(root).parts) & self._ALWAYS_IGNORE_DIRS:
+                        continue
+                    rel = p.relative_to(root).as_posix()
+                    if is_excluded(rel, self.mutable_exclude):
+                        continue
+                    candidates.add(rel)
+        else:
+            for name in MUTABLE_FILES:
+                candidates.add(name)
+            for sub in MUTABLE_DIRS:
+                for src in (parent_root / sub, child_root / sub):
+                    if src.exists():
+                        for p in src.glob("*.py"):
+                            if p.name == "__init__.py":
+                                continue
+                            candidates.add(f"{sub}/{p.name}")
 
         for rel in sorted(candidates):
             p_path = parent_root / rel

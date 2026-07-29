@@ -1,0 +1,114 @@
+# Global + per-agent prompt configuration for the wikihop MAS.
+#
+# Convention (mirrors math_mas):
+#   role : FROZEN   -- identity of the agent. Do not let an optimizer rewrite.
+#   task : EDITABLE -- the instruction. Fair game for prompt optimization.
+#
+# Every inter-agent hand-off here is structured JSON (not <answer> tags like
+# math_mas) because the controller branches on typed, multi-field output at
+# several points. Each task embeds a literal JSON example of the expected
+# output shape -- models follow schema-by-example more reliably than
+# schema-by-description alone. NOTE: task strings go through str.format(), so
+# every literal `{`/`}` in an example must be doubled (`{{`/`}}`).
+
+agents:
+  decomposer:
+    # FROZEN
+    role: >-
+      Question decomposer for multi-hop question answering. Classifies a
+      question's reasoning type and breaks it into the minimal sub-questions
+      needed to answer it. Never answers the question itself.
+    # EDITABLE
+    task: |
+      Classify the question below into exactly one reasoning type and decompose it into its sub-questions.
+
+      Reasoning types:
+      - "comparison": compares an attribute (e.g. a date or number) of two entities named directly in the question. Exactly 2 sub-questions, INDEPENDENT of each other (order doesn't matter).
+      - "bridge_comparison": like comparison, but one or both entities must first be resolved through a bridging fact (e.g. "the director of Film X") before the comparison can be made. Exactly 2 sub-questions, INDEPENDENT of each other.
+      - "inference": one fact leads to another via a relation (e.g. "who is the spouse of the founder of Company X"). Exactly 2 sub-questions, the second DEPENDENT on the first.
+      - "compositional": a chain of two facts about entities linked through the question (e.g. "what is the nationality of the director of Film X"). Exactly 2 sub-questions, the second DEPENDENT on the first.
+
+      If dependency is "dependent", write hop 2's question using the literal placeholder {{hop1_answer}} wherever hop 1's answer needs to be substituted in.
+
+      Respond with ONLY a JSON object, no other text, in exactly this shape:
+      {{
+        "type": "compositional",
+        "dependency": "dependent",
+        "sub_questions": [
+          {{"hop_id": 1, "question": "Who is the director of the film 'Example Film'?"}},
+          {{"hop_id": 2, "question": "What is the country of citizenship of {{hop1_answer}}?", "depends_on": 1}}
+        ]
+      }}
+
+      For an independent (comparison / bridge_comparison) question, "depends_on" is omitted and both sub-questions are self-contained, e.g.:
+      {{
+        "type": "comparison",
+        "dependency": "independent",
+        "sub_questions": [
+          {{"hop_id": 1, "question": "When was Entity A born?"}},
+          {{"hop_id": 2, "question": "When was Entity B born?"}}
+        ]
+      }}
+
+      Question: {question}
+
+  retriever:
+    # FROZEN
+    role: >-
+      Evidence retriever. Searches the question's own context paragraphs with
+      the search_context tool to find sentences relevant to one sub-question.
+      Does not answer the sub-question itself -- that is the Extractor's job.
+    # EDITABLE
+    task: |
+      Use the search_context tool to find evidence for the sub-question below. You may call it more than once with a different phrasing if the first results look thin, off-target, or ambiguous. Once you have enough evidence (or are confident there is none to find), stop calling tools and reply with a short one- or two-sentence note on what you found.
+
+      Sub-question: {sub_question}
+      {retry_hint}
+
+  extractor:
+    # FROZEN
+    role: >-
+      Fact extractor. Given a sub-question and retrieved sentences, pulls out
+      the specific answer, grounded in a verbatim quote from the source.
+    # EDITABLE
+    task: |
+      Using ONLY the retrieved sentences below, answer the sub-question. The "quote" field must be copied VERBATIM (character-for-character, including punctuation) from exactly one of the retrieved sentences -- never paraphrase it. If the sentences don't clearly answer the sub-question, still give your best-guess "answer" and quote the closest relevant sentence.
+
+      Respond with ONLY a JSON object, no other text, in exactly this shape:
+      {{
+        "answer": "United States",
+        "quote": "John Smith is an American film director born in Ohio.",
+        "source_title": "John Smith (director)",
+        "source_sent_id": 0
+      }}
+
+      Sub-question: {sub_question}
+
+      Retrieved sentences:
+      {context}
+
+  concluder:
+    # FROZEN
+    role: >-
+      Final reasoner. Aggregates all hop results into the answer, judges
+      whether each hop's evidence actually supports its answer, and -- for
+      comparisons between two hop answers -- uses the compare_values tool
+      instead of doing date/number arithmetic itself.
+    # EDITABLE
+    task: |
+      Question: {question}
+
+      Hop results so far:
+      {hops_summary}
+
+      For each hop, judge whether its quote genuinely supports its answer for what THIS question needs (this is "grounded" -- a quote can be verbatim-accurate yet still not establish the specific fact the question needs, e.g. nationality when citizenship is asked). If the question compares two hop answers (e.g. two dates or two numbers), call the compare_values tool to do that comparison -- do not compare them yourself.
+
+      When you are done reasoning (including any tool calls), respond with ONLY a JSON object, no other text, in exactly this shape:
+      {{
+        "hop_grounding": [
+          {{"hop_id": 1, "grounded": true, "reason": "quote directly states the requested fact"}},
+          {{"hop_id": 2, "grounded": false, "reason": "quote implies nationality, not citizenship specifically"}}
+        ],
+        "final_answer": "United States",
+        "reasoning": "one or two sentences on how the hops combine to this answer"
+      }}

@@ -16,7 +16,9 @@ The framework only knows three categories of env vars:
   ``OPENAI_API_KEY=EMPTY`` here as a courtesy so subprocesses don't
   have to know about the relaxation.
 - **Project selector** — ``META_AGENT_PROJECT`` so the immutable-tool
-  registry loads the right ``projects.<name>.tools`` package.
+  registry loads the right ``projects.<name>.tools`` package (or, when
+  ``tool_source_dirs`` is set, ``META_AGENT_TOOL_SOURCE_DIRS`` scans those
+  folders instead — see ``config.FrameworkConfig.tool_source_dirs``).
 - **Free-form user env** — whatever the YAML's ``env:`` block declares.
   Project-specific config (database paths, API keys, etc.) flows
   through here. Project tools that want a default should compute it
@@ -25,6 +27,8 @@ The framework only knows three categories of env vars:
 from __future__ import annotations
 
 import os
+from pathlib import Path
+from typing import Optional
 
 from . import config as cfg_mod
 
@@ -45,15 +49,41 @@ def apply_task_agent_env(spec: cfg_mod.TaskAgentSpec) -> None:
         os.environ.setdefault("OPENAI_API_KEY", "EMPTY")
 
 
-def apply_project_tools(project_name: str) -> None:
-    """Export ``META_AGENT_PROJECT`` so the evaluator's child subprocesses
-    populate the immutable-tool registry from this project. Eagerly populate
-    the parent's registry too — surfaces a misnamed project at startup
-    rather than at first child invocation."""
+def apply_project_tools(
+    project_name: str,
+    tool_source_dirs: Optional[list[str]] = None,
+    seed_dir: Optional[Path] = None,
+) -> None:
+    """Export ``META_AGENT_PROJECT`` (and, when set,
+    ``META_AGENT_TOOL_SOURCE_DIRS``) so the evaluator's child subprocesses
+    populate the immutable-tool registry the same way. Eagerly populate the
+    parent's registry too — surfaces a real bug in an existing tool module
+    at startup rather than at first child invocation.
+
+    ``tool_source_dirs`` (relative to ``seed_dir``) overrides the default
+    ``projects.<project_name>.tools`` convention — see
+    ``config.FrameworkConfig.tool_source_dirs``. Resolved to absolute paths
+    before export so they stay valid regardless of the child subprocess's
+    cwd. A project with neither pattern is valid too — ``load_project``
+    treats that as "no immutable tools to register," not an error.
+    """
     os.environ["META_AGENT_PROJECT"] = project_name
+    resolved: list[str] = []
+    if tool_source_dirs and seed_dir is not None:
+        resolved = [str((seed_dir / d).resolve()) for d in tool_source_dirs]
+    if resolved:
+        os.environ["META_AGENT_TOOL_SOURCE_DIRS"] = os.pathsep.join(resolved)
+        os.environ["META_AGENT_TOOL_SOURCE_ROOT"] = str(seed_dir)
+    else:
+        os.environ.pop("META_AGENT_TOOL_SOURCE_DIRS", None)
+        os.environ.pop("META_AGENT_TOOL_SOURCE_ROOT", None)
     from platform_core.tools import load_project
 
-    load_project(project_name)
+    load_project(
+        project_name,
+        source_dirs=[Path(p) for p in resolved] if resolved else None,
+        sys_path_root=seed_dir if resolved else None,
+    )
 
 
 def apply_user_env(env: dict[str, str]) -> None:
@@ -81,6 +111,8 @@ def apply_verbose(verbose: bool) -> None:
 def apply_all(cfg: cfg_mod.FrameworkConfig) -> None:
     """One-call helper: apply every env block declared on ``cfg``."""
     apply_task_agent_env(cfg.task_agent)
-    apply_project_tools(cfg.project)
+    apply_project_tools(
+        cfg.project, cfg.tool_source_dirs, cfg_mod.resolve_seed_dir(cfg)
+    )
     apply_user_env(cfg.env)
     apply_verbose(cfg.verbose)

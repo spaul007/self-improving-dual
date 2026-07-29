@@ -1,0 +1,144 @@
+# An HGM run against wikihop_mas_2k (2000-case random sample of the full
+# 2WikiMultihopQA dev split -- see projects/wikihop_mas_2k/benchmark/
+# generate_cases.py and aristotle_analysis.md) sized by target tree shape:
+# "I want roughly X good-enough agents, each evaluated on roughly Y
+# examples on average" -- X=20, Y=1000 here (2x the target tree size of
+# configs/hgm_wikihop_mas_2k_x10_y1000.yaml, same per-agent eval depth).
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_wikihop_mas_2k_x20_y1000.yaml
+#
+# --- Why this scale, specifically ---
+#
+# Same low-noise regime as the X=10/Y=1000 run (train_size=eval_size=1000,
+# the full 2000-case pool, no cases left over) -- see that config's own
+# comments and aristotle_analysis.md's "Fix: a 2000-case dataset" section
+# for the sampling-variance justification (std=0.0074 at n=1000, well below
+# every real signal size found this session). This run just widens the
+# search (more candidate agents explored, X=10->20) without changing the
+# per-node evaluation depth (Y stays 1000) -- launched back-to-back after
+# the X=10/Y=1000 run finished, to see whether a wider tree finds a better
+# node than the X=10 run's best (node 8, mean=0.596 at n=400 self-reported;
+# same-sample seed comparison showed this was NOT yet a clear win over the
+# seed's 0.6064 on the identical cases).
+#
+# --- How eval_budget and alpha were derived ---
+#
+# B = X*Y = 20*1000 = 20000.
+# alpha solved from B**alpha == X: alpha = ln(X)/ln(B) = ln(20)/ln(20000)
+#   = 0.3025.
+#
+# t_case=1.4294s/case is the same REAL measured aggregate throughput at
+# parallelism=16 used to size the X=10/Y=1000 run (from the actual
+# 2000-case seed evaluation, wall_time_s=2858.8 / 2000 cases) -- reused
+# directly rather than re-measured, since nothing about per-case cost
+# changes between the two runs (same seed code, same dataset).
+#
+#   python3 size_eval_budget.py --t-case 1.4294 --target-agents 20 \
+#     --evals-per-agent 1000 --eval-batch-size 100 \
+#     --fixed-unbudgeted-evals 6000 --max-rounds 50 --t-editor 60 \
+#     --t-summarizer-pair 15
+#   -> eval_budget=20000, alpha=0.3025, projected ~12.0h total.
+#
+# fixed_unbudgeted_evals=6000, same as the X=10 config: finalize_top_k=3/
+# full_eval_top_k=3 (seed 1000 + finalize top-up worst-case 2*1000=2000 +
+# full_eval_top_k audit 3*1000=3000), all bounded by train_size/eval_size
+# (1000) regardless of X -- unchanged from the X=10 run's own reasoning for
+# why full_eval_top_k=3 stays worth the extra time.
+
+experiment_name: "wikihop_mas_2k_hgm_x20_y1000"
+
+project: "wikihop_mas_2k"
+seed_dir_name: "wikihop_mas"
+
+# Same exclude-list as the X=10/Y=1000 run -- same vendored code (symlinked),
+# same rationale.
+mutable_exclude:
+  - "tools/immutable/"
+  - "eval/"
+  - "workflow.py"
+  - "benchmark/"
+
+tool_source_dirs:
+  - "tools"
+  - "agents"
+
+loop:
+  # ~2.5x the X=20 target node count.
+  max_rounds: 50
+  score_target: 1.0
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 20000
+    init_expansions: 1
+    # Derived, not the framework default (0.6) -- see the sizing note above.
+    alpha: 0.3025
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    # Same as the X=10 run -- 1/10 of train_size (1000).
+    eval_batch_size: 100
+    # Kept at 3/3 -- see the sizing note above on why.
+    finalize_top_k: 3
+    full_eval_top_k: 3
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    # Same as the X=10/Y=1000 config -- absorbs decomposer/per-hop
+    # retriever+extractor/concluder chains plus a possible grounding retry,
+    # and shared-host contention.
+    wall_time_s_per_case: 900
+    memory_mb: 1024
+    # Same value already validated at real scale (the X=10 run used
+    # parallelism=16 cleanly for its full duration).
+    parallelism: 16
+    scorer: "wikihop_mas_default"
+
+gatherer:
+  type: "wikihop_mas_default"
+  config:
+    n_hard_cases: 2
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "wikihop_mas_default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+# wikihop_mas's own llm_client.py reads these directly. Re-check this
+# endpoint is still live before launching -- it rotates.
+env:
+  MAS_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  MAS_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-1:8000/v1"
+  MAS_API_KEY: "dummy"
+
+# Full 2000-case pool, split evenly: no cases left over.
+split:
+  seed: 42
+  train_size: 1000
+  eval_size: 1000
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "immutable_files"
+  - type: "load_test"

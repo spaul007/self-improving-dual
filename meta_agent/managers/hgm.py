@@ -126,6 +126,11 @@ class HGMManager:
         # inject the lineage's behavior_memory.md files. ``None`` keeps
         # the legacy behavior (no memory written, no memory in prompts).
         self._summarizer: Any = None
+        # Optional per-round failure summarizer (see
+        # meta_agent/failure_summarizer.py) -- unlike ``_summarizer``, fires
+        # even for the root/seed's evaluation (no parent/diff needed) since
+        # its job is "what's failing right now", not "what did this edit do".
+        self._failure_summarizer: Any = None
         # Time-series tree snapshotter (a no-op unless snapshot_tree is on);
         # (re)created at the top of evolve() once experiment_dir is known.
         self._snapshotter: Optional[TreeSnapshotWriter] = None
@@ -147,11 +152,13 @@ class HGMManager:
         train_case_ids: Optional[list[str]] = None,
         eval_case_ids: Optional[list[str]] = None,
         summarizer: Any = None,
+        failure_summarizer: Any = None,
     ) -> EvolutionOutcome:
         self._benchmark_dir = benchmark_dir
         self._experiment_dir = experiment_dir
         self._eval_case_ids = eval_case_ids
         self._summarizer = summarizer
+        self._failure_summarizer = failure_summarizer
         self._tree = HGMTree(
             beta_prior=self.beta_prior,
             clade_pseudo_count=self.clade_pseudo_count,
@@ -345,6 +352,7 @@ class HGMManager:
                     f"[summarizer] unexpected error on node {node.node_id}: {exc!r}",
                     flush=True,
                 )
+        self._run_failure_summarizer(node)
         return len(batch)
 
     # ------------------------------------------------------------------ #
@@ -407,6 +415,19 @@ class HGMManager:
                 parts.extend(render_metrics(pf.project_metrics, cap=10, indent="  "))
             for exc in pf.runtime_exceptions[:3]:
                 parts.append(f"  parent error: {exc[:200]}")
+
+        # LLM-synthesized cross-case failure summary (main patterns + hardest
+        # cases), when configured -- grounded in ALL failing cases, not just
+        # the small char-capped sample failure_report.py renders elsewhere.
+        # Skipped silently when the failure summarizer isn't configured or
+        # the parent had no failing cases (failure_summary.md wasn't written).
+        from ..failure_summarizer import render_failure_summary_for_steering
+
+        failure_summary = render_failure_summary_for_steering(parent.round_dir)
+        if failure_summary:
+            parts.append(
+                f"\n## Failure summary — parent (node {parent.node_id}):\n{failure_summary}"
+            )
 
         siblings = [
             self._feedback[c] for c in parent.children if c in self._feedback
@@ -671,6 +692,7 @@ class HGMManager:
                 node.record(case)
             spent += len(missing)
             self._refresh_node_feedback(node, gatherer)
+            self._run_failure_summarizer(node)
             print(
                 f"finalize: node {node.node_id} +{len(missing)} "
                 f"-> mean={node.mean_utility:.3f} n={node.n_evals}/{n_train}",
@@ -852,11 +874,33 @@ class HGMManager:
             0, 0, zero_strategy, self._build_eval_result(node), out_dir
         )
         self._write_node_sidecar(node)
+        self._run_failure_summarizer(node)
         print(
             f"node 0: SEED pre-eval -> mean={node.mean_utility:.3f} "
             f"n={node.n_evals} (free, not charged to budget)",
             flush=True,
         )
+
+    def _run_failure_summarizer(self, node: HGMNode) -> None:
+        """Fire the failure summarizer (if configured) on a node's current
+        CUMULATIVE evaluation result -- unlike the behavior summarizer, this
+        runs unconditionally (no ``parent_id is not None`` guard): there's no
+        diff involved, so the root/seed round benefits from it just as much
+        as any other. Overwrites ``failure_summary.md`` each call; see
+        ``FailureSummarizer.summarize``'s own docstring for why that's safe."""
+        if self._failure_summarizer is None:
+            return
+        try:
+            self._failure_summarizer.summarize(
+                eval_result=self._feedback[node.node_id].eval_result,
+                round_dir=node.round_dir,
+                node_id=node.node_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"[failure_summarizer] unexpected error on node {node.node_id}: {exc!r}",
+                flush=True,
+            )
 
     def _refresh_node_feedback(
         self, node: HGMNode, gatherer: FeedbackGatherer

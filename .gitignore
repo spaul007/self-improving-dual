@@ -38,6 +38,10 @@ projects/travel/data/
 projects/shopping/data/
 docs/
 
+# --- Vendored MAS output artifacts (transient per-task results, not source) ---
+projects/db_mas/db-mas/results/
+projects/math_mas/math_mas/results/
+
 # --- Local-only working notes (do not check in) ---
 CLAUDE.md
 DEV_LOG.md

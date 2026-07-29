@@ -840,13 +840,21 @@ class SelfImprovementParsingTests(unittest.TestCase):
     Pydantic validation. Reproduces the gpt-oss-120b crash from job 140902
     (now guarded inside ``AgentEditor._parse_self_improvement``)."""
 
-    def test_malformed_tool_args_do_not_crash(self) -> None:
+    @staticmethod
+    def _bare_editor():
+        """A minimally-constructed AgentEditor for exercising
+        `_parse_self_improvement` directly. `mutable_exclude` defaults to
+        `None` (legacy include-list mode), matching what these tests check."""
         from meta_agent.agent_editor import AgentEditor
+
+        return AgentEditor(llm_caller=lambda **kw: None, validators=[])
+
+    def test_malformed_tool_args_do_not_crash(self) -> None:
         from meta_agent.models import EvolutionStrategy
 
         # Non-string scalars for text fields — the shape open-weights
         # models produce when they ignore the declared schema.
-        strategy, files = AgentEditor._parse_self_improvement(
+        strategy, files = self._bare_editor()._parse_self_improvement(
             {
                 "optimization_goal": 42,
                 "proposed_changes": None,
@@ -864,9 +872,7 @@ class SelfImprovementParsingTests(unittest.TestCase):
         """`target_files` is derived from the emitted file paths; a
         mutable_tools/* edit is applied but not an enum value, so it is
         dropped from the summary's `target_files`."""
-        from meta_agent.agent_editor import AgentEditor
-
-        strategy, files = AgentEditor._parse_self_improvement(
+        strategy, files = self._bare_editor()._parse_self_improvement(
             {
                 "optimization_goal": "g",
                 "proposed_changes": "c",

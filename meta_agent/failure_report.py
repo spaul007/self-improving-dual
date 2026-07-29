@@ -50,6 +50,28 @@ def _truncate(text: str, cap: int) -> str:
     return text[: cap - 1].rstrip() + "…"
 
 
+def _truncate_middle(text: str, cap: int) -> str:
+    """Like ``_truncate``, but keeps both the head AND the tail, eliding the
+    middle -- for free-form agent-generated text (an LLM's own raw output)
+    where the actual conclusion is very often at the very end (e.g. a final
+    ``<answer>`` tag after a long chain of reasoning). A head-only truncation
+    systematically hides exactly that: confirmed against a real case where a
+    1688-char response's closing ``<answer>`` tag fell entirely outside the
+    first 1000 chars, so the editor reasoning over this text had no way to
+    know the tag was ever emitted. Mirrors the elision pattern
+    ``behavior_summarizer.py``'s ``_diff_mutable_files`` already uses for the
+    same reason."""
+    text = (text or "").strip()
+    if cap <= 0 or len(text) <= cap:
+        return text
+    keep = (cap - 20) // 2
+    if keep <= 0:
+        return _truncate(text, cap)
+    head, tail = text[:keep], text[-keep:]
+    elided = len(text) - 2 * keep
+    return f"{head}\n<...{elided} chars elided...>\n{tail}"
+
+
 def _as_text(value: Any) -> str:
     if value is None:
         return ""
@@ -125,7 +147,7 @@ def _example_record(
         "case_id": str(getattr(case, "case_id", "?")),
         "score": round(float(getattr(case, "score", 0.0)), 4),
         "query": _truncate(_as_text(det.get("query")), cfg.query_char_cap),
-        "plan": _truncate(_as_text(det.get("raw_result")), cfg.plan_char_cap),
+        "plan": _truncate_middle(_as_text(det.get("raw_result")), cfg.plan_char_cap),
         "failed": _failed_text_for(
             str(getattr(case, "case_id", "?")), category, case, cfg
         ),

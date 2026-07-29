@@ -1,0 +1,175 @@
+# Small sanity-check HGM run against math_mas (Predictor -> Reflector Math500
+# solver, vendored at projects/math_mas/math_mas/).
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_math_mas_sanity.yaml
+#
+# eval_budget=6 (+ up to 6 more from finalize_top_k=1, bounded to the same
+# 6-case train split, not charged to eval_budget) -- bumped from an initial
+# train_size=2/eval_budget=2 attempt, which landed exactly 0/2 on the seed
+# (one true miss -- the reflector agreed the predictor was right but forgot
+# to re-emit <answer> tags, so extract_answer's fallback grabbed a garbage
+# fragment -- one a normalize_answer prefix-matching quirk) and, per
+# hgm.py::_expandable()'s `mean_utility > 0` filter (faithful to the
+# reference HGM algorithm), a zero-scoring root is never eligible to be an
+# expansion parent -- so the editor was never even called. 6 cases makes an
+# all-zero root far less likely while still keeping the run small. Meant to
+# confirm the whole pipeline actually works end to end -- math_mas runs
+# under the framework's evaluator, the editor can see/edit the real harness
+# (not a shim), the math_mas-named scorer/gatherer/summarizer produce
+# output, and (this time) an actual EXPAND/edit cycle happens -- not to
+# produce a meaningfully optimized agent.
+#
+# Two models, two roles (per the same convention db_mas uses):
+#   - task agent (math_mas's own predictor+reflector LLM calls, via its own
+#     llm_client.py / MAS_* env vars -- NOT platform_core.llm_wrapper, see
+#     projects/math_mas/math_mas/config.py): Qwen3.5-35B-A3B.
+#   - meta-agent (the editor's self-improvement call + the behavior
+#     summarizer, via platform_core.llm_wrapper.call_llm): Qwen3.5-122B-A10B.
+# `task_agent:` (the YAML block that exports LLM_MODEL/LLM_BASE_URL) is
+# irrelevant here -- math_mas's own code never reads those env vars -- so the
+# 35B endpoint is set via `env:` (MAS_MODEL/MAS_BASE_URL/MAS_API_KEY)
+# instead, matching math_mas/config.py's own env-var names.
+
+experiment_name: "math_mas_hgm_sanity"
+
+project: "math_mas"
+seed_dir_name: "math_mas"
+
+# The editor's exclude-list mutable surface (see meta_agent/config.py's
+# FrameworkConfig.mutable_exclude): everything under math_mas/ is editable
+# except tools/immutable/ (the benchmark's answer-extraction contract --
+# math_mas's own naming convention, now given real enforcement), eval/ (the
+# actual grader the framework's own scorer imports directly -- editing it
+# would let the editor redefine its own grading function, same rationale as
+# db_mas's score.py), workflow.py (the framework-mandated entry point --
+# excluded so the editor never touches or even sees it; it already satisfies
+# SignatureValidator's AST check as a real `def run_task(task):` function --
+# this exclusion is purely about editor visibility/mutability, not validator
+# compliance), and benchmark/ (structurally unreachable already -- a sibling
+# of math_mas/, never copied into the editor's workspace -- named explicitly
+# anyway for defense in depth, matching db_mas's config).
+mutable_exclude:
+  - "tools/immutable/"
+  - "eval/"
+  - "workflow.py"
+  - "benchmark/"
+
+# math_mas's tool-defining code (tools/mutable/compress.py, agents/*'s
+# workflow.py) is spread across a shared folder plus a per-agent folder
+# rather than one projects/math_mas/tools/ package -- see
+# meta_agent/config.py's FrameworkConfig.tool_source_dirs and
+# platform_core/tools/__init__.py's load_paths. None of math_mas's own tool
+# files call register_tool() (compress() is a plain LLM-call helper, not an
+# OpenAI-style function-calling tool -- math_mas uses no tool-calling API at
+# all), so this scan currently registers nothing at runtime; it's here so
+# the mechanism is exercised and ready if/when that changes.
+tool_source_dirs:
+  - "tools"
+  - "agents"
+
+loop:
+  # HGM's real terminator is manager.config.eval_budget; max_rounds is only
+  # a hard cap on tree size (node count) -- bumped to 3 so the schedule has
+  # room for more than one EXPAND if the bandit favors it.
+  max_rounds: 3
+  score_target: 1.0
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 6
+    init_expansions: 1
+    alpha: 0.6
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 1
+    finalize_top_k: 1        # bounded to train_size (6) below, cheap either way
+    full_eval_top_k: 0       # disabled -- no full-benchmark sidecar audit
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    # No Docker/container startup here (math_mas's biggest structural
+    # difference from db_mas) -- each case is just 2-3 sequential LLM calls.
+    # Generous relative to that, still far below db_mas's 3600s, to absorb
+    # shared vLLM host contention (confirmed to cause multi-minute stalls
+    # earlier this session against the same kind of endpoint).
+    wall_time_s_per_case: 600
+    # No anomaly-injection-scale threading here -- a plain asyncio + openai
+    # client process. Lighter than db_mas's 8192 requirement.
+    memory_mb: 1024
+    # No Docker/port contention to bound against, unlike db_mas -- still
+    # kept modest since this vLLM host is shared with other users' jobs.
+    parallelism: 2
+    scorer: "math_mas_default"
+
+# n_hard_cases trimmed from the framework default (3) to 2 -- now that a
+# narrative failure_summary.md (see failure_summarizer: below) carries the
+# cross-case synthesis, the raw examples rendered here only need to ground
+# it with 1-2 concrete instances, not stand alone as the sole evidence.
+gatherer:
+  type: "math_mas_default"
+  config:
+    n_hard_cases: 2
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "math_mas_default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+# LLM-synthesized cross-case failure summary (main failure patterns + hardest
+# cases, across ALL failing cases -- not just the 2 raw examples above) --
+# see meta_agent/failure_summarizer.py. Off by default everywhere else in the
+# framework (opt-in, per project); math_mas opts in here specifically because
+# this is the exact gap that caused the editor to fabricate claims about a
+# case it only ever saw a small truncated slice of (see the plan's Addendum 8
+# status notes). Reuses the same meta-agent model/endpoint as editor/summarizer.
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+# math_mas's own llm_client.py reads these directly (see
+# projects/math_mas/math_mas/config.py) -- this is the actual task-agent
+# model, used for the predictor's/reflector's real LLM calls.
+env:
+  MAS_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  MAS_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-1:8000/v1"
+  MAS_API_KEY: "dummy"
+
+# Bound total cost: restrict optimization to a 6-case train pool (matching
+# eval_budget -- big enough to make an all-zero seed unlikely, still small
+# enough to stay a sanity check, not a real optimization run) and disable
+# the held-out eval pass entirely (eval_size: 0 -- otherwise it would run
+# the best node against all ~494 remaining cases once at the end, far
+# beyond a sanity check).
+split:
+  seed: 42
+  train_size: 6
+  eval_size: 0
+
+# schema_wrapper_consistency / mutable_tool_imports / mutable_tool_routing /
+# imports omitted on purpose: all hardcode expectations from the
+# tool_wrapper.py/tools_schema.json/mutable_tools/ pattern (travel/shopping/
+# math's convention) that math_mas doesn't use at all. syntax/signature still
+# apply generically (workflow.py's own AST); immutable_files/load_test are
+# the two most load-bearing checks for this project specifically.
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "immutable_files"
+  - type: "load_test"

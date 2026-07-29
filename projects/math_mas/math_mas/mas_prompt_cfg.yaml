@@ -1,0 +1,48 @@
+# Global + per-agent prompt configuration for the math MAS.
+#
+# Convention (see structure.md):
+#   role : FROZEN   -- identity of the agent. Do not let an optimizer rewrite.
+#   task : EDITABLE -- the instruction. Fair game for prompt optimization.
+#
+# Placeholders available in `task`: {question}, {context}
+
+global:
+  # Answer format contract. The evaluator extracts whatever sits between the
+  # <answer> tags, so every agent must be told to emit them.
+  answer_format: "Show your final answer bracketed between <answer> and </answer> tags."
+
+agents:
+  predictor:
+    # FROZEN
+    role: >-
+      Primary solver that provides step-by-step mathematical reasoning and a
+      final answer.
+    # EDITABLE
+    task: |
+      Let's think step by step. Show your final answer bracketed between <answer> and </answer> tags.
+      {context}
+      Question: {question}
+      Reasoning:
+
+  reflector:
+    # FROZEN
+    role: >-
+      Critical reviewer that identifies errors in previous solutions and
+      provides corrected reasoning.
+    # EDITABLE
+    task: |
+      Please review the solution above and criticize where it might be wrong. Show your final answer bracketed between <answer> and </answer>.
+      Question: {question}
+      Solution: {context}
+      Feedback: indicating the reflection of the solution given the question.
+      Correct answer:
+
+tools:
+  # Mutable tool: compresses the predictor's full solution into a short briefing
+  # handed to the reflector. Internal protocol, not part of the benchmark.
+  compress: |
+    Below is a solution to a math problem. Summarize the key reasoning steps and the final answer in at most 30 words.
+
+    {raw}
+
+    Summary:

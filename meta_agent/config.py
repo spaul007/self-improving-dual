@@ -101,10 +101,11 @@ class SplitSpec(BaseModel):
 class FrameworkConfig(BaseModel):
     """A run is defined by a ``project`` plus the framework-component blocks.
 
-    ``project`` resolves three filesystem things by convention:
-      - seed dir       → ``projects/<project>/seed/``
+    ``project`` resolves these filesystem things by convention:
+      - seed dir       → ``projects/<project>/<seed_dir_name>/`` (default ``seed/``)
       - benchmark dir  → ``projects/<project>/benchmark/``
-      - tools package  → ``projects.<project>.tools`` (auto-imported)
+      - tools package  → ``projects.<project>.tools`` (default; see
+        ``tool_source_dirs`` to scan other folders instead), auto-imported
 
     Every pluggable component (manager / editor / evaluator / gatherer /
     validators) must be declared in the YAML — defaults are not
@@ -132,6 +133,15 @@ class FrameworkConfig(BaseModel):
     # contexts. Omit (or null) to disable; existing configs keep current
     # behavior without changes.
     summarizer: Optional[ComponentSpec] = None
+    # Optional. When set, an LLM-synthesized "failure_summary.md" (main
+    # failure patterns + hardest cases, across ALL failing cases -- not just
+    # the small char-capped sample failure_report.py renders for direct
+    # display) is written after every evaluation batch, including the
+    # root/seed's, and injected into the editor's steering context for
+    # descendants expanding from that node. Omit (or null) to disable;
+    # existing configs keep current behavior without changes. See
+    # meta_agent/failure_summarizer.py.
+    failure_summarizer: Optional[ComponentSpec] = None
     plugins: list[str] = Field(default_factory=list)
 
     task_agent: TaskAgentSpec = Field(default_factory=TaskAgentSpec)
@@ -147,6 +157,41 @@ class FrameworkConfig(BaseModel):
     # graded. Ground-truth data (data/, cases.jsonl, validation files) is never
     # exposed in either mode.
     eval_visibility: Literal["blackbox", "whitebox"] = "blackbox"
+
+    # Name of the project subfolder treated as the task-agent's seed source
+    # (copied into round_000/task_agent, then round-over-round by the
+    # editor). Defaults to "seed" — every existing project relies on this
+    # default and is unaffected. Set this when a project's own real
+    # implementation folder should double as the seed dir directly, instead
+    # of requiring a separate wrapper folder just to satisfy this convention.
+    seed_dir_name: str = "seed"
+
+    # Files/directories (relative to the seed dir) the editor may NOT modify.
+    # `None` (default) preserves the current behavior everywhere: the editor
+    # may ONLY touch the hardcoded include-list (`workflow.py`,
+    # `tool_wrapper.py`, `tools_schema.json`, `mutable_tools/*.py` — see
+    # `editor_validators.MUTABLE_FILES`/`MUTABLE_DIRS`). Setting this list
+    # flips the editor (and the `immutable_files` validator) into
+    # exclude-list mode instead: everything under the seed dir is editable
+    # EXCEPT these paths. Injected into both the editor and every validator
+    # via `_build_with_injection` so one list can't drift out of sync
+    # between what the editor is told and what the validator enforces.
+    mutable_exclude: Optional[list[str]] = None
+
+    # Directories (relative to the seed dir) to scan for immutable-tool
+    # registrations. `None` (default) preserves today's hardcoded
+    # convention — importing `projects.<project>.tools` as a single package
+    # — every existing project relies on this default. Set this instead for
+    # a project whose tool-defining code is spread across multiple folders
+    # inside its own vendored implementation (e.g. a shared `common_tools/`
+    # folder plus per-agent folders like `agents/coordinator/`) rather than
+    # living in one dedicated top-level `tools/` package: every `*.py` file
+    # under each listed directory (recursively) is loaded directly by path,
+    # so whichever ones call `platform_core.tools.register_tool` at import
+    # time register into the shared registry — files that don't (not every
+    # project's tool code follows this convention) load harmlessly as a
+    # no-op. A project with neither pattern is valid too.
+    tool_source_dirs: Optional[list[str]] = None
 
     verbose: bool = False
 
@@ -173,6 +218,7 @@ class AssembledFramework:
     benchmark_dir: Path
     runs_root: Path
     summarizer: Any = None
+    failure_summarizer: Any = None
     train_case_ids: Optional[list[str]] = None
     eval_case_ids: Optional[list[str]] = None
 
@@ -185,6 +231,7 @@ def _ensure_builtins_loaded() -> None:
     importlib.import_module("meta_agent.feedback_gatherer")
     importlib.import_module("meta_agent.agent_editor")
     importlib.import_module("meta_agent.behavior_summarizer")
+    importlib.import_module("meta_agent.failure_summarizer")
     importlib.import_module("meta_agent.managers")  # imports submodules
 
 
@@ -219,6 +266,13 @@ def load(path: Path) -> FrameworkConfig:
     return FrameworkConfig.model_validate(raw)
 
 
+def resolve_seed_dir(cfg: FrameworkConfig) -> Path:
+    """The one place `project` + `seed_dir_name` become a filesystem path.
+    Shared by `build_components` and `runtime_env.apply_all` (the latter
+    needs it to resolve `tool_source_dirs` before `build_components` runs)."""
+    return REPO_ROOT / "projects" / cfg.project / cfg.seed_dir_name
+
+
 def build_components(cfg: FrameworkConfig) -> AssembledFramework:
     _ensure_builtins_loaded()
     _load_project_components(cfg.project)
@@ -248,7 +302,8 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         cfg.gatherer, "gatherer", {"scorer": scorer_obj}
     )
     validators_obj = [
-        registry.get("validator", v.type)(**v.config) for v in cfg.validators
+        _build_with_injection(v, "validator", {"mutable_exclude": cfg.mutable_exclude})
+        for v in cfg.validators
     ]
 
     # Lazy import: keeps the YAML loader free of an OpenAI import for
@@ -259,12 +314,12 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
     # (tool implementations, DB schema, optional scorer code) is read from here.
     runs_root = _resolve_root(cfg.runs_root)
     project_root = REPO_ROOT / "projects" / cfg.project
-    seed_dir = project_root / "seed"
+    seed_dir = resolve_seed_dir(cfg)
     benchmark_dir = project_root / "benchmark"
     if not seed_dir.exists():
         raise FileNotFoundError(
             f"seed directory not found: {seed_dir} "
-            f"(check `project: \"{cfg.project}\"` in the YAML)"
+            f"(check `project: \"{cfg.project}\"` and `seed_dir_name` in the YAML)"
         )
     if not benchmark_dir.exists():
         raise FileNotFoundError(
@@ -272,14 +327,15 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
             f"(check `project: \"{cfg.project}\"` in the YAML)"
         )
 
-    # Static project context for the editor. tools_source + db_schema are shown
-    # in both modes; scorer_source only in whitebox. None of these read
-    # ground-truth data (data/, cases.jsonl, validation files).
+    # Static project context for the editor. tools_source + db_schema are
+    # shown in both modes; scorer_source only in whitebox. None of these
+    # read ground-truth data (data/, cases.jsonl, validation files).
     editor_injections: dict[str, Any] = {
         "llm_caller": call_llm,
         "validators": validators_obj,
-        "tools_source": _read_tools_source(project_root),
+        "tools_source": _read_tools_source(project_root, seed_dir),
         "db_schema": _read_db_schema(project_root),
+        "mutable_exclude": cfg.mutable_exclude,
     }
     if cfg.eval_visibility == "whitebox":
         editor_injections["scorer_source"] = _read_scorer_source(benchmark_dir)
@@ -288,7 +344,17 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
     summarizer_obj: Any = None
     if cfg.summarizer is not None:
         summarizer_obj = _build_with_injection(
-            cfg.summarizer, "summarizer", {"llm_caller": call_llm}
+            cfg.summarizer,
+            "summarizer",
+            {"llm_caller": call_llm, "mutable_exclude": cfg.mutable_exclude},
+        )
+
+    failure_summarizer_obj: Any = None
+    if cfg.failure_summarizer is not None:
+        failure_summarizer_obj = _build_with_injection(
+            cfg.failure_summarizer,
+            "failure_summarizer",
+            {"llm_caller": call_llm},
         )
 
     manager_obj = registry.get("manager", cfg.manager.type)(**cfg.manager.config)
@@ -325,6 +391,7 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         benchmark_dir=benchmark_dir,
         runs_root=runs_root,
         summarizer=summarizer_obj,
+        failure_summarizer=failure_summarizer_obj,
         train_case_ids=train_ids,
         eval_case_ids=eval_ids,
     )
@@ -439,12 +506,35 @@ def _read_py_bundle(py_files: list[Path], *, cap: int = _SOURCE_BUNDLE_CAP) -> O
     return out
 
 
-def _read_tools_source(project_root: Path) -> Optional[str]:
-    """Immutable tool implementations from ``projects/<p>/tools/*.py``."""
+def _read_tools_source(
+    project_root: Path, seed_dir: Optional[Path] = None
+) -> Optional[str]:
+    """Tool-implementation reference shown to the editor. Two sources, both
+    optional, concatenated:
+
+    - ``projects/<p>/tools/*.py`` — the original convention (travel/shopping/
+      math's project-level immutable tool package).
+    - When ``seed_dir`` is given: ``common_tools/**/*.py`` inside it
+      (interfaces every agent in the workspace shares, e.g. db_mas's
+      query_db/report_findings — worth surfacing as reference regardless of
+      whether a given one is also separately editable) plus any ``tools.py``
+      file nested inside a per-agent subfolder (e.g.
+      ``agents/coordinator/tools.py``).
+
+    Either source can be empty/absent; this generalizes cleanly to projects
+    with neither pattern (returns ``None``, same as before)."""
+    files: set[Path] = set()
     tools_dir = project_root / "tools"
-    if not tools_dir.is_dir():
+    if tools_dir.is_dir():
+        files.update(tools_dir.glob("*.py"))
+    if seed_dir is not None and seed_dir.is_dir():
+        common_tools_dir = seed_dir / "common_tools"
+        if common_tools_dir.is_dir():
+            files.update(common_tools_dir.rglob("*.py"))
+        files.update(seed_dir.glob("**/tools.py"))
+    if not files:
         return None
-    return _read_py_bundle(list(tools_dir.glob("*.py")))
+    return _read_py_bundle(sorted(files))
 
 
 def _read_db_schema(project_root: Path) -> Optional[str]:

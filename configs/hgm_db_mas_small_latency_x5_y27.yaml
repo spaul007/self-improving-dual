@@ -1,0 +1,156 @@
+# An HGM run against db_mas, restricted to the "small_latency_data" subset:
+# only the 54 (of 100) benchmark cases whose real, measured per-case latency
+# was under 5 minutes on a dedicated full-100-case timing probe against the
+# pristine seed (parallelism=8, no editing) -- see
+# projects/db_mas_small_latency/benchmark/generate_cases.py for exactly how
+# that subset was derived (3 cases timed out entirely and were excluded;
+# of the remaining 97, 54 qualified). The ORIGINAL db_mas dataset
+# (projects/db_mas/benchmark/cases.jsonl) was never modified -- this project
+# is a new sibling directory whose seed code (`db-mas/`) and glue code
+# (`adapter/`) are symlinks back to the original, unmodified vendored
+# implementation; only `benchmark/cases.jsonl` differs (a real, distinct
+# file containing just the filtered subset).
+#
+# This run also benefits from two feedback-pipeline bugs fixed this same
+# session (both apply to any db_mas-family project since they're reused via
+# the adapter/ symlink):
+#   - DBMASFeedbackGatherer.__init__'s bare `**kwargs` signature was hiding
+#     DefaultFeedbackGatherer's real parameters from the framework's
+#     introspection-based dependency injection, so `scorer` was never being
+#     injected and `project_metrics` was silently `{}` on every prior
+#     db_mas round. Fixed by restoring the real signature explicitly.
+#   - DBMASScorer.aggregate() gained `forced_fallback_rate` and mean
+#     per-phase timing (`mean_total_s`/`mean_coordinator_s`/
+#     `mean_specialists_s`) -- the two runtime signals that actually explain
+#     most of db_mas's latency tail (see this session's investigation),
+#     previously invisible to the editor even when project_metrics worked.
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_db_mas_small_latency_x5_y27.yaml
+#
+# --- How eval_budget and alpha were derived ---
+#
+# B = X*Y = 5*27 = 135 (total budget).
+# alpha solved from B**alpha == X (matches hgm_tree.py::schedule_favors_expand
+# exactly): alpha = ln(X)/ln(B) = ln(5)/ln(135) = 0.3281
+#
+#   python3 size_eval_budget.py --t-case 50 --target-agents 5 \
+#     --evals-per-agent 27 --eval-batch-size 9 --fixed-unbudgeted-evals 81 \
+#     --max-rounds 15 --t-editor 60
+#   -> eval_budget=135, alpha=0.3281, projected ~3.3h total.
+#
+# t_case=50s is derived (200s real measured mean for these 54 cases from the
+# timing probe, divided by the parallelism=4 this config uses -- an
+# approximation, not a fresh parallelism=4 measurement, but reasonable given
+# every qualifying case is individually capped under 300s by construction).
+#
+# train_size = Y = 27 (the entire train half of the 54-case pool -- no
+# single node can exceed the per-agent evaluation budget this run is framed
+# around, same convention as every other X/Y config this session).
+# eval_size = 27 (the other half, entirely disjoint).
+
+experiment_name: "db_mas_small_latency_hgm_x5_y27"
+
+project: "db_mas_small_latency"
+seed_dir_name: "db-mas"
+
+# Identical to configs/hgm_db_mas_x10_y20.yaml -- same vendored code
+# (symlinked, not copied), same exclude-list rationale.
+mutable_exclude:
+  - "environment/"
+  - "common_tools/immutable/"
+  - "score.py"
+  - "workflow.py"
+  - "benchmark/"
+
+tool_source_dirs:
+  - "common_tools"
+  - "agents"
+
+loop:
+  # ~3x the X=5 target node count.
+  max_rounds: 15
+  score_target: 1.0
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 135
+    init_expansions: 1
+    alpha: 0.3281
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    # ~1/3 of train_size (27) -- small enough to reassess the schedule
+    # frequently given the smaller overall budget than the full-dataset runs.
+    eval_batch_size: 9
+    finalize_top_k: 2
+    full_eval_top_k: 1
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    # Every case in this dataset completed in under 300s on the timing
+    # probe by construction -- 1200s gives generous headroom (4x) without
+    # being as extreme as the full-dataset config's 3600s, since a genuine
+    # outlier here would be surprising, not expected.
+    wall_time_s_per_case: 1200
+    memory_mb: 8192
+    # Raised from the full-dataset config's parallelism=1: that value was
+    # chosen purely as a shared-host-contention precaution, not because of
+    # any collision risk between concurrent cases within one run (docker
+    # project names are per-case-id, so concurrent DIFFERENT cases in one
+    # batch never collide -- the real collision risk found this session was
+    # specifically between two SEPARATE processes evaluating the SAME
+    # case_id at the same time, which a single run's own parallelism never
+    # triggers). Given every case here is latency-bounded under 5 minutes,
+    # a modest bump to 4 is a reasonable, real speed/contention trade-off --
+    # revisit if host contention from other concurrent jobs makes it worse
+    # than parallelism=1 would have been.
+    parallelism: 4
+    scorer: "db_mas_default"
+
+gatherer:
+  type: "db_mas_default"
+  config:
+    n_hard_cases: 2
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "db_mas_default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+# db-mas's own llm_client.py reads these directly. Re-check this endpoint is
+# still live before launching -- it rotates (see memory: vllm_endpoint.md).
+env:
+  VLLM_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  VLLM_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-1:8000/v1"
+  VLLM_API_KEY: "dummy"
+
+split:
+  seed: 42
+  train_size: 27
+  eval_size: 27
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "immutable_files"
+  - type: "load_test"
