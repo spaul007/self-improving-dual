@@ -1,0 +1,82 @@
+experiment_name: "travel_hgm_baseline_medium"
+
+# Vanilla HGM ablation for matched-candidate-count comparison vs hgm_dual.
+# Same train_size=60, same eval_budget=2000, same editor model (gpt-5.4 medium),
+# same summarizer, same eval_batch_size=16 as the dual configs. Differs only in:
+#   - manager.type: "hgm" (no dual stages, no categorizer)
+#   - manager.config.alpha: 0.6 (tuned so the bandit can reach ~90 expansions
+#     in eval_budget=2000 while still interleaving evaluate steps; see math below)
+#   - loop.max_rounds: 100 (raised from 30 — vanilla needs ~3× more nodes to
+#     match dual's total candidate count of 30 × 3 = ~90)
+#
+# Alpha math: schedule_favors_expand returns budget_spent**alpha >= n_nodes - 1.
+# At alpha=0.5 with eval_batch_size=16: max expansions ≈ 45 in 2000 budget
+# (sqrt(2000) = 44.7). To get ~90 expansions in 2000 budget, need a higher
+# alpha. At alpha=0.6: 89^(1/0.6) ≈ 1740 ≤ 2000 ✓. Leaves room for ~16 more
+# evaluate calls so finalize has interleaved evidence to draw on.
+project: "travel"
+
+loop:
+  max_rounds: 100        # vanilla creates 3× more tree nodes than dual at same compute
+  score_target: 0.95
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 2000
+    init_expansions: 3
+    alpha: 0.6           # tuned to allow ~90 expansions + meaningful evaluate phase
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 3
+    full_eval_top_k: 0   # no top-3 full-benchmark audit for this ablation
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 10
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+# Same summarizer setup as the dual experiments so the comparison isolates the
+# dual-vs-vanilla effect from the summarizer effect. Summarizer fires from
+# _evaluate's first-eval guard for each new node (one memo per node).
+summarizer:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+
+# 60 train / 60 held-out — same as the dual configs.
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

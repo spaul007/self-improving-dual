@@ -1,0 +1,75 @@
+experiment_name: "travel_hgm_dual_debug"
+
+# Fast debug run (no held-out eval): seed pre-eval on 16 train cases, then ONE
+# dual expansion = 1 Stage A (16) + 2 Stage B variants (2×16) = 48 charged
+# evals == eval_budget, so the bandit loop never runs. eval_size: 0 disables
+# the held-out eval entirely. Intended to exercise the full Stage A → Stage B
+# flow and the new feedback/prompt content quickly.
+project: "travel"
+
+eval_visibility: "blackbox"
+
+loop:
+  max_rounds: 16
+  score_target: 0.99
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "low"
+
+manager:
+  type: "hgm_dual"
+  config:
+    eval_budget: 200          # <=300; enough expansions to build a 3-4 deep lineage
+    init_expansions: 1        # one child off root, then deepen via the schedule
+    alpha: 0.7               # bias toward expansion so the tree deepens
+    eval_batch_size: 8
+    finalize_top_k: 1
+    seed: 42
+    num_variants: 2
+    intra_expand_eval_size: 8 # smaller intra batch => more expansions fit the budget
+    variant_parallelism: 2
+    categorizer_max_representative_errors: 3
+    min_remaining_budget_for_dual: 8
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 600
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+summarizer:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "low"
+
+split:
+  seed: 42
+  train_size: 16
+  eval_size: 0          # NO held-out eval — debug run, finish quickly
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

@@ -1,0 +1,82 @@
+experiment_name: "travel_hgm_dual_20rounds_medium_synergy"
+
+# Cloned from hgm_dual_travel_20rounds_medium.yaml. Only difference:
+# alpha=0.40 (was 0.50) so the bandit's schedule_favors_expand check flips
+# False after ~10 expansions, giving interleaved expand+evaluate rather than
+# pure-expand until max_rounds caps expansion.
+#
+# Math: per dual expansion charges 48 evals (1 intermediate + 2 variants × 16).
+# At alpha=0.40, after N=12 expansions (B=576), 576^0.4 ≈ 12.6 ≈ N-1, so the
+# condition starts flipping False around there. From then on bandit evaluates
+# interleave with expansions.
+project: "travel"
+
+loop:
+  max_rounds: 30
+  score_target: 0.95
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hgm_dual"
+  config:
+    eval_budget: 2000
+    init_expansions: 3
+    alpha: 0.40                                       # was 0.50 — tuned for expand-evaluate synergy
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 3
+    full_eval_top_k: 3                                # keep 120-case top-3 audit (60 held-out)
+    seed: 42
+
+    num_variants: 2
+    intra_expand_eval_size: 16
+    variant_parallelism: 2
+    select_metric: "mean"
+    categorizer_max_representative_errors: 5
+    min_remaining_budget_for_dual: 16
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+    category_selection: "balanced_by_type"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 10
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+summarizer:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

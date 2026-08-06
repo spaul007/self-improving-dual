@@ -1,0 +1,91 @@
+experiment_name: "shopping_hgm_dual_30rounds_medium"
+
+# hgm_dual on shopping, sized for ~20-30 dual expansions. Mirrors
+# configs (travel_hgm_dual_20rounds_medium) except: project=shopping, the
+# shopping categorizer/scorer, parallelism=16, and category_selection=
+# top_failure_rate (2 Stage B variants on the TOP error categories, NOT
+# balanced). Editor + summarizer use full gpt-5.4 @ reasoning_effort=medium;
+# task agent stays on gpt-5.4-mini @ high. Per-expansion cost = 1 Stage A +
+# 2 Stage B variants × intra_expand_eval_size(16) = 48. Top-3 finalists are
+# also scored on the full 120-case benchmark (full_eval_top_k=3) at the end.
+project: "shopping"
+
+loop:
+  # Loose cap; eval_budget is the real terminator. Editor failures consume a
+  # node slot but zero eval budget.
+  max_rounds: 50
+  score_target: 0.95
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hgm_dual"
+  config:
+    eval_budget: 2000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16        # bandit top-up batch (matches original HGM)
+    finalize_top_k: 3
+    full_eval_top_k: 3         # top-3 finalists each scored on all 120 cases
+    seed: 42
+
+    # Dual-optimization knobs.
+    num_variants: 2                                    # 2 Stage B variants per expansion
+    intra_expand_eval_size: 16                         # cases per candidate (Stage A + each variant)
+    variant_parallelism: 2
+    select_metric: "mean"                              # composite-mean winner (variance tiebreak)
+    categorizer_max_representative_errors: 5
+    min_remaining_budget_for_dual: 16
+    error_categorizer: "projects.shopping.shopping_error_categorizer:categorize_errors"
+    category_selection: "top_failure_rate"             # variants target the TOP failure-rate categories (NOT balanced)
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "shopping_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+summarizer:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+
+# Shopping data is local at projects/shopping/data — _db.database_root() falls
+# back to it when SHOPPING_DATABASE_ROOT is unset, so no env override is needed.
+
+# Deterministic train/eval split: 60 train cases for HGM (the optimization
+# sample), 60 held-out as a sidecar metric. intra_expand_eval_size=16 needs
+# at least 16 train cases.
+split:
+  seed: 42
+  train_size: 60
+  stratify_by: "context.level"   # balance the 60 optimization samples across levels (25/25/10)
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

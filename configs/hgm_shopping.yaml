@@ -57,6 +57,7 @@ editor:
 split:
   seed: 42
   train_size: 60
+  stratify_by: "context.level"   # balance the 60 optimization samples across levels (25/25/10)
 
 validators:
   - type: "syntax"
@@ -64,5 +65,6 @@ validators:
   - type: "imports"
   - type: "schema_wrapper_consistency"
   - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
   - type: "immutable_files"
   - type: "load_test"

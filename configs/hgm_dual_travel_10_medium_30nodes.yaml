@@ -1,0 +1,84 @@
+experiment_name: "travel_hgm_dual_10samples_medium_30nodes"
+
+# 30-node hgm_dual run on the 10-sample travel train split.
+# Editor + summarizer use the full gpt-5.4 model with reasoning_effort=medium;
+# task agent stays on gpt-5.4-mini. Each expansion produces a Stage A
+# intermediate + 2 Stage B variants (num_variants=2). The tree is hard-capped
+# at 30 nodes (max_rounds) and eval_budget is sized generously so the cap is
+# what terminates the run. Top-3 finalists are also scored on the full
+# 120-case benchmark (full_eval_top_k=3) for the post-run summary.
+project: "travel"
+
+loop:
+  max_rounds: 30
+  score_target: 0.95
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hgm_dual"
+  config:
+    # HGM knobs. eval_budget is intentionally generous; max_rounds is the
+    # real terminator. Each successful dual expansion debits ~30 evals
+    # (Stage A intermediate + 2 variants × intra_expand_eval_size=10),
+    # so 29 expansions ≈ 870 evals — 1500 leaves slack for retries.
+    eval_budget: 1500
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 10
+    finalize_top_k: 3
+    full_eval_top_k: 3
+    seed: 42
+
+    # Dual-optimization knobs.
+    num_variants: 2
+    intra_expand_eval_size: 10
+    variant_parallelism: 2
+    select_metric: "mean"
+    categorizer_max_representative_errors: 5
+    min_remaining_budget_for_dual: 10
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 10
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+summarizer:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+
+split:
+  seed: 42
+  train_size: 10
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

@@ -138,6 +138,17 @@ class SubprocessEvaluator:
 
         cwd = round_dir / "task_agent"
         env = self._child_env(trace_path)
+        # Per-evaluation isolated scratch dir, exported to every case
+        # subprocess (see platform_core.trace.SCRATCH_DIR_ENV). Generic:
+        # projects that keep mutable on-disk state write it under here so two
+        # concurrent run() calls (e.g. dual-optimization variants over the
+        # same case ids) never collide. Distinct round_dir per concurrent
+        # run() makes the scratch roots inherently distinct. Set only on this
+        # local env dict — never os.environ — so it stays child-only and
+        # thread-isolated between concurrent run() calls.
+        scratch_dir = logs_dir / "scratch"
+        scratch_dir.mkdir(parents=True, exist_ok=True)
+        env["META_AGENT_SCRATCH_DIR"] = str(scratch_dir)
 
         started = time.time()
         results: list[CaseResult] = []
@@ -162,6 +173,23 @@ class SubprocessEvaluator:
             results.sort(key=lambda r: r.case_id)
 
         wall = time.time() - started
+
+        # Attribute LLM round-trips to cases from the (now-complete) trace.
+        # Per-case llm count = number of kind=="llm_call" events whose
+        # payload.case_id matches. A case that ran but never called an LLM gets
+        # 0 (distinct from None = "no data"). Re-persist each case_<id>.json so
+        # the per-case file carries both wall_time_s (set in _run_one) and the
+        # now-known llm_calls; observability only — never fail the run on OSError.
+        llm_by_case = self._llm_calls_by_case(trace_path)
+        for r in results:
+            r.llm_calls = llm_by_case.get(str(r.case_id), 0)
+            try:
+                (logs_dir / f"case_{r.case_id}.json").write_text(
+                    r.model_dump_json(indent=2), encoding="utf-8"
+                )
+            except OSError:
+                pass
+
         passed = sum(1 for r in results if r.passed)
         failed = len(results) - passed
         score = sum(r.score for r in results) / len(results) if results else 0.0
@@ -229,6 +257,7 @@ class SubprocessEvaluator:
             context=dict(case.get("context") or {}),
         )
 
+        _t0 = time.perf_counter()
         try:
             proc = subprocess.run(
                 [sys.executable, "-m", "platform_core.runner"],
@@ -241,6 +270,7 @@ class SubprocessEvaluator:
                 preexec_fn=self._preexec if os.name == "posix" else None,
             )
         except subprocess.TimeoutExpired as exc:
+            elapsed = time.perf_counter() - _t0
             stderr_path.write_text(
                 f"TIMEOUT after {self.wall_time_s}s\n{(exc.stderr or '') if hasattr(exc, 'stderr') else ''}",
                 encoding="utf-8",
@@ -251,10 +281,14 @@ class SubprocessEvaluator:
                     passed=False,
                     score=0.0,
                     error=f"timeout after {self.wall_time_s}s",
+                    wall_time_s=elapsed,
                 ),
                 True,
                 logs_dir,
             )
+
+        # Per-case (per-plan) wall time for every non-timeout return path below.
+        elapsed = time.perf_counter() - _t0
 
         if proc.stderr:
             stderr_path.write_text(proc.stderr, encoding="utf-8")
@@ -266,6 +300,7 @@ class SubprocessEvaluator:
                     passed=False,
                     score=0.0,
                     error=f"child exit code {proc.returncode}",
+                    wall_time_s=elapsed,
                 ),
                 True,
                 logs_dir,
@@ -280,6 +315,7 @@ class SubprocessEvaluator:
                     passed=False,
                     score=0.0,
                     error=f"unparseable child output: {proc.stdout[:200]!r}",
+                    wall_time_s=elapsed,
                 ),
                 True,
                 logs_dir,
@@ -292,6 +328,7 @@ class SubprocessEvaluator:
                     passed=False,
                     score=0.0,
                     error=str(payload.get("error", "unknown error"))[:1000],
+                    wall_time_s=elapsed,
                 ),
                 False,
                 logs_dir,
@@ -302,7 +339,12 @@ class SubprocessEvaluator:
         # in the persisted case file. Without this, post-hoc debugging of a
         # low-scoring case requires rerunning the whole eval — the plan and
         # iteration count are gone after the subprocess exits.
+        # ``query`` is the task input (``case["input"]``) — not ground truth.
+        # Carrying it on the per-case result lets the (generic) feedback
+        # gatherer build "query + plan + what failed" examples without ever
+        # reading the benchmark/cases file itself.
         agent_artifact = {
+            "query": case.get("input"),
             "raw_result": agent_output.result,
             "agent_metadata": dict(agent_output.metadata or {}),
         }
@@ -316,6 +358,7 @@ class SubprocessEvaluator:
                     score=0.0,
                     error=f"scorer raised: {exc!r}",
                     details=agent_artifact,
+                    wall_time_s=elapsed,
                 ),
                 False,
                 logs_dir,
@@ -329,10 +372,41 @@ class SubprocessEvaluator:
                 passed=bool(scored.get("passed", False)),
                 score=float(scored.get("score", 0.0)),
                 details=details,
+                wall_time_s=elapsed,
             ),
             False,
             logs_dir,
         )
+
+    @staticmethod
+    def _llm_calls_by_case(trace_path: Path) -> dict[str, int]:
+        """Count llm_call events per ``str(payload['case_id'])`` from trace.jsonl.
+
+        Robust to blank/malformed lines and to events emitted outside any case
+        scope (no case_id -> skipped). The trace is fully written only once all
+        case subprocesses have exited, so call this after the batch completes.
+        """
+        counts: dict[str, int] = {}
+        try:
+            text = trace_path.read_text(encoding="utf-8")
+        except OSError:
+            return counts
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if event.get("kind") != "llm_call":
+                continue
+            cid = (event.get("payload") or {}).get("case_id")
+            if cid is None:
+                continue
+            key = str(cid)
+            counts[key] = counts.get(key, 0) + 1
+        return counts
 
     def _finish(
         self,

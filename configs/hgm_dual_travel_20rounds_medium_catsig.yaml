@@ -1,0 +1,88 @@
+experiment_name: "travel_hgm_dual_20rounds_medium_catsig"
+
+# Same as hgm_dual_travel_20rounds_medium.yaml (except alpha value), but selects the per-expansion
+# winner via per-check Binomial bootstrap on each variant's assigned error
+# category (select_metric=category_significance). A Stage B variant is
+# promoted only when P(V > Stage A) > 1 - significance_alpha on its assigned
+# category's individual checks; otherwise Stage A wins by default.
+#
+# Replay of the medium dual run under this rule produces ~31% specialist win
+# rate (vs ~86% under composite mean). Hypothesis: tighter selection
+# improves the LCB winner's held-out / full-120 audit scores by avoiding
+# noisy specialist promotions.
+project: "travel"
+
+loop:
+  max_rounds: 30
+  score_target: 0.95
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hgm_dual"
+  config:
+    eval_budget: 2000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 3
+    full_eval_top_k: 3
+    seed: 42
+
+    num_variants: 2
+    intra_expand_eval_size: 16
+    variant_parallelism: 2
+    categorizer_max_representative_errors: 5
+    min_remaining_budget_for_dual: 16
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+    category_selection: "balanced_by_type"
+
+    # Category-significance selection (new).
+    select_metric: "category_significance"
+    significance_alpha: 0.05
+    bootstrap_n_samples: 1000
+    category_tiebreak: "max_p_greater"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 10
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+summarizer:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

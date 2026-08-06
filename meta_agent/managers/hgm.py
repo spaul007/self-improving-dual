@@ -50,7 +50,12 @@ from ..models import (
     EvolutionStrategy,
 )
 from ..registry import register
+from ..tree_snapshot import NodeSnapshot, TreeSnapshotWriter
 from .hgm_tree import HGMNode, HGMTree
+
+# Rough char<->token proxy for the lineage-memory budget (avoids a hard
+# tiktoken dependency in the eval path; the budget is approximate by design).
+_CHARS_PER_TOKEN = 4
 
 
 @register("manager", "hgm")
@@ -68,6 +73,9 @@ class HGMManager:
         beta: float = 1.0,
         eval_batch_size: int = 16,
         finalize_top_k: int = 5,
+        full_eval_top_k: int = 0,
+        snapshot_tree: bool = False,
+        lineage_memory_token_budget: int = 15000,
         seed: int = 42,
     ) -> None:
         self.eval_budget = eval_budget
@@ -84,6 +92,21 @@ class HGMManager:
         # How many top finalists are re-evaluated on the full train split
         # before the final selection (the small-sample-overfit fix).
         self.finalize_top_k = finalize_top_k
+        # Sidecar audit: 0 disables; >0 runs that many top finalists on the
+        # FULL benchmark (train + held-out eval split) after LCB selection.
+        # Does not influence selection — purely for head-to-head comparison.
+        self.full_eval_top_k = full_eval_top_k
+        # Approx token budget for the lineage behavior-memory block injected into
+        # editor steering. Ancestors' full memories are included newest-first up
+        # the chain until this budget is reached (~4 chars/token). Applies to
+        # vanilla HGM expand + dual Stage A; dual Stage B also prepends the Stage
+        # A intermediate's memory as the most-recent.
+        self.lineage_memory_token_budget = lineage_memory_token_budget
+        # Opt-in time-series snapshots of the whole tree, written after every
+        # EXPAND/EVALUATE so the best node at any budget level can be recovered
+        # and re-evaluated later (analysis/debug). See meta_agent/tree_snapshot.py
+        # and snapshot_eval.py. Off by default — zero behavior change.
+        self.snapshot_tree = snapshot_tree
         self.seed = seed
 
         # Per-run state (reset at the top of evolve()).
@@ -98,6 +121,14 @@ class HGMManager:
         # and the finalization re-evaluations.
         self._budget_spent: int = 0
         self._task_rng: random.Random = random.Random(seed)
+        # Optional per-round behavior summarizer. When set, ``_evaluate``
+        # fires it after a node's feedback is final, and steering contexts
+        # inject the lineage's behavior_memory.md files. ``None`` keeps
+        # the legacy behavior (no memory written, no memory in prompts).
+        self._summarizer: Any = None
+        # Time-series tree snapshotter (a no-op unless snapshot_tree is on);
+        # (re)created at the top of evolve() once experiment_dir is known.
+        self._snapshotter: Optional[TreeSnapshotWriter] = None
 
     # ------------------------------------------------------------------ #
     # Public API (EvolutionManager protocol)
@@ -115,10 +146,12 @@ class HGMManager:
         score_target: float | None,
         train_case_ids: Optional[list[str]] = None,
         eval_case_ids: Optional[list[str]] = None,
+        summarizer: Any = None,
     ) -> EvolutionOutcome:
         self._benchmark_dir = benchmark_dir
         self._experiment_dir = experiment_dir
         self._eval_case_ids = eval_case_ids
+        self._summarizer = summarizer
         self._tree = HGMTree(
             beta_prior=self.beta_prior,
             clade_pseudo_count=self.clade_pseudo_count,
@@ -127,7 +160,15 @@ class HGMManager:
         self._feedback = {}
         self._next_id = 0
         self._budget_spent = 0
+        # Evaluations attributed to committed nodes (main-loop top-ups plus,
+        # in the dual manager, the winner's reused intra batch). This drives
+        # the widening schedule; ``_budget_spent`` (which also includes the
+        # dual manager's throw-away variant trials) only caps total spend.
+        self._node_evals_spent = 0
         self._task_rng = random.Random(self.seed)
+        self._snapshotter = TreeSnapshotWriter(
+            experiment_dir, enabled=self.snapshot_tree
+        )
 
         # Train cases drive the budget; fall back to every case when no
         # split is configured (the eval split, if any, stays a sidecar).
@@ -145,16 +186,33 @@ class HGMManager:
         # only evaluated, positive-mean nodes are expandable, so these all
         # branch off the freshly pre-evaluated root.
         self._run_seed(seed_dir, evaluator, gatherer)
+        self._snapshot("seed")
         for _ in range(self.init_expansions):
             expandable = self._expandable()
             if not expandable or self._tree.n_real_nodes() > max_rounds:
                 break
+            # Same affordability guard as the main loop (matters when
+            # eval_budget is tiny relative to the dual expansion cost).
+            if self.eval_budget - self._budget_spent < self._min_budget_to_expand():
+                break
             self._expand(self._tree.argmax_expand(1.0, expandable), editor, gatherer)
+            self._snapshot("expand")
 
-        # Scheduled EXPAND/EVALUATE loop. Budget counts loop evaluations
-        # only — the root's pre-evaluation is excluded.
+        # Scheduled EXPAND/EVALUATE loop. The while-stop keys off total spend
+        # (``_budget_spent``), but the widening schedule keys off
+        # ``_node_evals_spent`` — evaluations attributed to committed nodes —
+        # so the dual manager's throw-away variant trials don't distort it.
+        # The root's pre-evaluation is excluded from both.
         while self._budget_spent < self.eval_budget:
             remaining = self.eval_budget - self._budget_spent
+            # Early stop: if the remaining budget can't fund an expansion's
+            # intra-evaluation, stop instead of spawning un-evaluated nodes that
+            # still cost an editor call. ``_min_budget_to_expand`` is 0 for
+            # vanilla HGM (expand is free at expand-time; the bandit evaluates
+            # the node later), so vanilla's decoupled behavior is unchanged; the
+            # dual manager returns ``intra_expand_eval_size``.
+            if remaining < self._min_budget_to_expand():
+                break
             tau = self._tree.tau(
                 remaining, self.eval_budget,
                 cool_down=self.cool_down, beta=self.beta,
@@ -163,13 +221,17 @@ class HGMManager:
             evaluable = self._evaluable()
             can_grow = bool(expandable) and self._tree.n_real_nodes() < max_rounds
             if (
-                self._tree.schedule_favors_expand(self.alpha, self._budget_spent)
+                self._tree.schedule_favors_expand(self.alpha, self._node_evals_spent)
                 and can_grow
             ):
                 self._expand(self._tree.argmax_expand(tau, expandable), editor, gatherer)
+                self._snapshot("expand")
             elif evaluable:
                 node_id = self._tree.argmax_evaluate(tau, evaluable)
-                self._budget_spent += self._evaluate(node_id, evaluator, gatherer)
+                spent = self._evaluate(node_id, evaluator, gatherer)
+                self._budget_spent += spent
+                self._node_evals_spent += spent
+                self._snapshot("evaluate")
                 if (
                     score_target is not None
                     and self._tree[node_id].mean_utility >= score_target
@@ -178,6 +240,7 @@ class HGMManager:
             elif can_grow:
                 # Nothing left to evaluate, but the tree can still widen.
                 self._expand(self._tree.argmax_expand(tau, expandable), editor, gatherer)
+                self._snapshot("expand")
             else:
                 break
 
@@ -260,6 +323,28 @@ class HGMManager:
             f"cmp={self._tree.cmp(node_id):.3f}",
             flush=True,
         )
+        # Run the behavior summarizer after every batch. The first batch creates
+        # behavior_memory.md; later top-ups UPDATE it cumulatively (the
+        # summarizer reads the existing memo and merges this batch in). Pass the
+        # BATCH result (``result``) — not the cumulative one — so the aggregate's
+        # mutable_log/tool_calls cross-tab matches the per-batch trace.jsonl the
+        # summarizer reads (the evaluator truncates the trace each batch).
+        if self._summarizer is not None and node.parent_id is not None:
+            parent_round_dir = self._tree[node.parent_id].round_dir
+            try:
+                self._summarizer.summarize(
+                    round_dir=node.round_dir,
+                    parent_round_dir=parent_round_dir,
+                    eval_dir=node.round_dir,
+                    eval_result=result,
+                    node_id=node.node_id,
+                    parent_id=node.parent_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"[summarizer] unexpected error on node {node.node_id}: {exc!r}",
+                    flush=True,
+                )
         return len(batch)
 
     # ------------------------------------------------------------------ #
@@ -280,7 +365,10 @@ class HGMManager:
         if len(lineage) > 1:
             parts.append("## Edits already applied along this lineage (root → parent):")
             for depth, goal in lineage:
-                parts.append(f"  [depth {depth}] {goal[:200]}")
+                lines = goal.split("\n")
+                parts.append(f"  [depth {depth}] {lines[0][:200]}")
+                for cont in lines[1:]:
+                    parts.append(f"             {cont[:200]}")
 
         parts.append(f"\n## Parent performance — node {parent.node_id}")
         if parent.n_evals > 0:
@@ -331,10 +419,78 @@ class HGMManager:
             for sib in siblings[:8]:
                 parts.append(f"  - {sib.strategy.optimization_goal[:160]}")
 
+        # Inject the lineage's behavior memories, newest-first up the chain
+        # within a token budget. Skipped silently when the summarizer isn't
+        # configured or no ancestor has a memory file.
+        memory_block = self._render_lineage_memory(parent)
+        if memory_block:
+            parts.append(memory_block)
+
         parts.append(
-            "\nMake ONE focused improvement to this parent agent. Keep the "
+            "\nMake targeted improvement to this parent agent. Keep the "
             "scope small enough to apply correctly in one pass."
         )
+        return "\n".join(parts)
+
+    def _render_lineage_memory(
+        self,
+        parent: HGMNode,
+        *,
+        extra_recent: Optional[tuple[str, Path]] = None,
+    ) -> str:
+        """Render lineage behavior memories newest-first up the chain, within
+        ``lineage_memory_token_budget`` (approx; ~4 chars/token).
+
+        Walks ``parent -> grandparent -> ... -> root``, including each
+        ancestor's FULL ``behavior_memory.md`` greedily until the budget is
+        reached; the first memory that doesn't fully fit is truncated to the
+        remaining budget and the walk stops. ``extra_recent`` (a
+        ``(label, round_dir)`` pair — dual Stage B passes the Stage A
+        intermediate) is treated as the most-recent memory. Rendered oldest →
+        newest so the editor reads the evolution over time.
+
+        Returns ``""`` when no memory files exist along the lineage (e.g.
+        summarizer disabled, seed round, or write failed).
+        """
+        from ..behavior_summarizer import render_memory_for_steering
+
+        char_budget = max(0, self.lineage_memory_token_budget) * _CHARS_PER_TOKEN
+        if char_budget <= 0:
+            return ""
+
+        # Ordered most-recent-first: [extra_recent?, parent, grandparent, ..., root]
+        chain: list[tuple[str, Path]] = []
+        if extra_recent is not None:
+            chain.append(extra_recent)
+        nid: Optional[int] = parent.node_id
+        while nid is not None and nid in self._tree.nodes:
+            node = self._tree.nodes[nid]
+            chain.append((f"round {nid}", node.round_dir))
+            nid = node.parent_id
+
+        included: list[tuple[str, str]] = []  # (label, text), most-recent-first
+        used = 0
+        for label, round_dir in chain:
+            mem = render_memory_for_steering(round_dir)
+            if not mem:
+                continue
+            if used + len(mem) <= char_budget:
+                included.append((label, mem))
+                used += len(mem)
+            else:
+                remaining = char_budget - used
+                if remaining >= 400:  # only include a tail if a useful chunk fits
+                    included.append(
+                        (f"{label} (excerpt)", mem[:remaining].rstrip() + "\n<... truncated ...>")
+                    )
+                break  # budget exhausted — stop walking older ancestors
+
+        if not included:
+            return ""
+        parts: list[str] = []
+        for label, mem in reversed(included):  # oldest -> newest
+            parts.append(f"\n## Observed behavior memory — {label}:")
+            parts.append(mem)
         return "\n".join(parts)
 
     def _ancestor_goals(self, node_id: int) -> list[tuple[int, str]]:
@@ -362,6 +518,44 @@ class HGMManager:
         ]
         return max(scored, key=lambda kv: kv[1]) if scored else None
 
+    def _snapshot(self, event: str) -> None:
+        """Append a full-tree snapshot keyed by the current eval budget. A
+        no-op unless ``snapshot_tree`` is enabled. Records every node (incl.
+        the seed root and edit-failed placeholders) plus a pointer to the
+        current best-by-mean node, so an analyst can recover and re-evaluate
+        the best agent at any budget level (see snapshot_eval.py)."""
+        if self._snapshotter is None or not self._snapshotter.enabled:
+            return
+        nodes = [
+            NodeSnapshot(
+                node_id=n.node_id,
+                parent_id=n.parent_id,
+                round_dir=n.round_dir.name,
+                edit_failed=n.edit_failed,
+                n_evals=n.n_evals,
+                mean_utility=n.mean_utility,
+                n_success=n.n_success,
+                n_failure=n.n_failure,
+                cmp=self._tree.cmp(nid),
+            )
+            for nid, n in sorted(self._tree.nodes.items())
+        ]
+        best = self._best_evaluated()
+        best_id = best[0] if best is not None else None
+        best_round_dir = (
+            self._tree[best_id].round_dir.name if best_id is not None else None
+        )
+        self._snapshotter.record(
+            event=event,
+            manager=type(self).__name__,
+            budget_spent=self._budget_spent,
+            node_evals_spent=self._node_evals_spent,
+            nodes=nodes,
+            best_node_id=best_id,
+            best_mean_utility=best[1] if best is not None else None,
+            best_round_dir=best_round_dir,
+        )
+
     # ------------------------------------------------------------------ #
     # Selectable-node sets
     # ------------------------------------------------------------------ #
@@ -386,6 +580,17 @@ class HGMManager:
             if not n.edit_failed and len(n.evaluated_case_ids) < n_train
         ]
 
+    def _min_budget_to_expand(self) -> int:
+        """Minimum remaining eval budget required to make an EXPAND worthwhile.
+
+        Vanilla HGM evaluates lazily — ``_expand`` charges nothing at
+        expand-time (the bandit evaluates the new node later) — so there is no
+        minimum here (returns 0; behavior unchanged). The dual manager, whose
+        ``_expand`` runs an intra-evaluation, overrides this to
+        ``intra_expand_eval_size`` so the main loop stops instead of spawning
+        un-evaluated nodes once the budget can no longer fund one."""
+        return 0
+
     # ------------------------------------------------------------------ #
     # Finalization
     # ------------------------------------------------------------------ #
@@ -396,6 +601,9 @@ class HGMManager:
         # Bring the top-k finalists to a full-train estimate, THEN select —
         # so a small-sample fluke can no longer win the LCB comparison.
         self._finalize_top_k(evaluator, gatherer)
+        # Final snapshot: finalists are now fully train-evaluated, so the
+        # best-by-mean recorded here reflects the post-finalization tree.
+        self._snapshot("finalize")
 
         # Rewrite every sidecar so clade stats are final and consistent.
         for node in self._tree.nodes.values():
@@ -415,6 +623,7 @@ class HGMManager:
         )
         if self._eval_case_ids:
             self._run_eval_split(best_id, evaluator)
+        self._run_top_k_full_eval(evaluator)
 
         rounds = [self._feedback[nid] for nid in sorted(self._feedback)]
         final_score = self._tree[best_id].mean_utility
@@ -498,6 +707,111 @@ class HGMManager:
             f"held-out eval on best node {best_id}: {result.score:.3f}",
             flush=True,
         )
+
+    def _run_top_k_full_eval(self, evaluator: Evaluator) -> None:
+        """Evaluate top-k finalists on the full benchmark (train + eval split).
+
+        Sidecar audit metric — does NOT influence LCB selection. Gives every
+        finalist a head-to-head score on identical, comprehensive ground so
+        the user can compare generalization independent of the LCB winner.
+
+        Skips cases the finalist already has scores for (from intra-expand,
+        bandit top-up, or ``_finalize_top_k``) — only newly-needed cases hit
+        the evaluator. The audit's composite score combines the pre-existing
+        per-case results (from ``node.case_results``) with the newly-run
+        ones, so the reported number is over the full 120-case set without
+        the cost of re-evaluating cases this node has already been scored on.
+
+        Writes one ``full_eval_score.json`` per finalist into its round_dir.
+        Disabled when ``full_eval_top_k == 0`` (the default).
+        """
+        if self.full_eval_top_k <= 0:
+            return
+        if not self._train_case_ids and not self._eval_case_ids:
+            return
+
+        all_cases = list(self._train_case_ids or []) + list(self._eval_case_ids or [])
+        all_set = set(all_cases)
+
+        candidates = [
+            n for n in self._tree.nodes.values()
+            if not n.edit_failed and n.n_evals > 0
+        ]
+        candidates.sort(key=lambda n: n.mean_utility, reverse=True)
+        finalists = candidates[: self.full_eval_top_k]
+
+        print(
+            f"full-benchmark audit: running top-{len(finalists)} finalist(s) "
+            f"on {len(all_cases)} cases — dedup against per-node existing evals "
+            f"(sidecar, not used for selection)",
+            flush=True,
+        )
+        for node in finalists:
+            # Cases this node already has per-case results for, restricted to
+            # the audit's full-benchmark set (defensive: node could have
+            # results for case_ids that aren't in the current split, e.g. if
+            # train_case_ids changed between runs).
+            existing_by_id = {
+                c.case_id: c
+                for c in node.case_results
+                if c.case_id in all_set
+            }
+            missing = [cid for cid in all_cases if cid not in existing_by_id]
+
+            new_per_case = []
+            new_wall_time = 0.0
+            new_crashed = False
+            if missing:
+                new_result = evaluator.run(
+                    node.round_dir, self._benchmark_dir, case_ids=missing
+                )
+                new_per_case = list(new_result.per_case)
+                new_wall_time = new_result.wall_time_s
+                new_crashed = new_result.crashed
+            new_by_id = {c.case_id: c for c in new_per_case}
+
+            # Combine in `all_cases` order. Falls through if a case is in
+            # neither bucket (shouldn't happen unless the evaluator dropped
+            # something).
+            combined = []
+            for cid in all_cases:
+                if cid in existing_by_id:
+                    combined.append(existing_by_id[cid])
+                elif cid in new_by_id:
+                    combined.append(new_by_id[cid])
+            n_cases = len(combined)
+            composite = sum(c.score for c in combined) / n_cases if n_cases else 0.0
+            passed = sum(1 for c in combined if c.passed)
+            failed = n_cases - passed
+            audit_pre_existing = n_cases - len(new_per_case)
+
+            (node.round_dir / "full_eval_score.json").write_text(
+                json.dumps(
+                    {
+                        "node_id": node.node_id,
+                        "composite_score": composite,
+                        "passed": passed,
+                        "failed": failed,
+                        "n_cases": n_cases,
+                        "wall_time_s": new_wall_time,
+                        "crashed": new_crashed,
+                        "train_mean": node.mean_utility,
+                        "train_n": node.n_evals,
+                        # Audit cost transparency:
+                        "audit_pre_existing_evals": audit_pre_existing,
+                        "audit_new_evals": len(new_per_case),
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            print(
+                f"  node {node.node_id}: full={composite:.3f} "
+                f"(passed={passed}/{n_cases})  "
+                f"train_mean={node.mean_utility:.3f} n={node.n_evals}  "
+                f"[audit: {audit_pre_existing} cached + {len(new_per_case)} new]",
+                flush=True,
+            )
 
     # ------------------------------------------------------------------ #
     # Internals

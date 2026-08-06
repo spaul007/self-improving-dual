@@ -27,12 +27,14 @@ the manager calls it on the failed-edit synth path.
 """
 from __future__ import annotations
 
+import importlib
 import json
 import re
 from pathlib import Path
 from typing import Any, Optional, Protocol
 
 from . import verbose_log
+from .failure_report import FailureReportConfig, build_failure_report
 from .models import AgentFeedback, EvaluationResult, EvolutionStrategy
 from .registry import register
 
@@ -121,6 +123,20 @@ class DefaultFeedbackGatherer:
         log_tail: int = 30,
         exception_limit: int = 20,
         scorer: Any = None,
+        # Example-driven failure report (generic; see meta_agent/failure_report.py).
+        failure_analysis: bool = True,
+        # Project error categorizer ("module.path:function"), same convention
+        # the dual manager uses. When set, its categories drive the report's
+        # recurring-failure grouping + representative examples. When unset, the
+        # report degrades to hardest-cases-only — still fully generic.
+        error_categorizer: Optional[str] = None,
+        top_error_categories: int = 4,
+        examples_per_category: int = 2,
+        n_hard_cases: int = 3,
+        query_char_cap: int = 600,
+        plan_char_cap: int = 1000,
+        failure_char_cap: int = 500,
+        pass_threshold: float = 1.0,
     ) -> None:
         self.log_tail = log_tail
         self.exception_limit = exception_limit
@@ -130,6 +146,31 @@ class DefaultFeedbackGatherer:
         # configured scorer is a registered class. ``None`` (or a scorer
         # without ``aggregate``) leaves ``project_metrics`` empty.
         self.scorer = scorer
+
+        self.failure_analysis = failure_analysis
+        self._fr_cfg = FailureReportConfig(
+            top_error_categories=top_error_categories,
+            examples_per_category=examples_per_category,
+            n_hard_cases=n_hard_cases,
+            query_char_cap=query_char_cap,
+            plan_char_cap=plan_char_cap,
+            failure_char_cap=failure_char_cap,
+            pass_threshold=pass_threshold,
+        )
+        # Resolve the project categorizer once (same "module:func" convention
+        # as HGMDualManager). Kept generic: the gatherer only calls it and
+        # consumes its contract; all domain parsing lives in that project module.
+        self._categorize_errors = None
+        if error_categorizer:
+            mod_path, _, func_name = error_categorizer.partition(":")
+            if not mod_path or not func_name:
+                raise ValueError(
+                    "error_categorizer must be 'module.path:function_name', "
+                    f"got {error_categorizer!r}"
+                )
+            self._categorize_errors = getattr(
+                importlib.import_module(mod_path), func_name
+            )
 
     def compile(
         self,
@@ -148,10 +189,17 @@ class DefaultFeedbackGatherer:
         # Track tool_call name by id so we can attribute the error to the
         # right tool when its tool_result event arrives.
         call_name_by_id: dict[str, str] = {}
+        # Distinct cases the trace actually covers — the trace-derived stats
+        # (tool_usage/llm_calls/log_excerpt) only describe these, which may be
+        # fewer than the cumulative per-case set when a node has been topped up.
+        trace_case_ids: set[str] = set()
 
         for ev in events:
             kind = ev.get("kind")
             payload = ev.get("payload") or {}
+            cid = payload.get("case_id")
+            if cid is not None:
+                trace_case_ids.add(str(cid))
             if kind == "llm_call":
                 llm_calls += 1
             elif kind == "tool_call":
@@ -183,6 +231,7 @@ class DefaultFeedbackGatherer:
         log_excerpt = self._build_excerpt(events)
         tool_error_rate = self._tool_error_rate(tool_usage, tool_errors)
         project_metrics = self._project_metrics(eval_result, events)
+        failure_report = self._failure_report(eval_result)
 
         feedback = AgentFeedback(
             round_number=round_number,
@@ -195,6 +244,8 @@ class DefaultFeedbackGatherer:
             runtime_exceptions=runtime_exceptions,
             log_excerpt=log_excerpt,
             project_metrics=project_metrics,
+            failure_report=failure_report,
+            trace_n_cases=len(trace_case_ids),
         )
         persist_round_artifacts(round_dir, feedback)
 
@@ -224,8 +275,8 @@ class DefaultFeedbackGatherer:
     ) -> dict[str, Any]:
         """Dispatch to the scorer's optional ``aggregate(per_case,
         trace_events)`` method. Returns ``{}`` when the scorer doesn't
-        define ``aggregate`` (the typical case for simple benchmarks
-        like math).
+        define ``aggregate`` (the typical case for simple single-shot
+        benchmarks).
 
         The framework's prompt renderers iterate the returned dict
         generically: floats are rendered inline, lists of ``(name,
@@ -249,6 +300,28 @@ class DefaultFeedbackGatherer:
             )
             return {}
         return dict(result or {})
+
+    def _failure_report(self, eval_result: EvaluationResult) -> dict[str, Any]:
+        """Build the generic, example-driven failure report (query → plan →
+        what failed + hardest cases). Uses the project categorizer when one is
+        configured; otherwise degrades to hardest-cases-only. Never parses
+        domain-specific ``details`` keys — that lives in the categorizer."""
+        if not self.failure_analysis:
+            return {}
+        categories: list[dict[str, Any]] = []
+        if self._categorize_errors is not None:
+            try:
+                categories = list(self._categorize_errors(eval_result.per_case))
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"[gatherer] warning: error_categorizer raised {exc!r}; "
+                    "failure report falls back to hardest cases only",
+                    flush=True,
+                )
+                categories = []
+        return build_failure_report(
+            eval_result.per_case, categories, cfg=self._fr_cfg
+        )
 
     # ------------------------------------------------------------------ #
     # Internals

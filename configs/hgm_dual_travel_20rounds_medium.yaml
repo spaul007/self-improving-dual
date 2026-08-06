@@ -1,0 +1,92 @@
+experiment_name: "travel_hgm_dual_20rounds_medium"
+
+# hgm_dual on travel sized for at least 20 dual expansions.
+# Editor + summarizer use the full gpt-5.4 model with reasoning_effort=medium;
+# task agent stays on gpt-5.4-mini. Each expansion produces a Stage A
+# intermediate + 2 Stage B variants (num_variants=2). Per-candidate evaluation
+# uses intra_expand_eval_size=16; bandit top-up uses eval_batch_size=16
+# (matches original HGM). eval_budget is generous (2000) so the run yields ≥20
+# expansions even after bandit eval calls and a few editor failures.
+# Top-3 finalists are also scored on the full 120-case benchmark
+# (full_eval_top_k=3) at the end.
+project: "travel"
+
+loop:
+  # Loose cap; eval_budget is the real terminator. 30 = 1.5× the 20-round
+  # target, comfortably absorbs editor failures (each failure consumes a
+  # node slot but zero eval budget).
+  max_rounds: 30
+  score_target: 0.95
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hgm_dual"
+  config:
+    # HGM knobs. Per-expansion cost = 1 Stage A + 2 Stage B variants ×
+    # intra_expand_eval_size = 48. 20 expansions × 48 = 960 (floor).
+    # Realistic mix with ~30 bandit evaluate calls × 16 = +480 → ~1440.
+    # eval_budget=2000 gives ~25-30% headroom.
+    eval_budget: 2000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16        # matches original HGM
+    finalize_top_k: 3
+    full_eval_top_k: 3         # top-3 finalists each scored on all 120 cases
+    seed: 42
+
+    # Dual-optimization knobs.
+    num_variants: 2
+    intra_expand_eval_size: 16
+    variant_parallelism: 2
+    select_metric: "mean"
+    categorizer_max_representative_errors: 5
+    min_remaining_budget_for_dual: 16
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+    category_selection: "balanced_by_type"     # 1 commonsense + 1 hard per expansion when both available
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+summarizer:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+
+# Deterministic train/eval split: 60 train cases for HGM, 60 held-out as
+# sidecar metric. intra_expand_eval_size=16 needs at least 16 train cases.
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

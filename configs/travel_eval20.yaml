@@ -50,5 +50,6 @@ validators:
   - type: "imports"
   - type: "schema_wrapper_consistency"
   - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
   - type: "immutable_files"
   - type: "load_test"

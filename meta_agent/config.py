@@ -9,11 +9,12 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import inspect
+import json
 import os
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 import yaml
 from pydantic import BaseModel, Field
@@ -64,10 +65,37 @@ class SplitSpec(BaseModel):
     selected by a seeded shuffle); the remaining cases form the held-out
     eval set. The eval split is a sidecar metric — it does not feed the
     strategy or drive "best round" selection.
+
+    ``stratify_by`` is an optional dotted path into each case dict (e.g.
+    ``"context.level"``). When set, the split is balanced across the distinct
+    values of that field: every stratum contributes the same fraction
+    (``train_size / total``) of its cases to train, so both halves keep the
+    same level mix and random skew is removed. When ``None`` (the default),
+    the split is a plain seeded shuffle — identical to the legacy behavior, so
+    projects that don't opt in are unaffected.
     """
 
-    seed: int
-    train_size: int
+    seed: int = 42
+    # Number of train cases for the seeded shuffle/stratified split. Optional:
+    # omit when supplying an explicit ``train_ids`` / ``train_ids_path`` instead.
+    train_size: Optional[int] = None
+    stratify_by: Optional[str] = None
+    # Optional cap on the held-out eval set size. ``None`` (default) keeps all
+    # remaining cases as held-out (legacy behavior). ``0`` disables the held-out
+    # eval entirely (no ``_run_eval_split``) — handy for fast debug runs that
+    # want a small train set and no extra evaluation. Any N keeps the first N
+    # remaining cases. The leftover cases are simply unused.
+    eval_size: Optional[int] = None
+    # Predetermined optimization (train) case ids. When either is set, the
+    # seeded shuffle is bypassed and EXACTLY these ids are optimized (validated
+    # against the benchmark); the held-out eval set is empty unless ``eval_size``
+    # selects from the remaining cases. ``train_ids`` is an inline list;
+    # ``train_ids_path`` points to a JSON file containing a list of ids (or an
+    # object with a top-level ``train_ids`` list), resolved relative to the repo
+    # root if not absolute. Use this to fix the same set across runs (e.g. to
+    # compare hgm vs hgm_dual on identical cases).
+    train_ids: Optional[list[str]] = None
+    train_ids_path: Optional[str] = None
 
 
 class FrameworkConfig(BaseModel):
@@ -99,11 +127,26 @@ class FrameworkConfig(BaseModel):
     editor: ComponentSpec
     gatherer: ComponentSpec
     validators: list[ComponentSpec]
+    # Optional. When set, an LLM-summarized "behavior_memory.md" is written
+    # after every (non-seed) round and injected into descendants' steering
+    # contexts. Omit (or null) to disable; existing configs keep current
+    # behavior without changes.
+    summarizer: Optional[ComponentSpec] = None
     plugins: list[str] = Field(default_factory=list)
 
     task_agent: TaskAgentSpec = Field(default_factory=TaskAgentSpec)
     env: dict[str, str] = Field(default_factory=dict)
     split: Optional[SplitSpec] = None
+
+    # Evaluation visibility for the meta-agent editor. "blackbox" (default)
+    # preserves current behavior: the editor sees the agent's own code, tool
+    # implementations and DB schema, plus behavioral feedback (scores +
+    # query/plan/what-failed examples) — but NOT the scoring code. "whitebox"
+    # additionally injects the project's scorer source (benchmark/scorer.py +
+    # benchmark/_eval/*.py) so the editor can read exactly how output is
+    # graded. Ground-truth data (data/, cases.jsonl, validation files) is never
+    # exposed in either mode.
+    eval_visibility: Literal["blackbox", "whitebox"] = "blackbox"
 
     verbose: bool = False
 
@@ -129,6 +172,7 @@ class AssembledFramework:
     seed_dir: Path
     benchmark_dir: Path
     runs_root: Path
+    summarizer: Any = None
     train_case_ids: Optional[list[str]] = None
     eval_case_ids: Optional[list[str]] = None
 
@@ -140,6 +184,7 @@ def _ensure_builtins_loaded() -> None:
     importlib.import_module("meta_agent.evaluator")
     importlib.import_module("meta_agent.feedback_gatherer")
     importlib.import_module("meta_agent.agent_editor")
+    importlib.import_module("meta_agent.behavior_summarizer")
     importlib.import_module("meta_agent.managers")  # imports submodules
 
 
@@ -148,7 +193,7 @@ def _load_project_components(project_name: str) -> None:
     decorators run before ``build_components`` looks the scorer up by
     name. (Per-project gatherer modules used to live at
     ``projects/<name>/gatherer.py``; that abstraction was merged into
-    the scorer — see ``TravelCompositeScorer.aggregate``.)
+    the scorer — see the project scorer's ``aggregate`` method.)
 
     Missing modules are fine — the scorer's module-level ``score()``
     fallback covers projects without a registered class.
@@ -210,14 +255,8 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
     # tests that don't build components.
     from platform_core.llm_wrapper import call_llm
 
-    editor_obj = _build_with_injection(
-        cfg.editor,
-        "editor",
-        {"llm_caller": call_llm, "validators": validators_obj},
-    )
-
-    manager_obj = registry.get("manager", cfg.manager.type)(**cfg.manager.config)
-
+    # Resolve project paths up front — the editor's static project context
+    # (tool implementations, DB schema, optional scorer code) is read from here.
     runs_root = _resolve_root(cfg.runs_root)
     project_root = REPO_ROOT / "projects" / cfg.project
     seed_dir = project_root / "seed"
@@ -233,14 +272,46 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
             f"(check `project: \"{cfg.project}\"` in the YAML)"
         )
 
+    # Static project context for the editor. tools_source + db_schema are shown
+    # in both modes; scorer_source only in whitebox. None of these read
+    # ground-truth data (data/, cases.jsonl, validation files).
+    editor_injections: dict[str, Any] = {
+        "llm_caller": call_llm,
+        "validators": validators_obj,
+        "tools_source": _read_tools_source(project_root),
+        "db_schema": _read_db_schema(project_root),
+    }
+    if cfg.eval_visibility == "whitebox":
+        editor_injections["scorer_source"] = _read_scorer_source(benchmark_dir)
+    editor_obj = _build_with_injection(cfg.editor, "editor", editor_injections)
+
+    summarizer_obj: Any = None
+    if cfg.summarizer is not None:
+        summarizer_obj = _build_with_injection(
+            cfg.summarizer, "summarizer", {"llm_caller": call_llm}
+        )
+
+    manager_obj = registry.get("manager", cfg.manager.type)(**cfg.manager.config)
+
     train_ids: Optional[list[str]] = None
     eval_ids: Optional[list[str]] = None
     if cfg.split is not None:
-        train_ids, eval_ids = compute_split(
-            benchmark_dir,
-            seed=cfg.split.seed,
-            train_size=cfg.split.train_size,
-        )
+        if cfg.split.train_ids or cfg.split.train_ids_path:
+            # Predetermined optimization set — bypass the seeded shuffle.
+            train_ids, eval_ids = _resolve_explicit_train_ids(cfg.split, benchmark_dir)
+        elif cfg.split.train_size is not None:
+            train_ids, eval_ids = compute_split(
+                benchmark_dir,
+                seed=cfg.split.seed,
+                train_size=cfg.split.train_size,
+                stratify_by=cfg.split.stratify_by,
+                eval_size=cfg.split.eval_size,
+            )
+        else:
+            raise ValueError(
+                "split: needs either train_size (seeded split) or "
+                "train_ids / train_ids_path (predetermined set)"
+            )
 
     return AssembledFramework(
         config=cfg,
@@ -253,6 +324,7 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         seed_dir=seed_dir,
         benchmark_dir=benchmark_dir,
         runs_root=runs_root,
+        summarizer=summarizer_obj,
         train_case_ids=train_ids,
         eval_case_ids=eval_ids,
     )
@@ -278,24 +350,228 @@ def _build_with_injection(
     return cls(**kwargs)
 
 
+def _resolve_explicit_train_ids(
+    split: "SplitSpec", benchmark_dir: Path
+) -> tuple[list[str], list[str]]:
+    """Resolve a predetermined optimization set from ``split.train_ids`` or
+    ``split.train_ids_path`` (JSON list, or an object with a ``train_ids`` key;
+    path resolved relative to the repo root if not absolute). Validates every id
+    exists in the benchmark and preserves order. Held-out eval is empty unless
+    ``eval_size`` selects from the remaining cases."""
+    if split.train_ids is not None:
+        ids = [str(x) for x in split.train_ids]
+    else:
+        p = Path(split.train_ids_path)
+        if not p.is_absolute():
+            p = REPO_ROOT / p
+        if not p.is_file():
+            raise FileNotFoundError(f"split.train_ids_path not found: {p}")
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            data = data.get("train_ids")
+        if not isinstance(data, list):
+            raise ValueError(
+                f"{p}: expected a JSON list of ids (or an object with a "
+                "'train_ids' list)"
+            )
+        ids = [str(x) for x in data]
+
+    all_ids = {
+        str(c.get("id") or c.get("case_id")) for c in load_cases(benchmark_dir)
+    }
+    # De-dup while preserving order.
+    seen: set[str] = set()
+    train: list[str] = []
+    for cid in ids:
+        if cid not in seen:
+            seen.add(cid)
+            train.append(cid)
+    unknown = [cid for cid in train if cid not in all_ids]
+    if unknown:
+        raise ValueError(
+            f"split.train_ids contains ids not in the benchmark: {unknown[:10]}"
+            f"{' …' if len(unknown) > 10 else ''}"
+        )
+    if not train:
+        raise ValueError("split.train_ids resolved to an empty set")
+
+    eval_ids: list[str] = []
+    if split.eval_size:  # optional held-out from the remaining cases
+        remaining = [cid for cid in sorted(all_ids) if cid not in seen]
+        eval_ids = remaining[: max(0, split.eval_size)]
+    return train, eval_ids
+
+
+# ---------------------------------------------------------------------- #
+# Static project context for the editor (read by convention from the
+# project folder). SAFETY: these read ONLY curated source files — never
+# data/, cases.jsonl, or validation files — so no ground truth is exposed.
+# ---------------------------------------------------------------------- #
+
+# Total size cap (chars) per injected source bundle, to bound prompt growth.
+_SOURCE_BUNDLE_CAP = 24000
+
+
+def _read_py_bundle(py_files: list[Path], *, cap: int = _SOURCE_BUNDLE_CAP) -> Optional[str]:
+    """Concatenate the given .py source files with per-file headers, capped."""
+    chunks: list[str] = []
+    total = 0
+    truncated = False
+    for path in sorted(py_files):
+        if path.name == "__init__.py":
+            continue
+        try:
+            body = path.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        chunk = f"### {path.name}\n{body}\n"
+        if total + len(chunk) > cap:
+            chunks.append(f"### {path.name}\n(omitted — source bundle size cap reached)\n")
+            truncated = True
+            continue
+        chunks.append(chunk)
+        total += len(chunk)
+    if not chunks:
+        return None
+    out = "\n".join(chunks)
+    if truncated:
+        out += "\n(note: some files omitted to bound prompt size)\n"
+    return out
+
+
+def _read_tools_source(project_root: Path) -> Optional[str]:
+    """Immutable tool implementations from ``projects/<p>/tools/*.py``."""
+    tools_dir = project_root / "tools"
+    if not tools_dir.is_dir():
+        return None
+    return _read_py_bundle(list(tools_dir.glob("*.py")))
+
+
+def _read_db_schema(project_root: Path) -> Optional[str]:
+    """The project's hand-authored ``db_schema.md`` (if present)."""
+    schema = project_root / "db_schema.md"
+    if not schema.is_file():
+        return None
+    try:
+        text = schema.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return text[:_SOURCE_BUNDLE_CAP] or None
+
+
+def _read_scorer_source(benchmark_dir: Path) -> Optional[str]:
+    """Scoring code: ``benchmark/scorer.py`` + ``benchmark/_eval/*.py``.
+    Whitebox only. Reads source TEXT only — never executes, never reads data."""
+    files: list[Path] = []
+    scorer = benchmark_dir / "scorer.py"
+    if scorer.is_file():
+        files.append(scorer)
+    eval_dir = benchmark_dir / "_eval"
+    if eval_dir.is_dir():
+        files.extend(eval_dir.glob("*.py"))
+    if not files:
+        return None
+    return _read_py_bundle(files)
+
+
+def _dig(case: dict[str, Any], dotted_path: str) -> Any:
+    """Resolve a dotted path (e.g. ``"context.level"``) inside a case dict.
+    Returns ``None`` if any segment is missing or a non-dict is encountered —
+    generic, with no project-specific field names baked in."""
+    cur: Any = case
+    for part in dotted_path.split("."):
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(part)
+    return cur
+
+
 def compute_split(
     benchmark_dir: Path,
     *,
     seed: int,
     train_size: int,
+    stratify_by: Optional[str] = None,
+    eval_size: Optional[int] = None,
 ) -> tuple[list[str], list[str]]:
     """Deterministic train/eval split. Reproducible from ``seed`` alone, so
     a run can be re-derived from the YAML without a secondary state file.
     Returned in shuffled order; their union covers every case in
-    ``benchmark_dir/cases.jsonl``."""
+    ``benchmark_dir/cases.jsonl``.
+
+    When ``stratify_by`` is given (a dotted path into each case dict, e.g.
+    ``"context.level"``), the split is balanced across the distinct values of
+    that field: each stratum contributes the same fraction
+    (``train_size / total``) of its cases to train (largest-remainder rounding
+    to land on ``train_size`` exactly), so both halves keep the same value mix.
+    When ``None``, the split is a plain seeded shuffle — identical to the
+    legacy behavior."""
     cases = load_cases(benchmark_dir)
     ids = [str(c.get("id") or c.get("case_id")) for c in cases]
     if train_size < 0 or train_size > len(ids):
         raise ValueError(f"train_size={train_size} out of range for {len(ids)} cases")
     rng = random.Random(seed)
-    shuffled = list(ids)
-    rng.shuffle(shuffled)
-    return shuffled[:train_size], shuffled[train_size:]
+
+    def _cap_eval(ev: list[str]) -> list[str]:
+        return ev if eval_size is None else ev[: max(0, eval_size)]
+
+    if stratify_by is None:
+        shuffled = list(ids)
+        rng.shuffle(shuffled)
+        return shuffled[:train_size], _cap_eval(shuffled[train_size:])
+
+    # Stratified proportional split. Group ids by the stratify key (preserving
+    # file order within each stratum), shuffle within each stratum, then
+    # allocate train_size across strata proportionally with largest-remainder.
+    total = len(ids)
+    strata: dict[Any, list[str]] = {}
+    for case, cid in zip(cases, ids):
+        key = _dig(case, stratify_by)
+        # Keys may be unhashable/None — normalize to a stable string bucket so
+        # grouping never crashes and nothing is silently dropped.
+        bucket = key if isinstance(key, (str, int, float, bool, type(None))) else str(key)
+        strata.setdefault(bucket, []).append(cid)
+
+    # Deterministic stratum order (by string form of the key) so allocation and
+    # tie-breaks are reproducible regardless of dict insertion order.
+    ordered_keys = sorted(strata, key=lambda k: (k is None, str(k)))
+    for k in ordered_keys:
+        rng.shuffle(strata[k])
+
+    # base = floor(train_size * |stratum| / total); hand out the leftover to the
+    # strata with the largest fractional remainders (stable tie-break by key).
+    alloc: dict[Any, int] = {}
+    remainders: list[tuple[float, str, Any]] = []
+    for k in ordered_keys:
+        exact = train_size * len(strata[k]) / total
+        base = int(exact)  # floor for non-negative
+        alloc[k] = min(base, len(strata[k]))
+        remainders.append((exact - base, str(k), k))
+    leftover = train_size - sum(alloc.values())
+    # Largest remainder first; ties broken by stratum key for determinism.
+    remainders.sort(key=lambda t: (-t[0], t[1]))
+    i = 0
+    while leftover > 0 and remainders:
+        _, _, k = remainders[i % len(remainders)]
+        if alloc[k] < len(strata[k]):
+            alloc[k] += 1
+            leftover -= 1
+        i += 1
+        # Safety: if every stratum is capped, stop (can't happen when
+        # train_size <= total, which the range check above guarantees).
+        if i > len(remainders) * (total + 1):
+            break
+
+    train: list[str] = []
+    eval_: list[str] = []
+    for k in ordered_keys:
+        n = alloc[k]
+        train.extend(strata[k][:n])
+        eval_.extend(strata[k][n:])
+    # Final shuffle so callers don't see cases grouped by stratum.
+    rng.shuffle(train)
+    rng.shuffle(eval_)
+    return train, _cap_eval(eval_)
 
 
 def _resolve_root(rel_or_abs: str) -> Path:

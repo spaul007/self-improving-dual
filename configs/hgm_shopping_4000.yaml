@@ -1,0 +1,70 @@
+experiment_name: "shopping_hgm_4000"
+
+# 4000-budget vanilla HGM run on the SAME predetermined 60-case set as the
+# hgm_dual shopping run (configs/shopping_train_ids.json: 25 L1 / 25 L2 / 10 L3),
+# for a fair hgm-vs-hgm_dual comparison. No held-out eval — use snapshots +
+# snapshot_eval.py for the budget-vs-performance curve.
+project: "shopping"
+
+eval_visibility: "blackbox"
+
+loop:
+  max_rounds: 1000
+  score_target: 0.99
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 4000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 3
+    snapshot_tree: true
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "shopping_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.shopping.shopping_error_categorizer:categorize_errors"
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+summarizer:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+
+split:
+  train_ids_path: "configs/shopping_train_ids.json"   # 60 predetermined cases; no held-out eval
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

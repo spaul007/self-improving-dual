@@ -3,13 +3,14 @@ routes ``execute()`` calls to either ``platform_core.tools`` (immutable)
 or this round's ``mutable_tools/*``.
 
 The editor may modify this file across rounds — to add caching, retries,
-arg coercion, composite-tool routing, etc. — but it must always go
-through ``platform_core.tools.call_tool`` to reach a real capability.
+arg coercion, composite-tool routing, etc. — but it must always reach
+capabilities through ``platform_core.tools``: ``call_tool`` for immutable
+tools and ``call_mutable_tool`` for ``mutable_tools/*`` (the latter keeps
+mutable-tool calls in the trace, like immutable ones).
 Direct shape parity with ``projects/travel/seed/tool_wrapper.py``.
 """
 from __future__ import annotations
 
-import importlib
 import json
 from pathlib import Path
 from typing import Any
@@ -31,11 +32,6 @@ class ToolWrapper:
     def execute(self, tool_name: str, kwargs: dict[str, Any]) -> str:
         if immutable_tools.is_immutable(tool_name):
             return immutable_tools.call_tool(tool_name, **kwargs)
-        try:
-            mod = importlib.import_module(f"mutable_tools.{tool_name}")
-        except ModuleNotFoundError:
-            return f"Error: tool {tool_name!r} not recognised."
-        run = getattr(mod, "run", None)
-        if run is None:
-            return f"Error: mutable tool {tool_name!r} has no run() function."
-        return run(**kwargs)
+        # Mutable tools route through call_mutable_tool so their invocations are
+        # recorded in trace.jsonl (tool_call/tool_result) just like immutable ones.
+        return immutable_tools.call_mutable_tool(tool_name, **kwargs)

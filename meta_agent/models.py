@@ -27,6 +27,14 @@ class CaseResult(BaseModel):
     score: float
     error: Optional[str] = None
     details: dict[str, Any] = Field(default_factory=dict)
+    # Per-case (per-plan) wall time of the case subprocess, in seconds, measured
+    # by the evaluator around subprocess.run. None for legacy results. This is
+    # the TRUE per-plan latency — unlike EvaluationResult.wall_time_s, which is
+    # whole-batch wall clock under parallelism.
+    wall_time_s: Optional[float] = None
+    # Count of llm_call trace events attributed to this case (payload.case_id).
+    # 0 = ran but made no LLM call; None = no data.
+    llm_calls: Optional[int] = None
 
 
 class EvaluationResult(BaseModel):
@@ -54,6 +62,16 @@ class AgentFeedback(BaseModel):
     log_excerpt: str = ""
     edit_errors: list[str] = Field(default_factory=list)
 
+    # How many distinct cases the TRACE-derived stats above (``tool_usage``,
+    # ``tool_error_rate``, ``llm_calls``, ``log_excerpt``) actually cover — i.e.
+    # the cases present in the parsed ``trace.jsonl`` (the latest evaluation
+    # batch, since the evaluator truncates the trace each batch). The per-case
+    # parts (``eval_result``, ``project_metrics``, ``failure_report``) are
+    # cumulative over every case the node has seen, which may be more. The
+    # editor renders the gap from these counts (data-driven), rather than a
+    # hardcoded "last batch" claim. 0 when no trace events carried a case id.
+    trace_n_cases: int = 0
+
     # Project-defined per-case roll-ups produced by the project's scorer
     # (via its optional ``aggregate(per_case, trace_events)`` method, which
     # ``DefaultFeedbackGatherer`` calls). Format is a flat dict of named
@@ -63,6 +81,16 @@ class AgentFeedback(BaseModel):
     # benchmark. Default ``{}`` for projects whose scorer doesn't define
     # ``aggregate``.
     project_metrics: dict[str, Any] = Field(default_factory=dict)
+
+    # Generic, example-driven failure digest built by ``DefaultFeedbackGatherer``
+    # from the per-case contract (score/passed/error + ``details["query"]`` +
+    # ``details["raw_result"]``) and the project's ``categorize_errors`` output.
+    # Shape (all framework-agnostic — no domain keys):
+    #   {"summary": {...}, "categories": [...],
+    #    "examples": [{category_id, case_id, score, query, plan, failed}],
+    #    "hard_cases": [{case_id, score, query, plan, failed}]}
+    # Default ``{}`` when disabled or no failures. See meta_agent/failure_report.py.
+    failure_report: dict[str, Any] = Field(default_factory=dict)
 
 
 class EditResult(BaseModel):

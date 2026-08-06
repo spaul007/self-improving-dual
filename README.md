@@ -101,6 +101,35 @@ agent *and* rewrites its code, emitting an `EvolutionStrategy` summary
 (logged to `strategy.json`). There is no separate "propose a strategy" LLM
 call.
 
+### What the editor sees (information gathering)
+
+To diagnose well, the editor is given, in addition to the agent's own code:
+
+- **Example-driven failure analysis** — the feedback gatherer turns each node's
+  per-case results into a compact report: the top recurring failure categories
+  (from the project's `categorize_errors`), a *diverse* pair of representative
+  cases per category (a near-miss + a severe failure) shown as **query → agent
+  plan → what failed**, and the hardest (lowest-scoring) cases. This is generic:
+  the gatherer reads only a contract (`details["query"]`, `details["raw_result"]`,
+  score/passed/error) plus the project categorizer's output — all domain parsing
+  stays in the project folder. Stored on `AgentFeedback.failure_report`.
+- **Tool implementations** (`projects/<p>/tools/*.py`) and a **database schema**
+  (`projects/<p>/db_schema.md`) — so the editor understands what each tool does
+  and what the data looks like when generating/modifying tool calls.
+- **Evaluation scoring code** — only when `eval_visibility: whitebox` (see below).
+
+Set per-run via a top-level key:
+
+```yaml
+eval_visibility: "blackbox"   # default: behavioral feedback + tools + DB schema
+# eval_visibility: "whitebox" # also inject projects/<p>/benchmark/scorer.py (+ _eval/)
+```
+
+Ground-truth data (`data/`, `cases.jsonl`, validation files) is **never** exposed
+in either mode. To enable the failure report, set the gatherer's
+`error_categorizer` to the project's categorizer (same `module:func` value the
+dual manager uses); without it the report degrades to hardest-cases-only.
+
 To run HGM:
 
 ```bash
@@ -134,6 +163,43 @@ PYTHONPATH=. python3 evaluate.py \
 Results land in `runs/eval_<stamp>_<agent_basename>/round_eval/`. Per-case
 results are persisted to `logs/case_<id>.json` as each case finishes, so
 you can inspect partial scores while the run is still going.
+
+## Tree snapshots (best-at-budget analysis)
+
+The optimization managers evaluate nodes dynamically, so "which node is the
+best so far" keeps changing as the budget is spent. To support budget-vs-budget
+method comparison, any manager (`hgm`, `hgm_dual`, `hill_climbing`) can record a
+**time series** of the whole tree. Enable it per run with an opt-in manager key:
+
+```yaml
+manager:
+  type: "hgm"          # or hgm_dual, hill_climbing
+  config:
+    snapshot_tree: true
+```
+
+A snapshot is appended after every EXPAND/EVALUATE to
+`runs/<exp>/snapshots/tree_snapshots.jsonl` — one JSON line per step holding the
+budget spent, the full node roster (`node_id`, `parent_id`, `round_dir`,
+`mean_utility`, `n_evals`, …) and a pointer to the current best node. This is the
+same shape as the original HGM's `hgm_metadata.jsonl`. Off by default (no
+behavior change, no `snapshots/` dir written).
+
+`snapshot_eval.py` then picks the best agent at any budget level and
+re-evaluates it (reusing the `evaluate.py` machinery):
+
+```bash
+# List the best agent at every recorded budget (no evaluation, no API key):
+PYTHONPATH=. python3 snapshot_eval.py \
+    --experiment-dir runs/<exp> --all --list
+
+# Re-evaluate the best agent at budgets 100 and 200 on the held-out split:
+PYTHONPATH=. python3 snapshot_eval.py \
+    --config configs/hgm_travel.yaml \
+    --experiment-dir runs/<exp> --budgets 100,200 --eval-split
+```
+
+Per-budget results are written to `runs/<exp>/snapshots/eval_at_budget_<B>.json`.
 
 ## Train/eval split (optional)
 

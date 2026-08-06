@@ -1,0 +1,75 @@
+experiment_name: "travel_hgm_dual_smoke"
+
+# Tiny smoke run: 2 init expansions × (1 Stage A eval + ~2 Stage B variants)
+# × 4 cases ≈ 24 evals, well under eval_budget=40. Verifies the full
+# Stage A → categorize → Stage B → select → register flow end-to-end on a
+# 16-case train split.
+project: "travel"
+
+loop:
+  max_rounds: 8
+  score_target: 0.95
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "low"
+
+manager:
+  type: "hgm_dual"
+  config:
+    eval_budget: 40
+    init_expansions: 2
+    alpha: 0.5
+    eval_batch_size: 4
+    finalize_top_k: 2
+    seed: 42
+
+    num_variants: 2
+    intra_expand_eval_size: 4
+    variant_parallelism: 2
+    categorizer_max_representative_errors: 3
+    min_remaining_budget_for_dual: 8
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 600
+    memory_mb: 2048
+    parallelism: 4
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "low"
+    max_attempts: 2
+
+# Per-round behavior summarizer. Writes behavior_memory.md +
+# behavior_aggregate.json + behavior_summarizer_prompt.txt per round,
+# and feeds the memory into descendants' steering. Smoke uses
+# reasoning_effort=low for speed; bump to "high" for real runs.
+summarizer:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "low"
+
+split:
+  seed: 42
+  train_size: 16
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

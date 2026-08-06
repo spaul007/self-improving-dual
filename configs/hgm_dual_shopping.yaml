@@ -1,0 +1,87 @@
+experiment_name: "shopping_hgm_dual"
+
+# HGM with Dual Optimization for the shopping agent. Same project assets as
+# configs/hgm_shopping.yaml — only the manager differs. Each EXPAND first edits
+# the parent (Stage A), then spawns one error-conditioned variant per failure
+# category (Stage B), evaluates each on a shared intra-expand sample, and keeps
+# the highest-mean winner as the actual HGM tree child.
+project: "shopping"
+
+loop:
+  max_rounds: 60
+  score_target: 0.95
+
+task_agent:
+  model: "gpt-5.4-mini"
+  reasoning_effort: "high"
+
+manager:
+  type: "hgm_dual"
+  config:
+    # Inherited HGM knobs (same defaults as hgm_shopping.yaml).
+    eval_budget: 400
+    init_expansions: 5
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 5
+    seed: 42
+
+    # Dual-optimization knobs.
+    num_variants: 3                                    # max Stage B variants per expansion
+    intra_expand_eval_size: 8                          # cases used for Stage A + each variant
+    variant_parallelism: 3                             # parallel; set to 1 for sequential fallback
+    select_metric: "mean"                              # "category_significance" also works:
+                                                       #   the shopping categorizer exports
+                                                       #   per_case_category_checks.
+    category_selection: "per_node_level"               # round-robin the task LEVEL across
+                                                       #   Stage-B expansions; a node's variants
+                                                       #   are that level's top categories by
+                                                       #   failure_rate_by_level (so L3 coupons,
+                                                       #   tiny globally but 60% within L3, get
+                                                       #   focused variants). Pairs with
+                                                       #   select_metric: mean. Alternatives:
+                                                       #   "balanced_by_type" / "top_failure_rate".
+    categorizer_max_representative_errors: 5           # examples per category in the prompt
+    min_remaining_budget_for_dual: 12                  # below this, skip Stage B (vanilla HGM)
+    # Project-specific categorizer, dynamically imported (the manager itself is
+    # domain-agnostic — no travel/shopping knowledge baked in).
+    error_categorizer: "projects.shopping.shopping_error_categorizer:categorize_errors"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "shopping_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "gpt-5.4-mini"
+    reasoning_effort: "high"
+    max_attempts: 2
+
+# Shopping data is local at projects/shopping/data — _db.database_root() falls
+# back to it when SHOPPING_DATABASE_ROOT is unset, so no env override is needed.
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

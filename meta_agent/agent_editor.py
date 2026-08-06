@@ -24,6 +24,7 @@ from typing import Any, Callable, Iterable, Optional, Protocol
 
 from . import verbose_log
 from .editor_validators import MUTABLE_DIRS, MUTABLE_FILES
+from .failure_report import render_failure_report
 from .feedback_gatherer import render_metrics
 from .models import AgentFeedback, EditResult, EvolutionStrategy
 from .registry import register
@@ -89,7 +90,7 @@ SELF_IMPROVEMENT_TOOL: dict[str, Any] = {
     "name": "submit_self_improvement",
     "description": (
         "Diagnose the task agent from its current code and last round's "
-        "feedback, then submit ONE focused self-improvement: a short "
+        "feedback, then submit a targeted self-improvement: a short "
         "strategy summary plus the full file edits that implement it."
     ),
     "input_schema": {
@@ -129,6 +130,13 @@ class AgentEditor:
         model: Optional[str] = None,
         reasoning_effort: Optional[str] = None,
         base_url: Optional[str] = None,
+        # Static project context injected by build_components (read from the
+        # project folder by convention). tools_source + db_schema are shown in
+        # BOTH modes (the agent's own tooling/data shape, not ground truth);
+        # scorer_source is shown only when eval_visibility == "whitebox".
+        tools_source: Optional[str] = None,
+        db_schema: Optional[str] = None,
+        scorer_source: Optional[str] = None,
     ) -> None:
         self.llm = llm_caller
         self.validators = list(validators)
@@ -136,6 +144,9 @@ class AgentEditor:
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.base_url = base_url
+        self.tools_source = tools_source
+        self.db_schema = db_schema
+        self.scorer_source = scorer_source
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -231,7 +242,13 @@ class AgentEditor:
         system = (
             "You are the self-improvement module of a self-evolving agent. "
             "Diagnose what to change from the feedback and the current code, "
-            "then call `submit_self_improvement`. You may only modify these "
+            "then call `submit_self_improvement`.\n"
+            "First understand the task: read the agent's system prompt in "
+            "workflow.py, and (when provided below) the tool implementations, "
+            "database schema, and evaluation scoring code — together they show "
+            "what each tool does, what the data looks like, and how output is "
+            "graded. Target edits at the failures that most affect the score.\n"
+            "You may only modify these "
             "files in the task_agent workspace:\n"
             f"  - {', '.join(sorted(MUTABLE_FILES))}\n"
             f"  - any *.py file under mutable_tools/\n\n"
@@ -246,11 +263,25 @@ class AgentEditor:
             "mutable_tools.*, plus stdlib.\n"
             "  4. Mutable tools (mutable_tools/*.py) may import only: "
             "platform_core.tools, sibling mutable_tools.*, plus stdlib.\n"
-            "  5. Reach immutable capabilities only via "
-            "`platform_core.tools.call_tool(name, **kwargs)`.\n"
+            "  5. Reach capabilities only via `platform_core.tools`: "
+            "`call_tool(name, **kwargs)` for immutable tools, and "
+            "`call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never "
+            "invoke a mutable tool's `run()` directly — routing through "
+            "`call_mutable_tool` keeps its calls recorded in the trace.\n"
             "  6. tools_schema.json: every entry's `name` must be backed by "
             "either an immutable tool OR a `mutable_tools/<name>.py` file. "
-            "No collisions between immutable and mutable names.\n\n"
+            "No collisions between immutable and mutable names.\n"
+            "  7. Instrument your edits for the behavior summarizer. When you "
+            "add a verifier, helper, or decision branch in workflow.py or a "
+            "mutable_tools/*.py file, call "
+            "`platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', "
+            "name='specific_check_name', **context)` at the decision point. "
+            "Conventions: pick a stable `label` (e.g. 'verifier_fired', "
+            "'decision_branch'); use `name` to disambiguate within a label; "
+            "set `verdict` to `pass`, `fail`, or `skip`. The summarizer "
+            "cross-tabs these logs against case outcomes so the next editor "
+            "knows which of your additions helped, which didn't, and why. "
+            "Skip instrumentation only for trivial edits (renames, docstrings).\n\n"
             "Call `submit_self_improvement` with a one-line optimization_goal, "
             "a proposed_changes summary, a rationale, and the `files` payload. "
             "Each file is the FULL replacement content — do not produce diffs. "
@@ -262,6 +293,7 @@ class AgentEditor:
             user_parts.append(f"## Steering context\n{context}\n")
         if feedback is not None:
             user_parts.append(self._format_feedback(feedback))
+        user_parts.extend(self._format_project_context())
         user_parts.append(self._format_current_sources(current))
         if prior_errors:
             joined = "\n".join(f"  - {e}" for e in prior_errors)
@@ -370,6 +402,31 @@ class AgentEditor:
                 sources[rel] = py.read_text(encoding="utf-8")
         return sources
 
+    def _format_project_context(self) -> list[str]:
+        """Static project reference the editor needs to reason about tool calls
+        and the metric: immutable tool implementations, the database schema, and
+        (whitebox only) the evaluation scoring code. Each is injected by
+        ``build_components`` from the project folder; absent ones are skipped."""
+        parts: list[str] = []
+        if self.tools_source:
+            parts.append(
+                "## Tool implementations (immutable — reached via "
+                "platform_core.tools.call_tool; read to see what each tool "
+                f"actually does)\n{self.tools_source}\n"
+            )
+        if self.db_schema:
+            parts.append(
+                "## Database schema (what the tools query against)\n"
+                f"{self.db_schema}\n"
+            )
+        if self.scorer_source:
+            parts.append(
+                "## Evaluation scoring code (read-only — exactly how your "
+                "output is graded; ground-truth data is NOT accessible)\n"
+                f"{self.scorer_source}\n"
+            )
+        return parts
+
     def _format_current_sources(self, sources: dict[str, str]) -> str:
         if not sources:
             return "## Current sources\n(empty)\n"
@@ -387,6 +444,22 @@ class AgentEditor:
             "## Last round's feedback",
             f"score={ev.score:.3f}  passed={ev.passed}  failed={ev.failed}  "
             f"crashed={ev.crashed}",
+        ]
+        # Data-driven scope note: the trace-derived stats below cover only the
+        # cases present in the parsed trace (typically the latest evaluation
+        # batch), which can be fewer than the cumulative evaluated set behind
+        # the score / project metrics / failure analysis. Stated as actual
+        # counts (not a hardcoded "last batch" claim) so it stays correct
+        # regardless of how the trace was produced.
+        n_eval = len(ev.per_case)
+        if feedback.trace_n_cases and n_eval and feedback.trace_n_cases < n_eval:
+            lines.append(
+                f"(scope: tool_usage / tool error rates / llm_calls / log excerpt "
+                f"below are over {feedback.trace_n_cases} traced case(s); score, "
+                f"project metrics, and failure analysis cover {n_eval} evaluated "
+                f"case(s))"
+            )
+        lines += [
             f"llm_calls={feedback.llm_calls}",
             f"tool_usage={feedback.tool_usage}",
         ]
@@ -408,10 +481,15 @@ class AgentEditor:
             lines.append("edit_errors (previous round did not run — these are validator complaints):")
             for err in feedback.edit_errors[:5]:
                 lines.append(f"  - {err}")
-        if feedback.log_excerpt:
-            lines.append("log excerpt:")
-            lines.append(feedback.log_excerpt[:2000])
-        return "\n".join(lines) + "\n"
+        rendered = "\n".join(lines) + "\n"
+        # Example-driven failure analysis (query → plan → what failed +
+        # hardest cases) replaces the old generic trace tail, which bloated
+        # the prompt with low-signal events. Error events still surface above
+        # via runtime_exceptions.
+        report = render_failure_report(feedback.failure_report)
+        if report:
+            rendered += "\n" + report
+        return rendered
 
     def _write_edits(
         self, out_dir: Path, files: list[dict]
