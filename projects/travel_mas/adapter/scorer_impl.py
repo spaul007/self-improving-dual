@@ -1,4 +1,5 @@
-"""Travel benchmark scorer.
+"""Travel-MAS benchmark scorer (real logic; see benchmark/scorer.py for the
+framework-mandated thin shim that imports this module).
 
 Two stages, both running in the parent (evaluator) process:
 
@@ -18,12 +19,13 @@ Two stages, both running in the parent (evaluator) process:
    preserved in ``details`` so the gatherer can surface failed checks to the
    editor on the next round.
 
-The scorer registers itself under the ``"scorer"`` registry bucket as
-``travel_default`` so the framework's convention-based discovery picks
-it up when ``project: "travel"`` is set in the YAML (no explicit knob
-needed). A top-level ``score(case, agent_output)`` function is exposed
-for the alternate "load scorer.py and call score()" fallback path used
-by simpler benchmarks like math.
+Registered under the ``"scorer"`` registry bucket as ``travel_mas_default``
+(identical logic to ``projects/travel/benchmark/scorer.py``'s
+``travel_default`` -- kept as two names so both projects can be imported in
+the same process without a registry collision). A top-level
+``score(case, agent_output)`` function is exposed for the alternate
+"load scorer.py and call score()" fallback path used by simpler benchmarks
+like math_mas.
 """
 from __future__ import annotations
 
@@ -35,12 +37,15 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-# Make _eval importable as a top-level package when scorer.py is loaded by
-# importlib.util.spec_from_file_location (which gives no parent package
-# context). After this insertion, `from _eval.X import Y` resolves.
-_HERE = Path(__file__).resolve().parent
-if str(_HERE) not in sys.path:
-    sys.path.insert(0, str(_HERE))
+# Make _eval importable as a top-level package. _eval lives under
+# benchmark/_eval/ (a sibling of adapter/), not under adapter/ itself, so
+# this bootstraps benchmark/ onto sys.path -- unlike a project.scorer_impl
+# module loaded via a normal package import, this also has to work when
+# benchmark/scorer.py loads this file via importlib.util.spec_from_file_location
+# (no parent package context).
+_BENCHMARK_DIR = Path(__file__).resolve().parent.parent / "benchmark"
+if str(_BENCHMARK_DIR) not in sys.path:
+    sys.path.insert(0, str(_BENCHMARK_DIR))
 
 from _eval.constraints_commonsense import eval_commonsense  # noqa: E402
 from _eval.constraints_hard import eval_hard  # noqa: E402
@@ -71,7 +76,9 @@ def _resolve_database_root() -> Optional[Path]:
         return Path(val)
     # Project-relative default — mirrors projects/travel/tools/_csv.py::database_root()
     # so the scorer reads from the same database the agent's tools do when
-    # TRAVEL_DATABASE_ROOT is unset (the common case).
+    # TRAVEL_DATABASE_ROOT is unset (the common case). parents[1] from
+    # adapter/scorer_impl.py resolves to projects/travel_mas/, same as it did
+    # from benchmark/scorer.py (both are direct children of travel_mas/).
     candidate = Path(__file__).resolve().parents[1] / "data" / "database_en"
     return candidate if candidate.exists() else None
 
@@ -226,7 +233,7 @@ def _zero_result(reason: str, *, raw_output: str = "") -> dict[str, Any]:
     }
 
 
-@register("scorer", "travel_default")
+@register("scorer", "travel_mas_default")
 class TravelCompositeScorer:
     """Travel scorer + round-level aggregator.
 

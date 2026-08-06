@@ -52,6 +52,8 @@ class LLMSpec(BaseModel):
     model: Optional[str] = None
     reasoning_effort: Optional[str] = None  # "low" | "medium" | "high"
     base_url: Optional[str] = None
+    temperature: Optional[float] = None  # None -> call_llm's own default (1.0)
+    max_output_tokens: Optional[int] = None  # None -> call_llm sends no cap at all
 
 
 class TaskAgentSpec(LLMSpec):

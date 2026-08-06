@@ -41,6 +41,10 @@ def apply_task_agent_env(spec: cfg_mod.TaskAgentSpec) -> None:
         os.environ["LLM_MODEL"] = spec.model
     if spec.reasoning_effort:
         os.environ["LLM_REASONING_EFFORT"] = spec.reasoning_effort
+    if spec.temperature is not None:
+        os.environ["LLM_TEMPERATURE"] = str(spec.temperature)
+    if spec.max_output_tokens is not None:
+        os.environ["LLM_MAX_OUTPUT_TOKENS"] = str(spec.max_output_tokens)
     if spec.base_url:
         os.environ["LLM_BASE_URL"] = spec.base_url
         # Local OpenAI-compatible servers ignore auth, but the SDK

@@ -180,6 +180,51 @@ def _stdin_mode() -> int:
     return 0
 
 
+def _invoke_workflow_with_communication_trace(
+    task: Task, case: dict[str, Any] | None, args: argparse.Namespace
+) -> AgentOutput:
+    """Like ``_invoke_workflow``, but also captures a per-task communication trace
+    (prompts, tool calls, inter-agent hand-offs) via
+    ``platform_core.communication_instrumentation``, writing it to
+    ``args.export_communication`` once the workflow returns.
+
+    Purely additive and fully reversible: installs the ``--patch-agent-run``/
+    ``--patch-transform`` targets only for the duration of this one call and restores
+    the originals afterward (via each patch's ``uninstall()``), so nothing in the
+    target project's own files is ever touched. ``ground_truth`` is read from the raw
+    benchmark ``case`` dict's ``meta_info`` (available here, before ``_task_from_case``
+    stripped it) -- never from ``task`` itself, preserving the existing invariant that
+    ground truth never reaches agent-facing code.
+    """
+    from . import communication_instrumentation as citrace
+
+    ground_truth = case.get("meta_info") if case else None
+    recorder = citrace.CommunicationRecorder(
+        task_id=task.case_id,
+        communication_id=args.communication_id or "",
+        task_prompt=task.description,
+        ground_truth=ground_truth,
+    )
+    with citrace.recording_scope(recorder):
+        uninstalls = [
+            citrace.patch_agent_method(target, context_param=args.context_param)
+            for target in (args.patch_agent_run or [])
+        ]
+        uninstalls += [
+            citrace.patch_transform_function(target)
+            for target in (args.patch_transform or [])
+        ]
+        try:
+            out = _invoke_workflow(task)
+        finally:
+            for undo in uninstalls:
+                undo()
+    args.export_communication.write_text(
+        json.dumps(recorder.to_dict(), indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+    return out
+
+
 def _standalone_mode(args: argparse.Namespace) -> int:
     agent_dir = args.agent_dir.resolve()
     if not agent_dir.exists():
@@ -188,6 +233,7 @@ def _standalone_mode(args: argparse.Namespace) -> int:
     if str(agent_dir) not in sys.path:
         sys.path.insert(0, str(agent_dir))
 
+    case: dict[str, Any] | None = None
     if args.task_file:
         task = Task.from_dict(json.loads(args.task_file.read_text(encoding="utf-8")))
     elif args.benchmark and args.case_id:
@@ -207,7 +253,10 @@ def _standalone_mode(args: argparse.Namespace) -> int:
         return 2
 
     try:
-        out = _invoke_workflow(task)
+        if args.export_communication:
+            out = _invoke_workflow_with_communication_trace(task, case, args)
+        else:
+            out = _invoke_workflow(task)
     except Exception:
         print(traceback.format_exc(), file=sys.stderr)
         return 1
@@ -251,6 +300,47 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=None,
         help="Path to a JSON file containing a Task object (standalone mode).",
+    )
+    p.add_argument(
+        "--export-communication",
+        type=Path,
+        default=None,
+        help="Write a per-task communication trace (prompts, tool calls, inter-agent "
+        "hand-offs) as JSON to this path, without modifying the target project's own "
+        "files. Requires at least one --patch-agent-run; see "
+        "platform_core.communication_instrumentation for the underlying mechanism.",
+    )
+    p.add_argument(
+        "--patch-agent-run",
+        action="append",
+        default=None,
+        metavar="MODULE:CLASS.METHOD",
+        help="Monkey-patch this class method (e.g. 'agents.base:BaseAgent.arun') to "
+        "record its agent's prompt/tool-calls/hand-offs for --export-communication. "
+        "Repeatable -- pass one per distinct agent-invocation shape the project has.",
+    )
+    p.add_argument(
+        "--patch-transform",
+        action="append",
+        default=None,
+        metavar="MODULE:FUNCTION",
+        help="Monkey-patch this standalone function (e.g. "
+        "'tools.mutable.compress:compress') to record it as a tool call attributed "
+        "to whichever agent's own output it transforms. Repeatable.",
+    )
+    p.add_argument(
+        "--communication-id",
+        type=str,
+        default=None,
+        help="Override the exported trace's communication_id (default: "
+        "'<case_id>_thread_1').",
+    )
+    p.add_argument(
+        "--context-param",
+        type=str,
+        default="context",
+        help="Name of the argument each --patch-agent-run target receives the prior "
+        "agent's hand-off content through (default: 'context').",
     )
     args = p.parse_args(argv)
 

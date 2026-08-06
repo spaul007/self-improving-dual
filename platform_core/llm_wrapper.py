@@ -10,6 +10,11 @@ needing to thread config through:
 
     LLM_MODEL              default model name
     LLM_REASONING_EFFORT   "low" | "medium" | "high" (reasoning models only)
+    LLM_TEMPERATURE        sampling temperature, only applied when
+                           LLM_REASONING_EFFORT is unset (reasoning models
+                           reject explicit temperature). Defaults to 1.0.
+    LLM_MAX_OUTPUT_TOKENS  cap on completion tokens. Unset -> no cap is
+                           sent at all (model's/server's own default).
     LLM_BASE_URL           OpenAI-compatible endpoint to target instead of
                            the SDK default (e.g. a locally hosted vLLM
                            Responses-API server). When set, the
@@ -45,6 +50,10 @@ DEFAULT_MAX_OUTPUT_TOKENS: Optional[int] = None
 # network/server errors don't kill a case.
 DEFAULT_API_MAX_RETRIES = 30
 DEFAULT_API_BACKOFF_S = 1.5
+# 5 minutes -- generous for a real (even slow) MAS-stage or reasoning
+# call, but bounds how long a single hung/degenerate attempt can block
+# before the retry loop's exception handling ever gets a chance to run.
+DEFAULT_REQUEST_TIMEOUT_S = 300.0
 
 
 def _env_default_model() -> str:
@@ -59,6 +68,35 @@ def _env_default_reasoning_effort() -> Optional[str]:
 def _env_default_base_url() -> Optional[str]:
     val = os.environ.get("LLM_BASE_URL")
     return val if val else None
+
+
+def _env_default_temperature() -> float:
+    val = os.environ.get("LLM_TEMPERATURE")
+    if val is None or val == "":
+        return 1.0
+    return float(val)
+
+
+def _env_default_max_output_tokens() -> Optional[int]:
+    val = os.environ.get("LLM_MAX_OUTPUT_TOKENS")
+    if val is None or val == "":
+        return None
+    return int(val)
+
+
+def _env_default_request_timeout() -> float:
+    """Per-attempt HTTP timeout for the OpenAI client (seconds). Without an
+    explicit value, the SDK's own default (~600s) applies -- combined with
+    DEFAULT_API_MAX_RETRIES=30, a run of slow/degenerate attempts (e.g. a
+    local model generating a long repetitive completion against a large
+    max_output_tokens budget) can legitimately stack up to hours before any
+    exception is ever raised to trigger the retry-count logic. Confirmed
+    live: one case stalled a real hgm_dual run for 3+ hours this way.
+    DEFAULT_REQUEST_TIMEOUT_S below caps each individual attempt instead."""
+    val = os.environ.get("LLM_REQUEST_TIMEOUT_S")
+    if val is None or val == "":
+        return DEFAULT_REQUEST_TIMEOUT_S
+    return float(val)
 
 
 @dataclass
@@ -231,7 +269,7 @@ def call_llm(
     *,
     tools: Optional[list[dict[str, Any]]] = None,
     model: Optional[str] = None,
-    temperature: float = 1.0,
+    temperature: Optional[float] = None,
     reasoning_effort: Optional[str] = None,
     base_url: Optional[str] = None,
     max_output_tokens: Optional[int] = DEFAULT_MAX_OUTPUT_TOKENS,
@@ -259,6 +297,13 @@ def call_llm(
     resolved_model = model or _env_default_model()
     resolved_effort = reasoning_effort or _env_default_reasoning_effort()
     resolved_base_url = base_url or _env_default_base_url()
+    resolved_temperature = (
+        temperature if temperature is not None else _env_default_temperature()
+    )
+    resolved_max_output_tokens = (
+        max_output_tokens if max_output_tokens is not None
+        else _env_default_max_output_tokens()
+    )
 
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -279,6 +324,7 @@ def call_llm(
             "model": resolved_model,
             "reasoning_effort": resolved_effort,
             "base_url": resolved_base_url,
+            "temperature": resolved_temperature,
             "tool_names": [t["name"] for t in norm_tools],
             "num_messages": len(messages),
         },
@@ -293,7 +339,10 @@ def call_llm(
             },
         )
 
-    client_kwargs: dict[str, Any] = {"api_key": api_key}
+    client_kwargs: dict[str, Any] = {
+        "api_key": api_key,
+        "timeout": _env_default_request_timeout(),
+    }
     if resolved_base_url:
         client_kwargs["base_url"] = resolved_base_url
     client = OpenAI(**client_kwargs)
@@ -304,15 +353,15 @@ def call_llm(
     # Omit the key entirely when max_output_tokens is None — callers pass
     # None to run uncapped (model's full output budget), matching agents
     # whose reference does not send max_output_tokens at all.
-    if max_output_tokens is not None:
-        request["max_output_tokens"] = max_output_tokens
+    if resolved_max_output_tokens is not None:
+        request["max_output_tokens"] = resolved_max_output_tokens
     if norm_tools:
         request["tools"] = norm_tools
     if resolved_effort:
         # Reasoning models reject explicit temperature; let them default.
         request["reasoning"] = {"effort": resolved_effort}
     else:
-        request["temperature"] = temperature
+        request["temperature"] = resolved_temperature
 
     started = time.time()
     last_err: Optional[Exception] = None

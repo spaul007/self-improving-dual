@@ -623,6 +623,281 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("boom", envelope["error"])
 
 
+class CommunicationInstrumentationTests(unittest.TestCase):
+    """platform_core.communication_instrumentation captures per-task communication
+    (prompts, tool calls, inter-agent hand-offs) purely by monkey-patching an
+    already-existing agent-invocation method / transform function at runtime --
+    never by modifying the target project's own files."""
+
+    def test_recorder_schema_and_ordinals(self) -> None:
+        from platform_core.communication_instrumentation import CommunicationRecorder
+
+        rec = CommunicationRecorder(
+            task_id="t1", task_prompt="Do the thing", ground_truth={"answer": "42"}
+        )
+        rec.set_agent_prompt("agent_1", "You are agent 1. Do the thing.")
+        rec.record_tool_call("agent_1", "search", {"q": "x"}, "result-1")
+        rec.record_tool_call("agent_1", "search", {"q": "y"}, "result-2")
+        rec.set_agent_prompt("agent_2", "You are agent 2.")
+        rec.record_message("agent_1", "agent_2", "here is my finding")
+        rec.record_message("agent_2", "agent_1", "thanks, got it")
+
+        out = rec.to_dict()
+        self.assertEqual(out["task_id"], "t1")
+        self.assertEqual(out["communication_id"], "t1_thread_1")
+        self.assertEqual(out["task_prompt"], "Do the thing")
+        self.assertEqual(out["ground_truth"], {"answer": "42"})
+
+        self.assertEqual([a["agent_id"] for a in out["agents"]], ["agent_1", "agent_2"])
+        agent1 = out["agents"][0]
+        self.assertEqual([tc["ordinal"] for tc in agent1["tool_calls"]], [1, 2])
+        self.assertEqual(agent1["tool_calls"][0]["tool_name"], "search")
+        self.assertEqual(agent1["tool_calls"][0]["result"], "result-1")
+        self.assertEqual(out["agents"][1]["tool_calls"], [])
+
+        self.assertEqual([c["ordinal"] for c in out["communications"]], [1, 2])
+        self.assertEqual(out["communications"][0]["sender"], "agent_1")
+        self.assertEqual(out["communications"][0]["receiver"], "agent_2")
+        self.assertEqual(out["communications"][1]["sender"], "agent_2")
+
+    def test_find_producers_substring_and_ordering(self) -> None:
+        from platform_core.communication_instrumentation import CommunicationRecorder
+
+        rec = CommunicationRecorder(task_id="t2")
+        rec.register_output("inv_a", "alpha finding")
+        rec.register_output("inv_b", "beta finding")
+        joined = "[1] alpha finding\n---\n[2] beta finding"
+        matches = rec.find_producers(joined)
+        self.assertEqual([m[0] for m in matches], ["inv_a", "inv_b"])
+        self.assertEqual(matches[0][1], "alpha finding")
+
+    def test_find_producers_exact_only_ignores_substrings(self) -> None:
+        from platform_core.communication_instrumentation import CommunicationRecorder
+
+        rec = CommunicationRecorder(task_id="t3")
+        rec.register_output("predictor", "the full solution text")
+        matches = rec.find_producers(
+            "the full solution text and more", exact_only=True
+        )
+        self.assertEqual(matches, [])
+        matches = rec.find_producers("the full solution text", exact_only=True)
+        self.assertEqual([m[0] for m in matches], ["predictor"])
+
+    def test_patch_agent_method_records_prompt_tool_calls_and_handoff(self) -> None:
+        """Exercises patch_agent_method/patch_transform_function against small fake
+        classes defined right here -- not a real MAS project -- confirming the
+        patch + uninstall mechanics work without touching any source file, and that
+        uninstall genuinely restores the original callables."""
+        import asyncio
+        import types
+
+        from platform_core.communication_instrumentation import (
+            CommunicationRecorder,
+            patch_agent_method,
+            patch_transform_function,
+            recording_scope,
+        )
+
+        fake_agents = types.ModuleType("fake_agents_module_for_test")
+
+        class FakeAgentOutput:
+            def __init__(self, prompt, raw, tool_calls=None):
+                self.prompt = prompt
+                self.raw = raw
+                self.tool_calls = tool_calls or []
+
+        class FakeAgent:
+            def __init__(self, name):
+                self.name = name
+
+            async def arun(self, question, context=""):
+                tool_calls = []
+                if self.name == "worker":
+                    tool_calls = [
+                        {"name": "lookup", "args": {"q": question}, "result": "42"}
+                    ]
+                return FakeAgentOutput(
+                    prompt=f"role={self.name} q={question} ctx={context}",
+                    raw=f"[{self.name}-output for {question}]",
+                    tool_calls=tool_calls,
+                )
+
+        fake_agents.FakeAgent = FakeAgent
+        sys.modules["fake_agents_module_for_test"] = fake_agents
+
+        fake_transform = types.ModuleType("fake_transform_module_for_test")
+
+        async def compress(raw: str) -> str:
+            return raw.upper()
+
+        fake_transform.compress = compress
+        sys.modules["fake_transform_module_for_test"] = fake_transform
+
+        original_arun = FakeAgent.arun
+        original_compress = fake_transform.compress
+
+        try:
+            recorder = CommunicationRecorder(task_id="t4", task_prompt="2+2?")
+            with recording_scope(recorder):
+                undo_agent = patch_agent_method(
+                    "fake_agents_module_for_test:FakeAgent.arun"
+                )
+                undo_transform = patch_transform_function(
+                    "fake_transform_module_for_test:compress"
+                )
+                try:
+                    async def run() -> None:
+                        worker = FakeAgent("worker")
+                        reviewer = FakeAgent("reviewer")
+                        out1 = await worker.arun("2+2?")
+                        compressed = await fake_transform.compress(out1.raw)
+                        await reviewer.arun("2+2?", context=compressed)
+
+                    asyncio.run(run())
+                finally:
+                    undo_agent()
+                    undo_transform()
+
+            # Reversion must be genuine -- the class/module attributes must be back
+            # to the exact original (unwrapped) callables, not just "still callable".
+            self.assertIs(FakeAgent.arun, original_arun)
+            self.assertIs(fake_transform.compress, original_compress)
+
+            result = recorder.to_dict()
+        finally:
+            del sys.modules["fake_agents_module_for_test"]
+            del sys.modules["fake_transform_module_for_test"]
+
+        agent_ids = [a["agent_id"] for a in result["agents"]]
+        self.assertEqual(agent_ids, ["worker", "reviewer"])
+        worker = result["agents"][0]
+        tool_names = [tc["tool_name"] for tc in worker["tool_calls"]]
+        self.assertEqual(tool_names, ["lookup", "compress"])
+        self.assertEqual([tc["ordinal"] for tc in worker["tool_calls"]], [1, 2])
+        self.assertEqual(result["agents"][1]["tool_calls"], [])
+
+        self.assertEqual(len(result["communications"]), 1)
+        comm = result["communications"][0]
+        self.assertEqual(comm["sender"], "worker")
+        self.assertEqual(comm["receiver"], "reviewer")
+        self.assertEqual(comm["content"], "[WORKER-OUTPUT FOR 2+2?]")
+
+    def test_export_communication_end_to_end_via_cli(self) -> None:
+        """Full round trip through `python -m platform_core.runner
+        --export-communication` against a small fake two-agent project, proving the
+        CLI wiring (--patch-agent-run/--patch-transform) works end to end and that
+        ground_truth is read from meta_info while never reaching the workflow."""
+        tmp = Path(tempfile.mkdtemp(prefix="metaagent_comm_test_"))
+        try:
+            agent_dir = tmp / "agent"
+            agent_dir.mkdir()
+            (agent_dir / "agents.py").write_text(
+                "class AgentOutput:\n"
+                "    def __init__(self, prompt, raw, tool_calls=None):\n"
+                "        self.prompt = prompt\n"
+                "        self.raw = raw\n"
+                "        self.tool_calls = tool_calls or []\n"
+                "\n"
+                "class BaseAgent:\n"
+                "    def __init__(self, name):\n"
+                "        self.name = name\n"
+                "\n"
+                "    async def arun(self, question, context=''):\n"
+                "        tool_calls = []\n"
+                "        if self.name == 'worker':\n"
+                "            tool_calls = [{'name': 'lookup', 'args': {'q': question}, 'result': '42'}]\n"
+                "        return AgentOutput(\n"
+                "            prompt=f'role={self.name} q={question} ctx={context}',\n"
+                "            raw=f'[{self.name}-answer]',\n"
+                "            tool_calls=tool_calls,\n"
+                "        )\n",
+                encoding="utf-8",
+            )
+            (agent_dir / "transform.py").write_text(
+                "async def compress(raw):\n    return raw.upper()\n",
+                encoding="utf-8",
+            )
+            (agent_dir / "workflow.py").write_text(
+                "import asyncio\n"
+                "from agents import BaseAgent\n"
+                "from transform import compress\n"
+                "from platform_core.runner import AgentOutput\n"
+                "\n"
+                "async def _run(task):\n"
+                "    a = BaseAgent('worker')\n"
+                "    b = BaseAgent('reviewer')\n"
+                "    out_a = await a.arun(task.description)\n"
+                "    short = await compress(out_a.raw)\n"
+                "    out_b = await b.arun(task.description, context=short)\n"
+                "    return AgentOutput(result=out_b.raw, metadata={})\n"
+                "\n"
+                "def run_task(task):\n"
+                "    return asyncio.run(_run(task))\n",
+                encoding="utf-8",
+            )
+
+            benchmark_dir = tmp / "benchmark"
+            benchmark_dir.mkdir()
+            (benchmark_dir / "cases.jsonl").write_text(
+                json.dumps(
+                    {
+                        "id": "1",
+                        "input": "What is 2+2?",
+                        "context": {},
+                        "meta_info": {"answer": "4"},
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            export_path = tmp / "comm.json"
+            proc = subprocess.run(
+                [
+                    sys.executable, "-m", "platform_core.runner",
+                    "--agent-dir", str(agent_dir),
+                    "--benchmark", str(benchmark_dir),
+                    "--case-id", "1",
+                    "--export-communication", str(export_path),
+                    "--patch-agent-run", "agents:BaseAgent.arun",
+                    "--patch-transform", "transform:compress",
+                ],
+                capture_output=True,
+                text=True,
+                cwd=str(REPO_ROOT),
+                env={**__import__("os").environ, "PYTHONPATH": str(REPO_ROOT)},
+                timeout=15,
+            )
+            self.assertEqual(proc.returncode, 0, msg=proc.stderr)
+            out = json.loads(proc.stdout)
+            # Only worker's output is routed through compress() before the
+            # hand-off -- reviewer's own raw output is never uppercased.
+            self.assertEqual(out["result"], "[reviewer-answer]")
+
+            trace = json.loads(export_path.read_text(encoding="utf-8"))
+            self.assertEqual(trace["task_id"], "1")
+            self.assertEqual(trace["communication_id"], "1_thread_1")
+            self.assertEqual(trace["task_prompt"], "What is 2+2?")
+            self.assertEqual(trace["ground_truth"], {"answer": "4"})
+
+            agent_ids = [a["agent_id"] for a in trace["agents"]]
+            self.assertEqual(agent_ids, ["worker", "reviewer"])
+            worker = trace["agents"][0]
+            self.assertEqual(
+                [tc["tool_name"] for tc in worker["tool_calls"]],
+                ["lookup", "compress"],
+            )
+            self.assertEqual(trace["agents"][1]["tool_calls"], [])
+
+            self.assertEqual(len(trace["communications"]), 1)
+            comm = trace["communications"][0]
+            self.assertEqual(comm["sender"], "worker")
+            self.assertEqual(comm["receiver"], "reviewer")
+            self.assertEqual(comm["content"], "[WORKER-ANSWER]")
+        finally:
+            shutil.rmtree(tmp, ignore_errors=True)
+
+
 class FailedEditFeedbackTests(unittest.TestCase):
     """When the editor's mutation fails validation, the round must (a)
     skip the held-out eval split (the workspace is identical to the
