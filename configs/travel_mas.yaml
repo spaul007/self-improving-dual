@@ -1,0 +1,110 @@
+# Multi-agent travel planner (Flight -> Train -> Sightseeing -> Accounting,
+# see projects/travel_mas/seed/workflow.py) evaluated against the local
+# vLLM server hosting Qwen/Qwen3.5-122B-A10B (node-2, the 8xH100 server also
+# used by configs/hgm_dual_travel_1000_qwen122b_node2.yaml) -- the sibling
+# comparison config for configs/eval_local_travel_qwen3_5_122b_node2.yaml
+# (which runs the single-agent projects/travel/seed baseline). Same model,
+# base_url, env, reasoning_effort, and parallelism on both so the two are
+# compared under identical conditions. (Originally targeted the 35B-A3B/
+# node-1 endpoint; switched after that one showed a severe tool-calling
+# reliability problem live -- 27/28 sampled baseline cases produced no plan
+# at all, the model losing track of its own tool calls after ~2 turns.)
+#
+#   PYTHONPATH=. python3 evaluate_task_agent.py \
+#       --config configs/travel_mas.yaml \
+#       --agent-dir projects/travel_mas/seed \
+#       --limit 30 --parallelism 4
+
+experiment_name: "travel_mas_qwen3_5_122b_node2"
+project: "travel_mas"
+# runs_root omitted -> repo-local ./runs
+
+# projects/travel_mas/seed has no tools/ package of its own -- its
+# tool_wrapper.py does `import projects.travel.tools` directly (the real
+# dotted package path, so its internal relative imports resolve -- the
+# tool_source_dirs mechanism was tried first but doesn't support that
+# module's `from . import _csv` relative imports). This reuses the same 9
+# real tool implementations, and projects/travel/tools/_csv.py's
+# database_root() already defaults to projects/travel/data/database_en, so
+# the 431MB of per-sample CSV fixture data is reused too with no extra
+# config here.
+
+loop:
+  max_rounds: 1
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.5-122B-A10B"
+  reasoning_effort: "high"
+  base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+manager:
+  type: "hill_climbing"
+  config:
+    branch_policy: "best"
+    strategy_history_window: 5
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 3600  # bumped from 1800 -- confirmed live: 30/120 MAS cases hit the 1800s cap (4-stage pipeline needs more time than a single tool loop), scored 0.0 as a result. See run summary discussion. Baseline never needed the extra headroom but bumped too for parity.
+    memory_mb: 2048
+    # The 122B 8xH100 server has more headroom than the 35B one (per
+    # hgm_dual_travel_1000_qwen122b_node2.yaml's note: parallelism 8 is
+    # fine there, drop to 4 if APIConnectionError retries show up in
+    # trace.jsonl). This MAS also issues 4 stages' worth of smaller calls
+    # per case, so starting conservative at 4 for this first run.
+    parallelism: 4
+    # max_cases caps the case count INSIDE meta_agent/evaluator.py
+    # regardless of evaluate_task_agent.py's --limit/full-benchmark CLI
+    # choice (confirmed: omitting --limit still only ran 30 cases here).
+    # Left unset so evaluate_task_agent.py's own case selection (--limit,
+    # --case-ids, --eval-split, or the full 120-case benchmark) is what
+    # actually controls how many cases run.
+    scorer: "travel_mas_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "high"
+    max_attempts: 2
+
+# Local models (Qwen3.x, gpt-oss) misread echoed `reasoning` items in the
+# conversation history as a "wrap up" signal -- they exit the tool loop
+# without writing the formal <plan> block. Strip them before the next call.
+# TRAVEL_CONVERT_MODEL routes the travel scorer's plan->JSON conversion at
+# the same Qwen model (base_url comes from task_agent.base_url -> LLM_BASE_URL).
+# TRAVEL_DATABASE_ROOT: projects/travel_mas/benchmark/scorer.py's own
+# database-root fallback is computed relative to ITS file location
+# (parents[1] -> projects/travel_mas/data/database_en), which doesn't
+# exist -- we deliberately didn't duplicate the 431MB per-sample CSV
+# dataset (see projects/travel_mas/seed/tool_wrapper.py's comment). The
+# agent's own tools still found the real data fine (their fallback is
+# hardcoded to projects/travel/data/... regardless of which project
+# imports them), but without this the SCORER had no ground-truth database
+# to cross-reference at all -- confirmed live: every geospatial/business-
+# hours/duration check failed on 100% of a 30-case run with "missing
+# coordinates" warnings, purely from this path bug, not the agent design.
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-122B-A10B"
+  TRAVEL_DATABASE_ROOT: "/groups/AIC-MV/v.kulkarni1/unified_framework/self-improving-dual/projects/travel/data/database_en"
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

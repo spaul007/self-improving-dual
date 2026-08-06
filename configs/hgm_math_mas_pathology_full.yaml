@@ -1,0 +1,128 @@
+# A proper (not sanity-check) HGM run against math_mas_pathology: 100 train
+# / 50 eval cases (randomly sampled out of the same 500 math_mas uses),
+# mirroring configs/hgm_math_mas_full.yaml's split.
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_math_mas_pathology_full.yaml
+#
+# --- eval_budget: an UNVERIFIED starting estimate, re-check before launch ---
+#
+# math_mas's own full config was sized from a real measured baseline
+# (2.528 s/case at parallelism=16, see configs/hgm_math_mas_full.yaml),
+# landing on eval_budget=12000 for a ~10.7h run. This project has no
+# equivalent baseline yet -- MAS_VERIFY_ROUNDS=20 alone adds up to ~20 extra
+# sequential LLM calls per case on top of math_mas's ~3
+# (predictor/compress/reflector), an ~8x per-case-cost multiplier by call
+# count (real wall-clock impact will differ, since compress() calls are
+# short). eval_budget below (1500) is that ~8x factor applied naively to
+# math_mas's 12000 -- a rough starting point, NOT a measured number.
+#
+# REQUIRED before trusting this file: run the offline pilot (see project
+# README.md / integrating.md Step 6) -- `run_inference.py` over ~20-30 real
+# cases with MAS_VERIFY_ROUNDS=20 -- to get a real t_case, then recompute
+# via the same tool math_mas's full config used:
+#   python3 size_eval_budget.py --t-case <measured> --hours 12 \
+#     --eval-batch-size 50 --max-rounds 100 --fixed-unbudgeted-evals 600
+
+experiment_name: "math_mas_pathology_hgm_full"
+
+project: "math_mas_pathology"
+seed_dir_name: "math_mas_pathology"
+
+# Same exclude-list as the sanity config -- see
+# configs/hgm_math_mas_pathology_sanity.yaml for the full rationale on each
+# entry.
+mutable_exclude:
+  - "tools/immutable/"
+  - "eval/"
+  - "workflow.py"
+  - "benchmark/"
+
+tool_source_dirs:
+  - "tools"
+  - "agents"
+
+loop:
+  max_rounds: 100
+  score_target: 1.0
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 1500          # UNVERIFIED estimate -- see note above, resize after the offline pilot
+    init_expansions: 1
+    alpha: 0.6
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 50
+    finalize_top_k: 3
+    full_eval_top_k: 3
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1200
+    memory_mb: 1024
+    # Kept below math_mas's 16 -- each case here is materially more
+    # expensive (up to ~24 sequential LLM calls vs. ~3), so fewer cases in
+    # flight per worker keeps per-case latency from ballooning under shared
+    # vLLM host contention. Re-tune from the offline pilot's real numbers.
+    parallelism: 8
+    scorer: "math_mas_pathology_default"
+
+gatherer:
+  type: "math_mas_pathology_default"
+  config:
+    n_hard_cases: 2
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "math_mas_pathology_default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+# This project's own llm_client.py reads these directly -- this is the
+# actual task-agent model, used for the predictor's/verifier's/reflector's
+# real LLM calls. Re-check this endpoint is still live before launching --
+# it rotates.
+env:
+  MAS_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  MAS_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+  MAS_API_KEY: "dummy"
+  # Full literal-example default -- the pathology this project is meant to
+  # demonstrate ("ask the same thing 20 times").
+  MAS_VERIFY_ROUNDS: "20"
+  MAS_VERIFIER_TEMPERATURE: "0.2"
+  MAS_ENABLE_REPETITION_PATHOLOGY: "1"
+  MAS_ENABLE_STALE_CONTEXT_PATHOLOGY: "1"
+  MAS_ENABLE_SELECTIVE_DEAFNESS: "1"
+
+# Same 100/50 split as math_mas's full config -- same case ids/seed, so
+# results stay directly comparable case-for-case.
+split:
+  seed: 42
+  train_size: 100
+  eval_size: 50
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "immutable_files"
+  - type: "load_test"

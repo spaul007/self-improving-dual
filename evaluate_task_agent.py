@@ -126,6 +126,12 @@ def main() -> int:
     args = parser.parse_args()
 
     agent_dir = args.agent_dir.resolve()
+    # Resolve to absolute: the evaluator subprocess runs with cwd set to the
+    # isolated round dir, so a relative out_dir would make trace_path (passed
+    # via META_AGENT_TRACE_PATH) resolve against the wrong directory and
+    # crash every case on the first call_llm (FileNotFoundError opening
+    # trace.jsonl).
+    args.out_dir = args.out_dir.resolve()
     if not agent_dir.is_dir():
         raise SystemExit(f"--agent-dir not found: {agent_dir}")
     if not (agent_dir / "workflow.py").is_file():

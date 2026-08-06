@@ -1,0 +1,127 @@
+# hgm_dual optimization run for the SINGLE-AGENT travel task
+# (projects/travel/seed -- the original brittle one-agent tool-loop, NOT
+# travel_mas), task agent on the local vLLM server hosting
+# Qwen/Qwen3.5-35B-A3B (node-6, as of 2026-08-05 -- node-1 died), implicit
+# mode (no reasoning_effort; temperature=0.2 + max_output_tokens=16384 --
+# this session's established tuning, see
+# configs/eval_local_travel_qwen35b_implicit.yaml's task_agent comment for
+# the full rationale: reasoning_effort="medium" causes a catastrophic
+# tool-calling breakdown on this endpoint, documented in
+# qwen35bnotworking.md; implicit mode is the only setting that keeps the
+# single agent functional at all -- though even then its unedited-seed
+# full-120 score was 0.0 (100% no_plan_rate), so this run is a genuine test
+# of whether HGM's prompt/code editing can recover a working agent, not a
+# refinement of an already-working one.
+#
+# Sibling of configs/hgm_dual_travel_single_35b_1000.yaml (eval_budget=1000
+# on node-1/node-2), which died mid-run at 796/1000 budget spent when
+# node-1 went offline (endpoints rotated to node-6/node-5 -- see
+# vllm_endpoint.md memory). main_loop.py has no --resume mechanism
+# (init_experiment_dir always mkdir(exist_ok=False)'s a fresh timestamped
+# dir; the tree/RNG state from the dead run can't be reopened), so per
+# explicit instruction this is a FRESH run from the unedited seed (not
+# seeded from the old run's best node, node_014) -- but at a larger
+# eval_budget=3000 (vs. 1000) and keeping the SAME predetermined 60-case
+# train_ids_path split as the dead run, for a comparable optimization
+# target even though the search itself restarts from scratch.
+#
+#   - task_agent.base_url: node-1 -> node-6
+#   - editor/summarizer.base_url: node-2 -> node-5
+#   - manager.config.eval_budget: 1000 -> 3000
+#   - everything else unchanged from the 1000-budget sibling
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_dual_travel_single_35b_3000.yaml
+
+experiment_name: "travel_hgm_dual_single_35b_3000"
+project: "travel"
+
+eval_visibility: "blackbox"
+
+loop:
+  max_rounds: 1000
+  score_target: 0.99
+
+task_agent:
+  model: "Qwen/Qwen3.5-35B-A3B"
+  # reasoning_effort intentionally omitted -- implicit mode (see header).
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+
+manager:
+  type: "hgm_dual"
+  config:
+    eval_budget: 3000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 3
+    seed: 42
+    num_variants: 2
+    intra_expand_eval_size: 16
+    variant_parallelism: 2
+    select_metric: "mean"
+    categorizer_max_representative_errors: 5
+    min_remaining_budget_for_dual: 16
+    category_selection: "balanced_by_type"
+    category_types: ["commonsense", "hard_constraint"]
+    snapshot_tree: true
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    # Conservative for the 35B/node-6 server -- see header comment.
+    parallelism: 3
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+editor:
+  # Deliberately NOT the same model/endpoint as task_agent -- matches
+  # math_mas/db_mas/travel_mas's hgm_dual editor convention exactly.
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+# Local models (Qwen3.x, gpt-oss) misread echoed `reasoning` items in the
+# conversation history as a "wrap up" signal and exit the tool loop without
+# writing the formal <plan> block -- strip them before the next call.
+# TRAVEL_CONVERT_MODEL routes the scorer's plan->JSON conversion at the same
+# Qwen model as the task agent (its base_url comes from task_agent.base_url
+# -> LLM_BASE_URL, which meta_agent/runtime_env.py exports into the
+# evaluator subprocess environment).
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-35B-A3B"
+
+split:
+  train_ids_path: "configs/travel_train_ids.json"   # same 60 predetermined cases as the dead 1000-budget run
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

@@ -1,0 +1,145 @@
+# An HGM run against math_mas_pathology sized by target tree shape, not
+# directly by wall-clock time: "I want roughly X good-enough agents, each
+# evaluated on roughly Y examples on average" -- X=20, Y=100, mirroring
+# configs/hgm_math_mas_x20_y100.yaml's own derivation exactly (see that file
+# for the full writeup this reuses unchanged).
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_math_mas_pathology_x20_y100.yaml
+#
+# --- eval_budget/alpha: identical derivation to math_mas's x20_y100 config ---
+#
+# B = X*Y = 20*100 = 2000 (total budget, counted in agent-task EVALUATIONS,
+# not LLM calls -- this formula is architecture-independent, so it carries
+# over unchanged even though each evaluation here is internally much more
+# expensive than math_mas's, see below):
+#   alpha = ln(X)/ln(B) = ln(20)/ln(2000) = 0.3941
+#
+# --- wall_time_s_per_case / parallelism: CONSERVATIVE GUESSES, not measured ---
+#
+# Unlike math_mas's x20_y100 config (which reused a real measured
+# t_case=2.528s from a full 500-case baseline run), this project has no
+# offline timing pilot yet -- launched directly per explicit instruction to
+# proceed with a conservative guess rather than spend time measuring first.
+# Each case here can involve up to ~24 SEQUENTIAL LLM calls (1 predictor + 1
+# compress + MAS_VERIFY_ROUNDS=20 verifier turns, run one at a time, not
+# concurrently, by design -- see agents/verifier/workflow.py::arun_repeated
+# + 1 verifier-output compress + 1 reflector), vs. math_mas's ~3 -- roughly
+# an 8x per-case-cost multiplier by call count. A single live smoke-test
+# case at MAS_VERIFY_ROUNDS=3 (7 total calls) took ~43-46s wall-clock;
+# naive linear extrapolation to 24 calls suggests ~150s/case single-stream
+# latency, before any shared-host contention. wall_time_s_per_case below
+# (1800s) is a generous multiple of that guess, not a measured bound.
+# parallelism (8, half of math_mas's 16) is lowered because this run and the
+# concurrently-launched baseline run (results/raw/baseline_full.json) both
+# hit the same MAS_MODEL endpoint -- keeping per-job concurrency modest
+# limits how much either job can starve the other under shared-host
+# contention. TREAT THE PROJECTED RUNTIME AS UNKNOWN until real progress is
+# observed -- re-tune wall_time_s_per_case/parallelism/eval_budget from
+# actual observed throughput if this run is running much slower or faster
+# than expected.
+
+experiment_name: "math_mas_pathology_hgm_x20_y100"
+
+project: "math_mas_pathology"
+seed_dir_name: "math_mas_pathology"
+
+# Same exclude-list as the other math_mas_pathology configs -- see
+# configs/hgm_math_mas_pathology_sanity.yaml for the full rationale on each
+# entry. agents/verifier/* deliberately stays editable.
+mutable_exclude:
+  - "tools/immutable/"
+  - "eval/"
+  - "workflow.py"
+  - "benchmark/"
+
+tool_source_dirs:
+  - "tools"
+  - "agents"
+
+loop:
+  # ~2x the X=20 target node count, same convention as math_mas's x20_y100
+  # config -- eval_budget/alpha are what's actually expected to bound growth.
+  max_rounds: 40
+  score_target: 1.0
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 2000
+    init_expansions: 1
+    alpha: 0.3941
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    # Half of train_size (100), same established convention: keeps the
+    # number of summarizer-triggering EVALUATE steps
+    # (eval_budget / eval_batch_size = 40) from dominating the run.
+    eval_batch_size: 50
+    finalize_top_k: 3
+    full_eval_top_k: 3
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800   # conservative guess -- see note above
+    memory_mb: 1024
+    parallelism: 8                # conservative guess -- see note above
+    scorer: "math_mas_pathology_default"
+
+gatherer:
+  type: "math_mas_pathology_default"
+  config:
+    n_hard_cases: 2
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "math_mas_pathology_default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+# This project's own llm_client.py reads these directly -- the actual
+# task-agent model, used for the predictor's/verifier's/reflector's real LLM
+# calls. Confirmed live via `curl <base_url>/models` on 2026-08-05 -- see
+# memory: vllm_endpoint. Re-check before relaunching later; it rotates.
+env:
+  MAS_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  MAS_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+  MAS_API_KEY: "dummy"
+  MAS_VERIFY_ROUNDS: "20"
+  MAS_VERIFIER_TEMPERATURE: "0.2"
+  MAS_ENABLE_REPETITION_PATHOLOGY: "1"
+  MAS_ENABLE_STALE_CONTEXT_PATHOLOGY: "1"
+  MAS_ENABLE_SELECTIVE_DEAFNESS: "1"
+
+# train_size = Y = 100 exactly, matching math_mas's x20_y100 convention.
+# eval_size = 50 -- this is the "test set" the HGM run holds out and never
+# trains on; communication traces (see the separate trace-capture step) are
+# captured against exactly these 50 case ids for both the baseline seed
+# agent and the run's best resulting agent, for direct comparability.
+split:
+  seed: 42
+  train_size: 100
+  eval_size: 50
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "immutable_files"
+  - type: "load_test"

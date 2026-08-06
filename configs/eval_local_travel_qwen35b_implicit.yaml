@@ -1,0 +1,91 @@
+# Baseline measurement of the single-agent travel seed against the local
+# vLLM server hosting Qwen/Qwen3.5-35B-A3B (node-1), IMPLICIT mode: no
+# `reasoning_effort` set (see configs/travel_mas_qwen35b_implicit.yaml's
+# comment for the full mechanism). This is the sibling baseline config for
+# that MAS config -- same model, base_url, env, parallelism -- for a fair
+# 35B-vs-35B comparison. The earlier 35B baseline attempt
+# (configs/eval_local_travel_qwen3_5_35b_node1.yaml, reasoning_effort:
+# "medium") isn't valid for this comparison: it hit the same catastrophic
+# tool-calling breakdown implicit mode fixes (27/28 sampled cases produced
+# no plan at all).
+#
+#   PYTHONPATH=. python3 evaluate_task_agent.py \
+#       --config configs/eval_local_travel_qwen35b_implicit.yaml \
+#       --agent-dir projects/travel/seed \
+#       --limit 10 --parallelism 3
+
+experiment_name: "eval_local_travel_qwen35b_implicit"
+project: "travel"
+# runs_root omitted -> repo-local ./runs
+
+loop:
+  max_rounds: 1
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.5-35B-A3B"
+  # reasoning_effort intentionally omitted -- implicit mode: thinking stays
+  # on (Qwen3.5's chat-template default), the model decides for itself how
+  # much to think, no imposed budget/target via an explicit effort level.
+  #
+  # temperature 0.0, 0.2, and the framework default (1.0) were all tried
+  # live and ALL produced near-total failure (90-100% no-plan, model
+  # stopping tool calls after only 3-9 iterations with an empty final
+  # response) -- so temperature was never the variable. Current
+  # hypothesis: platform_core/llm_wrapper.py sends no max_output_tokens
+  # cap at all by default (intending "unlimited"), and the server may be
+  # silently applying its own low default completion budget, truncating
+  # the model mid-<think> before it ever reaches a visible answer. Testing
+  # with an explicit, generous cap below.
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+
+manager:
+  type: "hill_climbing"
+  config:
+    branch_policy: "best"
+    strategy_history_window: 5
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    # A single 35B-class vLLM server saturates fast (see
+    # eval_local_qwen3_6_35b.yaml's note: parallelism 8 produced ~140
+    # APIConnectionError retries and 0/10 passes). Keep concurrency low.
+    parallelism: 3
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-35B-A3B"
+    max_attempts: 2
+
+# Local models (Qwen3.x, gpt-oss) misread echoed `reasoning` items in the
+# conversation history as a "wrap up" signal -- they exit the tool loop
+# without writing the formal <plan> block. Kept on as a safety net even in
+# implicit mode.
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-35B-A3B"
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

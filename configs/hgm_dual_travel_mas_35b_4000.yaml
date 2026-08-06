@@ -1,0 +1,154 @@
+# hgm_dual REAL optimization run for projects/travel_mas (eval_budget=4000),
+# on the local vLLM server hosting Qwen/Qwen3.5-35B-A3B (node-1), implicit
+# mode (no reasoning_effort; temperature=0.2 + max_output_tokens=16384 --
+# this session's tuning, see configs/travel_mas_qwen35b_implicit.yaml's
+# task_agent comment for the full rationale). Sibling of
+# configs/hgm_dual_travel_mas_35b_sanity.yaml (kept separately at
+# eval_budget=50 as a cheap wiring check) -- this is the real run.
+#
+# Structurally modeled on configs/hgm_dual_travel_1000_qwen122b_node2.yaml
+# and configs/hgm_dual_travel_8000_balanced.yaml, adapted for travel_mas:
+#   - project: "travel" -> "travel_mas"
+#   - evaluator.config.scorer / gatherer.config.error_categorizer's target
+#     module both point at travel_mas's own registered names/logic
+#   - error_categorizer itself is REUSED VERBATIM from
+#     projects/travel/travel_error_categorizer.py: it's pure schema-logic
+#     (reads only case.details["dimension_details"]/["hard_constraints"]/
+#     ["failed_checks"] via the generic CaseResult type, no project-specific
+#     coupling), and travel_mas's scorer emits the byte-identical details
+#     shape -- confirmed by reading the categorizer's source before wiring
+#     this up, and by running it live against real travel_mas case data.
+#     No new categorizer module needed.
+#   - eval_budget=4000 (this session's requested scale), all other
+#     manager.config knobs unchanged from the sanity/reference configs
+#     (num_variants/intra_expand_eval_size/variant_parallelism/etc. don't
+#     scale with eval_budget in the reference configs either -- only
+#     eval_budget and loop.max_rounds do)
+#   - evaluator.config.parallelism kept conservative (3) despite the larger
+#     budget -- that's a 35B/node-1 server-capacity constraint, not an
+#     optimization-budget one; the reference's parallelism:16 assumes
+#     OpenAI's API, not a single fragile local vLLM server
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_dual_travel_mas_35b_4000.yaml
+
+experiment_name: "travel_mas_hgm_dual_35b_4000"
+project: "travel_mas"
+
+eval_visibility: "blackbox"
+
+loop:
+  max_rounds: 1000
+  score_target: 0.99
+
+task_agent:
+  model: "Qwen/Qwen3.5-35B-A3B"
+  # reasoning_effort intentionally omitted -- implicit mode.
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "http://gpu-aic-mv-02-st-p5-node-1:8000/v1"
+
+manager:
+  type: "hgm_dual"
+  config:
+    eval_budget: 4000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 3
+    seed: 42
+    num_variants: 2
+    intra_expand_eval_size: 16
+    variant_parallelism: 2
+    select_metric: "mean"
+    categorizer_max_representative_errors: 5
+    min_remaining_budget_for_dual: 16
+    category_selection: "balanced_by_type"
+    category_types: ["commonsense", "hard_constraint"]
+    snapshot_tree: true
+    # Reused verbatim from the sibling single-agent project -- see the
+    # module-level comment above for why this is safe (pure schema-logic,
+    # no projects.travel-specific coupling).
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+evaluator:
+  type: "subprocess"
+  config:
+    # 3600, not the reference's 1800 -- established necessary earlier this
+    # session: the 4-stage pipeline needs more wall-clock than a single
+    # tool loop; 30/120 cases hit 1800s and were scored 0.0 as an artifact
+    # before this was raised.
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    # Conservative for the 35B/node-1 server (same ceiling used throughout
+    # this session's other travel_mas/35B configs) -- raise only if
+    # confirmed stable at this concurrency over a real run.
+    parallelism: 3
+    scorer: "travel_mas_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+editor:
+  # Deliberately NOT the same model/endpoint as task_agent -- the editor
+  # does self-improvement code editing, a different workload from the
+  # task agent's tool-calling loop, and doesn't need to run on the
+  # fragile 35B/node-1 endpoint being evaluated. Matches the exact editor
+  # config already used for math_mas/db_mas (configs/hgm_math_mas_*.yaml,
+  # configs/hgm_db_mas_*.yaml) for consistency across this framework's
+  # MAS integrations. temperature/max_output_tokens NOT set:
+  # AgentEditor.__init__ (meta_agent/agent_editor.py) has no such
+  # parameters -- passing them raises TypeError. It already hardcodes
+  # temperature=0.2 for its own LLM call whenever reasoning_effort is
+  # unset, but reasoning_effort IS set here (matching the math_mas/db_mas
+  # convention), so that hardcoded fallback doesn't even apply.
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  # Same reasoning as editor above: independent model/endpoint choice,
+  # matching math_mas/db_mas's summarizer config exactly.
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-2:8000/v1"
+
+# Local models (Qwen3.x, gpt-oss) misread echoed `reasoning` items in the
+# conversation history as a "wrap up" signal and exit the tool loop without
+# writing the formal <plan> block -- strip them before the next call.
+# TRAVEL_CONVERT_MODEL routes the scorer's plan->JSON conversion at the same
+# Qwen model (its base_url comes from task_agent.base_url -> LLM_BASE_URL,
+# which meta_agent/runtime_env.py exports into the parent/evaluator process).
+# TRAVEL_DATABASE_ROOT: travel_mas/adapter/scorer_impl.py's own
+# database-root fallback resolves to the wrong (non-existent)
+# projects/travel_mas/data/ directory; this points it at the real one
+# (see configs/travel_mas_qwen35b_implicit.yaml's comment for the full
+# story -- confirmed live earlier this session: without this, every
+# geospatial/business-hours/duration check silently fails).
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  TRAVEL_DATABASE_ROOT: "/groups/AIC-MV/v.kulkarni1/unified_framework/self-improving-dual/projects/travel/data/database_en"
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

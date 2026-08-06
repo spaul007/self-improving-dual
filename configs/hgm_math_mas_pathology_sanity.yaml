@@ -1,0 +1,166 @@
+# Small sanity-check HGM run against math_mas_pathology (Predictor ->
+# Verifier(xN) -> Reflector Math500 solver, deliberately containing three
+# communication pathologies -- see
+# projects/math_mas_pathology/math_mas_pathology/README.md).
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_math_mas_pathology_sanity.yaml
+#
+# Sized from math_mas's own sanity config (train_size=6, eval_budget=6),
+# doubled here: this project's reflector receives systematically corrupted
+# context (stale + deafened) on top of a wasteful-but-not-necessarily-
+# harmful repetition stage, so true accuracy is very plausibly well below
+# math_mas's 0.78 baseline -- and hgm.py::_expandable()'s `mean_utility > 0`
+# filter means an unluckily-all-zero seed sample silently prevents the
+# editor from ever being called (exactly what happened to math_mas's first,
+# too-small sanity attempt). A bigger sample buys margin against that.
+# RECOMMENDED: run the offline pilot in the project README/integration
+# playbook (run_inference.py over ~20-30 real cases) to measure actual
+# degraded accuracy before trusting this train_size, and shrink or grow it
+# from that real number rather than this pre-measurement guess.
+#
+# MAS_VERIFY_ROUNDS overridden down to 4 (not the project's literal-example
+# default of 20, see env: below) purely for sanity-run cost: at N=20,
+# per-case LLM calls jump from math_mas's ~3 (predictor/compress/reflector)
+# to ~24 (+20 verifier turns, +1 verifier-output compress) -- roughly an 8x
+# multiplier that has no place in a "does the wiring work" check. N=4 still
+# exercises the discard-turns-1..N-1 mechanism and, with
+# MAS_VERIFIER_TEMPERATURE=0.2, should produce real turn-to-turn drift.
+#
+# Two models, two roles (same convention math_mas uses):
+#   - task agent (this project's own predictor+verifier+reflector LLM
+#     calls, via its own llm_client.py / MAS_* env vars -- NOT
+#     platform_core.llm_wrapper, see
+#     projects/math_mas_pathology/math_mas_pathology/config.py): Qwen3.5-35B-A3B.
+#   - meta-agent (the editor's self-improvement call + the behavior
+#     summarizer, via platform_core.llm_wrapper.call_llm): Qwen3.5-122B-A10B.
+# `task_agent:` (the YAML block that exports LLM_MODEL/LLM_BASE_URL) is
+# irrelevant here -- this project's own code never reads those env vars --
+# so the 35B endpoint is set via `env:` (MAS_MODEL/MAS_BASE_URL/MAS_API_KEY)
+# instead, matching config.py's own env-var names.
+
+experiment_name: "math_mas_pathology_hgm_sanity"
+
+project: "math_mas_pathology"
+seed_dir_name: "math_mas_pathology"
+
+# Identical exclude-list convention to math_mas's own sanity config --
+# tools/immutable/ (the benchmark's answer-extraction contract), eval/ (the
+# actual grader the framework's own scorer imports directly -- editing it
+# would let the editor redefine its own grading function), workflow.py (the
+# framework-mandated entry point -- excluded so the editor never touches or
+# even sees it), and benchmark/ (structurally unreachable already, named
+# explicitly anyway for defense in depth). agents/verifier/* is
+# DELIBERATELY left editable, symmetric with predictor/reflector -- an HGM
+# run against this project is effectively asking "can the self-improvement
+# loop detect and fix a broken agent hand-off?"
+mutable_exclude:
+  - "tools/immutable/"
+  - "eval/"
+  - "workflow.py"
+  - "benchmark/"
+
+# Same convention as math_mas: tool-defining code (tools/mutable/*,
+# agents/*'s workflow.py) is spread across a shared folder plus per-agent
+# folders rather than one projects/math_mas_pathology/tools/ package.
+tool_source_dirs:
+  - "tools"
+  - "agents"
+
+loop:
+  # Same as math_mas's sanity config -- HGM's real terminator is
+  # manager.config.eval_budget; this is only a hard cap on tree size.
+  max_rounds: 3
+  score_target: 1.0
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 12
+    init_expansions: 1
+    alpha: 0.6
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 1
+    finalize_top_k: 1        # bounded to train_size (12) below
+    full_eval_top_k: 0       # disabled -- no full-benchmark sidecar audit
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    # Raised well above math_mas's 600s -- a single case can now involve
+    # 1 (predictor) + up to MAS_VERIFY_ROUNDS (verifier) + 1 (reflector)
+    # sequential LLM calls, plus compress() calls, all still just in-process
+    # asyncio (no Docker/container startup, math_mas_pathology's biggest
+    # structural similarity to math_mas and difference from db_mas).
+    wall_time_s_per_case: 1200
+    memory_mb: 1024
+    # Kept modest, same reasoning as math_mas -- this vLLM host is shared.
+    parallelism: 2
+    scorer: "math_mas_pathology_default"
+
+gatherer:
+  type: "math_mas_pathology_default"
+  config:
+    n_hard_cases: 2
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "math_mas_pathology_default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+# Same opt-in cross-case failure digest math_mas uses -- see
+# meta_agent/failure_summarizer.py.
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+# This project's own llm_client.py reads these directly (see
+# projects/math_mas_pathology/math_mas_pathology/config.py) -- this is the
+# actual task-agent model, used for the predictor's/verifier's/reflector's
+# real LLM calls. Re-check this endpoint is still live before launching --
+# it rotates (see memory: vllm_endpoint).
+env:
+  MAS_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  MAS_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+  MAS_API_KEY: "dummy"
+  # Sanity-run override -- see the cost note above. The project's own
+  # default (config.py) is 20, matching the pathology's literal design
+  # target; use configs/hgm_math_mas_pathology_full.yaml for that.
+  MAS_VERIFY_ROUNDS: "4"
+  MAS_VERIFIER_TEMPERATURE: "0.2"
+  MAS_ENABLE_REPETITION_PATHOLOGY: "1"
+  MAS_ENABLE_STALE_CONTEXT_PATHOLOGY: "1"
+  MAS_ENABLE_SELECTIVE_DEAFNESS: "1"
+
+# Bound total cost: restrict optimization to a 12-case train pool (2x
+# math_mas's 6, see the seed-sizing note above) and disable the held-out
+# eval pass entirely (eval_size: 0), same reasoning as math_mas's sanity
+# config -- this is a wiring check, not a real optimization run.
+split:
+  seed: 42
+  train_size: 12
+  eval_size: 0
+
+# Same omissions as math_mas's sanity config, same reasoning: these all
+# hardcode expectations from the tool_wrapper.py/tools_schema.json/
+# mutable_tools/ convention this project doesn't use.
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "immutable_files"
+  - type: "load_test"

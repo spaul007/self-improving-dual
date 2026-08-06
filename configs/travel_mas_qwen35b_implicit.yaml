@@ -1,0 +1,112 @@
+# Multi-agent travel planner (Flight -> Train -> Sightseeing -> Accounting,
+# see projects/travel_mas/seed/workflow.py) evaluated against the local
+# vLLM server hosting Qwen/Qwen3.5-35B-A3B (node-1) in IMPLICIT mode: no
+# `reasoning_effort` is set here at all, so platform_core/llm_wrapper.py's
+# call_llm never sends a `reasoning: {effort: ...}` field on the Responses
+# API request (see its `resolved_effort = reasoning_effort or
+# _env_default_reasoning_effort()` -- both are None/unset here, so the
+# request falls back to plain `temperature`, and the model isn't pushed
+# into an explicit extended-thinking mode).
+#
+# This is a deliberate re-test of the 35B/node-1 endpoint: an earlier run
+# (configs/eval_local_travel_qwen3_5_35b_node1.yaml, reasoning_effort:
+# "medium") showed the model losing track of its own tool calls after ~2
+# turns and degenerating into malformed pseudo-tool-call text -- we moved
+# the whole comparison to 122B/node-2 as a result. Per operator report,
+# this model performs better in implicit/non-thinking mode; worth
+# re-validating before assuming 35B is unusable for this task.
+#
+#   PYTHONPATH=. python3 evaluate_task_agent.py \
+#       --config configs/travel_mas_qwen35b_implicit.yaml \
+#       --agent-dir projects/travel_mas/seed \
+#       --limit 10 --parallelism 3
+
+experiment_name: "travel_mas_qwen3_5_35b_node1_implicit"
+project: "travel_mas"
+# runs_root omitted -> repo-local ./runs
+
+# projects/travel_mas/seed has no tools/ package of its own -- see
+# configs/travel_mas.yaml's comment for why (tool_wrapper.py imports
+# projects.travel.tools directly; tool_source_dirs doesn't support that
+# module's relative imports).
+
+loop:
+  max_rounds: 1
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.5-35B-A3B"
+  # reasoning_effort intentionally omitted -- implicit mode: thinking stays
+  # on (Qwen3.5's chat-template default), the model decides for itself how
+  # much to think, no imposed budget/target via an explicit effort level.
+  #
+  # temperature 0.0, 0.2, and the framework default (1.0) were all tried
+  # live on the SINGLE AGENT and ALL produced near-total failure (90-100%
+  # no-plan, model stopping tool calls after only 3-9 iterations with an
+  # empty final response) -- so temperature was never the variable there.
+  # Current hypothesis: platform_core/llm_wrapper.py sends no
+  # max_output_tokens cap at all by default (intending "unlimited"), and
+  # the server may be silently applying its own low default completion
+  # budget, truncating the model mid-<think> before it ever reaches a
+  # visible answer. Testing with an explicit, generous cap below (this MAS
+  # itself was less severely affected in earlier testing without this fix,
+  # but apply the same settings for a fair, consistent comparison).
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "http://gpu-aic-mv-02-st-p5-node-1:8000/v1"
+
+manager:
+  type: "hill_climbing"
+  config:
+    branch_policy: "best"
+    strategy_history_window: 5
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    # A single 35B-class vLLM server saturates fast (see
+    # eval_local_qwen3_6_35b.yaml's note: parallelism 8 produced ~140
+    # APIConnectionError retries and 0/10 passes). Keep concurrency low,
+    # especially for a first validation run of implicit mode.
+    parallelism: 3
+    scorer: "travel_mas_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-35B-A3B"
+    # reasoning_effort intentionally omitted, matching task_agent.
+    max_attempts: 2
+
+# Local models (Qwen3.x, gpt-oss) misread echoed `reasoning` items in the
+# conversation history as a "wrap up" signal -- they exit the tool loop
+# without writing the formal <plan> block. Kept on even in implicit mode
+# as a safety net (no-op if the model never emits a `reasoning` item type
+# without an explicit reasoning.effort request).
+# TRAVEL_DATABASE_ROOT: see configs/travel_mas.yaml's comment -- the
+# copied scorer.py's own database-root fallback resolves to the wrong
+# (non-existent) directory; this points it at the real one.
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  TRAVEL_DATABASE_ROOT: "/groups/AIC-MV/v.kulkarni1/unified_framework/self-improving-dual/projects/travel/data/database_en"
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

@@ -1,0 +1,68 @@
+# Global + per-agent prompt configuration for the math MAS (pathological variant).
+#
+# Convention (unchanged from math_mas, see structure.md):
+#   role : FROZEN   -- identity of the agent. Do not let an optimizer rewrite.
+#   task : EDITABLE -- the instruction. Fair game for prompt optimization.
+#
+# Placeholders available in `task`: {question}, {context}
+#
+# `verifier` is new here (see README.md "Communication Pathologies"). Its task
+# template is deliberately IDENTICAL every turn it is called with -- no turn
+# index, no history, no reference to a "previous attempt" is ever interpolated
+# into it. That sameness is what makes mas_workflow.py's repeated calls to it
+# "ask the same thing N times" rather than N genuinely different questions.
+
+global:
+  answer_format: "Show your final answer bracketed between <answer> and </answer> tags."
+
+agents:
+  predictor:
+    # FROZEN
+    role: >-
+      Primary solver that provides step-by-step mathematical reasoning and a
+      final answer.
+    # EDITABLE
+    task: |
+      Let's think step by step. Show your final answer bracketed between <answer> and </answer> tags.
+      {context}
+      Question: {question}
+      Reasoning:
+
+  verifier:
+    # FROZEN
+    role: >-
+      Independent verifier that re-derives a proposed solution from scratch to
+      confirm or correct its final answer. You are not told how many times you
+      have been asked this before -- treat every request as the only time you
+      are being asked.
+    # EDITABLE
+    task: |
+      Given the question and the proposed solution below, independently re-derive
+      the final answer and state whether the proposed solution is correct. Show
+      your final answer bracketed between <answer> and </answer> tags.
+      Question: {question}
+      Proposed solution: {context}
+      Re-verification:
+
+  reflector:
+    # FROZEN
+    role: >-
+      Critical reviewer that identifies errors in previous solutions and
+      provides corrected reasoning.
+    # EDITABLE
+    task: |
+      Please review the solution above and criticize where it might be wrong. Show your final answer bracketed between <answer> and </answer>.
+      Question: {question}
+      Solution: {context}
+      Feedback: indicating the reflection of the solution given the question.
+      Correct answer:
+
+tools:
+  # Mutable tool: compresses an agent's full solution into a short briefing
+  # handed to the next stage. Internal protocol, not part of the benchmark.
+  compress: |
+    Below is a solution to a math problem. Summarize the key reasoning steps and the final answer in at most 30 words.
+
+    {raw}
+
+    Summary:

@@ -265,16 +265,110 @@ Only after all four pass, run a small live HGM sanity check
   fallback), nodes table with diff line-counts, per-round drill-down.
 - **`meta_agent/run_inspect.py`** — the pure-Python data layer behind the
   dashboard; reusable directly for any offline analysis script.
+- **`platform_core/communication_instrumentation.py`** +
+  `platform_core/runner.py`'s `--export-communication` flag — capture a
+  per-task-instance communication trace (every agent's exact prompt, every
+  tool call, every inter-agent hand-off) from a vendored project **without
+  changing a single line of its own code**. See the dedicated section below.
+
+## Instrumenting agent communication (tool calls, messages, prompts)
+
+For evaluating communication quality separately from task accuracy: a
+generic, non-invasive mechanism to capture, per task instance, (a) every
+tool call each agent makes, (b) every message passed between agents
+(including one-way pipeline hand-offs, not just live back-and-forth), and
+(c) each agent's exact prompt — exported as one JSON object. Built and
+live-verified against `math_mas` and `db_mas_snapshot` (see plan file
+Addendum 10 for the full design rationale); documented here so the same
+approach generalizes to any future project without rederiving it.
+
+**How it works, in one sentence**: `platform_core/runner.py --agent-dir
+<project> --benchmark <dir> --case-id <id> --export-communication out.json
+--patch-agent-run "module:Class.method"` monkey-patches the named method at
+runtime (reading the `prompt`/`tool_calls` the *unmodified* code already
+computes and returns, and detecting hand-offs by matching one agent's
+previously-returned text against a later call's `context` argument),
+records everything into a `CommunicationRecorder`, then restores the
+original method once the task finishes. Nothing is added to the project's
+own files, ever — so this also works unchanged against any HGM round's
+`task_agent/` copy, not just the seed, and can't be stripped out by an
+editor edit.
+
+Verified command shape (identical for both target projects, only the paths/
+module targets change):
+```
+python -m platform_core.runner --agent-dir projects/<project>/<project> \
+  --benchmark projects/<project>/benchmark --case-id <id> \
+  --export-communication /tmp/comm.json \
+  --patch-agent-run "agents.base:BaseAgent.arun" \
+  --patch-transform "tools.mutable.compress:compress"
+```
+
+**A real bug found during live verification, now fixed**: `db_mas_snapshot`'s
+`AgentOutput.answer = (raw or "").strip()` often equals `raw` byte-for-byte
+(no surrounding whitespace to strip), so naively registering both `raw` and
+`answer` as separate "producer texts" double-counted the same output —
+showing up as a duplicate `compress` tool-call entry and a duplicate
+`communications` entry per investigator. Fixed by making
+`CommunicationRecorder.register_output` idempotent per `(agent_id, text)`
+and capping `find_producers` at one match per producing agent — a project
+with two identical-content attributes on its result object is not a
+special case to special-case per-project, it's the general rule.
+
+**Applying this to the two projects not yet instrumented**:
+- **`wikihop_mas`** — two agent-invocation shapes need separate
+  `--patch-agent-run` targets: `agents.base:BaseAgent.run` (Decomposer/
+  Extractor) and `agents.base:ToolAgent.run_with_tools` (Retriever/
+  Concluder — its tool-call ledger is `result.trace`, already handled by
+  the same defensive `tool_calls`-or-`trace` check in
+  `_record_from_agent_call`). Its Extractor hand-off
+  (`retriever_out.retrieved_paragraphs`, a `list[Paragraph]`, not a flat
+  string) doesn't fit the default string-`context_param` matching — either
+  add a small adapter that joins paragraph text before matching, or accept
+  that this one hand-off isn't auto-detected for this project. Its other
+  three hand-offs (Decomposer→hop dispatch, hop1→hop2 entity substitution,
+  hops→Concluder summary) are plain strings and fit the generic pattern
+  directly.
+- **`db_mas`** (Docker) — has *genuine* bidirectional messaging via
+  `ask_specialist` (`agents/coordinator/workflow.py:112-126` /
+  `agents/specialists/_base.py:74-122`), a direct in-process method call
+  (`specialist.answer_followup(question)`) not visible through the outer
+  `run()` boundary alone. Needs an additional
+  `--patch-agent-run "agents.specialists._base:SpecialistAgent.answer_followup"`
+  target (recording `question` as an incoming message, its return value as
+  the reply), plus tracking "which coordinator is currently active" (there
+  is exactly one per task) to attribute sender/receiver correctly — not
+  handled by the generic patcher as built. **Concurrency caveat, must be
+  solved before instrumenting this project**: its 5 specialists run via
+  `ThreadPoolExecutor` (`mas_workflow.py:71-76`), not `asyncio.gather` —
+  `contextvars` (what `recording_scope` uses to find the active recorder)
+  do **not** automatically propagate into new OS threads the way they do
+  into `asyncio` tasks. Each submitted specialist task needs the active
+  recorder explicitly carried across the thread boundary (e.g.
+  `contextvars.copy_context().run(...)` per submitted task). Not an issue
+  for `math_mas`/`db_mas_snapshot`/`wikihop_mas`, all of which use
+  `asyncio.gather`.
 
 ## Still-open / deferred (not blockers, just known gaps)
 
 - `error_categorizer` — richer failure-category grouping; neither db_mas
   nor math_mas has one configured yet.
-- Tool-call/LLM-call tracing instrumentation inside the vendored project's
-  own code — without it, `tool_usage`/`llm_calls` stay empty and the
-  behavior summarizer can only say "no instrumentation fired."
-  `platform_core.trace.log(...)` calls need to be added inside the
-  vendor's own tool/decision points for this to populate.
+- Tool-call/LLM-call tracing instrumentation feeding the
+  BehaviorSummarizer's `tool_usage`/`llm_calls` project_metrics (a
+  different mechanism from the per-task communication export above —
+  `platform_core.trace.log(...)` calls inside the vendor's own tool/
+  decision points, wired into `SubprocessEvaluator`'s round-level
+  aggregation, not a standalone `--export-communication` run). Without it,
+  those two fields stay empty and the summarizer can only say "no
+  instrumentation fired."
+- Wiring `platform_core.communication_instrumentation` into
+  `SubprocessEvaluator` so a communication trace is captured automatically
+  during normal HGM/eval rounds (today it's opt-in, standalone-only, via
+  `runner.py --export-communication`) — the module's `recording_scope` +
+  no-op-when-inactive design supports this without rework, just not built.
+  Also still open: an LLM-judge "communication quality" score consuming
+  this JSON (analogous to the `communication_score`/`coordination_score`
+  judge already designed for the Docker `db_mas` project's `score.py`).
 - A "duplicate basename" write-time check (catch a new file whose name
   already exists elsewhere in the workspace, the exact bug the README-diagram
   issue above causes) — designed, not yet built.

@@ -1,0 +1,77 @@
+# Baseline measurement of the single-agent travel seed against the local
+# vLLM server hosting Qwen/Qwen3.5-35B-A3B (node-1). Hard-wires the server
+# URL in task_agent.base_url (no submit_eval.sh discovery plumbing needed),
+# mirroring configs/eval_local_qwen3_6_35b.yaml. This is the sibling
+# baseline config for configs/travel_mas.yaml -- same model, same base_url,
+# same env/parallelism -- so the two projects are compared under identical
+# conditions.
+#
+#   PYTHONPATH=. python3 evaluate_task_agent.py \
+#       --config configs/eval_local_travel_qwen3_5_35b_node1.yaml \
+#       --agent-dir projects/travel/seed \
+#       --limit 30 --parallelism 2
+
+experiment_name: "eval_local_travel_qwen3_5_35b_node1"
+project: "travel"
+# runs_root omitted -> repo-local ./runs
+
+loop:
+  max_rounds: 1
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.5-35B-A3B"
+  reasoning_effort: "medium"
+  base_url: "http://gpu-aic-mv-02-st-p5-node-1:8000/v1"
+
+manager:
+  type: "hill_climbing"
+  config:
+    branch_policy: "best"
+    strategy_history_window: 5
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    # A single 35B-class vLLM server saturates fast (see
+    # eval_local_qwen3_6_35b.yaml's note: parallelism 8 produced ~140
+    # APIConnectionError retries and 0/10 passes). Keep concurrency low.
+    parallelism: 2
+    max_cases: 30
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-35B-A3B"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+# Local models (Qwen3.x, gpt-oss) misread echoed `reasoning` items in the
+# conversation history as a "wrap up" signal -- they exit the tool loop
+# without writing the formal <plan> block. Strip them before the next call.
+# TRAVEL_CONVERT_MODEL routes the travel scorer's plan->JSON conversion at
+# the same Qwen model (base_url comes from task_agent.base_url -> LLM_BASE_URL).
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-35B-A3B"
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

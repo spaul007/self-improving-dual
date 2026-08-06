@@ -189,3 +189,168 @@ independent held-out set.
 
 Finished. 21 nodes, all 2,000 budget evals spent (2,100 incl. the free seed
 pre-eval and the finalize top-up). Best = node 19, train mean 0.550 (n=100).
+
+---
+
+# travel_mas HGM (dual) run — baseline vs. best found so far (in progress, paused)
+
+Run: `configs/hgm_dual_travel_mas_35b_4000.yaml`, experiment
+`runs/20260802_175007_travel_mas_hgm_dual_35b_4000` (`Qwen/Qwen3.5-35B-A3B`
+@ node-1, implicit mode — no `reasoning_effort`, `temperature=0.2`,
+`max_output_tokens=16384`; `eval_budget=4000`, `train_size=60`; editor/
+summarizer on `Qwen/Qwen3.5-122B-A10B` @ node-2, matching math_mas/db_mas
+convention). `travel_mas` itself is a 4-stage sequential MAS (Flight → Train
+→ Sightseeing → Accounting agents) built this session as a "slightly
+better than single-agent" alternative to `projects/travel/seed` — see
+earlier sections of this session's history for the single-agent-vs-seed-MAS
+comparison; this section covers HGM's optimization *on top of* the seed MAS.
+
+This was the **3rd attempt** at this run — the first two both died to real,
+previously-undiscovered framework bugs, only surfaced by attempting a real
+long-running `hgm_dual` job (never triggered by short `evaluate_task_agent.py`
+smoke runs): (1) `projects/travel_mas/tools/` had no discovery package, so
+`SchemaWrapperConsistencyValidator` saw all 9 tools as unprovided and every
+edited round failed validation for 27+ rounds straight (fixed by adding
+`projects/travel_mas/tools/__init__.py`); (2) no HTTP client timeout was set
+on the vLLM calls, letting a single stuck call block for 3+ hours (fixed with
+an explicit 300s request timeout in `platform_core/llm_wrapper.py` and both
+`scorer.py` copies). Both fixes confirmed live before this 3rd, real run was
+started fresh.
+
+| | Baseline (seed, full 120) | Node 17 (best found, full 120) | Δ |
+|---|---|---|---|
+| **Score (composite, full 120)** | 0.36875 | **0.5333** | **+0.1646** (+44.6% relative) |
+| Same-run train score (n=60) | 0.356 | 0.535 | — |
+| Pass rate (full 120) | 0/120 | 2/120 | +2 cases |
+| no_plan_rate (full 120) | 30.8% | 7.5% | -23.3pp |
+
+Node 17's full-120 confirmatory score (0.5333) lands almost exactly on its
+own search-time train score (0.535, n=60) — negligible overfit, a genuine
+generalizing improvement rather than a lucky sample.
+
+## What actually changed
+
+Edit lineage: `0 → 9 → 10 → 13 → 17` (all prompt/code edits to
+`workflow.py`, restricted to the seed's mutable-surface convention). Node
+10 was a weak intermediate branch (0.158, well below the 0.356 seed) that
+recovered strongly through nodes 13 (0.416) and 17 (0.535). Node 17's edit
+specifically targeted the **Time Feasibility** dimension, which round 13's
+feedback showed at 0.00 mean score / 75% failure rate: the sightseeing
+agent was outputting checklist-formatted text claiming transfer times had
+been checked, without actually calling `query_road_route_info` (called only
+once across an entire 16-case sample despite 12 Time Feasibility failures).
+Node 17 restructured `_run_sightseeing_stage` into two explicit phases —
+Phase 1 gathers all entity details and forces a real `query_road_route_info`
+call for every planned transfer into a structured data object; Phase 2
+composes the itinerary using only that verified data — closing the
+"checklist without a real tool call" loophole the model had been exploiting.
+
+## Statistical confidence
+
+No formal sampling-variance model was built for `travel_mas` this session.
+Taken at face value, the full-120 confirmatory run (0.5333) essentially
+reproduces the node's own 60-case search-time score (0.535), which is a
+reasonable indicator this isn't sampling noise — but treat it as a good,
+plausible result rather than a rigorously bounded one, the way math_mas's
+and wikihop_mas_2k's reports above are.
+
+## Run status
+
+**Paused (killed intentionally), not finished.** 42 nodes generated,
+2252/4000 budget evals spent (56.3%) at round_042 when stopped. Best =
+node 17, train mean 0.535 (n=60), full-120 confirmatory mean 0.5333 (see
+table above). Can be resumed as a fresh run from this point if further
+search is wanted later — the config, fixes, and this checkpoint are all in
+place to do so.
+
+---
+
+# travel single-agent HGM (dual) run — same-endpoint comparison against travel_mas
+
+Run: `configs/hgm_dual_travel_single_35b_1000.yaml`, experiment
+`runs/20260804_183603_travel_hgm_dual_single_35b_1000` (`project: "travel"` —
+the original single-agent seed, NOT `travel_mas`; same 35B/implicit task_agent
+settings and same 122B editor/summarizer convention as the `travel_mas`
+hgm_dual run above; same predetermined 60-case `train_ids_path` split). This
+run answers a direct question: **if you spend HGM search budget optimizing
+the single task agent alone (prompt/code edits only, no structural
+redesign), how much of travel_mas's improvement can you recover?**
+
+Died mid-run at 796/1000 budget spent when the `node-1` vLLM endpoint went
+offline (endpoints rotated to `node-6`/`node-5` — see `vllm_endpoint.md`
+memory). `main_loop.py` has no `--resume` mechanism, so the run's tree/RNG
+state couldn't be reopened; a fresh sibling run was launched afterward
+(`configs/hgm_dual_travel_single_35b_3000.yaml`, `eval_budget=3000`, same
+train split, on `node-6`/`node-5`) rather than resuming this one.
+
+## Baseline vs. best found (this run, before it died)
+
+| | Baseline (seed, full 120) | Node 14 (best found, full 120) | Δ |
+|---|---|---|---|
+| **Score (composite, full 120)** | 0.0000 | **0.3406** | **+0.3406** |
+| Same-run train score (n=60) | 0.015 | 0.409 | — |
+| Pass rate (full 120) | 0/120 | 0/120 | unchanged |
+| no_plan_rate (full 120) | 100% | 18.3% | -81.7pp |
+
+Node 14's edit lineage: `0 → 11 → 12 → 14`. The first ten sibling edits off
+the seed (nodes 1-10) all scored exactly 0.0 — real, `edit_failed: False`
+evaluations, not a validation bug (confirmed by inspecting per-case error
+traces: genuine "agent produced no plan" failures matching the breakdown
+documented in `qwen35bnotworking.md`, plus one edit — node 4 — that
+introduced a real runtime crash calling `.get()` on a pydantic object).
+Node 11 was the first to escape zero (0.039), adding an explicit
+"Phase 1 completion criteria" checklist to the system prompt. Node 12
+(0.395) added the actual behavioral fix: when the model stops calling
+tools without having emitted a `<plan>` block, inject one explicit rescue
+message ("Do NOT call any more tools. Generate your final plan NOW") and
+give it one more iteration before giving up — the seed's original code had
+no such rescue call at all. Node 14 is a further sibling refinement of the
+same idea, edging node 12 out as the leader (0.409 vs. 0.395 on-search,
+0.3406 vs. presumably similar on full-120 — node 12 itself was never
+separately confirmed on the full benchmark).
+
+## Apples-to-apples: best node at matched raw budget (~720-750 evals) vs. travel_mas
+
+Both this run and the `travel_mas` hgm_dual run above found their eventual
+"final" best node very early and never displaced it for the rest of the
+run — so comparing at matched raw budget spent (not matched fraction of
+each run's differently-sized total budget) is a fair, apples-to-apples
+check of how much of the win was already locked in early:
+
+| | travel_mas (4-agent MAS) | Single agent |
+|---|---|---|
+| Best node at ~750 budget spent | node 17 (at budget=736) | node 14 (at budget=720) |
+| On-search mean_utility at that checkpoint | 0.5957 | 0.4089 |
+| Same node as the run's eventual final-best? | Yes (held leader to 2252/4000) | Yes (held leader to 796/1000, when it died) |
+| Full-120 confirmatory score | **0.5333** | **0.3406** |
+
+## What this shows
+
+HGM search alone, editing only the single agent's prompt/code (no
+structural redesign), recovers **most but not all** of the way from a
+completely broken agent (0.0) to a working one — reaching 0.3406, close to
+but still below the *unoptimized* `travel_mas` seed's own score (0.3688,
+see the `travel_mas` section above) and well below the *optimized*
+`travel_mas` (0.5333). The multi-agent decomposition still has a real,
+meaningful edge over prompt-editing a single agent alone on this fragile
+35B endpoint — HGM can partially compensate for a bad architecture, but
+doesn't fully substitute for a better one here.
+
+## Statistical confidence
+
+Same caveat as the `travel_mas` section: no formal sampling-variance model
+was built for this project. Node 14's full-120 score (0.3406) is
+reasonably close to its own 60-case search-time score (0.409, a ~7pp gap,
+larger than travel_mas node 17's near-exact match) — plausible mild
+overfit to the 60-case train split, or just noise from a small sample;
+treat 0.3406 as a good, plausible result rather than a tightly bounded one.
+
+## Run status
+
+**Dead (endpoint outage), not finished.** 22 nodes generated, 796/1000
+budget evals spent (79.6%) when the `node-1` server went offline. Best =
+node 14, train mean 0.409 (n=60), full-120 confirmatory mean 0.3406 (see
+table above). A fresh (not resumed) sibling run at `eval_budget=3000` on
+the new `node-6`/`node-5` endpoints was launched afterward — see
+`configs/hgm_dual_travel_single_35b_3000.yaml`,
+`runs/20260806_041514_travel_hgm_dual_single_35b_3000`.
