@@ -494,5 +494,261 @@ class ShoppingCartIsolationTests(unittest.TestCase):
         self.assertIsNone(self._db.cart_path())
 
 
+class ShoppingFeedbackTests(unittest.TestCase):
+    """Near-miss feature attribution (Part A) + budget / coupon-ownership
+    feedback (Part B), exercised against a hand-built level-2 case tree with a
+    products.jsonl catalog and a user_info.json. Levels 2/3 carry NO
+    operator/operator_value in meta_info, so this also covers the sub-query
+    operator parser."""
+
+    def setUp(self) -> None:
+        import os
+
+        from projects.shopping.benchmark.scorer import ShoppingScorer
+
+        self.scorer = ShoppingScorer()
+        self.tmp = Path(tempfile.mkdtemp(prefix="shopping_feedback_test_"))
+        self.case_dir = self.tmp / "database_level2" / "case_50"
+        self.case_dir.mkdir(parents=True)
+
+        # Two gold products, index-aligned with meta_info (level-2 shape: only
+        # field + gold value, no operator/operator_value).
+        validation = {
+            "query": "Refresh my wardrobe. My budget is between 100 and 200.",
+            "ground_truth_products": [
+                {"product_id": "P1", "price": 80, "color": "Black",
+                 "sales_volume": {"total": 2000}},
+                {"product_id": "P2", "price": 70, "color": "Red",
+                 "sales_volume": {"total": 1500}},
+            ],
+            "meta_info": [
+                {"sub_query": "Find products where the color is Black.",
+                 "features": [{"field": "color", "value": "Black"}]},
+                {"sub_query": ("Find products where the color is Red, the total "
+                               "sales volume is more than 1000, and the transport "
+                               "time is less than 2."),
+                 "features": [
+                     {"field": "color", "value": "Red"},
+                     {"field": "sales_volume.total", "value": 1500},
+                     {"field": "transport_time", "value": 1},
+                 ]},
+            ],
+        }
+        (self.case_dir / "validation_cases.json").write_text(
+            json.dumps(validation), encoding="utf-8"
+        )
+        # Catalog: the two gold products + a near-miss extra E that satisfies
+        # P2's sales-volume requirement (5000 > 1000) but NOT its colour (Blue).
+        catalog = [
+            {"product_id": "P1", "color": "Black", "sales_volume": {"total": 2000}},
+            {"product_id": "P2", "color": "Red", "sales_volume": {"total": 1500}},
+            {"product_id": "E", "color": "Blue", "sales_volume": {"total": 5000}},
+            # E2 satisfies P1's only constraint (colour Black) -> ambiguous match.
+            {"product_id": "E2", "color": "Black", "sales_volume": {"total": 3000}},
+        ]
+        (self.case_dir / "products.jsonl").write_text(
+            "\n".join(json.dumps(p) for p in catalog), encoding="utf-8"
+        )
+        (self.case_dir / "user_info.json").write_text(
+            json.dumps({"coupons": {"C1": 1}}), encoding="utf-8"
+        )
+
+        self._orig_env = os.environ.get("SHOPPING_DATABASE_ROOT")
+        os.environ["SHOPPING_DATABASE_ROOT"] = str(self.tmp)
+
+    def tearDown(self) -> None:
+        import os
+
+        if self._orig_env is None:
+            os.environ.pop("SHOPPING_DATABASE_ROOT", None)
+        else:
+            os.environ["SHOPPING_DATABASE_ROOT"] = self._orig_env
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _case(self) -> dict:
+        return {"env": {"SHOPPING_LEVEL": "2", "SHOPPING_SAMPLE_ID": "50"},
+                "meta_info": {"level": 2}}
+
+    def _cart(self, pids, total_price, used_coupons=None) -> str:
+        return json.dumps({
+            "items": [{"product_id": p, "price": 1, "quantity": 1} for p in pids],
+            "used_coupons": used_coupons or [],
+            "summary": {"total_price": total_price},
+        })
+
+    def test_near_miss_narrows_missing_features(self) -> None:
+        # Cart matches P1, misses P2, adds near-miss E. E satisfies P2's
+        # sales-volume (5000>1000) so that feature must be DROPPED; colour
+        # (Blue!=Red) and transport_time (unverifiable) remain.
+        out = self.scorer.score(self._case(), self._cart(["P1", "E"], 150))
+        mfc = out["details"]["failure_causes"]["feature_mismatch"]
+        self.assertEqual(set(mfc.keys()), {"color", "delivery_time"})
+        self.assertNotIn("sales_volume", mfc)
+        self.assertEqual(mfc["color"]["product_ids"], ["P2"])
+
+    def test_ambiguous_match_when_all_constraints_met(self) -> None:
+        # Miss P1 (sub-query: colour Black) but add E2 which IS Black -> the
+        # pick satisfies every checkable constraint => ambiguous, NOT a feature
+        # miss. No missing_feature_categories; ambiguous_matches carries P1 +
+        # the gold's required predicate as context.
+        out = self.scorer.score(self._case(), self._cart(["P2", "E2"], 150))
+        det = out["details"]
+        self.assertNotIn("feature_mismatch", det["failure_causes"])
+        amb = det["failure_causes"]["ambiguous"]
+        self.assertEqual(amb["product_ids"], ["P1"])
+        self.assertEqual([p["field"] for p in amb["predicates"]], ["color"])
+
+    def test_no_extras_is_missing_product(self) -> None:
+        # Miss P2 with NO extra product (cart is a strict subset of GT) -> the
+        # cause is `missing_product` (no substitute attempted), not a feature
+        # mismatch. The gold's required features are kept as context.
+        out = self.scorer.score(self._case(), self._cart(["P1"], 150))
+        pc = out["details"]["failure_causes"]
+        self.assertEqual(pc["missing_product"]["product_ids"], ["P2"])
+        self.assertNotIn("feature_mismatch", pc)
+
+    def test_l2_cart_level_not_cheapest_frame(self) -> None:
+        # Cart matches both gold but overspends (¥180 > GT ¥150) within budget ->
+        # the L2 cart-level cost signal fires; level_objective is emitted.
+        out = self.scorer.score(self._case(), self._cart(["P1", "P2"], 180))
+        bc = out["details"]["budget_check"]
+        self.assertEqual(bc["status"], "within")
+        self.assertEqual(bc["frame"], "not_cheapest_cart_level")
+        self.assertEqual(bc["cost_gap"], 30.0)  # 180 - 150
+        # level_objective is now a POINTER to the L2 system prompt (not its text).
+        self.assertIn("_SYSTEM_PROMPT_LEVEL_2", out["details"]["level_objective"])
+
+    def test_budget_within_and_over(self) -> None:
+        within = self.scorer.score(self._case(), self._cart(["P1", "P2"], 150))
+        self.assertEqual(within["details"]["budget_check"]["status"], "within")
+        self.assertEqual(within["details"]["budget_check"]["gt_total"], 150)
+        over = self.scorer.score(self._case(), self._cart(["P1", "P2"], 500))
+        self.assertEqual(over["details"]["budget_check"]["status"], "over")
+
+    def test_coupon_ownership_flags_unowned(self) -> None:
+        out = self.scorer.score(
+            self._case(),
+            self._cart(["P1", "P2"], 150, used_coupons=[
+                {"coupon_name": "C1", "quantity": 1},   # owned
+                {"coupon_name": "C2", "quantity": 1},   # not owned
+            ]),
+        )
+        own = out["details"]["coupon_ownership"]
+        self.assertEqual(own["applied_not_owned"], ["C2"])
+        self.assertEqual(own["over_owned_qty"], [])
+
+    def test_score_unchanged_by_feedback(self) -> None:
+        # Part A/B are diagnostics-only: the composite score is still the pure
+        # id+coupon intersection (2 matched / 2 expected products).
+        out = self.scorer.score(self._case(), self._cart(["P1", "P2"], 9999))
+        self.assertTrue(out["passed"])
+        self.assertEqual(out["score"], 1.0)
+
+
+class ShoppingCauseTests(unittest.TestCase):
+    """The 5-cause classification (feature / user_info gender+size / not_cheapest
+    / missing_product) on a hand-built level-1 case with a user profile."""
+
+    def setUp(self) -> None:
+        import os
+        from projects.shopping.benchmark.scorer import ShoppingScorer
+
+        self.scorer = ShoppingScorer()
+        self.tmp = Path(tempfile.mkdtemp(prefix="shopping_cause_test_"))
+        self.case_dir = self.tmp / "database_level1" / "case_60"
+        self.case_dir.mkdir(parents=True)
+        # Gold G1: Nike Red women's tee, size M, ¥100. Sub-query states only
+        # brand+colour (L1, operators present) -> gender/size are profile-derived.
+        validation = {
+            "query": "A Nike red top.",
+            "ground_truth_products": [{
+                "product_id": "G1", "name": "Nike Red Tee", "price": 100,
+                "brand": "Nike", "color": "Red", "target_demographic": "Women", "size": "M",
+            }],
+            "meta_info": [{
+                "sub_query": "Find a Nike product in Red.",
+                "features": [
+                    {"field": "brand", "value": "Nike", "operator": "equals", "operator_value": "Nike"},
+                    {"field": "color", "value": "Red", "operator": "equals", "operator_value": "Red"},
+                ],
+            }],
+        }
+        (self.case_dir / "validation_cases.json").write_text(json.dumps(validation), encoding="utf-8")
+        catalog = [
+            {"product_id": "G1", "name": "Nike Red Tee", "price": 100, "brand": "Nike",
+             "color": "Red", "target_demographic": "Women", "size": "M"},
+            # E_feature: wrong colour (violates a stated feature).
+            {"product_id": "EF", "name": "Nike Blue Tee", "price": 100, "brand": "Nike",
+             "color": "Blue", "target_demographic": "Women", "size": "M"},
+            # E_gender: matches stated brand+colour but wrong demographic (Men).
+            {"product_id": "EG", "name": "Nike Red Tee", "price": 100, "brand": "Nike",
+             "color": "Red", "target_demographic": "Men", "size": "M"},
+            # E_size: matches brand+colour+gender but wrong tops size (L vs profile M).
+            {"product_id": "ES", "name": "Nike Red Tee", "price": 100, "brand": "Nike",
+             "color": "Red", "target_demographic": "Women", "size": "L"},
+            # E_price: fully valid but pricier than gold (¥150 > ¥100).
+            {"product_id": "EP", "name": "Nike Red Tee", "price": 150, "brand": "Nike",
+             "color": "Red", "target_demographic": "Women", "size": "M"},
+        ]
+        (self.case_dir / "products.jsonl").write_text(
+            "\n".join(json.dumps(p) for p in catalog), encoding="utf-8")
+        (self.case_dir / "user_info.json").write_text(json.dumps({
+            "demographics": {"gender": "Female"},
+            "body_profile": {"standard_sizes": {"tops": "M", "bottoms": "M", "shoes": "38"}},
+            "coupons": {},
+        }), encoding="utf-8")
+        self._orig = os.environ.get("SHOPPING_DATABASE_ROOT")
+        os.environ["SHOPPING_DATABASE_ROOT"] = str(self.tmp)
+
+    def tearDown(self) -> None:
+        import os
+        if self._orig is None:
+            os.environ.pop("SHOPPING_DATABASE_ROOT", None)
+        else:
+            os.environ["SHOPPING_DATABASE_ROOT"] = self._orig
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _causes(self, extra_pid):
+        cart = json.dumps({"items": [{"product_id": extra_pid}], "used_coupons": []})
+        case = {"env": {"SHOPPING_LEVEL": "1", "SHOPPING_SAMPLE_ID": "60"}, "meta_info": {"level": 1}}
+
+        class AO:
+            result = cart
+        return self.scorer.score(case, AO())["details"]["failure_causes"]
+
+    def test_feature_mismatch(self) -> None:
+        pc = self._causes("EF")
+        self.assertIn("color", pc["feature_mismatch"])
+        self.assertEqual(pc["feature_mismatch"]["color"]["product_ids"], ["G1"])
+
+    def test_user_info_gender(self) -> None:
+        pc = self._causes("EG")
+        self.assertEqual(pc["user_info_mismatch"]["gender"]["product_ids"], ["G1"])
+        self.assertNotIn("feature_mismatch", pc)  # empty bucket omitted
+
+    def test_user_info_size(self) -> None:
+        pc = self._causes("ES")
+        self.assertEqual(pc["user_info_mismatch"]["size"]["product_ids"], ["G1"])
+
+    def test_not_cheapest(self) -> None:
+        pc = self._causes("EP")
+        self.assertEqual(pc["not_cheapest"]["product_ids"], ["G1"])
+        self.assertEqual(pc["not_cheapest"]["gaps"][0]["gap"], 50.0)
+
+    def test_l2_suppresses_per_item_not_cheapest(self) -> None:
+        # Same pricier-but-valid pick (EP), but scored as level 2 -> per-item
+        # not_cheapest is suppressed (cost is cart-level at L2); the miss falls
+        # through to ambiguous.
+        cart = json.dumps({"items": [{"product_id": "EP"}], "used_coupons": []})
+        case = {"env": {"SHOPPING_LEVEL": "1", "SHOPPING_SAMPLE_ID": "60"},
+                "meta_info": {"level": 2}}
+
+        class AO:
+            result = cart
+        pc = self.scorer.score(case, AO())["details"]["failure_causes"]
+        self.assertNotIn("not_cheapest", pc)                         # suppressed at L2
+        self.assertEqual(pc["ambiguous"]["product_ids"], ["G1"])     # falls through
+
+
 if __name__ == "__main__":
     unittest.main()

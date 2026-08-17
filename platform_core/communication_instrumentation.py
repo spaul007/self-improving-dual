@@ -73,6 +73,7 @@ class CommunicationRecorder:
         self._tool_call_counters: dict[str, int] = {}
         self._communications: list[dict[str, Any]] = []
         self._comm_ordinal = 0
+        self._recorded_messages: set[tuple[str, str, str]] = set()
         # agent_id -> list of texts that agent has produced (raw/short/answer/compressed
         # outputs), used only to detect hand-offs -- never part of the output schema.
         self._outputs: dict[str, list[str]] = {}
@@ -104,9 +105,19 @@ class CommunicationRecorder:
             )
 
     def record_message(self, sender: str, receiver: str, content: str) -> None:
+        """Idempotent per exact (sender, receiver, content) triple -- a
+        caller that re-derives the same hand-off from repeated calls (e.g.
+        `patch_agent_function` re-scanning a monotonically growing prompt
+        across a multi-call tool loop, where the same producer text keeps
+        showing up) must not have it appear as N separate communications
+        for what is really one hand-off."""
         if not sender or not receiver:
             return
+        key = (sender, receiver, content)
         with self._lock:
+            if key in self._recorded_messages:
+                return
+            self._recorded_messages.add(key)
             self._comm_ordinal += 1
             self._communications.append(
                 {
@@ -317,6 +328,145 @@ def patch_agent_method(
             context_value = bound.get(context_param)
             result = original(self, *args, **kwargs)
             _record_from_agent_call(recorder, self, agent_id_attr, result, context_value)
+            return result
+
+    setattr(owner, attr_name, wrapper)
+
+    def uninstall() -> None:
+        setattr(owner, attr_name, original)
+
+    return uninstall
+
+
+def _process_function_call(
+    recorder: "CommunicationRecorder",
+    bound: dict[str, Any],
+    result: Any,
+    agent_id: "str | Callable[[dict[str, Any]], Optional[str]]",
+    prompt_from: Optional[Callable[[dict[str, Any]], Optional[str]]],
+    result_parser: Optional[Callable[[Any], dict[str, Any]]],
+) -> None:
+    resolved_id = agent_id(bound) if callable(agent_id) else agent_id
+    if not resolved_id:
+        return
+
+    if prompt_from is not None:
+        prompt = prompt_from(bound)
+        if isinstance(prompt, str) and prompt:
+            # `target` here may be called many times per agent (e.g. once
+            # per tool-loop round), and CommunicationRecorder.set_agent_prompt
+            # unconditionally overwrites -- so plain "last call wins" only
+            # gives a complete picture if `prompt_from` renders the FULL
+            # conversation state on every call (e.g. the whole `messages`
+            # list as a transcript, which only grows across a tool loop and
+            # so is a superset of every earlier call's rendering). Callers
+            # that instead extract a single message (e.g. "the last
+            # user-role message") will see that same last-call-wins
+            # overwrite lose earlier, possibly more informative content --
+            # that's a property of what `prompt_from` chooses to return,
+            # not of this dispatch loop.
+            recorder.set_agent_prompt(resolved_id, prompt)
+            # Hand-off detection: a flat function has no single distinguished
+            # "context" argument the way patch_agent_method's context_param
+            # does, but the prompt itself is frequently WHERE a prior stage's
+            # output gets embedded (e.g. travel_mas's Sightseeing stage
+            # builds its user content by splicing in the Flight/Train
+            # stages' notes verbatim) -- so search it the same way.
+            for producer_id, matched_text in recorder.find_producers(prompt):
+                if producer_id != resolved_id:
+                    recorder.record_message(producer_id, resolved_id, matched_text)
+
+    parsed = result_parser(result) if result_parser is not None else {}
+    for tc in parsed.get("tool_calls") or []:
+        name = tc.get("name") or tc.get("tool") or tc.get("tool_name")
+        arguments = tc.get("arguments") if "arguments" in tc else tc.get("args")
+        recorder.record_tool_call(resolved_id, name, arguments, tc.get("result"))
+
+    text = parsed.get("text")
+    if isinstance(text, str) and text:
+        recorder.register_output(resolved_id, text)
+
+
+def patch_agent_function(
+    target: str,
+    agent_id: "str | Callable[[dict[str, Any]], Optional[str]]",
+    *,
+    prompt_from: Optional[Callable[[dict[str, Any]], Optional[str]]] = None,
+    result_parser: Optional[Callable[[Any], dict[str, Any]]] = None,
+) -> Callable[[], None]:
+    """Like `patch_agent_method`, but for a standalone function with no
+    `self`/agent-identity argument at all -- some vendored projects (e.g.
+    `travel_mas`, whose 4 pipeline stages are plain module-level functions
+    in `workflow.py`, not methods on a class with a `.name`) don't fit
+    `patch_agent_method`'s assumption that the first positional argument is
+    a `self`-like object to read an agent id off of.
+
+    `agent_id` is either a fixed string (one static identity for every call
+    to `target`), or a callable receiving the call's bound-arguments dict
+    (`{param_name: value}`, via `inspect.signature(...).bind_partial`) and
+    returning the agent id dynamically -- e.g. for a *shared* low-level
+    helper multiple distinct "stages" funnel through (like `travel_mas`'s
+    `call_llm`), keyed off of which stage's own system prompt was passed in
+    that particular call. Returning a falsy value from the callable skips
+    recording that call entirely (useful if some calls to `target` aren't
+    attributable to any known stage).
+
+    Unlike `patch_agent_method` (which assumes the wrapped call returns an
+    `AgentOutput`-shaped object with `.prompt`/`.tool_calls`/`.raw` etc.),
+    a flat function's own return shape varies project to project (a plain
+    string, a tuple, a dataclass...) -- so prompt/tool-call extraction is
+    fully pluggable instead of assumed:
+      - `prompt_from(bound) -> str | None` -- derive the prompt from the
+        call's own arguments (a flat function's prompt is normally
+        constructed FROM its arguments, not found on its return value).
+        Also doubles as the hand-off-detection search text (the same
+        `find_producers` substring match `patch_agent_method` runs against
+        its `context_param` value) -- a flat function usually has no single
+        distinguished "context" argument, but the constructed prompt itself
+        is frequently where a prior stage's output actually gets embedded.
+      - `result_parser(result) -> {"text": str | None, "tool_calls": [...]}`
+        -- pull the response text / tool-call list out of whatever `target`
+        actually returns.
+    Both default to `None` (no-op -- nothing recorded for that piece),
+    since a caller only interested in tool calls (say) shouldn't be forced
+    to supply a no-op `prompt_from`.
+
+    No-ops (delegates straight to the original) when no recorder is
+    active, exactly like `patch_agent_method`. Works for both `async def`
+    and plain `def` functions. Returns an `uninstall()` callable.
+
+    `prompt_from` is called on every invocation and each call's result
+    overwrites the previously recorded prompt via `set_agent_prompt` (same
+    last-call-wins semantics `patch_agent_method` already has) -- so for a
+    function called repeatedly per agent (e.g. once per tool-loop round),
+    render the full accumulated conversation state (e.g. the whole
+    `messages` list as a transcript) rather than a single message, so the
+    last call's rendering is a superset of every earlier call's.
+    """
+    owner, attr_name, original = _resolve(target)
+
+    if inspect.iscoroutinefunction(original):
+
+        @functools.wraps(original)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            recorder = _active.get()
+            if recorder is None:
+                return await original(*args, **kwargs)
+            bound = _bind_args(original, *args, **kwargs)
+            result = await original(*args, **kwargs)
+            _process_function_call(recorder, bound, result, agent_id, prompt_from, result_parser)
+            return result
+
+    else:
+
+        @functools.wraps(original)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:  # type: ignore[misc]
+            recorder = _active.get()
+            if recorder is None:
+                return original(*args, **kwargs)
+            bound = _bind_args(original, *args, **kwargs)
+            result = original(*args, **kwargs)
+            _process_function_call(recorder, bound, result, agent_id, prompt_from, result_parser)
             return result
 
     setattr(owner, attr_name, wrapper)

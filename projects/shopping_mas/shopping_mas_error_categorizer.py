@@ -1,7 +1,14 @@
-"""Shopping-specific error categorizer for the HGM dual-optimization manager.
+"""shopping_mas error categorizer for the HGM dual-optimization manager.
+
+Copied verbatim from projects/shopping/shopping_error_categorizer.py (the
+sibling single-agent project) -- pure function of the scorer's details
+shape, zero logic changes needed since adapter/scorer_impl.py is itself a
+verbatim copy of that project's scorer, emitting the byte-identical
+failure_causes/budget_check/coupon_ownership/final_price_check shape this
+module already knows how to read.
 
 Consumes the per-case ``CaseResult.details`` emitted by
-``projects/shopping/benchmark/scorer.py`` and groups failures into a small,
+``projects/shopping_mas/adapter/scorer_impl.py`` and groups failures into a small,
 fixed set of **clubbed** categories the manager uses to spawn error-conditioned
 Stage B variants. Contract (mirrors travel):
 

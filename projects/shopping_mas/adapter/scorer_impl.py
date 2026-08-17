@@ -1,14 +1,21 @@
-"""Shopping scorer — set-intersection match on product ids + coupons.
+"""shopping_mas scorer — set-intersection match on product ids + coupons.
+
+Copied from projects/shopping/benchmark/scorer.py (the sibling single-agent
+project's scorer), renamed for this project's own registration. No logic
+changes -- this scorer is agent-topology-agnostic: it only reads
+``agent_output.result`` (the final cart, as a dict or JSON string) and
+``validation_cases.json`` off disk, neither of which depends on how many
+agents produced the cart.
 
 No LLM call at scoring time (the agent's effect is recorded in the
 per-case ``cart.json``; the scorer compares directly against
-``validation_cases.json``). Ports
+``validation_cases.json``). Ultimately ports
 `/users/n.tzou/cl/shopping_agent/evaluation/evaluation_pipeline.py::
-evaluate_single_case` verbatim, just adapted to read the cart from
-``agent_output.result`` (a JSON string) instead of disk.
+evaluate_single_case` verbatim (via the sibling project), just adapted to
+read the cart from ``agent_output.result`` instead of disk.
 
-Registered as ``shopping_default`` via the meta-agent's component
-registry. Same shape contract as travel's scorer:
+Registered as ``shopping_mas_default`` via the meta-agent's component
+registry. Same shape contract as travel's/shopping's scorer:
 
   ``score(case, agent_output) -> {"score", "passed", "details"}``
   ``aggregate(per_case, trace_events) -> dict``
@@ -101,9 +108,11 @@ def _case_dir(case: dict[str, Any]):
     if root_env:
         root = Path(root_env)
     else:
-        # Project-relative default. scorer.py at projects/shopping/benchmark/scorer.py
-        # -> repo root is three parents up; data lives at projects/shopping/data.
-        root = Path(__file__).resolve().parents[3] / "projects" / "shopping" / "data"
+        # Project-relative default. scorer_impl.py at
+        # projects/shopping_mas/adapter/scorer_impl.py -> repo root is three
+        # parents up; data lives at projects/shopping_mas/data (a symlink to
+        # a shared, verified data source -- see the project's own data/ entry).
+        root = Path(__file__).resolve().parents[3] / "projects" / "shopping_mas" / "data"
     return root / f"database_level{level}" / f"case_{sample_id}"
 
 
@@ -737,14 +746,14 @@ def _render_error_log(details: dict[str, Any]) -> str:
     budget, coupon and final-price diagnostics). Delegates to the categorizer,
     which owns the message templates. Lazy import to avoid load-order coupling."""
     try:
-        from projects.shopping.shopping_error_categorizer import render_case_error_log
+        from projects.shopping_mas.shopping_mas_error_categorizer import render_case_error_log
         return render_case_error_log(details)
     except Exception:
         return ""
 
 
-@register("scorer", "shopping_default")
-class ShoppingScorer:
+@register("scorer", "shopping_mas_default")
+class ShoppingMasScorer:
     """Shopping scorer + round-level aggregator.
 
     Matches the reference's scoring (`evaluation_pipeline.py:85`):
@@ -1129,9 +1138,9 @@ class ShoppingScorer:
 # Default instance for the evaluator's "load scorer.py" fallback path
 # (i.e. when nothing is passed to SubprocessEvaluator(scorer=...)). The
 # in-config path runs `build_components` which constructs a fresh
-# `ShoppingScorer()` and injects it; this module-level instance is what
+# `ShoppingMasScorer()` and injects it; this module-level instance is what
 # the standalone `evaluate.py` invocation uses.
-_DEFAULT_SCORER = ShoppingScorer()
+_DEFAULT_SCORER = ShoppingMasScorer()
 
 
 def score(case: dict[str, Any], agent_output: Any) -> dict[str, Any]:

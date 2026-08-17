@@ -354,3 +354,106 @@ table above). A fresh (not resumed) sibling run at `eval_budget=3000` on
 the new `node-6`/`node-5` endpoints was launched afterward — see
 `configs/hgm_dual_travel_single_35b_3000.yaml`,
 `runs/20260806_041514_travel_hgm_dual_single_35b_3000`.
+
+---
+
+# shopping / shopping_mas baselines — single-agent vs. 4-agent vendor MAS
+
+Both projects newly integrated this session (`projects/shopping`, ported
+from the `origin/shopping` branch; `projects/shopping_mas`, ported from
+the vendored `Shopping-MAS-main` 4-agent implementation — see
+`integrating.md`/memory for the integration playbook both followed).
+Baselines below are raw seed scores, no HGM search — `Qwen/Qwen3.5-35B-A3B`
+@ node-6, temperature 0.2, implicit mode (no explicit `reasoning_effort`,
+confirmed the working setting for this deployment — see
+`qwen35bnotworking.md`), full 120-case benchmark (50 L1 / 50 L2 / 20 L3).
+
+| | Single-agent (`shopping`) | 4-agent MAS (`shopping_mas`) |
+|---|---|---|
+| **Score (full 120)** | 0.0 → **0.2517** (after fix, see below) | **0.8829** |
+| Passed | 0 → 18/120 | 79/120 |
+| Per level | L1 0.39 · L2 0.13 · L3 0.20 | L1 0.91 · L2 0.88 · L3 0.88 |
+| Wall time | ~58 min | ~5.4 hours |
+| Crashes | None (119-120/120 completed cleanly both versions) | 1 case timeout (1800s) |
+
+The MAS's much longer wall time reflects its own internal structure — 4
+sequential/parallel agent stages with their own tool rounds per case,
+vs. the single agent's flat 2-phase tool loop.
+
+## Single-agent `shopping`: root cause of the original 0.0, and the fix
+
+The first full-120 baseline (`runs/adhoc_eval_shopping/baseline_full_35b_implicit_v2_full_benchmark`)
+scored a suspicious flat **0.0 on all 120 cases** — every case's cart came
+back completely empty (0 matched, 0 extra products; confirmed by direct
+inspection, not just the scorer's summary). The model's tool-call
+sequence looked entirely reasonable in a live-traced smoke test
+(`search_products` → sensible IDs → `get_product_details` on those exact
+IDs), yet every single `get_product_details`/`filter_by_brand` call
+returned empty.
+
+**Root cause**: `platform_core.llm_wrapper.call_llm` (OpenAI Responses
+API) against this model/endpoint sends array-typed tool arguments back
+**double-encoded as JSON strings** instead of native arrays — e.g.
+`{"product_ids": "[\"a\", \"b\"]"}` (a string) instead of
+`{"product_ids": ["a", "b"]}`. The tool code
+(`projects/shopping/tools/get_product_details.py`,
+`filter_by_brand.py`) does `for pid in product_ids` expecting a list;
+against a string this iterates individual *characters*, matching
+nothing, silently, no exception. Scalar-typed arguments (`query`,
+`limit`, etc.) were unaffected — only tools with array-typed params hit
+this, which is why `search_products`/`get_user_info`/`get_cart_info`
+worked fine while `get_product_details`/`filter_by_brand` always came
+back empty. `projects/shopping_mas` (same model/endpoint) never
+exhibited this because it goes through a different, project-local Chat
+Completions client instead of the shared Responses-API wrapper.
+
+**Fix**: ported `shopping_mas`'s Chat-Completions-API approach into a new
+project-local `projects/shopping/seed/llm_client.py` (drop-in
+`call_llm(messages, tools=...) -> LLMResponse` matching
+`platform_core.llm_wrapper`'s own interface/env-vars, so `workflow.py`
+only needed its import line and Responses-API-specific message-building
+(`_append_raw_output`/`_strip_reasoning`, which have no Chat-Completions
+equivalent) swapped for standard Chat-Completions turn format). Verified
+live: the same case that produced an empty cart under the Responses API
+produced all 5 expected products (¥3645 total) under Chat Completions. A
+6-case harness smoke test went from 0.0 to 0.4333. The full 120-case
+re-run (`runs/adhoc_eval_shopping/baseline_full_35b_chatcompletions_v3_full_benchmark`)
+landed at **0.2517** (18/120 passed, 0 crashes) — the 6-case sample was
+optimistic, as small samples often are, but the fix's effect at full
+scale is unambiguous (0.0 → 0.2517, from provably broken to genuinely
+attempting the task).
+
+Failure causes across the 102 remaining failures: `missing_product` (85),
+`feature_mismatch` (7), `not_cheapest` (4), `ambiguous` (4),
+`user_info_mismatch` (3). Notably **81/120 cases still end with a fully
+empty cart** even after the fix — a separate, not-yet-root-caused
+remaining issue (a live single-case trace showed occasional LLM turns
+returning neither text content nor a tool call, breaking the loop's
+progress; not investigated further this session). This is a real
+avenue for improvement (via HGM search or further debugging) but out of
+scope for this baseline-establishment pass — this memory entry documents
+what's confirmed vs. open: `responses_api_array_args_bug.md`.
+
+## Statistical confidence
+
+No formal sampling-variance model was built for either project. The
+single-agent's 6-case smoke score (0.4333) vs. full-120 score (0.2517)
+is a large gap driven by small-sample variance, not concerning on its
+own, but a reminder not to trust small-sample checks as final numbers for
+this project. `shopping_mas`'s 0.8829 is a full-120 result already, no
+smoke-vs-full comparison available.
+
+## Run status
+
+**Both complete, seed baselines only — no HGM search run yet for either
+project this session.** `shopping_mas` config:
+`configs/eval_local_shopping_mas_qwen35b_implicit.yaml`. `shopping`
+single-agent config: `configs/hgm_dual_shopping.yaml` (note: despite the
+name, this run used `evaluate_task_agent.py` directly against the seed,
+not an actual `hgm_dual` search). `shopping`'s new `llm_client.py` is
+currently NOT in that config's `mutable_exclude` list (the config has no
+`mutable_exclude` at all — the whole seed dir is HGM-editable by default)
+— worth adding `mutable_exclude: ["llm_client.py"]` (matching
+`shopping_mas`'s own convention) before running an actual HGM search,
+so the editor doesn't inadvertently mutate the infra fix documented
+above.

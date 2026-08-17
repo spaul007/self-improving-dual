@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import json
 
-from platform_core.llm_wrapper import call_llm
+from llm_client import call_llm
 from platform_core.runner import AgentOutput, Task
 
 from tool_wrapper import ToolWrapper
@@ -209,26 +209,34 @@ def _load_cart_json() -> str:
     return json.dumps(_db.load_cart(), ensure_ascii=False)
 
 
-def _append_raw_output(messages: list, response) -> None:
-    """Extend ``messages`` with every item in ``response.raw.output``.
+def _append_assistant_turn(messages: list, response) -> None:
+    """Append this turn's assistant message in Chat-Completions shape.
 
-    Mirrors the reference's ``messages.extend(raw_output)`` pattern
-    (`shopping_agent.py:267`). Items come back as OpenAI SDK Pydantic
-    models; convert to plain dicts so the conversation stays
-    JSON-serializable.
+    Chat Completions has no Responses-API-style ``raw.output`` items list
+    to echo back (and, unlike the Responses API, never asks the caller to
+    replay the model's own reasoning trace in conversation history at all
+    -- reasoning, if any, lives in a separate non-echoed field) -- so the
+    entire `_strip_reasoning`/`_item_type` mechanism this project used to
+    need (to stop local vLLM models from misreading echoed reasoning
+    fragments as a "wrap up" signal) is structurally not applicable here.
     """
-    raw = getattr(response, "raw", None)
-    raw_output = getattr(raw, "output", None) or []
-    for item in raw_output:
-        if hasattr(item, "model_dump"):
-            messages.append(item.model_dump(exclude_none=True))
-        else:
-            messages.append(item)
+    tool_calls = response.tool_calls or []
+    msg: dict = {"role": "assistant", "content": response.content or ""}
+    if tool_calls:
+        msg["tool_calls"] = [
+            {
+                "id": tc.id,
+                "type": "function",
+                "function": {"name": tc.name, "arguments": json.dumps(tc.arguments, ensure_ascii=False)},
+            }
+            for tc in tool_calls
+        ]
+    messages.append(msg)
 
 
 def _dispatch_tools(messages: list, response, wrapper: ToolWrapper) -> None:
     """For each tool call in the response, dispatch via the wrapper and
-    append the result as a ``function_call_output`` item.
+    append the result as a Chat-Completions ``tool`` message.
     """
     for tc in response.tool_calls:
         try:
@@ -237,9 +245,9 @@ def _dispatch_tools(messages: list, response, wrapper: ToolWrapper) -> None:
             result = json.dumps({"error": str(e)}, ensure_ascii=False)
         messages.append(
             {
-                "type": "function_call_output",
-                "call_id": tc.id,
-                "output": result,
+                "role": "tool",
+                "tool_call_id": tc.id,
+                "content": result,
             }
         )
 
@@ -255,10 +263,10 @@ def _run_phase(messages: list, schema: list, wrapper: ToolWrapper) -> int:
         response = call_llm(messages=messages, tools=schema, max_output_tokens=None)
         if not response.tool_calls:
             # Model decided it's done with this phase. Still append the
-            # response items so the next phase (if any) sees them.
-            _append_raw_output(messages, response)
+            # response so the next phase (if any) sees it.
+            _append_assistant_turn(messages, response)
             return calls
-        _append_raw_output(messages, response)
+        _append_assistant_turn(messages, response)
         _dispatch_tools(messages, response, wrapper)
     return calls
 
