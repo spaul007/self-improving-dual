@@ -1,11 +1,32 @@
-experiment_name: "shopping_hgm_dual"
+experiment_name: "shopping_hgm_dual_2000"
 
 # HGM with Dual Optimization for the shopping agent. Same project assets as
 # configs/hgm_shopping.yaml — only the manager differs. Each EXPAND first edits
 # the parent (Stage A), then spawns one error-conditioned variant per failure
 # category (Stage B), evaluates each on a shared intra-expand sample, and keeps
 # the highest-mean winner as the actual HGM tree child.
+#
+# eval_budget=2000, real search run (not a sanity check) -- launched after the
+# seed's Chat-Completions-API fix (see projects/shopping/seed/llm_client.py,
+# report.md's "shopping / shopping_mas baselines" section, and memory
+# responses_api_array_args_bug.md): the seed now scores 0.2517 on the full
+# 120-case benchmark (up from a hard 0.0 under the old Responses-API path),
+# with 81/120 cases still ending in a fully empty cart for a separate,
+# not-yet-root-caused reason -- exactly the kind of orchestration gap HGM's
+# own EXPAND/edit search has fixed before (see travel single-agent's report.md
+# section: 0.0 -> 0.34 by having the editor inject a tool-loop rescue
+# message). This run's real starting point is 0.2517, not 0.0.
 project: "shopping"
+
+# llm_client.py is the just-added Chat-Completions-API infra fix -- excluded
+# so the editor can't inadvertently revert it back toward the
+# double-encoded-array-args failure mode. workflow.py/tool_wrapper.py
+# deliberately stay in the mutable surface (unlike most other projects'
+# convention) so HGM's own search can attack the remaining 81/120
+# empty-cart orchestration gap, the same way it fixed travel single-agent's
+# analogous 0.0-seed bug.
+mutable_exclude:
+  - "llm_client.py"
 
 loop:
   max_rounds: 60
@@ -31,12 +52,21 @@ task_agent:
   temperature: 0.2
   max_output_tokens: 16384
   base_url: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+  # NOTE: task_agent: here is a leftover of this config's history and is NOT
+  # actually used by projects/shopping/seed/workflow.py -- as of the
+  # Chat-Completions fix, that seed imports its own project-local
+  # llm_client.py (not platform_core.llm_wrapper), which reads
+  # LLM_MODEL/LLM_BASE_URL/LLM_TEMPERATURE/LLM_MAX_OUTPUT_TOKENS directly
+  # from the environment. runtime_env.py's apply_task_agent_env still sets
+  # those same env vars from this block, so this remains the correct place
+  # to configure the task agent's model/endpoint/sampling -- just via env
+  # vars now, not a direct platform_core.llm_wrapper call.
 
 manager:
   type: "hgm_dual"
   config:
     # Inherited HGM knobs (same defaults as hgm_shopping.yaml).
-    eval_budget: 400
+    eval_budget: 2000
     init_expansions: 5
     alpha: 0.5
     epsilon: 0.25
@@ -81,7 +111,16 @@ evaluator:
     # (meta_agent/evaluator.py::_preexec). Confirmed live via a full
     # 120-case baseline run that failed 120/120 with cases_with_ground_truth=0.
     memory_mb: 8192
-    parallelism: 16
+    # Reduced from this config's original 16 -- untested at that level (this
+    # project's own baseline reruns this session were only ever exercised at
+    # --parallelism 4). node-6 is documented (eval_local_shopping_mas_*.yaml)
+    # to saturate badly above ~12 concurrent requests (~140 APIConnectionError
+    # retries observed at parallelism=8 on a single run). This run is launched
+    # CONCURRENTLY with shopping_mas's own HGM run (parallelism=4 x
+    # MAS_SCOUT_WORKERS=3 = 12 peak) against the same node-6 -- kept to 8 here
+    # to bound combined peak concurrency to ~20 rather than stacking two
+    # untested-at-scale values.
+    parallelism: 8
     scorer: "shopping_default"
 
 gatherer:
@@ -101,11 +140,13 @@ editor:
 # falls back to it when SHOPPING_DATABASE_ROOT is unset, so no env override
 # is needed.
 
-# Local vLLM-served open-weights models (Qwen3.5) misread echoed `reasoning`
-# items in the conversation history as a "wrap up" signal and exit the tool
-# loop before finishing the cart -- same failure mode travel's own
-# eval_local_*.yaml configs found and fixed. See
-# projects/shopping/seed/workflow.py::_strip_reasoning.
+# META_AGENT_STRIP_REASONING is now a no-op for this project: the
+# Chat-Completions client (llm_client.py) never echoes reasoning content
+# back into conversation history at all (structurally, not by choice --
+# Chat Completions has no equivalent of the Responses API's echoed
+# `reasoning` output items), so the workaround this env var used to enable
+# (projects/shopping/seed/workflow.py::_strip_reasoning, now removed) isn't
+# needed anymore. Left set for harmlessness / in case of rollback.
 env:
   META_AGENT_STRIP_REASONING: "1"
 

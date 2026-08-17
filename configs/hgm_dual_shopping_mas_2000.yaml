@@ -1,0 +1,162 @@
+# Real HGM-dual search run against shopping_mas (Requirement-Parser ->
+# Product-Scout(xN) -> Cart-Optimizer -> Cart-Executor, vendored from
+# /groups/AIC-MV/v.kulkarni1/Shopping-MAS-main), eval_budget=2000 -- scaled up
+# from configs/hgm_dual_shopping_mas_sanity.yaml (wiring/sanity check only,
+# eval_budget=12) once that sanity run confirmed the project's registration/
+# mutable-surface/scorer wiring, and once the full-120 baseline
+# (0.8829, see report.md) confirmed the seed itself is strong. Structured as
+# a vendored-MAS project (mutable_exclude, seed_dir_name, tool_source_dirs)
+# rather than the sibling single-agent's legacy seed/tool_wrapper.py/
+# tools_schema.json convention, since shopping_mas has its own multi-file
+# agents/ package (mirrors math_mas_pathology's config shape, not shopping's).
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_dual_shopping_mas_2000.yaml
+#
+# NOT wired through platform_core.llm_wrapper -- shopping_mas owns its own
+# llm_client.py (raw openai SDK, Chat Completions API), so there is
+# deliberately no `task_agent:` block here; model/endpoint/sampling are set
+# entirely via `env:` (MAS_MODEL/MAS_BASE_URL/MAS_API_KEY/MAS_TEMPERATURE/...),
+# which this project's own config.py reads directly.
+
+experiment_name: "shopping_mas_hgm_dual_2000"
+
+project: "shopping_mas"
+seed_dir_name: "shopping_mas"
+
+# The editor's exclude-list mutable surface -- workflow.py (framework glue +
+# scratch-dir/ground-truth-safety logic), config.py/llm_client.py (infra
+# plumbing -- the vendor's own hard-won retry/JSON-salvage logic must not be
+# touched), tools/immutable/ (vendor's explicit "DO NOT MODIFY" benchmark
+# contract), eval/ (not the real scorer -- that's adapter/scorer_impl.py --
+# but excluded anyway to prevent shadow-scorer confusion). Everything else
+# (mas_workflow.py, mas_prompt_cfg.py, every agents/*/{prompt.py,workflow.py},
+# tools/mutable/) stays editable.
+mutable_exclude:
+  - "workflow.py"
+  - "config.py"
+  - "llm_client.py"
+  - "tools/immutable/"
+  - "eval/"
+
+tool_source_dirs:
+  - "tools/immutable"
+  - "tools/mutable"
+
+loop:
+  # Was left at the sanity config's max_rounds=3 in the first draft of this
+  # file -- every other knob got scaled up for a real eval_budget=2000 run,
+  # but this one didn't, so the first run of this config stopped after only
+  # 3 EXPAND rounds (244/2000 budget evals spent, best=seed) instead of
+  # actually using the budget. 60 matches the sibling single-agent config
+  # (hgm_dual_shopping_2000.yaml), which used 37 of its 60 rounds to spend
+  # its full 2000 budget -- comfortable headroom for this project too.
+  max_rounds: 60
+  score_target: 0.95
+
+manager:
+  type: "hgm_dual"
+  config:
+    eval_budget: 2000
+    init_expansions: 5
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 5
+    seed: 42
+
+    # Dual-optimization knobs -- matched to the sibling single-agent
+    # project's own proven real-run sizing (hgm_dual_shopping_2000.yaml).
+    num_variants: 3
+    intra_expand_eval_size: 8
+    variant_parallelism: 3
+    select_metric: "mean"
+    category_selection: "balanced_by_type"    # round-robin across category types
+                                               # (missing_feature / user_info / not_cheapest /
+                                               # not_cheapest_cart_level / missing_product /
+                                               # budget_constraint_mismatch / suboptimal_coupon /
+                                               # generic-last), priority from the categorizer's
+                                               # category_type_priority.
+    categorizer_max_representative_errors: 5
+    min_remaining_budget_for_dual: 12
+    # Project-specific categorizer, dynamically imported (the manager itself
+    # is domain-agnostic). Copied verbatim from the sibling shopping
+    # project's own categorizer -- see shopping_mas_error_categorizer.py's
+    # own docstring for why zero logic changes were needed.
+    error_categorizer: "projects.shopping_mas.shopping_mas_error_categorizer:categorize_errors"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    # See configs/eval_local_shopping_mas_qwen35b_implicit.yaml's note --
+    # 2048 crashed every case with an OpenBLAS virtual-memory allocation
+    # failure (rank_bm25 -> numpy, imported by search_products_tool.py).
+    memory_mb: 8192
+    parallelism: 4                  # matches the proven-working full-120 baseline run's own
+                                     # setting (0.8829, 1 timeout/120); MAS_WORKERS/
+                                     # MAS_SCOUT_WORKERS below govern this MAS's own internal
+                                     # fan-out per case on top of this
+    scorer: "shopping_mas_default"
+
+gatherer:
+  type: "shopping_mas_default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "high"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "shopping_mas_default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "high"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+# shopping_mas's own llm_client.py reads these directly (see
+# projects/shopping_mas/shopping_mas/config.py) -- this is the actual
+# task-agent model, used for all 4 pipeline agents' real LLM calls.
+# Re-check these endpoints are still live before launching -- they rotate
+# (see memory: vllm_endpoint).
+env:
+  MAS_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  MAS_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+  MAS_API_KEY: "EMPTY"
+  MAS_TEMPERATURE: "0.2"          # vendor's own default; already vLLM-friendly per its
+                                   # README's own reported 120-case run at this temperature
+  MAS_MAX_TOKENS: "16384"
+  MAS_MAX_TOOL_ROUNDS: "12"
+  MAS_MAX_LLM_CALLS: "240"
+  MAS_TOP_K: "8"
+  MAS_WORKERS: "2"                # irrelevant for the evaluator's per-subprocess invocation path
+                                   # (see eval_local_shopping_mas_qwen35b_implicit.yaml's note)
+  MAS_SCOUT_WORKERS: "3"          # matches the proven-safe full-120 baseline combo (evaluator
+                                   # parallelism=4 x this=3 -> 12 peak concurrent requests to
+                                   # node-6; higher concurrency documented to cause
+                                   # APIConnectionError storms on this endpoint)
+  SHOPPING_DATABASE_ROOT: "/groups/AIC-MV/v.kulkarni1/unified_framework/self-improving-dual/projects/shopping_mas/data"
+
+# Matches the sibling single-agent project's real-run train size
+# (hgm_dual_shopping_2000.yaml) -- the seed here is already strong
+# (0.8829 full-120 baseline, see report.md), so this is a genuine
+# optimization search, not a bootstrap-out-of-zero run like the sanity
+# config's 8-case pool was sized for.
+split:
+  seed: 42
+  train_size: 60
+
+# Vendored-MAS validator set (matches math_mas_pathology's, not shopping's
+# legacy seed/tool_wrapper.py-convention set) -- imports/
+# schema_wrapper_consistency/mutable_tool_imports/mutable_tool_routing all
+# assume a convention shopping_mas doesn't use.
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "immutable_files"
+  - type: "load_test"
