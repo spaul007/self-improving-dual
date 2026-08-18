@@ -12,6 +12,8 @@ import re
 from platform_core.llm_wrapper import call_llm
 
 from agents.common import COMMON_RULES, filter_schema, run_tool_stage
+from agents.immutable.message import AgentMessage, from_sender
+from platform_core.runner import Task
 from tool_wrapper import ToolWrapper
 
 SIGHTSEEING_TOOLS = {
@@ -141,22 +143,24 @@ MAX_SIGHTSEEING_ITERATIONS = 80
 
 
 def run_sightseeing_stage(
-    task_description: str,
-    flight_note: str,
-    train_note: str,
+    task: Task,
+    inbox: list[AgentMessage],
     wrapper: ToolWrapper,
     full_schema: list[dict],
-):
-    """Returns (itinerary_body, iterations, budget_exhausted). ``itinerary_body``
-    is "" if the stage never produced a real <itinerary> block even after a
-    retry nudge -- callers must not feed that fallback text onward (an
-    earlier design let the Accounting stage compute a budget from a
-    Sightseeing stage's leftover reasoning prose when it ran out of
-    iterations mid-tool-loop; it dutifully fabricated numbers instead of
-    failing, which is worse than an honest empty result)."""
+) -> AgentMessage:
+    """Reads the Flight and Train agents' notes from `inbox` (by sender
+    name, via `from_sender`). Returns an AgentMessage whose `content` is
+    "" and `ok` is False if the stage never produced a real <itinerary>
+    block even after a retry nudge -- callers must not feed that fallback
+    content onward (an earlier design let the Accounting stage compute a
+    budget from a Sightseeing stage's leftover reasoning prose when it ran
+    out of iterations mid-tool-loop; it dutifully fabricated numbers
+    instead of failing, which is worse than an honest empty result)."""
     schema = filter_schema(full_schema, SIGHTSEEING_TOOLS)
+    flight_note = from_sender(inbox, "flight").content
+    train_note = from_sender(inbox, "train").content
     user_content = (
-        f"Traveler's request:\n{task_description}\n\n"
+        f"Traveler's request:\n{task.description}\n\n"
         f"Flight specialist's note (do not change these legs):\n{flight_note}\n\n"
         f"Train specialist's note (do not change these legs):\n{train_note}\n"
     )
@@ -166,7 +170,7 @@ def run_sightseeing_stage(
     )
     itinerary = _extract_itinerary(text)
     if itinerary:
-        return itinerary, iters, exhausted
+        return AgentMessage(sender="sightseeing", content=itinerary, ok=True, iterations=iters, budget_exhausted=exhausted)
 
     # One retry: force a text-only wrap-up call (no tools) with the full
     # accumulated context, explicitly asking for the missing tag.
@@ -179,4 +183,10 @@ def run_sightseeing_stage(
     })
     response = call_llm(messages=messages)
     itinerary = _extract_itinerary(response.content or "")
-    return itinerary, iters, (exhausted or not itinerary)
+    return AgentMessage(
+        sender="sightseeing",
+        content=itinerary,
+        ok=bool(itinerary),
+        iterations=iters,
+        budget_exhausted=(exhausted or not itinerary),
+    )

@@ -11,6 +11,8 @@ from __future__ import annotations
 import re
 
 from agents.common import run_notool_stage
+from agents.immutable.message import AgentMessage, from_sender
+from platform_core.runner import Task
 
 BUDGET_RULES = """
 --------------------------------------------------
@@ -66,7 +68,7 @@ def _extract_budget_summary(text: str) -> str:
     return match.group(1).strip() if match else ""
 
 
-def run_accounting_stage(task_description: str, sightseeing_body: str) -> str:
+def run_accounting_stage(task: Task, inbox: list[AgentMessage]) -> AgentMessage:
     """Compute the Budget Summary only -- never asks an LLM to retype the
     itinerary. An earlier design had this stage "reproduce the day-by-day
     body exactly" before appending the summary; live evaluation showed
@@ -75,10 +77,12 @@ def run_accounting_stage(task_description: str, sightseeing_body: str) -> str:
     on ~90%+ of a 120-case run) even though the underlying itinerary was
     fine. Assembling the final <plan> here in plain Python, from the
     Sightseeing stage's untouched text plus this stage's small, focused
-    budget computation, removes that whole failure class by construction."""
+    budget computation, removes that whole failure class by construction.
+    Never fails today -- ok stays at its AgentMessage default (True)."""
+    sightseeing_body = from_sender(inbox, "sightseeing").content
     user_content = (
         f"Traveler's request (for reference, e.g. party size / room count / "
-        f"stated budget):\n{task_description}\n\n"
+        f"stated budget):\n{task.description}\n\n"
         f"Day-by-day itinerary (for computing the budget from -- do not "
         f"repeat it back):\n{sightseeing_body}\n"
     )
@@ -98,4 +102,5 @@ def run_accounting_stage(task_description: str, sightseeing_body: str) -> str:
         text = run_notool_stage(ACCOUNTING_SYSTEM_PROMPT, retry_note)
         summary = _extract_budget_summary(text) or text.strip()
 
-    return f"{sightseeing_body.strip()}\n\n{summary.strip()}"
+    plan = f"{sightseeing_body.strip()}\n\n{summary.strip()}"
+    return AgentMessage(sender="accounting", content=plan)

@@ -74,11 +74,15 @@ def _resolve_database_root() -> Optional[Path]:
     val = os.environ.get("TRAVEL_DATABASE_ROOT")
     if val:
         return Path(val)
-    # Project-relative default — mirrors projects/travel/tools/_csv.py::database_root()
-    # so the scorer reads from the same database the agent's tools do when
-    # TRAVEL_DATABASE_ROOT is unset (the common case). parents[1] from
-    # adapter/scorer_impl.py resolves to projects/travel_mas/, same as it did
-    # from benchmark/scorer.py (both are direct children of travel_mas/).
+    # Project-relative default — mirrors this project's own
+    # tools/_csv.py::database_root() so the scorer reads from the same
+    # database the agent's tools do when TRAVEL_DATABASE_ROOT is unset (the
+    # common case). parents[1] from adapter/scorer_impl.py resolves to
+    # projects/travel_mas_refactored/, same as it did from
+    # benchmark/scorer.py (both are direct children of
+    # travel_mas_refactored/). That directory's data/database_en is a
+    # symlink to projects/travel/data/database_en (avoids duplicating
+    # ~431MB), not a live import/path dependency on projects/travel.
     candidate = Path(__file__).resolve().parents[1] / "data" / "database_en"
     return candidate if candidate.exists() else None
 

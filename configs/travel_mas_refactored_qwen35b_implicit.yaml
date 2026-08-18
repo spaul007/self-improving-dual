@@ -17,9 +17,15 @@
 # workflow.py/tool_wrapper.py/tools_schema.json/mutable_tools/*.py editable)
 # to an EXCLUDE-list (mutable_exclude, matching math_mas/db_mas's own
 # convention -- see integrating.md Step 5): everything under seed/ is
-# editable EXCEPT workflow.py (frozen glue) and benchmark/ (already
+# editable EXCEPT workflow.py (frozen glue), benchmark/ (already
 # structurally unreachable, listed anyway for defense-in-depth per
-# integrating.md). tool_wrapper.py/tools_schema.json/mutable_tools/*.py
+# integrating.md), and agents/immutable/ (the fixed AgentMessage
+# inter-agent collaboration contract -- see agents/immutable/message.py's
+# own docstring; every stage function returns exactly one AgentMessage and
+# takes an inbox: list[AgentMessage] of upstream agents' outputs, and this
+# directory is excluded so HGM's editor can tune *how* each stage uses
+# that contract but never redefine the contract itself).
+# tool_wrapper.py/tools_schema.json/mutable_tools/*.py
 # stay editable, same as they were under the old legacy scheme -- this
 # project still uses the real ToolWrapper/tools_schema.json function-
 # calling machinery (unlike math_mas/db_mas, which have their own separate
@@ -27,6 +33,14 @@
 # mutable_tool_routing/imports validators stay ON (integrating.md Step 5's
 # advice to omit them only applies to projects that drop that convention
 # entirely).
+#
+# Self-contained tools/data: projects/travel_mas_refactored/tools/ holds
+# its own real copy of the 9 tool implementations (not a passthrough to
+# projects.travel.tools), and projects/travel_mas_refactored/data/database_en
+# is a symlink to projects/travel/data/database_en (same underlying
+# per-sample CSVs, avoids duplicating ~431MB) -- so no TRAVEL_DATABASE_ROOT
+# override is needed below; _csv.py's own project-relative default now
+# resolves correctly for this project on its own.
 #
 #   PYTHONPATH=. python3 evaluate_task_agent.py \
 #       --config configs/travel_mas_refactored_qwen35b_implicit.yaml \
@@ -39,6 +53,7 @@ project: "travel_mas_refactored"
 mutable_exclude:
   - "workflow.py"
   - "benchmark/"
+  - "agents/immutable/"
 
 loop:
   max_rounds: 1
@@ -87,7 +102,6 @@ editor:
 env:
   META_AGENT_STRIP_REASONING: "1"
   TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-35B-A3B"
-  TRAVEL_DATABASE_ROOT: "/groups/AIC-MV/v.kulkarni1/unified_framework/self-improving-dual/projects/travel/data/database_en"
 
 split:
   seed: 42

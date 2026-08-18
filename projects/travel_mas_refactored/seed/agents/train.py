@@ -8,6 +8,8 @@ advance; each agent makes its own relevance call from the request text.
 from __future__ import annotations
 
 from agents.common import COMMON_RULES, INTERCITY_LINE_SPEC, filter_schema, run_tool_stage
+from agents.immutable.message import AgentMessage
+from platform_core.runner import Task
 from tool_wrapper import ToolWrapper
 
 TRAIN_TOOLS = {"query_train_info"}
@@ -39,9 +41,17 @@ line above or an explicit "No train needed for <leg>" statement. Do not
 invent a whole itinerary -- only report on intercity rail travel."""
 
 
-def run_train_stage(task_description: str, wrapper: ToolWrapper, full_schema: list[dict]):
+def run_train_stage(
+    task: Task, inbox: list[AgentMessage], wrapper: ToolWrapper, full_schema: list[dict]
+) -> AgentMessage:
+    """Train has no upstream dependency (`inbox` is always `[]`)."""
     schema = filter_schema(full_schema, TRAIN_TOOLS)
     text, iters, exhausted, _messages = run_tool_stage(
-        TRAIN_SYSTEM_PROMPT, task_description, schema, wrapper
+        TRAIN_SYSTEM_PROMPT, task.description, schema, wrapper
     )
-    return text.strip() or "No train information produced.", iters, exhausted
+    content = text.strip() or "No train information produced."
+    # No real failure signal exists for this stage today -- the fallback
+    # text above only fires on an empty tool-loop response, and a normal
+    # "No train needed for <leg>" model response (a valid, well-formed
+    # outcome) is indistinguishable from it at this layer. ok=True always.
+    return AgentMessage(sender="train", content=content, ok=True, iterations=iters, budget_exhausted=exhausted)

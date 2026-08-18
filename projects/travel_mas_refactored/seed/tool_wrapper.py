@@ -7,18 +7,19 @@ capabilities through platform_core.tools: call_tool for immutable tools and
 call_mutable_tool for mutable_tools/* (the latter keeps mutable-tool calls in
 the trace, like immutable ones).
 
-``import projects.travel.tools`` below registers the same 9 real tool
-implementations projects/travel/seed uses (same benchmark, same per-sample
-CSV data) via their real dotted package path, so their internal
-``from . import _csv`` relative imports resolve. The framework's
-``tool_source_dirs`` mechanism was tried first but doesn't work here: it
-loads each file standalone by file path with no parent package, which
-breaks exactly that kind of relative import (confirmed:
-"ImportError: attempted relative import with no known parent package").
-``platform_core.tools``'s own discovery (keyed off ``project: "travel_mas"``
-in the YAML) then finds no ``projects.travel_mas.tools`` package, which is
-an explicitly-swallowed no-op — the tools registered here via the real
-``projects.travel.tools`` import are what's actually in the registry.
+The 9 real tool implementations live in this project's own
+``projects/travel_mas_refactored/tools/`` package (copied from
+``projects/travel/tools/`` so this project has zero import-time or
+data-path dependency on ``projects/travel`` — see that package's own
+``_csv.py`` for the project-relative database-path default, which points
+at ``projects/travel_mas_refactored/data/database_en`` (a symlink to the
+real per-sample CSVs, not a duplicated copy). ``platform_core.tools``'s
+standard discovery (keyed off ``project: "travel_mas_refactored"`` in the
+YAML, via ``importlib.import_module("projects.travel_mas_refactored.tools")``)
+finds this project's own tools package directly -- no explicit import hack
+needed here the way the original travel_mas required (it had to reach
+across to ``projects.travel.tools`` since its own tools/ package didn't
+exist yet).
 """
 from __future__ import annotations
 
@@ -26,7 +27,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-import projects.travel.tools  # noqa: F401 -- registers the real tool implementations
 from platform_core import tools as immutable_tools
 
 

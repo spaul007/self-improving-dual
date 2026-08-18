@@ -511,8 +511,9 @@ def _read_py_bundle(py_files: list[Path], *, cap: int = _SOURCE_BUNDLE_CAP) -> O
 def _read_tools_source(
     project_root: Path, seed_dir: Optional[Path] = None
 ) -> Optional[str]:
-    """Tool-implementation reference shown to the editor. Two sources, both
-    optional, concatenated:
+    """Immutable-code reference shown to the editor (read-only — this is
+    where a project's ``mutable_exclude``d files become visible again, just
+    not editable). Three sources, all optional, concatenated:
 
     - ``projects/<p>/tools/*.py`` — the original convention (travel/shopping/
       math's project-level immutable tool package).
@@ -522,9 +523,22 @@ def _read_tools_source(
       whether a given one is also separately editable) plus any ``tools.py``
       file nested inside a per-agent subfolder (e.g.
       ``agents/coordinator/tools.py``).
+    - When ``seed_dir`` is given: any ``.py`` file nested inside a
+      directory literally named ``immutable`` anywhere under it (e.g.
+      ``tools/immutable/*.py`` — math_mas/shopping_mas's existing
+      convention; ``agents/immutable/*.py`` — travel_mas_refactored's
+      AgentMessage contract). Confirmed live: before this glob existed,
+      every project using this convention had its own excluded files
+      completely invisible to its editor (``_read_tools_source`` returned
+      ``None`` for math_mas's real config, which excludes
+      ``tools/immutable/`` via ``mutable_exclude`` but never surfaced it as
+      reference) — the editor could only infer their behavior from how
+      they're called, never see the actual immutable source. This glob
+      fixes that generically for any current or future project following
+      the ``.../immutable/...`` naming convention, not just one project.
 
-    Either source can be empty/absent; this generalizes cleanly to projects
-    with neither pattern (returns ``None``, same as before)."""
+    Any source can be empty/absent; this generalizes cleanly to projects
+    with none of these patterns (returns ``None``, same as before)."""
     files: set[Path] = set()
     tools_dir = project_root / "tools"
     if tools_dir.is_dir():
@@ -534,6 +548,7 @@ def _read_tools_source(
         if common_tools_dir.is_dir():
             files.update(common_tools_dir.rglob("*.py"))
         files.update(seed_dir.glob("**/tools.py"))
+        files.update(seed_dir.glob("**/immutable/**/*.py"))
     if not files:
         return None
     return _read_py_bundle(sorted(files))

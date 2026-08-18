@@ -8,6 +8,8 @@ unmodified.
 from __future__ import annotations
 
 from agents.common import COMMON_RULES, INTERCITY_LINE_SPEC, filter_schema, run_tool_stage
+from agents.immutable.message import AgentMessage
+from platform_core.runner import Task
 from tool_wrapper import ToolWrapper
 
 FLIGHT_TOOLS = {"query_flight_info", "search_location"}
@@ -40,9 +42,17 @@ line above or an explicit "No flight needed for <leg>" statement. Do not
 invent a whole itinerary -- only report on intercity air travel."""
 
 
-def run_flight_stage(task_description: str, wrapper: ToolWrapper, full_schema: list[dict]):
+def run_flight_stage(
+    task: Task, inbox: list[AgentMessage], wrapper: ToolWrapper, full_schema: list[dict]
+) -> AgentMessage:
+    """Flight has no upstream dependency (`inbox` is always `[]`)."""
     schema = filter_schema(full_schema, FLIGHT_TOOLS)
     text, iters, exhausted, _messages = run_tool_stage(
-        FLIGHT_SYSTEM_PROMPT, task_description, schema, wrapper
+        FLIGHT_SYSTEM_PROMPT, task.description, schema, wrapper
     )
-    return text.strip() or "No flight information produced.", iters, exhausted
+    content = text.strip() or "No flight information produced."
+    # No real failure signal exists for this stage today -- the fallback
+    # text above only fires on an empty tool-loop response, and a normal
+    # "No flight needed for <leg>" model response (a valid, well-formed
+    # outcome) is indistinguishable from it at this layer. ok=True always.
+    return AgentMessage(sender="flight", content=content, ok=True, iterations=iters, budget_exhausted=exhausted)
