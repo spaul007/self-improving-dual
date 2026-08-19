@@ -155,6 +155,81 @@ outright.
   worth prototyping independently before combining, so a bad interaction
   between the two isn't mistaken for a bug in either.
 
+## Block-level Thompson sampling: which surface to edit
+
+Beyond *when* to allow task-specific edits (the tier gate) and *how much* to
+explore structurally vs. confirm confidence (adaptive alpha), there's a
+third axis: *which part of the MAS* an EXPAND's edit should target. Rather
+than leaving that entirely to the editor LLM's own judgment every time,
+maintain a posterior mean reward per **block** — a category of editable
+surface — and Thompson-sample which block to target before invoking the
+editor.
+
+This reuses machinery the tree already has rather than inventing new
+mechanism: `hgm_tree.py` already runs Beta-Bernoulli Thompson sampling for
+node selection (`_beta_sample`, `sample_self_score`, `sample_clade_score`,
+temperature `tau`). A `BlockBandit` is the same pattern applied to a new
+axis — one `(n_success, n_failure)` Beta posterior per block, scoped per
+project (block composition and effectiveness are project-specific, as the
+case study below shows).
+
+**Mechanism:**
+
+1. `argmax_expand` picks the node (unchanged).
+2. Thompson-sample a block from that project's `BlockBandit`.
+3. Steer, don't fence: give the editor a block-specific *instruction*
+   rather than mechanically restricting which files/regions it can touch.
+   The editor keeps its existing full view of the mutable surface
+   (everything outside `mutable_exclude`) and its own judgment about where
+   the right change actually lives — it's just told what kind of change to
+   make, e.g. "identify the system prompt used by one agent in this MAS and
+   change its wording" vs. "write a verifier that checks the final output
+   before the MAS returns it." See the case study below for concrete
+   per-block instruction templates.
+4. When the resulting child node is evaluated, update both the node's own
+   tallies (existing behavior) and the chosen block's tallies.
+
+**Refinement over the tier gate's hard threshold:** instead of a hard
+"don't EXPAND task-specific edits while Tier 0/1 severity is above
+threshold" cutoff, tier severity could instead inflate the
+`foundational_ability` arm's prior pseudo-counts each round. Thompson
+sampling then handles the tradeoff between fixing general capability and
+task-specific edits organically, consistent with how the rest of the tree
+already prefers posterior sampling over hard cutoffs.
+
+### Case study: travel_mas_refactored
+
+`projects/travel_mas_refactored/seed/` is a good concrete testbed because
+its file layout already separates concerns close to (but not exactly
+along) the proposed block lines, and its `mutable_exclude` is short:
+`["workflow.py", "benchmark/", "agents/immutable/"]` — everything else
+under `seed/` is editable.
+
+| Block | Concrete target in this project | Editor instruction (sketch) |
+|---|---|---|
+| `prompt` | The per-role system-prompt string constants inside each `agents/*.py` file — e.g. `FLIGHT_SYSTEM_PROMPT` in `agents/flight.py`, and the analogous constant in `train.py`/`sightseeing.py`/`accounting.py`. | "Identify the system prompt used by one agent/role in this MAS and propose a change to its wording or instructions. Do not change the surrounding control flow, tool selection, or retry logic." |
+| `sub_agent` | The behavioral logic surrounding that same file — tool subset selection (`FLIGHT_TOOLS`), the stage function's control flow (`run_flight_stage`), retry/budget handling — i.e. *how* a role acts, not just what it's told. | "Identify one role's behavioral logic — which tools it can call, its control flow, retry/budget handling — and propose a change to how it acts. Leave its system prompt wording as-is unless the behavioral fix requires it." |
+| `collaboration` | `seed/mas_workflow.py` — the Flight → Train → Sightseeing → Accounting sequencing and which upstream `AgentMessage`s each stage's `inbox` receives. Notably, `mas_workflow.py`'s own docstring states there is currently **no step that re-reads the finished plan and audits/patches it against the scoring rubric** — a real, named gap this block could target by adding a new collaboration edge, not just editing an existing one. | "Look at how agents hand work to each other — sequencing, and what each stage's `inbox` receives from upstream. Propose a change to this collaboration structure. This may mean adding a new handoff (e.g. a stage that reviews and can send work back to an earlier stage), not only editing an existing one." |
+| `verifiers` | Does not exist as a block in this project today — there is no self-check/audit stage at all (see above). | "Check whether this MAS has a stage that reviews the final output against the scoring rubric before returning it. If none exists, propose adding one. If one exists, propose how to make it more reliable." |
+| `foundational_ability` | `agents/common.py` — `COMMON_RULES` (the shared rule text every one of the four stages includes verbatim) and the shared tool-calling loop plumbing (`run_tool_stage`, `MAX_ITERATIONS_PER_STAGE`). Already a documented high-leverage spot: `qwen35bnotworking.md` records a real case where `reasoning_effort="medium"` caused a catastrophic tool-calling breakdown on this model — a live Tier 1 failure whose fix belongs here, not in any one role's prompt. | "Look at logic shared across all agents — common rule text, the tool-calling loop, iteration/budget mechanics. Propose a change to this shared surface, not to any one role's specific behavior." |
+
+**Why prompt-level steering, not file/region fencing:** `prompt` and
+`sub_agent` aren't file-granular here — `agents/flight.py` contains both
+`FLIGHT_SYSTEM_PROMPT` and `run_flight_stage` in the same file — so a
+`block_map` of file globs (the earlier sketch) would collapse both arms to
+"anything in this file." Region-level mechanical fencing (AST splitting,
+marker comments) would work but adds real machinery for a soft distinction
+that doesn't need hard enforcement. Steering through the editor's own
+instruction handles both `prompt`/`sub_agent` sharing a file, and the
+`verifiers`-doesn't-exist-yet case, for free — no fencing, no create-vs-edit
+special case. The cost: the editor is trusted to actually follow the
+instruction rather than being mechanically prevented from drifting; a
+verifiers-block edit that quietly rewrites a system prompt instead would
+still land, so reward attribution to a block is only as reliable as the
+editor's adherence. Worth a cheap post-hoc check — inspect which
+files/regions an edit actually touched and flag (not block) a mismatch
+against the sampled block's instruction — as a diagnostic, not a gate.
+
 ## Open questions / not yet decided
 
 - Where does tier classification live: inside `failure_summarizer.py`, a new
@@ -164,7 +239,23 @@ outright.
   adaptive per project?
 - Does a Tier 1 fix target a genuinely shared prompt surface across projects,
   or does "general" here still mean "general within one project's editor
-  surface" (no cross-project shared prompt currently exists in the
-  framework)?
+  surface"? `travel_mas_refactored/seed/agents/common.py` shows a real
+  within-project shared surface exists (`COMMON_RULES` + the tool-calling
+  loop plumbing every stage imports) — still open whether that surface
+  should ever be shared *across* projects (db_mas/math_mas/travel_mas_refactored
+  all have their own `common.py`-shaped file today, not one framework-level
+  file).
 - Auto-fix for Tier 0: safe to apply without human/editor review, or does it
   still need a lightweight approval step given the container-leak precedent?
+- Resolved (see case study): block targeting doesn't need file/region
+  fencing — it's steered through a block-specific editor instruction
+  instead, which also handles `verifiers` having no existing instance to
+  edit in `travel_mas_refactored` (the instruction just says "propose
+  adding one" when none exists) without a separate create-vs-edit
+  mechanism.
+- Still open: how much to trust that steering. Since the editor isn't
+  mechanically prevented from drifting off-block, is a post-hoc
+  diff-vs-instruction consistency check (diagnostic only, per the case
+  study) worth building before or after the first prototype, and should a
+  drifted edit still count toward the sampled block's tallies or get
+  excluded from that block's reward attribution?
