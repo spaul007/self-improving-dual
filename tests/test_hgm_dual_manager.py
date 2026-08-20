@@ -460,7 +460,9 @@ class HGMDualExpandTests(unittest.TestCase):
         # Render the lineage that an EXPAND off node 1 would see. The stub's
         # composite for node 1 has two lines, so the rendered output should
         # include the indented continuation form.
-        ctx = manager._render_expand_context(manager._tree[1])
+        ctx = manager._render_expand_context(
+            manager._tree[1], "collaboration_workflow", self.experiment / "round_999", 999
+        )
         self.assertIn("[depth 1] Stage A: stub edit for intermediate", ctx)
         self.assertIn("             Stage B (", ctx)
 

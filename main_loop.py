@@ -47,6 +47,7 @@ def run(config_path: Path) -> EvolutionOutcome:
         eval_case_ids=fw.eval_case_ids,
         summarizer=fw.summarizer,
         failure_summarizer=fw.failure_summarizer,
+        block_suggester=fw.block_suggester,
     )
 
     summary_path: Optional[Path] = None

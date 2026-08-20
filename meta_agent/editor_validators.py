@@ -94,33 +94,53 @@ class SyntaxValidator:
 
 @register("validator", "signature")
 class SignatureValidator:
-    """<workflow_filename> must define run_task(task) -> AgentOutput.
+    """Every file in ``workflow_filenames`` must define
+    run_task(task) -> AgentOutput.
 
     The runner accepts either an AgentOutput return or a bare value (which
     it wraps), so the return type is not AST-enforced here. The argument
     must be a single positional arg named ``task``.
 
-    ``workflow_filename`` (default ``"workflow.py"``, every existing project
-    relies on this) overrides which file gets the AST check -- set it when
-    the framework-mandated ``workflow.py`` (required verbatim by
-    ``platform_core.runner``'s hardcoded ``import workflow``) is kept as a
-    trivial, permanently-excluded re-export, and the real
-    `def run_task(task): ...` implementation lives in a separate,
-    also-excluded file instead (e.g. db_mas's `workflow_adapter.py`) -- a
-    bare `from workflow_adapter import run_task` in workflow.py is an
-    `ast.ImportFrom` node, not a `FunctionDef`, so it would never satisfy
-    this check on `workflow.py` itself; redirecting the check to the file
-    that actually defines the function is the fix, not requiring
-    workflow.py to also contain a wrapper function.
+    ``workflow_filenames`` (default ``("workflow.py",)``, every existing
+    project relies on this default) is the set of files checked. The
+    framework-mandated ``workflow.py`` (required verbatim by
+    ``platform_core.runner``'s hardcoded ``import workflow``) is always
+    worth checking even when it's a trivial, permanently-excluded
+    re-export -- but for a project that SPLITS entry-point glue from real
+    orchestration (``workflow.py`` delegates to a second, editable file
+    that does the actual work -- e.g. travel_mas_refactored's/math_mas's/
+    db_mas's ``mas_workflow.py`` convention), that second file's own
+    ``run_task`` signature was previously never independently checked:
+    ``workflow.py``'s hardcoded call into it (e.g.
+    ``mas_workflow.run_task(task)``) only fails at real EVALUATION time,
+    on every case identically, burning eval budget instead of being caught
+    pre-evaluation like every other validator failure (fed back to the
+    editor as ``prior_errors`` for a same-round retry). List every file
+    whose ``run_task`` needs checking, e.g.
+    ``["workflow.py", "mas_workflow.py"]``. If ``workflow.py`` is instead
+    kept as a trivial re-export of a file that does NOT itself define
+    ``run_task`` at module level (a bare
+    ``from workflow_adapter import run_task`` is an ``ast.ImportFrom``
+    node, not a ``FunctionDef``, so it would never satisfy this check on
+    ``workflow.py`` itself -- e.g. db_mas's `workflow_adapter.py`), list
+    that file instead of (or in addition to) ``workflow.py``.
     """
 
-    def __init__(self, *, workflow_filename: str = "workflow.py") -> None:
-        self.workflow_filename = workflow_filename
+    def __init__(
+        self, *, workflow_filenames: tuple[str, ...] = ("workflow.py",)
+    ) -> None:
+        self.workflow_filenames = tuple(workflow_filenames)
 
     def validate(self, out_dir: Path, base_dir: Path) -> list[str]:
-        path = out_dir / "task_agent" / self.workflow_filename
+        errors: list[str] = []
+        for fname in self.workflow_filenames:
+            errors.extend(self._validate_one(out_dir, fname))
+        return errors
+
+    def _validate_one(self, out_dir: Path, fname: str) -> list[str]:
+        path = out_dir / "task_agent" / fname
         if not path.exists():
-            return [f"{self.workflow_filename} is missing"]
+            return [f"{fname} is missing"]
         try:
             tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError:
@@ -129,13 +149,14 @@ class SignatureValidator:
             if isinstance(node, ast.FunctionDef) and node.name == "run_task":
                 args = node.args
                 if args.vararg or args.kwarg or args.kwonlyargs:
-                    return ["run_task must take exactly one positional arg"]
+                    return [f"{fname}: run_task must take exactly one positional arg"]
                 if len(args.args) != 1 or args.args[0].arg != "task":
                     return [
-                        "run_task signature must be run_task(task) -> AgentOutput"
+                        f"{fname}: run_task signature must be "
+                        "run_task(task) -> AgentOutput"
                     ]
                 return []
-        return [f"{self.workflow_filename} does not define run_task at module level"]
+        return [f"{fname} does not define run_task at module level"]
 
 
 @register("validator", "imports")

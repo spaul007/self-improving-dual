@@ -42,7 +42,16 @@ tool_source_dirs:
   - "tools/mutable"
 
 loop:
-  max_rounds: 3
+  # Bumped 3->7: max_rounds directly caps tree size, including during the
+  # init_expansions loop itself (not just the scheduled loop) -- with the
+  # previous max_rounds=3, init_expansions=5 below could only ever
+  # complete 2 of its 5 intended unconditional expansions before hitting
+  # the cap, silently defeating the exact bootstrap-past-a-zero-seed
+  # mechanism this config's own split: comment describes relying on.
+  # HGMManager.evolve() now asserts max_rounds > 1 + init_expansions;
+  # 7 = 1 (root) + 5 (init_expansions) + 1 (room for one scheduled EXPAND
+  # after init completes).
+  max_rounds: 7
   score_target: 0.95
 
 manager:

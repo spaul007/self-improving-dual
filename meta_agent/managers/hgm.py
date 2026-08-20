@@ -131,6 +131,14 @@ class HGMManager:
         # even for the root/seed's evaluation (no parent/diff needed) since
         # its job is "what's failing right now", not "what did this edit do".
         self._failure_summarizer: Any = None
+        # Optional per-EXPAND block-level improvement suggestion (see
+        # meta_agent/block_suggester.py) -- injects a block-scoped, grounded
+        # diagnosis into the editor's steering context alongside the
+        # (currently hardcoded, see _select_block) selected block. ``None``
+        # keeps legacy behavior: no block section beyond the plain "Selected
+        # block" line, ``EvolutionStrategy.block`` stays set but unsupported
+        # by any suggestion text.
+        self._block_suggester: Any = None
         # Time-series tree snapshotter (a no-op unless snapshot_tree is on);
         # (re)created at the top of evolve() once experiment_dir is known.
         self._snapshotter: Optional[TreeSnapshotWriter] = None
@@ -153,12 +161,14 @@ class HGMManager:
         eval_case_ids: Optional[list[str]] = None,
         summarizer: Any = None,
         failure_summarizer: Any = None,
+        block_suggester: Any = None,
     ) -> EvolutionOutcome:
         self._benchmark_dir = benchmark_dir
         self._experiment_dir = experiment_dir
         self._eval_case_ids = eval_case_ids
         self._summarizer = summarizer
         self._failure_summarizer = failure_summarizer
+        self._block_suggester = block_suggester
         self._tree = HGMTree(
             beta_prior=self.beta_prior,
             clade_pseudo_count=self.clade_pseudo_count,
@@ -176,6 +186,52 @@ class HGMManager:
         self._snapshotter = TreeSnapshotWriter(
             experiment_dir, enabled=self.snapshot_tree
         )
+
+        # max_rounds directly caps tree size (n_real_nodes() < max_rounds
+        # gates the scheduled loop below, same as init_expansions' own
+        # guard) -- NOT just a soft hint, and separate from eval_budget.
+        # root (1) + init_expansions unconditional EXPANDs already fills
+        # max_rounds <= 1 + init_expansions, leaving zero room for the
+        # alpha-driven schedule to ever expand again regardless of
+        # eval_budget -- a real misconfiguration caught live in this
+        # project's own first sanity run (max_rounds=3, init_expansions=1
+        # silently capped the search at 2 EXPANDs total, no matter how
+        # large eval_budget was). Fail fast, before spending the seed's
+        # free pre-evaluation, rather than silently producing a
+        # prematurely-frozen tree.
+        if max_rounds <= 1 + self.init_expansions:
+            raise ValueError(
+                f"max_rounds={max_rounds} leaves no room for schedule-driven "
+                f"expansion beyond init_expansions={self.init_expansions} "
+                f"(root + init_expansions = {1 + self.init_expansions} "
+                "node(s) already fills the cap) -- increase max_rounds or "
+                "reduce init_expansions."
+            )
+        # Second, independent check: schedule_favors_expand's own natural
+        # ceiling. Its condition (budget_spent**alpha >= n_real_nodes - 1)
+        # means that, given the FULL configured eval_budget eventually
+        # gets spent, the alpha-schedule itself is designed to grow the
+        # tree up to roughly eval_budget**alpha + 1 nodes (this is exactly
+        # what size_eval_budget.py::solve_alpha_from_xy solves alpha FOR --
+        # alpha = ln(target_agents)/ln(eval_budget) makes
+        # eval_budget**alpha == target_agents by construction). If
+        # max_rounds is smaller than that natural ceiling, max_rounds --
+        # not the schedule -- becomes the actual thing deciding when
+        # growth stops, silently capping expansion below what alpha was
+        # tuned to reach and defeating the point of tuning it at all.
+        schedule_ceiling = self.eval_budget**self.alpha
+        if max_rounds <= schedule_ceiling:
+            raise ValueError(
+                f"max_rounds={max_rounds} is at or below the widening "
+                f"schedule's own natural ceiling at this eval_budget/alpha "
+                f"(eval_budget**alpha = {self.eval_budget}**{self.alpha} = "
+                f"{schedule_ceiling:.2f}) -- max_rounds would cap growth "
+                "before the schedule itself would, defeating whatever "
+                "eval_budget/alpha was tuned to reach (see "
+                "size_eval_budget.py). Increase max_rounds above "
+                f"{schedule_ceiling:.2f}, or lower alpha/eval_budget to "
+                "match the intended max_rounds."
+            )
 
         # Train cases drive the budget; fall back to every case when no
         # split is configured (the eval split, if any, stays a sidecar).
@@ -268,12 +324,14 @@ class HGMManager:
         out_dir = self._experiment_dir / f"round_{node_id:03d}"
         (out_dir / "logs").mkdir(parents=True, exist_ok=True)
 
-        context = self._render_expand_context(parent)
+        block = self._select_block(parent)
+        context = self._render_expand_context(parent, block, out_dir, node_id)
         edit_result = editor.apply(
             self._feedback.get(parent_id), parent.round_dir, out_dir,
             context=context,
         )
         strategy = edit_result.strategy or fallback_strategy()
+        strategy.block = block
         node = HGMNode(node_id=node_id, parent_id=parent_id, round_dir=out_dir)
 
         if not edit_result.success:
@@ -356,10 +414,31 @@ class HGMManager:
         return len(batch)
 
     # ------------------------------------------------------------------ #
+    # Block selection — swappable seam
+    # ------------------------------------------------------------------ #
+
+    def _select_block(self, parent: HGMNode) -> str:
+        """Which block (see meta_agent/block_suggester.py) this EXPAND
+        should target.
+
+        HARDCODED for stage 1 of tier_based_hgm.md's roadmap: always
+        "collaboration_workflow". A later stage replaces this body with a
+        Thompson sample over a per-project BlockBandit (see
+        tier_based_hgm.md's "Block-level Thompson sampling" section) --
+        everything that touches block SELECTION should change only here.
+        Called exactly once per _expand -- callers must reuse the same
+        value for both steering the editor and stamping
+        EvolutionStrategy.block, since a future stochastic implementation
+        must not be sampled twice for one EXPAND."""
+        return "collaboration_workflow"
+
+    # ------------------------------------------------------------------ #
     # Steering context for the editor's self-improvement call
     # ------------------------------------------------------------------ #
 
-    def _render_expand_context(self, parent: HGMNode) -> str:
+    def _render_expand_context(
+        self, parent: HGMNode, block: str, out_dir: Path, node_id: int
+    ) -> str:
         """Build the manager's steering context for an EXPAND: the parent's
         edit lineage, performance + clade metaproductivity, the best node
         so far, and the parent's feedback digest. Pure string assembly —
@@ -429,10 +508,75 @@ class HGMManager:
                 f"\n## Failure summary — parent (node {parent.node_id}):\n{failure_summary}"
             )
 
+        # Sibling edits already branched off this parent. Computed once,
+        # before the block suggester call, so it can be handed the same
+        # data -- see below for why the editor no longer sees this as a
+        # separate, potentially-conflicting instruction when a suggester
+        # is configured.
         siblings = [
             self._feedback[c] for c in parent.children if c in self._feedback
         ]
-        if siblings:
+
+        # Block-scoped improvement suggestion (see block_suggester.py), when
+        # configured. Selected block always shown (even if the suggester is
+        # off/unconfigured or its call failed) so the editor still gets a
+        # lightweight steer, degrading gracefully to "no suggestion
+        # available" rather than silently vanishing.
+        parts.append(f"\n## Selected block for this EXPAND: {block}")
+        # Tracks whether a real suggestion was actually produced -- stays
+        # None both when no suggester is configured AND when a configured
+        # suggester's call fails/errors, so the sibling-directive fallback
+        # below (which used to check `self._block_suggester is None` only)
+        # correctly fires in BOTH cases. Previously, a suggester configured
+        # but erroring on one EXPAND would silently lose ALL sibling-
+        # differentiation guidance -- neither the suggestion (which owns
+        # that responsibility when it succeeds) nor the fallback directive
+        # (gated on the wrong condition) would appear.
+        suggestion = None
+        if self._block_suggester is not None:
+            try:
+                suggestion = self._block_suggester.suggest(
+                    block=block,
+                    agent_dir=parent.round_dir / "task_agent",
+                    out_dir=out_dir,
+                    node_id=node_id,
+                    feedback=self._feedback.get(parent.node_id),
+                    failure_summary=failure_summary,
+                    siblings=[
+                        (sib.strategy.block, sib.strategy.optimization_goal)
+                        for sib in siblings
+                    ],
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(
+                    f"[block_suggester] unexpected error on node {node_id}: {exc!r}",
+                    flush=True,
+                )
+                suggestion = None
+            if suggestion:
+                parts.append(
+                    f"\n## Block-scoped suggestion ({block}) — grounded "
+                    "diagnosis + proposal for THIS block specifically. "
+                    "This already accounts for any sibling edits already "
+                    "tried off this parent (see its own reasoning above) "
+                    "-- implement it largely as given; you do not need to "
+                    "separately differentiate from siblings yourself. "
+                    "Deviate only if your own reading of the current "
+                    "source clearly contradicts this suggestion's "
+                    "diagnosis. Either way, say so explicitly in your "
+                    "rationale (per the editor's own hard rules).\n\n"
+                    + suggestion
+                )
+
+        # Fallback: fires whenever no ACTUAL suggestion made it into the
+        # context above -- either no suggester is configured, or one is
+        # but failed/errored for this EXPAND. When a suggestion WAS
+        # produced, sibling differentiation is entirely its responsibility
+        # (see the `siblings=` kwarg above and BlockSuggester's own
+        # _SYSTEM_CLOSING) -- showing this too would hand the editor two
+        # instructions that can pull in different directions (see
+        # tier_based_hgm.md's stage-1 findings).
+        if siblings and not suggestion:
             parts.append(
                 f"\n## {len(siblings)} sibling edit(s) already branch off this "
                 "parent — make a DIFFERENT change from these:"

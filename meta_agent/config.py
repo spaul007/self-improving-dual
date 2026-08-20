@@ -144,6 +144,13 @@ class FrameworkConfig(BaseModel):
     # existing configs keep current behavior without changes. See
     # meta_agent/failure_summarizer.py.
     failure_summarizer: Optional[ComponentSpec] = None
+    # Optional. When set, an LLM-synthesized, block-scoped improvement
+    # suggestion (see meta_agent/block_suggester.py) is produced once per
+    # EXPAND -- for whichever block HGMManager._select_block chose -- and
+    # injected into the editor's steering context alongside the selected
+    # block name. Omit (or null) to disable; existing configs keep current
+    # behavior without changes.
+    block_suggester: Optional[ComponentSpec] = None
     plugins: list[str] = Field(default_factory=list)
 
     task_agent: TaskAgentSpec = Field(default_factory=TaskAgentSpec)
@@ -221,6 +228,7 @@ class AssembledFramework:
     runs_root: Path
     summarizer: Any = None
     failure_summarizer: Any = None
+    block_suggester: Any = None
     train_case_ids: Optional[list[str]] = None
     eval_case_ids: Optional[list[str]] = None
 
@@ -234,6 +242,7 @@ def _ensure_builtins_loaded() -> None:
     importlib.import_module("meta_agent.agent_editor")
     importlib.import_module("meta_agent.behavior_summarizer")
     importlib.import_module("meta_agent.failure_summarizer")
+    importlib.import_module("meta_agent.block_suggester")
     importlib.import_module("meta_agent.managers")  # imports submodules
 
 
@@ -359,6 +368,17 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
             {"llm_caller": call_llm},
         )
 
+    block_suggester_obj: Any = None
+    if cfg.block_suggester is not None:
+        # Reuses the same project-context values already computed for the
+        # editor (editor_injections) so the suggestion is grounded in the
+        # identical current-source/tool/schema view the editor itself sees.
+        block_suggester_obj = _build_with_injection(
+            cfg.block_suggester,
+            "block_suggester",
+            {"llm_caller": call_llm, **editor_injections},
+        )
+
     manager_obj = registry.get("manager", cfg.manager.type)(**cfg.manager.config)
 
     train_ids: Optional[list[str]] = None
@@ -394,6 +414,7 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         runs_root=runs_root,
         summarizer=summarizer_obj,
         failure_summarizer=failure_summarizer_obj,
+        block_suggester=block_suggester_obj,
         train_case_ids=train_ids,
         eval_case_ids=eval_ids,
     )

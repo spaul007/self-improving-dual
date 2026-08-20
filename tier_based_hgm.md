@@ -230,6 +230,341 @@ editor's adherence. Worth a cheap post-hoc check — inspect which
 files/regions an edit actually touched and flag (not block) a mismatch
 against the sampled block's instruction — as a diagnostic, not a gate.
 
+### Stage 1 sanity run — real findings
+
+Live end-to-end run against `travel_mas_refactored` (config
+`hgm_travel_mas_refactored_block_sanity.yaml`, `manager: hgm`, hardcoded
+`collaboration_workflow` selection, `eval_budget: 6`). Wiring verified
+clean: seed had no `block_suggestion.md`, both EXPANDs got one plus a
+non-null `strategy.json["block"]`, and the run found a genuine improvement
+over the seed (`0.229` vs. `0.188`) via exactly this mechanism — the
+winning edit added a new `context.py` stage threading structured
+constraints through every stage's `inbox`, a real structural
+`collaboration_workflow` change, not a prompt tweak.
+
+Two real, load-bearing issues the run surfaced:
+
+1. **Unbounded meta-agent generation.** One block-suggester call
+   degenerated into a ~320x repetition loop
+   (`"Wait, let's check if I should mention the inbox instance." / "Yes,
+   'inbox instance'."`) before terminating, producing a 60KB suggestion
+   dumped into the editor's context. Root cause: `AgentEditor`,
+   `BehaviorSummarizer`, `FailureSummarizer`, and `BlockSuggester` had no
+   `max_output_tokens` cap on their LLM calls (`task_agent` already had
+   one). Fixed: all four now default to `max_output_tokens=16384`,
+   overridable per-component via each's `config:` block in the YAML like
+   any other constructor kwarg.
+2. **The `collaboration_workflow` prompt under-constrained what "editing
+   the collaboration block" should mean in practice.** One EXPAND steered
+   toward this block ended up producing a pure single-file,
+   single-role edit (`agents/sightseeing.py`, no message-interface
+   change at all) — a legitimate exercise of "steer, don't fence" (the
+   editor's own judgment overrode the suggestion), but not the kind of
+   edit this block exists for. Tightened the prompt
+   (`meta_agent/block_suggester.py`) to state explicitly: the primary
+   edit surface is the message interface itself — what a stage *sends*
+   (its outgoing message's fields) and what it *receives* (what it reads
+   out of its `inbox`). Touching an individual sub-agent's file is fine,
+   and often necessary, as a *consequence* of an interface change (e.g.
+   adding a field one stage's message must carry so a downstream stage
+   can read it) — but a change with no message-interface impact belongs
+   in `individual_subagent`, not here. Named explicitly as one common
+   in-scope case: if a stage's outgoing content is missing something a
+   downstream stage needs (or is wrong), changing the *sending* stage's
+   own prompt/logic to produce the right content is fine and often the
+   correct fix — as long as the change is about content headed into
+   another stage's inbox, not that stage's unrelated internal behavior.
+   The suggestion's required **Proposed change** section now also asks it
+   to name any sub-agent files the interface change touches and why.
+
+### Second sanity pass — suggestion compliance, and a real architecture fix
+
+Re-ran with `eval_budget: 20`, `max_rounds: 10` (the first pass's
+`max_rounds: 3` was the actual binding constraint that limited it to 2
+EXPANDs — `hgm.py` checks `n_real_nodes() < max_rounds` in the main loop
+too, not just `eval_budget`) to get enough EXPANDs to compute a real
+compliance fraction, not just n=2.
+
+**Two distinct things worth measuring separately**, discovered while
+grading this run's 6 EXPANDs by hand (no automated check exists yet — see
+the "cheap post-hoc check" idea above, still unbuilt):
+
+- **Suggestion compliance** — does `block_suggestion.md` itself stay
+  within the block's scope? 6/6 did, including one (round_002) that
+  correctly diagnosed a real bug (`sightseeing_msg.ok=False` discarding
+  raw text instead of preserving partial output) and proposed a clean
+  message-interface fix, self-verifying *"This preserves the existing
+  `AgentMessage` interface... while ensuring the workflow handoff retains
+  partial data."*
+- **Edit compliance** — does the applied `strategy.json` actually reflect
+  the suggestion? Mixed: round_003 (new `transport_review.py` stage
+  inserted into `mas_workflow.py`) and round_004 (sending stage fixed to
+  emit trip parameters, receiving stage updated to read them) were fully
+  compliant. Round_002 was the sharpest counter-example: its
+  `strategy.json` was about something **entirely unrelated** to
+  `block_suggestion.md` — Flight/Train/Sightseeing prompt-strengthening
+  for tool-result parsing, nothing about message interfaces at all. Its
+  own `rationale` said *"This is a different change from the sibling
+  edit"* — a real clue.
+
+**Root cause, and the fix**: the sibling-diversity instruction
+(`"N sibling edit(s) already branch off this parent — make a DIFFERENT
+change from these"`) predates `block_suggester` entirely — it was written
+for when the editor did all the diagnosis itself, so "be different from
+your sibling" was the only anti-redundancy signal available. Once a block
+suggestion pre-scopes the diagnosis, that older instruction can pull
+directly against it, and round_002 (sibling to round_001, told explicitly
+to differ) looks like exactly that collision — two instructions in one
+prompt, editor picks one.
+
+Rather than have the editor arbitrate between "follow the suggestion" and
+"differ from your sibling" itself, that reconciliation moved entirely
+into `BlockSuggester`, which is better positioned to do it (it already
+sees the failure data driving the diagnosis):
+
+- `BlockSuggester.suggest()` gained a `siblings: list[(block, goal)]`
+  parameter — each prior sibling's `strategy.block` (stamped by the
+  manager, see the block-Thompson-sampling section above) and
+  `optimization_goal`. Its system prompt now instructs it to
+  differentiate from same-block siblings *within* the block's scope
+  (different aspect of the diagnosis, different failing case, different
+  bug) and explicitly *not* to be pulled toward a different block just
+  because a sibling targeted one — future stages where blocks are
+  actually sampled per-EXPAND will have siblings on genuinely different
+  blocks, which shouldn't constrain this suggestion at all.
+- `hgm.py::_render_expand_context` now only shows the editor the
+  standalone `"make a DIFFERENT change from these"` directive when
+  **no** block suggester is configured (graceful-degradation fallback,
+  unchanged behavior for that case). When a suggester *is* configured,
+  the editor sees one already-sibling-aware suggestion and is told
+  explicitly to implement it largely as given rather than separately
+  litigating sibling-diversity itself.
+
+Verified offline (not yet re-confirmed live): `siblings=` reaches
+`BlockSuggester.suggest` correctly, the standalone directive is
+suppressed when a suggester is configured, and the pre-existing fallback
+behavior (no suggester) is unchanged.
+
+### Prompt review pass, and closing the compliance-auditability gap
+
+Reviewing all 4 block prompts together (not just `collaboration_workflow`)
+surfaced further refinements, all in `meta_agent/block_suggester.py`:
+
+- `individual_subagent` now states explicitly that any change to a role's
+  own harness is fair game as long as the GOAL is that role's own task
+  performance — an interface side-effect (e.g. its output format changes
+  as a consequence of fixing its reasoning) doesn't disqualify it. Mirrors
+  `collaboration_workflow`'s own "sub-agent edits are fine as a
+  consequence" clause symmetrically, in the other direction.
+- `foundation_capability` gained concrete worked examples: tool-call retry
+  reliability, retrying the shared LLM-call function on a
+  malformed/empty response, adding timeouts to hanging calls, and
+  improving shared error-log parsing/classification — all framed as
+  general-purpose reliability/observability primitives, not any one
+  role's own reasoning.
+- `verifiers` was substantially rewritten: all "handoff"/"new pipeline
+  stage" language removed (this closes the asymmetry flagged earlier,
+  where `verifiers` claimed overlap with `collaboration_workflow` but the
+  reverse was never true). Redefined as ANY code or check whose job is to
+  enforce quality/check a constraint — an inline check inside an existing
+  function counts just as much as a dedicated stage, and intermediate
+  outputs are explicitly as in-scope as the final one.
+
+**Compliance auditability**: every compliance check in this doc so far
+required manually reading `block_suggestion.md` and `strategy.json` side
+by side — nothing in the pipeline records whether the editor's own edit
+actually followed the suggestion. Added `agent_editor.py`'s hard rule 9
+(both system-prompt branches): if the steering context includes a
+specific suggestion, the editor's `rationale` must state explicitly
+whether its edit follows it, and if it deviates in any way (different
+target, different mechanism, broader scope), say so and why — "silently
+doing something else is not acceptable." Reinforced in `hgm.py`'s
+block-suggestion wrapper text too. Not yet re-verified live — next sanity
+run should check whether `rationale` actually surfaces deviation
+explanations, which would make future compliance tallies readable
+directly off `strategy.json` instead of requiring manual cross-reference.
+
+### A validator gap, found by auditing prompt-vs-code compatibility
+
+Auditing `agent_editor.py`'s system prompt against `travel_mas_refactored`'s
+actual structure (split `workflow.py`/`mas_workflow.py`/`agents/*.py`, not
+the single-`workflow.py` convention the prompt's hard rules 1-6 were
+originally written for) surfaced a real safety gap, not just a wording
+one: `SignatureValidator` only ever checked `workflow.py`'s `run_task`
+signature. `workflow.py` here is a trivial, permanently-excluded delegator
+(`return mas_workflow.run_task(task)`) — its own signature check always
+trivially passes — but `mas_workflow.py`'s *own* `run_task` (the function
+actually being called, and actually edited nearly every round) was never
+independently checked by anything. `ImportValidator` has the same blind
+spot (hardcoded to check only `workflow.py`/`tool_wrapper.py` by
+filename). `LoadTestValidator` catches import-time errors in
+`mas_workflow.py` transitively (`workflow.py`'s own `import mas_workflow`
+pulls it in), but never *calls* `run_task`, so a broken signature there
+(wrong arg count/name) would import cleanly and then crash identically on
+every real evaluation case — burning eval budget on an easily-preventable
+failure instead of being caught pre-evaluation like every other validator
+failure.
+
+Fixed generically, not just for this project: `SignatureValidator`
+(`editor_validators.py`) now takes `workflow_filenames: tuple[str, ...]`
+(plural) instead of a single `workflow_filename`, checking every listed
+file's `run_task` signature. Default unchanged (`("workflow.py",)` — every
+existing config's behavior is identical without changes). Both
+`travel_mas_refactored` configs now opt in explicitly:
+`workflow_filenames: ["workflow.py", "mas_workflow.py"]`. Verified
+offline: catches a synthetically broken `mas_workflow.py::run_task`
+signature, passes cleanly against the real current seed, default
+single-file behavior unchanged, full test suite green. The same gap
+likely applies to `math_mas`/`db_mas`, which use the analogous
+`workflow.py` + `mas_workflow.py`/`workflow_adapter.py` split — worth
+opting their configs in too, not yet done.
+
+### max_rounds vs. the widening schedule's own natural ceiling
+
+`max_rounds` (the `loop:` config's hard cap on `n_real_nodes()`) turned
+out to have no correctness guard at all, and the first stage-1 sanity run
+had already been silently bitten by it (`max_rounds: 3` was the actual
+binding constraint that limited that run to 2 EXPANDs, not `eval_budget`
+as its own comment claimed). `HGMManager.evolve()` (`hgm.py`) now asserts
+two independent conditions before any work begins (fail fast, before the
+seed's free pre-evaluation), each `raise ValueError` with a specific
+message:
+
+1. `max_rounds > 1 + init_expansions` — root + the forced
+   `init_expansions` unconditional EXPANDs must not already fill the cap,
+   or the scheduled loop can never expand again regardless of
+   `eval_budget`.
+2. `max_rounds > eval_budget**alpha` — the widening schedule's own natural
+   ceiling (from `schedule_favors_expand`'s `budget_spent**alpha >=
+   n_real_nodes - 1`; at `budget_spent == eval_budget` this is exactly
+   `n_real_nodes <= eval_budget**alpha + 1`). This is precisely what
+   `size_eval_budget.py::solve_alpha_from_xy` solves `alpha` *for*
+   (`alpha = ln(target_agents)/ln(eval_budget)` makes
+   `eval_budget**alpha == target_agents` by construction) — if
+   `max_rounds` sits below this, `max_rounds` becomes the actual thing
+   deciding when growth stops, not the tuned `alpha`, silently defeating
+   whatever `eval_budget`/`alpha` combination was chosen for a reason.
+
+Checking every existing config against both conditions found 3 real,
+previously-silent violations in small sanity configs — fixed:
+`hgm_db_mas_sanity.yaml` (`max_rounds` 2→3), `hgm_dual_shopping_mas_sanity.yaml`
+(3→7 — its own `init_expansions: 5` could previously only ever complete 2
+of its 5 intended unconditional expansions before hitting the old cap,
+silently defeating the exact bootstrap-past-a-zero-seed mechanism its own
+`split:` comment describes relying on), and this project's own
+`hgm_travel_mas_refactored_block_sanity.yaml` (already fixed earlier this
+session for the same first reason, before the second check existed).
+
+It also found **16 further violations** in real (non-sanity) configs —
+`hgm_math_mas_full.yaml` (`eval_budget=12000`, would need `max_rounds`
+raised from 100 to 281+), several `hgm_dual_travel`/`hgm_dual_shopping`
+configs at real scale (budgets of 200-2000). **Deliberately left
+unfixed** — every one of the 16 is `hgm_dual`, where one "node" costs
+substantially more than in vanilla HGM (Stage A + up to N Stage B
+variants per expansion), so a deliberately-lower `max_rounds` there may
+have been an intentional resource cap, not an oversight; bumping them
+now would change the compute-cost profile of several expensive real runs
+without individual review. They'll now fail loudly (a clear
+`ValueError`, not a silent undercount) the next time anyone actually runs
+one — at which point raising `max_rounds` or lowering `alpha`/`eval_budget`
+is a deliberate, informed call, not a silent bulk edit made here.
+
+## Formal algorithm: TB-HGM
+
+The reference algorithm is Algorithm 1 in Wang et al. 2025, "Huxley–Gödel
+Machine: Human-Level Coding Agent Development by an Approximation of the
+Optimal Self-Improving Machine" (arXiv:2510.21614), p.17 — the paper HGM in
+this codebase is named after, and the source of the EXPAND/EVALUATE
+Beta-Bernoulli Thompson-sampling loop `hgm_tree.py`/`hgm.py` already
+implement. Below is that same algorithm modified for block selection
+(§"Block-level Thompson sampling" above) and adaptive `alpha` (§"Adaptive
+alpha" above, in its final settled form — the `TierDebt`/`D` term discussed
+in an earlier draft was cut for being unimplemented and unjustified, and a
+`U_0`/seed-utility term was cut from `AdaptAlpha` for the same reason: its
+only concrete justification (avoiding a node getting stuck at exactly 0
+success with too few evals — see the math_mas `train_size` precedent) turns
+out to already be handled elsewhere, by `_run_seed`'s unconditional
+full-train-set pre-evaluation of the root, independent of `alpha`).
+
+`U(a)` is `HGMNode.mean_utility` (`hgm_tree.py:63-67`) — already exists,
+already used everywhere else in the algorithm. `AdaptAlpha` is driven purely
+by a plateau signal: `B_t`, the tree's best known utility so far (what
+`hgm.py::_best_evaluated()` already computes for the steering context), and
+`ΔB_t = B_t - B_{t-W}`, its change over the last `W` iterations. A stagnant
+best score (`ΔB_t` at or below the `0` reference — no real progress
+recently) pushes `alpha` up to favor EXPAND, escaping the plateau; a still-
+climbing best score pushes `alpha` down to favor EVALUATE, exploiting the
+productive lineage rather than diluting it with more untested nodes.
+
+```latex
+\begin{algorithm}
+\caption{Tiered Block-Selecting Huxley--G\"odel Machine (TB-HGM)}
+\label{alg:tb-hgm}
+\begin{algorithmic}[1]
+\Require initial agent $a_0$; block set $\mathcal B = \{\texttt{sub}, \texttt{collab}, \texttt{found}, \texttt{verif}\}$; initial widening parameter $\alpha_0 \in [\alpha_{\min},\alpha_{\max}]$; percentile $\epsilon$; temperature $\tau$; plateau window $W$
+\State Initialize a tree $\mathcal T$ with root $a_0$; $\alpha \gets \alpha_0$
+\State Initialize counters $n^C_{\mathrm{success}}(a), n^C_{\mathrm{failure}}(a), n_{\mathrm{success}}(a), n_{\mathrm{failure}}(a)$ for all $a \in \mathcal T$
+\State \textbf{[new]} Initialize block counters $n^B_{\mathrm{success}}(b), n^B_{\mathrm{failure}}(b) \gets 0$ for all $b \in \mathcal B$
+\State \textbf{[new]} $\mathrm{blk}(a_0) \gets \bot$; best-utility history buffer $H \gets [\,]$
+\While{computational budget not exceeded}
+  \State \textbf{[new]} $B_t \gets \max_{a \in \mathcal T,\ n_{\mathrm{evals}}(a)>0} U(a)$ \Comment{best mean-utility evaluated so far; append to $H$, keep last $W{+}1$}
+  \State \textbf{[new]} $\Delta B_t \gets B_t - H[0]$ if $|H| > W$ else $0$ \Comment{change in best score over the last $W$ iterations; $0$ = not enough history yet}
+  \State \textbf{[new]} $\alpha \gets \Call{AdaptAlpha}{\alpha, \Delta B_t}$ \Comment{replaces the fixed input $\alpha$}
+  \If{$|\mathcal T| \le n^{\alpha}$ \textbf{and} expandable parents exist}
+    \State \textbf{Expand:}
+    \For{each node $a \in A$}
+      \State Sample $S_C(a) \sim \mathrm{Beta}\big(\tau(1+n^C_{\mathrm{success}}(a)),\ \tau(1+n^C_{\mathrm{failure}}(a))\big)$
+    \EndFor
+    \State Select node $a^\star = \arg\max_a S_C(a)$
+    \State \textbf{[new]} \textbf{Select block:}
+    \For{each block $b \in \mathcal B$}
+      \State Sample $S_B(b) \sim \mathrm{Beta}\big(\tau(1+n^B_{\mathrm{success}}(b)),\ \tau(1+n^B_{\mathrm{failure}}(b))\big)$
+    \EndFor
+    \State Select block $b^\star = \arg\max_b S_B(b)$
+    \State Create child $c$ by block-targeted self-modification of $a^\star$ \textbf{using $b^\star$} \Comment{was: ``self-modification of $a^\star$''}
+    \State \textbf{[new]} $\mathrm{blk}(c) \gets b^\star$ \Comment{provenance, for block-level reward attribution}
+    \State Add $c$ to $\mathcal T$
+  \Else
+    \State \textbf{Evaluate:}
+    \For{each agent $a \in A$ with remaining tasks}
+      \State Sample $S(a) \sim \mathrm{Beta}\big(\tau(1+n_{\mathrm{success}}(a)),\ \tau(1+n_{\mathrm{failure}}(a))\big)$
+    \EndFor
+    \State Select agent $a^\star = \arg\max_a S(a)$
+    \State Allocate a benchmark task to $a^\star$
+    \State Update $n_{\mathrm{success}}, n_{\mathrm{failure}}$ for $a^\star$
+    \State Update $n^C_{\mathrm{success}}, n^C_{\mathrm{failure}}$ for $a^\star$ and ancestors
+    \If{$\mathrm{blk}(a^\star) \ne \bot$} \Comment{\textbf{[new]}}
+      \State Update $n^B_{\mathrm{success}}, n^B_{\mathrm{failure}}$ for $\mathrm{blk}(a^\star)$ using the same signal
+    \EndIf
+  \EndIf
+\EndWhile
+\State \Return $\arg\max_{a \in \mathcal T_B} I_\epsilon\big(1+n_{\mathrm{success}}(a),\ 1+n_{\mathrm{failure}}(a)\big)$
+\end{algorithmic}
+\end{algorithm}
+
+\begin{algorithm}
+\caption{\textsc{AdaptAlpha} --- recompute the widening parameter from the plateau signal}
+\label{alg:adapt-alpha}
+\begin{algorithmic}[1]
+\Procedure{AdaptAlpha}{$\alpha_{\mathrm{prev}}$, $\Delta B_t$}
+  \State $\Delta \gets -w\big(\Delta B_t - \Delta B_{\mathrm{ref}}\big)$, \quad $\Delta B_{\mathrm{ref}} = 0$
+  \Comment{$\Delta$ is the raw, unbounded steering signal for this iteration: $\Delta B_t$ below the reference (stagnant best score) makes $\Delta > 0$ (push toward EXPAND); $\Delta B_t$ above it (still improving) makes $\Delta < 0$ (push toward EVALUATE). Not yet a valid $\alpha$ --- clipped and smoothed below.}
+  \State $\alpha_{\mathrm{target}} \gets \mathrm{clip}\big(\alpha_{\mathrm{base}} + \Delta,\ \alpha_{\min},\ \alpha_{\max}\big)$
+  \State $\alpha_{\mathrm{new}} \gets (1-\gamma)\,\alpha_{\mathrm{prev}} + \gamma\,\alpha_{\mathrm{target}}$ \Comment{EMA smoothing against round-to-round noise}
+  \State \Return $\alpha_{\mathrm{new}}$
+\EndProcedure
+\end{algorithmic}
+\end{algorithm}
+```
+
+Not yet implemented in code — `meta_agent/managers/hgm.py`'s stage-1
+implementation (see below) has `_select_block` hardcoded to always return
+`"collaboration_workflow"` (no Thompson sampling over blocks yet) and no
+`AdaptAlpha`/plateau tracking at all (`alpha` is still the static
+config-supplied constant). This algorithm is the target design for the
+stages that build the block bandit and the adaptive-alpha loop on top of
+what stage 1 already ships.
+
 ## Open questions / not yet decided
 
 - Where does tier classification live: inside `failure_summarizer.py`, a new

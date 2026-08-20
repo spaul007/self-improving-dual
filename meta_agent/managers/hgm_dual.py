@@ -228,7 +228,8 @@ class HGMDualManager(HGMManager):
         # ---------- Stage A: today's HGM edit ---------- #
         intermediate_dir = variants_root / "intermediate"
         (intermediate_dir / "logs").mkdir(parents=True, exist_ok=True)
-        context_a = self._render_expand_context(parent)
+        block_a = self._select_block(parent)
+        context_a = self._render_expand_context(parent, block_a, intermediate_dir, node_id)
         res_a = editor.apply(
             self._feedback.get(parent_id),
             parent.round_dir,
@@ -236,6 +237,7 @@ class HGMDualManager(HGMManager):
             context=context_a,
         )
         strategy_a = res_a.strategy or fallback_strategy()
+        strategy_a.block = block_a
 
         if not res_a.success:
             node = HGMNode(node_id=node_id, parent_id=parent_id, round_dir=out_dir)
@@ -365,6 +367,18 @@ class HGMDualManager(HGMManager):
                 f"Stage A: {stage_a_goal}\n"
                 f"Stage B ({cat_name} specialist): {stage_b_goal}"
             )
+
+        # block_a is the block targeted for this WHOLE expansion (Stage B
+        # specialists edit ON TOP of the Stage A agent, not as separate
+        # block-targeted edits of their own -- there's no per-variant
+        # _select_block call). Stamp it on whichever strategy actually won:
+        # a no-op when Stage A wins (strategy_a already has it, same object
+        # as winner.strategy), but necessary when a Stage B variant wins --
+        # _run_variants builds each variant's strategy fresh from that
+        # editor call's own response, which never sets .block, so without
+        # this the node's persisted strategy.json would silently lose its
+        # block provenance whenever a specialist wins.
+        winner.strategy.block = block_a
 
         self._promote_winner(winner, out_dir, pool)
 
@@ -902,6 +916,9 @@ class HGMDualManager(HGMManager):
         # (out of scope for now — this manager's variant logic differs
         # enough from vanilla HGM's _evaluate that it wasn't verified here).
         failure_summarizer: Any = None,
+        # Same reasoning as failure_summarizer above, for
+        # meta_agent/block_suggester.py's new component.
+        block_suggester: Any = None,
     ) -> Any:
         # Stash the evaluator so _expand can call _evaluate_candidate
         # without changing the HGMManager._expand signature.
@@ -931,4 +948,5 @@ class HGMDualManager(HGMManager):
             eval_case_ids=eval_case_ids,
             summarizer=summarizer,
             failure_summarizer=failure_summarizer,
+            block_suggester=block_suggester,
         )

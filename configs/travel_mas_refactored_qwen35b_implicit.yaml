@@ -109,7 +109,15 @@ split:
 
 validators:
   - type: "syntax"
+  # workflow.py is a trivial, permanently-excluded delegator to
+  # mas_workflow.py's real run_task -- check both so a broken
+  # mas_workflow.py::run_task signature is caught pre-evaluation (as a
+  # retryable validator error) instead of crashing every eval case
+  # identically at real-evaluation time. See editor_validators.py's
+  # SignatureValidator docstring.
   - type: "signature"
+    config:
+      workflow_filenames: ["workflow.py", "mas_workflow.py"]
   - type: "imports"
   - type: "schema_wrapper_consistency"
   - type: "mutable_tool_imports"

@@ -88,12 +88,16 @@ class BehaviorSummarizer:
         base_url: Optional[str] = None,
         domain_label: Optional[str] = None,
         mutable_exclude: Optional[list[str]] = None,
+        # Caps runaway generation. 16384 matches the task_agent default.
+        # None disables the cap.
+        max_output_tokens: Optional[int] = 16384,
     ) -> None:
         self.llm = llm_caller
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.base_url = base_url
         self.mutable_exclude = mutable_exclude
+        self.max_output_tokens = max_output_tokens
         # Domain noun for the summarizer prompt — keeps the framework
         # project-agnostic. Precedence: explicit config value, then the active
         # project name (exported as ``META_AGENT_PROJECT`` by
@@ -782,6 +786,8 @@ class BehaviorSummarizer:
             kwargs["temperature"] = 0.2
         if self.base_url:
             kwargs["base_url"] = self.base_url
+        if self.max_output_tokens is not None:
+            kwargs["max_output_tokens"] = self.max_output_tokens
         response = self.llm(**kwargs)
         return getattr(response, "content", None) or ""
 

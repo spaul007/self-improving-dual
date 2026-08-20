@@ -13,6 +13,7 @@ _REGISTRIES: dict[str, dict[str, type]] = {
     "editor": {},
     "summarizer": {},
     "failure_summarizer": {},
+    "block_suggester": {},
 }
 
 

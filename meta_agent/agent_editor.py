@@ -22,7 +22,7 @@ import shutil
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional, Protocol
 
-from . import verbose_log
+from . import source_context, verbose_log
 from .editor_validators import MUTABLE_DIRS, MUTABLE_FILES, is_excluded
 from .failure_report import render_failure_report
 from .feedback_gatherer import render_metrics
@@ -152,6 +152,9 @@ class AgentEditor:
         # seed dir is editable except these paths. See
         # config.FrameworkConfig.mutable_exclude.
         mutable_exclude: Optional[list[str]] = None,
+        # Caps runaway generation (e.g. a reasoning-model repetition loop) --
+        # 16384 matches the task_agent default. None disables the cap.
+        max_output_tokens: Optional[int] = 16384,
     ) -> None:
         self.llm = llm_caller
         self.validators = list(validators)
@@ -163,6 +166,7 @@ class AgentEditor:
         self.db_schema = db_schema
         self.scorer_source = scorer_source
         self.mutable_exclude = mutable_exclude
+        self.max_output_tokens = max_output_tokens
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -325,6 +329,14 @@ class AgentEditor:
                 "contribute\") rather than stating it as settled fact — a "
                 "correct edit with an honest, hedged rationale is better than "
                 "a confident but unverified one.\n\n"
+                "  9. If the steering context above includes a specific "
+                "suggestion or recommendation for what to change, state in "
+                "your `rationale` whether your edit follows it. If your "
+                "edit departs from it in any way — a different target, a "
+                "different mechanism, or scope beyond what it proposed — "
+                "say so explicitly: what you changed instead and why. "
+                "Silently doing something else is not acceptable; an "
+                "honest \"I deviated from the suggestion because X\" is.\n\n"
                 "Call `submit_self_improvement` with a one-line optimization_goal, "
                 "a proposed_changes summary, a rationale, and the `files` payload. "
                 "Each file is the FULL replacement content — do not produce diffs. "
@@ -386,6 +398,14 @@ class AgentEditor:
                 "contribute\") rather than stating it as settled fact — a "
                 "correct edit with an honest, hedged rationale is better than "
                 "a confident but unverified one.\n\n"
+                "  9. If the steering context above includes a specific "
+                "suggestion or recommendation for what to change, state in "
+                "your `rationale` whether your edit follows it. If your "
+                "edit departs from it in any way — a different target, a "
+                "different mechanism, or scope beyond what it proposed — "
+                "say so explicitly: what you changed instead and why. "
+                "Silently doing something else is not acceptable; an "
+                "honest \"I deviated from the suggestion because X\" is.\n\n"
                 "Call `submit_self_improvement` with a one-line optimization_goal, "
                 "a proposed_changes summary, a rationale, and the `files` payload. "
                 "Each file is the FULL replacement content — do not produce diffs. "
@@ -421,6 +441,8 @@ class AgentEditor:
             llm_kwargs["temperature"] = 0.2
         if self.base_url:
             llm_kwargs["base_url"] = self.base_url
+        if self.max_output_tokens is not None:
+            llm_kwargs["max_output_tokens"] = self.max_output_tokens
         response = self.llm(**llm_kwargs)
 
         if verbose_log.is_enabled():
@@ -499,69 +521,19 @@ class AgentEditor:
     _ALWAYS_IGNORE_DIRS = {"__pycache__", "results"}
 
     def _read_mutable_sources(self, agent_dir: Path) -> dict[str, str]:
-        if self.mutable_exclude is not None:
-            sources: dict[str, str] = {}
-            for path in sorted(agent_dir.rglob("*")):
-                if path.is_dir() or path.name == "__init__.py":
-                    continue
-                if set(path.relative_to(agent_dir).parts) & self._ALWAYS_IGNORE_DIRS:
-                    continue
-                rel = path.relative_to(agent_dir).as_posix()
-                if is_excluded(rel, self.mutable_exclude):
-                    continue
-                try:
-                    sources[rel] = path.read_text(encoding="utf-8")
-                except (OSError, UnicodeDecodeError):
-                    continue
-            return sources
-
-        sources = {}
-        for fname in sorted(MUTABLE_FILES):
-            path = agent_dir / fname
-            if path.exists():
-                sources[fname] = path.read_text(encoding="utf-8")
-        mutable_dir = agent_dir / "mutable_tools"
-        if mutable_dir.exists():
-            for py in sorted(mutable_dir.glob("*.py")):
-                if py.name == "__init__.py":
-                    continue
-                rel = f"mutable_tools/{py.name}"
-                sources[rel] = py.read_text(encoding="utf-8")
-        return sources
+        return source_context.read_mutable_sources(
+            agent_dir, mutable_exclude=self.mutable_exclude
+        )
 
     def _format_project_context(self) -> list[str]:
-        """Static project reference the editor needs to reason about tool calls
-        and the metric: immutable tool implementations, the database schema,
-        and (whitebox only) the evaluation scoring code. Each is injected by
-        ``build_components``
-        from the project folder; absent ones are skipped."""
-        parts: list[str] = []
-        if self.tools_source:
-            parts.append(
-                "## Tool implementations (immutable — reached via "
-                "platform_core.tools.call_tool; read to see what each tool "
-                f"actually does)\n{self.tools_source}\n"
-            )
-        if self.db_schema:
-            parts.append(
-                "## Database schema (what the tools query against)\n"
-                f"{self.db_schema}\n"
-            )
-        if self.scorer_source:
-            parts.append(
-                "## Evaluation scoring code (read-only — exactly how your "
-                "output is graded; ground-truth data is NOT accessible)\n"
-                f"{self.scorer_source}\n"
-            )
-        return parts
+        return source_context.format_project_context(
+            tools_source=self.tools_source,
+            db_schema=self.db_schema,
+            scorer_source=self.scorer_source,
+        )
 
     def _format_current_sources(self, sources: dict[str, str]) -> str:
-        if not sources:
-            return "## Current sources\n(empty)\n"
-        parts = ["## Current sources"]
-        for path, body in sources.items():
-            parts.append(f"### {path}\n```\n{body}\n```")
-        return "\n".join(parts) + "\n"
+        return source_context.format_current_sources(sources)
 
     def _format_feedback(self, feedback: AgentFeedback) -> str:
         """Render the previous round's ``AgentFeedback`` into a compact

@@ -80,6 +80,9 @@ class FailureSummarizer:
         reasoning_effort: Optional[str] = None,
         base_url: Optional[str] = None,
         domain_label: Optional[str] = None,
+        # Caps runaway generation. 16384 matches the task_agent default.
+        # None disables the cap.
+        max_output_tokens: Optional[int] = 16384,
     ) -> None:
         self.llm = llm_caller
         self.model = model
@@ -88,6 +91,7 @@ class FailureSummarizer:
         self.domain_label = (
             domain_label or os.environ.get("META_AGENT_PROJECT") or "agent"
         )
+        self.max_output_tokens = max_output_tokens
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -260,6 +264,8 @@ class FailureSummarizer:
             kwargs["temperature"] = 0.2
         if self.base_url:
             kwargs["base_url"] = self.base_url
+        if self.max_output_tokens is not None:
+            kwargs["max_output_tokens"] = self.max_output_tokens
         response = self.llm(**kwargs)
         return getattr(response, "content", None) or ""
 

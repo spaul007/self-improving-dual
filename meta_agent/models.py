@@ -17,6 +17,12 @@ class EvolutionStrategy(BaseModel):
     optimization_goal: str
     proposed_changes: str
     rationale: str = ""
+    # Which block this EXPAND targeted (see block_suggester.py and
+    # HGMManager._select_block). Stamped by the MANAGER after the editor
+    # call returns -- the editor itself never sets or reads this; it's
+    # bookkeeping for block-level reward attribution in a later stage.
+    # None for the seed round or any manager that doesn't select blocks.
+    block: Optional[str] = None
 
 
 class TraceEvent(BaseModel):

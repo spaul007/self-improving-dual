@@ -70,8 +70,14 @@ tool_source_dirs:
 
 loop:
   # HGM's real terminator is manager.config.eval_budget; max_rounds is only
-  # a hard cap on tree size (node count) -- kept small too for this check.
-  max_rounds: 2
+  # a hard cap on tree size (node count). Bumped 2->3: HGMManager.evolve()
+  # now asserts max_rounds > 1 + init_expansions (root + init_expansions
+  # must leave room for at least one schedule-driven EXPAND) -- this
+  # config's original max_rounds=2 with init_expansions=1 exactly filled
+  # the cap with the init expansion alone, silently forbidding the
+  # scheduled loop from ever expanding again regardless of eval_budget.
+  # eval_budget=2 is already tiny, so this costs effectively nothing.
+  max_rounds: 3
   score_target: 1.0
 
 manager:
