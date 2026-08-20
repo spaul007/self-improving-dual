@@ -557,13 +557,52 @@ productive lineage rather than diluting it with more untested nodes.
 \end{algorithm}
 ```
 
-Not yet implemented in code — `meta_agent/managers/hgm.py`'s stage-1
-implementation (see below) has `_select_block` hardcoded to always return
-`"collaboration_workflow"` (no Thompson sampling over blocks yet) and no
+Not fully implemented in code yet — `meta_agent/managers/hgm.py`'s
+`_select_block` now supports three config-driven FIXED strategies (see
+below), but still no Thompson sampling over blocks, and no
 `AdaptAlpha`/plateau tracking at all (`alpha` is still the static
 config-supplied constant). This algorithm is the target design for the
 stages that build the block bandit and the adaptive-alpha loop on top of
-what stage 1 already ships.
+what's already shipped.
+
+### Block selection strategy, config-driven
+
+`_select_block` no longer hardcodes a single block. `HGMManager.__init__`
+takes `block_selection_strategy: str = "collaboration"` (any `manager:
+config:` YAML key, same as `alpha`/`eval_budget`/etc. — no `config.py`
+wiring needed, and `HGMDualManager` inherits it for free via its
+`**base_kwargs` forwarding). Five strategies, validated against this
+exact set at construction time (fails fast, not mid-run):
+
+| `block_selection_strategy` | Behavior |
+|---|---|
+| `"collaboration"` (default — zero behavior change for every existing config) | Always `collaboration_workflow` |
+| `"single_agent"` | Always `individual_subagent` |
+| `"verifiers"` | Always `verifiers` |
+| `"foundations"` | Always `foundation_capability` |
+| `"non_adaptive"` | Uniform-random among all four, resampled every EXPAND |
+
+The first four are fixed, parent-independent constants. `"non_adaptive"`
+is the first non-constant strategy but is still not adaptive in the
+tier_based_hgm.md sense — it uses no feedback/performance signal, just a
+dedicated seeded RNG (`self._block_rng`, kept separate from
+`self._task_rng` so comparing `block_selection_strategy` values doesn't
+also perturb which tasks get sampled) sampling uniformly each call. Reads
+the candidate block set directly from `block_suggester.py`'s own
+`_BLOCK_BODIES` rather than a second hardcoded literal list, so it can't
+drift out of sync if a block is ever added or renamed there. Genuine
+adaptive selection (Thompson sampling per the block-bandit design above)
+is a future branch in this same dispatch, not a separate mechanism, per
+`_select_block`'s own docstring.
+
+While reviewing the `verifiers` prompt for this, tightened it further:
+a suggestion that only names *which* constraint to check was accepted as
+complete before. Now explicitly required to also specify *how* the check
+is invoked (standalone function vs. inline check vs. decision branch, and
+what happens on failure — block/patch/flag) and *where* exactly it's
+called (the specific stage/function and point within it, not just "in
+the sightseeing stage") — a suggestion missing either is now called out
+as incomplete, not just under-specified.
 
 ## Open questions / not yet decided
 

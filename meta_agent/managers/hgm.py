@@ -77,6 +77,23 @@ class HGMManager:
         snapshot_tree: bool = False,
         lineage_memory_token_budget: int = 15000,
         seed: int = 42,
+        # Which block _select_block targets for every EXPAND (see
+        # meta_agent/block_suggester.py for what each block means).
+        # "collaboration" (default -- preserves the stage-1 hardcoded
+        # behavior with zero config changes for every existing config)
+        # always returns "collaboration_workflow"; "single_agent" always
+        # returns "individual_subagent"; "verifiers" always returns
+        # "verifiers"; "foundations" always returns "foundation_capability".
+        # "non_adaptive" samples uniformly at random among all four
+        # (seeded via self._block_rng, so the sequence of choices is
+        # reproducible for a given seed) -- "non_adaptive" because it
+        # still uses no feedback/performance signal to pick, unlike the
+        # future "adaptive" strategy below. A later "adaptive" strategy
+        # (Thompson sampling over a per-project BlockBandit, see
+        # tier_based_hgm.md's "Block-level Thompson sampling" section)
+        # plugs into this same dispatch in _select_block, not a separate
+        # mechanism.
+        block_selection_strategy: str = "collaboration",
     ) -> None:
         self.eval_budget = eval_budget
         self.init_expansions = init_expansions
@@ -84,6 +101,17 @@ class HGMManager:
         self.epsilon = epsilon
         self.beta_prior = beta_prior
         self.clade_pseudo_count = clade_pseudo_count
+        allowed_block_selection_strategies = {
+            "collaboration", "single_agent", "verifiers", "foundations",
+            "non_adaptive",
+        }
+        if block_selection_strategy not in allowed_block_selection_strategies:
+            raise ValueError(
+                "block_selection_strategy must be one of "
+                f"{sorted(allowed_block_selection_strategies)}, got "
+                f"{block_selection_strategy!r}"
+            )
+        self.block_selection_strategy = block_selection_strategy
         # τ scheduler: off by default, matching the reference's committed
         # config.yaml (`cool_down: false`). When on, τ = (B/b)**beta.
         self.cool_down = cool_down
@@ -121,6 +149,13 @@ class HGMManager:
         # and the finalization re-evaluations.
         self._budget_spent: int = 0
         self._task_rng: random.Random = random.Random(seed)
+        # Dedicated RNG for the "non_adaptive" block_selection_strategy
+        # (uniform-random block choice per EXPAND) -- kept separate from
+        # _task_rng so block selection doesn't perturb the task-sampling
+        # draw sequence (comparing block_selection_strategy values with
+        # everything else held fixed would otherwise also change which
+        # tasks get sampled, confounding the comparison).
+        self._block_rng: random.Random = random.Random(seed)
         # Optional per-round behavior summarizer. When set, ``_evaluate``
         # fires it after a node's feedback is final, and steering contexts
         # inject the lineage's behavior_memory.md files. ``None`` keeps
@@ -183,6 +218,7 @@ class HGMManager:
         # dual manager's throw-away variant trials) only caps total spend.
         self._node_evals_spent = 0
         self._task_rng = random.Random(self.seed)
+        self._block_rng = random.Random(self.seed)
         self._snapshotter = TreeSnapshotWriter(
             experiment_dir, enabled=self.snapshot_tree
         )
@@ -419,18 +455,57 @@ class HGMManager:
 
     def _select_block(self, parent: HGMNode) -> str:
         """Which block (see meta_agent/block_suggester.py) this EXPAND
-        should target.
+        should target, per ``self.block_selection_strategy``.
 
-        HARDCODED for stage 1 of tier_based_hgm.md's roadmap: always
-        "collaboration_workflow". A later stage replaces this body with a
-        Thompson sample over a per-project BlockBandit (see
-        tier_based_hgm.md's "Block-level Thompson sampling" section) --
-        everything that touches block SELECTION should change only here.
-        Called exactly once per _expand -- callers must reuse the same
-        value for both steering the editor and stamping
-        EvolutionStrategy.block, since a future stochastic implementation
-        must not be sampled twice for one EXPAND."""
-        return "collaboration_workflow"
+        Stage 1 of tier_based_hgm.md's roadmap: four FIXED strategies
+        ("collaboration" -> "collaboration_workflow", "single_agent" ->
+        "individual_subagent", "verifiers" -> "verifiers", "foundations"
+        -> "foundation_capability") that always return the same block
+        regardless of ``parent``, plus "non_adaptive", which samples
+        UNIFORMLY AT RANDOM among all four every call (via
+        self._block_rng, seeded -- reproducible for a given seed, but not
+        fixed to one block; still "non_adaptive" because the choice uses
+        no feedback/performance signal, unlike the future "adaptive"
+        strategy). All five are validated against this exact set in
+        __init__, so an unknown value fails fast at construction, not
+        here. A later "adaptive" strategy (Thompson sampling over a
+        per-project BlockBandit, see tier_based_hgm.md's "Block-level
+        Thompson sampling" section) plugs in as another branch here --
+        everything that touches block SELECTION should change only in
+        this method. Called exactly once per _expand -- callers must
+        reuse the same value for both steering the editor and stamping
+        EvolutionStrategy.block, since a stochastic strategy must not be
+        sampled twice for one EXPAND (this is exactly why "non_adaptive"
+        must live in this single method rather than being sampled at
+        each call site separately)."""
+        if self.block_selection_strategy == "collaboration":
+            return "collaboration_workflow"
+        if self.block_selection_strategy == "single_agent":
+            return "individual_subagent"
+        if self.block_selection_strategy == "verifiers":
+            return "verifiers"
+        if self.block_selection_strategy == "foundations":
+            return "foundation_capability"
+        if self.block_selection_strategy == "non_adaptive":
+            # Import here (not module-level) matching the existing lazy
+            # -import pattern for other meta_agent submodules used within
+            # a single method (see render_failure_summary_for_steering
+            # below). Reads the canonical block-name set directly from
+            # block_suggester.py's own _BLOCK_BODIES rather than
+            # duplicating the 4 literal names again here, so this stays
+            # correct automatically if a block is ever added/renamed
+            # there. sorted() makes the choice order deterministic before
+            # sampling, independent of dict insertion order.
+            from ..block_suggester import _BLOCK_BODIES
+
+            return self._block_rng.choice(sorted(_BLOCK_BODIES))
+        # Unreachable: __init__ already validates block_selection_strategy
+        # against the exact same set. Kept as a loud failure (not a
+        # silent fallback to one block) in case that invariant is ever
+        # broken by a future edit to either place.
+        raise ValueError(
+            f"unhandled block_selection_strategy={self.block_selection_strategy!r}"
+        )
 
     # ------------------------------------------------------------------ #
     # Steering context for the editor's self-improvement call
