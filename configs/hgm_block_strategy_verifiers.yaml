@@ -1,0 +1,113 @@
+# Block-selection-strategy comparison run ('verifiers') against
+# travel_mas_refactored, using the vanilla `hgm` manager. One of 5 sibling
+# configs (see configs/hgm_block_strategy_*.yaml) -- same everything else
+# (model, endpoints, budget, train pool) except manager.config's
+# block_selection_strategy, so results are comparable across the 5 fixed
+# strategies (tier_based_hgm.md's "Block selection strategy" section).
+# eval_budget=1000 -- big enough to actually see optimization happen, not
+# just plumbing -- but restricted to a 20-case REPRESENTATIVE train pool
+# (configs/travel_mas_refactored_representative_20_ids.json, stratified by
+# meta_info.days so all 6 trip lengths 2-7 are covered, seed=42) rather
+# than the full 120, so this runs in a reasonable time and still gets
+# real signal. That same 20-case set is BOTH train and validation/test --
+# no separate held-out split (eval_size unset/0): with only 20 cases in
+# scope, finalize_top_k's own full re-evaluation of the top finalists on
+# every one of the 20 already IS the validation pass.
+#
+# max_rounds=80: HGMManager.evolve() asserts max_rounds > eval_budget**alpha
+# (1000**0.6 ≈ 63.1) as well as max_rounds > 1+init_expansions -- 80 clears
+# both with real headroom.
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_block_strategy_verifiers.yaml
+#
+# Double-check the task_agent/editor vLLM endpoints below against whatever's
+# actually live before running.
+
+experiment_name: "travel_mas_refactored_block_strategy_verifiers"
+project: "travel_mas_refactored"
+
+mutable_exclude:
+  - "workflow.py"
+  - "benchmark/"
+  - "agents/immutable/"
+
+loop:
+  max_rounds: 80
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.5-35B-A3B"
+  # implicit mode -- reasoning_effort intentionally omitted, see
+  # qwen35bnotworking.md / configs/travel_mas_refactored_qwen35b_implicit.yaml.
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 1000
+    init_expansions: 2
+    alpha: 0.6
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 4
+    finalize_top_k: 3
+    full_eval_top_k: 0
+    seed: 42
+    block_selection_strategy: "verifiers"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    parallelism: 3
+    scorer: "travel_mas_refactored_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    max_attempts: 2
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+block_suggester:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-35B-A3B"
+
+split:
+  seed: 42
+  train_ids_path: "configs/travel_mas_refactored_representative_20_ids.json"
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+    config:
+      workflow_filenames: ["workflow.py", "mas_workflow.py"]
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"
