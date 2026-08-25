@@ -74,6 +74,17 @@ class HGMManager:
         cool_down: bool = False,
         beta: float = 1.0,
         eval_batch_size: int = 16,
+        # How many times a single node may be evaluated on the SAME case
+        # before it's excluded from that node's candidate pool. 1 (default)
+        # is today's exact "at most once, ever" behavior -- every existing
+        # config is implicitly this. >1 opts into repeat-eligible dripping:
+        # each repeat is folded as its own fresh observation into the
+        # node's Beta tallies (HGMNode.record()), not averaged first, so
+        # the posterior actually tightens with more repeats. Exists for
+        # small (down to 1-case) demos, where breadth across many distinct
+        # cases -- the thing that makes the Beta-Bernoulli bandit meaningful
+        # at n=20+ -- isn't available to fall back on.
+        eval_repeats: int = 1,
         finalize_top_k: int = 5,
         full_eval_top_k: int = 0,
         snapshot_tree: bool = False,
@@ -121,6 +132,7 @@ class HGMManager:
         self.cool_down = cool_down
         self.beta = beta
         self.eval_batch_size = max(1, eval_batch_size)
+        self.eval_repeats = max(1, eval_repeats)
         # How many top finalists are re-evaluated on the full train split
         # before the final selection (the small-sample-overfit fix).
         self.finalize_top_k = finalize_top_k
@@ -430,11 +442,20 @@ class HGMManager:
         """Drip a random batch of un-run train cases to a node. Returns the
         number of evaluations actually spent."""
         node = self._tree[node_id]
-        unevaluated = [
-            cid
-            for cid in self._train_case_ids
-            if cid not in node.evaluated_case_ids
-        ]
+        if self.eval_repeats > 1:
+            # Repeat-eligible: every case is always a valid candidate,
+            # regardless of how many times this node has already seen it.
+            # eval_repeats is an on/off switch here, not a per-case cap --
+            # how often a given case actually gets re-picked is left to
+            # self._task_rng's random sampling, bounded only by the total
+            # eval_budget (same as any other eval).
+            unevaluated = list(self._train_case_ids)
+        else:
+            unevaluated = [
+                cid
+                for cid in self._train_case_ids
+                if cid not in node.evaluated_case_ids
+            ]
         # Cap the batch at the remaining budget so the run lands on
         # eval_budget exactly. Tasks are sampled at RANDOM — the reference
         # runs with eval_random_level=1.0 (fully random task selection).
@@ -851,6 +872,12 @@ class HGMManager:
 
     def _evaluable(self) -> list[int]:
         """Real nodes that still have un-evaluated train cases."""
+        if self.eval_repeats > 1:
+            # Repeats never exhaust the pool -- any real node is always
+            # evaluable as long as there's at least one train case to drip.
+            if not self._train_case_ids:
+                return []
+            return [nid for nid, n in self._tree.nodes.items() if not n.edit_failed]
         n_train = len(self._train_case_ids)
         return [
             nid
@@ -936,10 +963,16 @@ class HGMManager:
         n_train = len(self._train_case_ids)
         spent = 0
         for node in finalists:
-            missing = [
-                cid for cid in self._train_case_ids
-                if cid not in node.evaluated_case_ids
-            ]
+            if self.eval_repeats > 1:
+                # Same on/off switch as _evaluate: one additional full pass
+                # over every train case, on top of whatever repeats this
+                # finalist already accumulated during the search loop.
+                missing = list(self._train_case_ids)
+            else:
+                missing = [
+                    cid for cid in self._train_case_ids
+                    if cid not in node.evaluated_case_ids
+                ]
             if not missing:
                 continue
             result = evaluator.run(
@@ -1235,6 +1268,10 @@ class HGMManager:
                     "cmp": self._tree.cmp(node.node_id),
                     "utility_measures": node.utility_measures,
                     "evaluated_case_ids": sorted(node.evaluated_case_ids),
+                    # Repeat counts per case -- always 0/1 unless
+                    # eval_repeats > 1, in which case this is the only place
+                    # that shows how many times each case was re-run.
+                    "case_eval_counts": dict(node.evaluated_case_ids),
                 },
                 indent=2,
             ),

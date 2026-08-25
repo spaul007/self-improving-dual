@@ -49,7 +49,14 @@ class HGMNode:
     # Cumulative per-case results, kept so the manager can rebuild a full
     # EvaluationResult for feedback after each lazy-eval batch.
     case_results: list[CaseResult] = field(default_factory=list)
-    evaluated_case_ids: set[str] = field(default_factory=set)
+    # case_id -> number of times this node has been evaluated on it.
+    # Was a set[str] (just "seen or not"); a dict lets HGMManager's
+    # opt-in eval_repeats (default 1 -- current "at most once" behavior)
+    # cap repeats per case instead of forbidding them outright. Dict
+    # membership (``cid not in evaluated_case_ids``) and ``sorted(...)``
+    # (returns sorted keys) both still mean the same thing as before for
+    # any caller that never checks the count.
+    evaluated_case_ids: dict[str, int] = field(default_factory=dict)
     children: list[int] = field(default_factory=list)
     # True when this node was born from a failed editor.apply — it occupies
     # a node id for a complete run dir but is neither expandable nor
@@ -73,7 +80,9 @@ class HGMNode:
         self.n_failure += 1.0 - s
         self.utility_measures.append(s)
         self.case_results.append(case)
-        self.evaluated_case_ids.add(case.case_id)
+        self.evaluated_case_ids[case.case_id] = (
+            self.evaluated_case_ids.get(case.case_id, 0) + 1
+        )
 
 
 class HGMTree:
