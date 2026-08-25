@@ -33,6 +33,7 @@ cheap (non-LLM) steering context string.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import random
 import shutil
@@ -40,6 +41,7 @@ from pathlib import Path
 from typing import Optional
 
 from ..agent_editor import AgentEditor, fallback_strategy
+from ..block_bandit import AdaptiveStrategy, BlockBandit
 from ..evaluator import Evaluator, load_cases
 from ..feedback_gatherer import FeedbackGatherer, persist_round_artifacts, render_metrics
 from ..models import (
@@ -87,12 +89,14 @@ class HGMManager:
         # "non_adaptive" samples uniformly at random among all four
         # (seeded via self._block_rng, so the sequence of choices is
         # reproducible for a given seed) -- "non_adaptive" because it
-        # still uses no feedback/performance signal to pick, unlike the
-        # future "adaptive" strategy below. A later "adaptive" strategy
-        # (Thompson sampling over a per-project BlockBandit, see
-        # tier_based_hgm.md's "Block-level Thompson sampling" section)
-        # plugs into this same dispatch in _select_block, not a separate
-        # mechanism.
+        # still uses no feedback/performance signal to pick, unlike
+        # "adaptive" below. "adaptive" Thompson-samples a block from a
+        # BlockBandit (see meta_agent/block_bandit.py) built from the
+        # accumulated success/failure mass of every node evaluated so far,
+        # grouped by which block its creating edit targeted -- the same
+        # Beta-Bernoulli convention hgm_tree.py already uses for node
+        # selection, applied to a new axis. See tier_based_hgm.md's
+        # "Block-level Thompson sampling" section for the design.
         block_selection_strategy: str = "collaboration",
     ) -> None:
         self.eval_budget = eval_budget
@@ -103,7 +107,7 @@ class HGMManager:
         self.clade_pseudo_count = clade_pseudo_count
         allowed_block_selection_strategies = {
             "collaboration", "single_agent", "verifiers", "foundations",
-            "non_adaptive",
+            "non_adaptive", "adaptive",
         }
         if block_selection_strategy not in allowed_block_selection_strategies:
             raise ValueError(
@@ -156,6 +160,20 @@ class HGMManager:
         # everything else held fixed would otherwise also change which
         # tasks get sampled, confounding the comparison).
         self._block_rng: random.Random = random.Random(seed)
+        # Blackbox for the "adaptive" block_selection_strategy -- swappable
+        # for a different adaptive algorithm later without touching
+        # _select_block/_expand beyond this construction line, since both
+        # only ever call BlockBandit.select(tree, feedback). Shares
+        # self._block_rng with "non_adaptive" (both are the block-selection
+        # RNG, kept isolated from _task_rng -- see above).
+        self._block_bandit: BlockBandit = BlockBandit(
+            beta_prior=beta_prior, rng=self._block_rng
+        )
+        # Snapshot of the most recent adaptive selection (None for every
+        # other strategy, and reset at the top of every _select_block call)
+        # so _expand can persist it to adaptive_strategy.json without
+        # _select_block's return type changing from plain str.
+        self._last_block_selection: Optional[AdaptiveStrategy] = None
         # Optional per-round behavior summarizer. When set, ``_evaluate``
         # fires it after a node's feedback is final, and steering contexts
         # inject the lineage's behavior_memory.md files. ``None`` keeps
@@ -219,6 +237,13 @@ class HGMManager:
         self._node_evals_spent = 0
         self._task_rng = random.Random(self.seed)
         self._block_rng = random.Random(self.seed)
+        # Rebuild against the freshly-seeded RNG above -- BlockBandit holds
+        # its rng by reference, so without this it would keep drawing from
+        # the (stale) RNG object created in __init__.
+        self._block_bandit = BlockBandit(
+            beta_prior=self.beta_prior, rng=self._block_rng
+        )
+        self._last_block_selection = None
         self._snapshotter = TreeSnapshotWriter(
             experiment_dir, enabled=self.snapshot_tree
         )
@@ -361,6 +386,12 @@ class HGMManager:
         (out_dir / "logs").mkdir(parents=True, exist_ok=True)
 
         block = self._select_block(parent)
+        if self._last_block_selection is not None:
+            (out_dir / "adaptive_strategy.json").write_text(
+                json.dumps(
+                    dataclasses.asdict(self._last_block_selection), indent=2
+                )
+            )
         context = self._render_expand_context(parent, block, out_dir, node_id)
         edit_result = editor.apply(
             self._feedback.get(parent_id), parent.round_dir, out_dir,
@@ -465,19 +496,22 @@ class HGMManager:
         UNIFORMLY AT RANDOM among all four every call (via
         self._block_rng, seeded -- reproducible for a given seed, but not
         fixed to one block; still "non_adaptive" because the choice uses
-        no feedback/performance signal, unlike the future "adaptive"
-        strategy). All five are validated against this exact set in
-        __init__, so an unknown value fails fast at construction, not
-        here. A later "adaptive" strategy (Thompson sampling over a
-        per-project BlockBandit, see tier_based_hgm.md's "Block-level
-        Thompson sampling" section) plugs in as another branch here --
-        everything that touches block SELECTION should change only in
-        this method. Called exactly once per _expand -- callers must
-        reuse the same value for both steering the editor and stamping
-        EvolutionStrategy.block, since a stochastic strategy must not be
-        sampled twice for one EXPAND (this is exactly why "non_adaptive"
-        must live in this single method rather than being sampled at
-        each call site separately)."""
+        no feedback/performance signal, unlike "adaptive"). "adaptive"
+        Thompson-samples a block from ``self._block_bandit`` (see
+        meta_agent/block_bandit.py), built from the accumulated
+        success/failure mass of every node evaluated so far grouped by
+        block -- real feedback/performance signal, unlike the other five.
+        All six are validated against this exact set in __init__, so an
+        unknown value fails fast at construction, not here. Called exactly
+        once per _expand -- callers must reuse the same value for both
+        steering the editor and stamping EvolutionStrategy.block, since a
+        stochastic strategy must not be sampled twice for one EXPAND (this
+        is exactly why "non_adaptive"/"adaptive" must live in this single
+        method rather than being sampled at each call site separately)."""
+        # Reset here (not just in evolve()) so a stale AdaptiveStrategy from
+        # a previous "adaptive" call can never leak into this round's
+        # persisted artifact if block_selection_strategy isn't "adaptive".
+        self._last_block_selection = None
         if self.block_selection_strategy == "collaboration":
             return "collaboration_workflow"
         if self.block_selection_strategy == "single_agent":
@@ -499,6 +533,10 @@ class HGMManager:
             from ..block_suggester import _BLOCK_BODIES
 
             return self._block_rng.choice(sorted(_BLOCK_BODIES))
+        if self.block_selection_strategy == "adaptive":
+            adaptive = self._block_bandit.select(self._tree, self._feedback)
+            self._last_block_selection = adaptive
+            return adaptive.block
         # Unreachable: __init__ already validates block_selection_strategy
         # against the exact same set. Kept as a loud failure (not a
         # silent fallback to one block) in case that invariant is ever

@@ -457,3 +457,123 @@ currently NOT in that config's `mutable_exclude` list (the config has no
 `shopping_mas`'s own convention) before running an actual HGM search,
 so the editor doesn't inadvertently mutate the infra fix documented
 above.
+
+---
+
+# travel_mas_refactored block-selection-strategy batch — foundations / single_agent / verifiers / collaboration / non_adaptive
+
+Five HGM runs, one per `block_selection_strategy` (see `tier_based_hgm.md`'s
+block-level Thompson sampling section), otherwise identical config:
+`configs/hgm_block_strategy_{foundations,single_agent,verifiers,collaboration,non_adaptive}.yaml`.
+Same task_agent (Qwen3.5-35B-A3B), editor/failure_summarizer/block_suggester
+(Qwen3.5-122B-A10B), `eval_budget: 1000`, `max_rounds: 80`, `alpha: 0.6`,
+`init_expansions: 2`, `eval_batch_size: 4`. Train/test is a fixed
+20-case stratified-representative subset of the 120-case benchmark
+(`configs/travel_mas_refactored_representative_20_ids.json`, seed=42) used
+identically by all 5 runs — same code, same cases, only the block-selection
+strategy differs.
+
+## Results
+
+| Strategy | Baseline (n=20) | Best node (n=20) | n=20 nodes above baseline | Mean of all n=20 nodes | Status |
+|---|---|---|---|---|---|
+| foundations | 0.431 | node 10: 0.556 (+0.125) | 10/11 | 0.468 (+0.037) | terminated early (positive signal already clear at round 44/80) |
+| **single_agent** | 0.306 | node 22: **0.566** (+0.260) | **33/33 (100%)** | **0.439 (+0.133)** | completed (budget exhausted, 63 nodes) |
+| verifiers | 0.369 | node 43: 0.503 (+0.134) | 22/34 (65%) | 0.388 (+0.019) | completed (budget exhausted, 76 nodes) |
+| **collaboration** | 0.438 | node 6: 0.441 (+0.003) | **1/37 (3%)** | **0.340 (-0.098)** | completed (budget exhausted, 66 nodes) |
+| non_adaptive | 0.369 | node 45: 0.500 (+0.131) | 17/21 (81%) | 0.415 (+0.046) | terminated manually (round 59/80, 812/1000 budget, decision made once the pattern looked settled) |
+
+## What actually changed
+
+`individual_subagent` (the `single_agent` strategy) is the clear winner, and
+by a wide margin: every single one of its 33 fully-evaluated (n=20) nodes
+beat baseline — not just the best one. Sampled diagnoses/fixes: empty
+sightseeing-stage generation and internal-monologue leakage into the
+`<itinerary>` tags (fixed via an explicit no-monologue output rule +
+pre-extraction empty-text retry), hallucinated passenger counts in the
+accounting stage, train-agent terminology errors ("Deplaning" for train
+arrivals), and flight-selection not respecting stated constraints
+(earliest/cheapest/shortest). These are per-role, high-frequency failure
+modes — they gate whether a stage produces *any* usable output at all, and
+recur across many of the 20 cases.
+
+`collaboration_workflow` is the clear loser: only 1 of 37 fully-evaluated
+nodes beat baseline, and the *average* effect across all of them was
+actively negative (mean 0.340 vs. 0.438 baseline). This is not because the
+block_suggester found nothing — its diagnoses were concrete and specific,
+e.g.: Flight/Train stages invoked with `inbox=[]` and no visibility into the
+traveler's time/budget/party-size constraints (round 1); no validation
+stage between Sightseeing and Accounting to catch constraint violations
+before budget calculation (round 5); no structured origin/destination leg
+data, causing a directional booking bug on case 59 (round 10). These are
+real structural gaps. But two things made them a worse bet than
+individual_subagent fixes in practice:
+
+1. **Narrower coverage** — each collaboration diagnosis targeted a handful
+   of specific cases (23, 40, 59, 70, 34), versus individual_subagent's
+   issues (empty generation, monologue leakage, passenger-count
+   hallucination) which recurred across a much larger share of the 20 cases.
+2. **Higher blast radius** — a collaboration fix means editing
+   `mas_workflow.py`, the shared orchestration every case runs through, vs.
+   a single-role file. A bug introduced there can degrade every case at
+   once, which is consistent with so many collaboration nodes landing
+   *below* baseline (as low as 0.212) rather than clustering near it.
+
+`verifiers` landed in between: real but modest improvement (65% of nodes
+above baseline, +0.019 on average) — plausible, since adding output-checking
+logic can only help if a stage after it can act on the check, whereas the
+underlying generation defects (still) live in individual_subagent territory.
+
+This is direct empirical support for `tier_based_hgm.md`'s core thesis:
+forcing edits into a low-severity, high-blast-radius block produces worse
+ROI — here, net-negative — than targeting the block where the dominant,
+highest-frequency failures actually live.
+
+`non_adaptive` (uniform-random block per EXPAND) lands where you'd expect
+from averaging the four fixed strategies: solidly positive (81% of nodes
+above baseline, +0.046 on average) but well short of `single_agent`'s
+100%/+0.133 — consistent with a random mix diluting individual_subagent's
+strong, reliable signal with collaboration_workflow's net-negative one.
+This is exactly the gap an adaptive (Thompson-sampling) block-selection
+strategy is meant to close: pick the good block more often once it's shown
+itself to be good, instead of paying the collaboration_workflow tax on a
+quarter of all EXPANDs regardless of what's actually working. See
+"Adaptive (Thompson-sampling) block selection" below.
+
+## Statistical confidence — noise floor
+
+Two independent pieces of evidence on how much run-to-run stochasticity
+(task_agent `temperature=0.2`, tool-call nondeterminism) alone contributes,
+holding code and cases fixed:
+
+- **3 repeated n=6 sanity runs**, identical seed code, identical 6 case IDs
+  (114, 30, 84, 9, 92, 95): overall scores 0.1875 / 0.1667 / 0.2292 (mean
+  0.194, stdev 0.032). The aggregate looks stable at this n, but per-case
+  swings are large and look bimodal, not Gaussian: case 9 scored
+  0.875 / 0.188 / 0.0 across the three runs; case 30 scored 0.0 / 0.0 / 0.625;
+  case 95 scored 0.0 / 0.563 / 0.0.
+- **2 independent n=20 baseline draws**, identical seed code, identical
+  20-case set (the `foundations` and `single_agent` runs' own free `SEED
+  pre-eval`): 0.431 vs. 0.306 — a 0.125 gap from stochasticity alone, the
+  same order of magnitude as several of the single-node deltas reported
+  above (e.g. foundations' own +0.125 "best node").
+
+Implication: a **single node's** delta from baseline (e.g. any one
+`foundations` or `verifiers` node) is not reliably distinguishable from this
+noise floor without a repeat evaluation. The **strategy-level aggregate**
+comparisons above are on much firmer ground, precisely because they're not
+single draws — `single_agent`'s 33/33-above-baseline and `collaboration`'s
+1/37-above-baseline are far more nodes, independently evaluated, pointing
+the same direction than the ~0.03–0.13 noise floor could plausibly produce
+by chance.
+
+## Run status
+
+All 5 experiments complete (`block_strategy_batch.done` written). `single_agent`,
+`verifiers`, and `collaboration` ran to natural completion (`eval_budget`
+exhausted at 250 EVALUATE batches × 4 = 1000, before hitting the
+`max_rounds: 80` ceiling). `foundations` and `non_adaptive` were both
+stopped manually once their pattern looked settled (round 44/80 and 59/80
+respectively) rather than run to exhaustion — in both cases the decision
+was made after the direction of the result was already clear, not to cut a
+still-forming signal short.

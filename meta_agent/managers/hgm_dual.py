@@ -27,7 +27,7 @@ import random
 import shutil
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from statistics import pvariance
 from typing import Any, Optional
@@ -229,6 +229,10 @@ class HGMDualManager(HGMManager):
         intermediate_dir = variants_root / "intermediate"
         (intermediate_dir / "logs").mkdir(parents=True, exist_ok=True)
         block_a = self._select_block(parent)
+        if self._last_block_selection is not None:
+            (intermediate_dir / "adaptive_strategy.json").write_text(
+                json.dumps(asdict(self._last_block_selection), indent=2)
+            )
         context_a = self._render_expand_context(parent, block_a, intermediate_dir, node_id)
         res_a = editor.apply(
             self._feedback.get(parent_id),
