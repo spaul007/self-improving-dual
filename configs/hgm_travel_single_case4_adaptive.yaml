@@ -1,0 +1,122 @@
+# Single-case demo: adaptive (Thompson-sampling) block selection +
+# repeat-eligible dripping (eval_repeats), against ONE relatively easy
+# travel_mas_refactored case.
+#
+# Case "4": Changchun -> Dalian, 2 days, train first-class both ways,
+# 3-star hotel w/ gym (3 people, 2 rooms), highest-rated natural scenic
+# spot, highest-rated restaurant near Zhongshan Square. Picked because it's
+# the shortest trip length in the benchmark (2 days -- least itinerary
+# surface to get wrong) and already scores well at baseline under the
+# unmodified seed (0.875: hard_score=1.0, commonsense_score=0.75, per
+# runs/travel_mas_refactored_baseline_full120/seed_full_benchmark/run_1/
+# eval_result.json) -- real headroom to demonstrate improvement without
+# starting from a case that's badly broken for unrelated reasons.
+#
+# X/Y sizing (see report.md's "sizing by target tree shape" section):
+# X=10 target good-enough agents, Y=10 evals each on average.
+# eval_budget = X*Y = 100, alpha = ln(X)/ln(eval_budget) = ln(10)/ln(100)
+# = 0.5. With exactly ONE train case, "Y=10 evals per agent" can only
+# happen via eval_repeats (see meta_agent/block_bandit.py's sibling
+# feature in hgm.py) -- re-running the SAME case per node instead of
+# spreading across many distinct cases. eval_repeats is an on/off switch,
+# not a literal cap at 10 (see hgm.py::_evaluate) -- any value > 1 enables
+# unbounded repeat sampling, bounded only by eval_budget.
+# eval_batch_size=1 because with one train case, a batch can never be
+# larger than 1 candidate anyway (see hgm.py::_evaluate's unevaluated pool).
+#
+# max_rounds=20 clears both of HGMManager.evolve()'s asserts:
+# max_rounds > eval_budget**alpha (100**0.5 = 10) and
+# max_rounds > 1+init_expansions (3).
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_single_case4_adaptive.yaml
+#
+# Double-check the task_agent/editor vLLM endpoints below against whatever's
+# actually live before running.
+
+experiment_name: "travel_mas_refactored_single_case4_adaptive_X10Y10"
+project: "travel_mas_refactored"
+
+mutable_exclude:
+  - "workflow.py"
+  - "benchmark/"
+  - "agents/immutable/"
+
+loop:
+  max_rounds: 20
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.5-35B-A3B"
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 100
+    init_expansions: 2
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 1
+    eval_repeats: 10
+    finalize_top_k: 3
+    full_eval_top_k: 0
+    seed: 42
+    block_selection_strategy: "adaptive"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    parallelism: 3
+    scorer: "travel_mas_refactored_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    max_attempts: 2
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+block_suggester:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-35B-A3B"
+
+split:
+  seed: 42
+  train_ids_path: "configs/travel_mas_refactored_single_case_4_ids.json"
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+    config:
+      workflow_filenames: ["workflow.py", "mas_workflow.py"]
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"
