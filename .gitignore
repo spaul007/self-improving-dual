@@ -35,7 +35,10 @@ tmp/
 
 # --- Bulk data (per-sample CSVs etc., gitignored to keep the repo small) ---
 projects/travel/data/
+projects/shopping/data
 projects/shopping/data/
+projects/shopping_mas/data
+projects/shopping_mas/data/
 docs/
 
 # --- Vendored MAS output artifacts (transient per-task results, not source) ---
