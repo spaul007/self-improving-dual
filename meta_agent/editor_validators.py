@@ -24,6 +24,9 @@ import textwrap
 from pathlib import Path
 from typing import Any, Iterable
 
+from pyflakes import checker as pyflakes_checker
+from pyflakes import messages as pyflakes_messages
+
 from .registry import register
 
 MUTABLE_FILES = {"workflow.py", "tool_wrapper.py", "tools_schema.json"}
@@ -89,6 +92,51 @@ class SyntaxValidator:
             except SyntaxError as exc:
                 rel = py.relative_to(agent_dir)
                 errors.append(f"{rel}: SyntaxError at line {exc.lineno}: {exc.msg}")
+        return errors
+
+
+@register("validator", "undefined_names")
+class UndefinedNameValidator:
+    """Catches what SyntaxValidator/LoadTestValidator can't: a name used
+    inside a function body but never bound in any enclosing scope (e.g. a
+    new helper that constructs ``AgentMessage(...)`` without importing it).
+    ``ast.parse``/``compile`` only check grammar -- Python doesn't resolve a
+    name referenced inside a ``def`` until that function actually runs, so
+    this class of bug is invisible to both, and to LoadTestValidator's bare
+    ``importlib.import_module("workflow")`` (which never calls into the
+    function body where the bad reference lives). Real, concrete case that
+    motivated this: a collaboration_workflow edit added a new
+    ``_merge_transport_messages`` helper that returned
+    ``AgentMessage(...)`` without importing ``AgentMessage`` -- every
+    validator passed, and the node crashed on 100% of its real evaluations.
+
+    Deliberately narrow: only pyflakes message classes that map directly to
+    a runtime NameError/UnboundLocalError (``UndefinedName``,
+    ``UndefinedLocal``, ``UndefinedExport``) gate the edit. Everything else
+    pyflakes reports (unused imports/variables, redefinitions, style-only
+    findings) is not a correctness bug and is intentionally ignored here --
+    those would just add rejection noise unrelated to whether the code
+    actually runs."""
+
+    _GATING_MESSAGE_TYPES = (
+        pyflakes_messages.UndefinedName,
+        pyflakes_messages.UndefinedLocal,
+        pyflakes_messages.UndefinedExport,
+    )
+
+    def validate(self, out_dir: Path, base_dir: Path) -> list[str]:
+        errors: list[str] = []
+        agent_dir = out_dir / "task_agent"
+        for py in _all_python_files(agent_dir):
+            try:
+                tree = ast.parse(py.read_text(encoding="utf-8"), filename=str(py))
+            except SyntaxError:
+                continue  # SyntaxValidator's job -- avoid double-reporting.
+            rel = py.relative_to(agent_dir)
+            checker = pyflakes_checker.Checker(tree, filename=str(rel))
+            for msg in checker.messages:
+                if isinstance(msg, self._GATING_MESSAGE_TYPES):
+                    errors.append(str(msg))
         return errors
 
 

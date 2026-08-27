@@ -38,9 +38,28 @@ if not experiments:
     st.error(f"No experiment directories found under `{runs_root}`.")
     st.stop()
 
-exp_names = [p.name for p in experiments]
-selected_name = st.sidebar.selectbox("Experiment (newest first)", exp_names, index=0)
-experiment_dir = runs_root / selected_name
+# For now: only visualize the currently-running experiment, not a picker
+# across every run under `runs/` -- auto-select the newest LIVE experiment
+# (falling back to the newest experiment overall if nothing looks active).
+# To restore the full picker, swap this block back for the commented-out
+# selectbox below.
+#
+# ri.run_is_active() does a full recursive file scan (rglob + stat on every
+# file) to check staleness -- fine for one experiment, but with 50+ historical
+# run dirs under `runs/`, calling it across the WHOLE list on every render
+# (every `refresh_interval` seconds via auto-refresh) turns into a massive,
+# unnecessary filesystem walk. `experiments` is already newest-mtime-first,
+# so a genuinely active run is always near the front -- only check a handful.
+_CANDIDATES_TO_CHECK = 5
+active = [p for p in experiments[:_CANDIDATES_TO_CHECK] if ri.run_is_active(p)]
+default_dir = active[0] if active else experiments[0]
+selected_name = default_dir.name
+st.sidebar.markdown(f"**Experiment (auto):** `{selected_name}`")
+experiment_dir = default_dir
+
+# exp_names = [p.name for p in experiments]
+# selected_name = st.sidebar.selectbox("Experiment (newest first)", exp_names, index=0)
+# experiment_dir = runs_root / selected_name
 
 auto_refresh = st.sidebar.checkbox("Auto-refresh", value=True)
 refresh_interval = st.sidebar.slider("Refresh interval (s)", 2, 30, 5)
@@ -57,7 +76,7 @@ rounds = ri.discover_rounds(experiment_dir)
 snapshots = ri.load_tree_snapshots(experiment_dir)
 is_active = ri.run_is_active(experiment_dir)
 budget = ri.budget_progress(cfg, snapshots, rounds)
-alerts = ri.extract_diagnostics(rounds)
+alerts = ri.extract_diagnostics(rounds, is_active=is_active)
 run_summary = ri.load_run_summary(experiment_dir)
 
 rounds_by_id = {r.node_id: r for r in rounds}
@@ -99,6 +118,54 @@ if budget.total:
 
 
 # --------------------------------------------------------------------------- #
+# Block reward distributions (adaptive block_selection_strategy only)
+# --------------------------------------------------------------------------- #
+
+adaptive = ri.latest_adaptive_strategy(rounds)
+if adaptive:
+    st.subheader("Block reward distributions")
+    st.caption(
+        "Beta posterior per block, as of the most recent EXPAND (node "
+        f"{max(r.node_id for r in rounds if r.adaptive_strategy is adaptive)}). "
+        "Width = uncertainty, not just the mean -- a wide curve means the "
+        "search hasn't ruled that block out yet, even if its mean looks low."
+    )
+    try:
+        import matplotlib.pyplot as plt
+
+        beta_prior = adaptive.get("beta_prior", 1.0)
+        fig, ax = plt.subplots(figsize=(8, 3.2))
+        for block, post in sorted(adaptive.get("posteriors", {}).items()):
+            a = beta_prior + post["n_success"]
+            b = beta_prior + post["n_failure"]
+            xs, ys = ri.beta_pdf_curve(a, b)
+            ax.plot(xs, ys, label=f"{block}  (n={post['n_evals']}, mean={post['mean']:.2f})")
+            ax.axvline(post["mean"], linestyle=":", linewidth=1, alpha=0.5)
+        ax.set_xlim(0, 1)
+        ax.set_xlabel("reward")
+        ax.set_ylabel("density")
+        ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.22), ncol=2, fontsize=8)
+        fig.tight_layout()
+        st.pyplot(fig)
+    except Exception as exc:  # noqa: BLE001 -- matplotlib may be absent
+        st.warning(f"Couldn't render the Beta curves ({exc}); showing raw posteriors instead.")
+        st.json(adaptive.get("posteriors", {}))
+
+    post_rows = [
+        {
+            "block": block,
+            "mean": post["mean"],
+            "n_evals": post["n_evals"],
+            "n_success": round(post["n_success"], 2),
+            "n_failure": round(post["n_failure"], 2),
+            "last_sample": round(post["sampled_value"], 3),
+        }
+        for block, post in sorted(adaptive.get("posteriors", {}).items())
+    ]
+    st.dataframe(pd.DataFrame(post_rows), width="stretch", hide_index=True)
+
+
+# --------------------------------------------------------------------------- #
 # Diagnostics panel
 # --------------------------------------------------------------------------- #
 
@@ -107,8 +174,29 @@ if not alerts:
     st.success("No issues detected.")
 else:
     icon = {"error": "🔴", "warning": "🟡", "info": "🔵"}
+    # A single crashed/broken node can produce one alert per case (up to
+    # eval_batch_size each) -- e.g. one bad edit failing all 32 cases in a
+    # batch floods this panel with 32 near-identical lines. Collapse to one
+    # representative line per (node, severity), with a "(x N)" count, so the
+    # panel reads as "which nodes have problems" rather than a raw error log.
+    grouped: dict[tuple[int, str], list[str]] = {}
     for a in alerts:
-        st.markdown(f"{icon.get(a.severity, '⚪')} **node {a.node_id}** — {a.message}")
+        grouped.setdefault((a.node_id, a.severity), []).append(a.message)
+
+    _MAX_GROUPS_SHOWN = 20
+    group_items = sorted(
+        grouped.items(),
+        key=lambda kv: ({"error": 0, "warning": 1, "info": 2}.get(kv[0][1], 3), kv[0][0]),
+    )
+    st.caption(
+        f"{len(alerts)} raw alert(s) across {len(grouped)} node(s) -- "
+        "showing one representative message per node/severity."
+    )
+    for (node_id, severity), messages in group_items[:_MAX_GROUPS_SHOWN]:
+        suffix = f"  *(×{len(messages)})*" if len(messages) > 1 else ""
+        st.markdown(f"{icon.get(severity, '⚪')} **node {node_id}** — {messages[0]}{suffix}")
+    if len(group_items) > _MAX_GROUPS_SHOWN:
+        st.caption(f"... and {len(group_items) - _MAX_GROUPS_SHOWN} more node/severity group(s) not shown.")
 
 
 # --------------------------------------------------------------------------- #
@@ -132,14 +220,18 @@ dot_lines = [
     'node [shape=box, style="filled,rounded", fontname="Helvetica", fontsize=11];',
 ]
 for r in rounds:
-    mu_str = f"{r.mean_utility:.3f}" if r.mean_utility is not None else "n/a"
+    # mean_utility is 0.0 (not None) for a node with zero evals so far --
+    # showing "mean=0.000" would misleadingly read as a failing score
+    # rather than "hasn't been evaluated yet".
+    display_mean = r.mean_utility if r.n_evals > 0 else None
+    mu_str = f"{display_mean:.3f}" if display_mean is not None else "in-progress"
     label = f"node {r.node_id}\\nmean={mu_str}"
     if r.node_id in diffs_by_node:
         _, added, removed = diffs_by_node[r.node_id]
         label += f"\\n+{added}/-{removed}"
     if r.edit_failed:
         label += "\\nEDIT FAILED"
-    color = _color_for(r.mean_utility, r.edit_failed)
+    color = _color_for(display_mean, r.edit_failed)
     dot_lines.append(f'  n{r.node_id} [label="{label}", fillcolor="{color}"];')
     if r.parent_id is not None and r.parent_id in rounds_by_id:
         dot_lines.append(f"  n{r.parent_id} -> n{r.node_id};")
@@ -169,8 +261,15 @@ for r in rounds:
         {
             "node_id": r.node_id,
             "parent": r.parent_id,
+            "block": (r.strategy or {}).get("block"),
             "edit_failed": r.edit_failed,
-            "mean_utility": r.mean_utility,
+            # mean_utility is 0.0 (not None) for a node with zero evals so
+            # far -- "0.000" would misleadingly read as a failing score
+            # rather than "hasn't been evaluated yet". NaN (not the string
+            # "--") so the column stays numeric -- Arrow can't serialize a
+            # float column with a string mixed in, and st.dataframe renders
+            # NaN as a blank cell, which reads the same way to a viewer.
+            "mean_utility": r.mean_utility if r.n_evals > 0 else float("nan"),
             "n_evals": r.n_evals,
             "cmp": r.cmp,
             "+added": added,
@@ -181,7 +280,7 @@ for r in rounds:
 nodes_df = pd.DataFrame(rows)
 st.dataframe(nodes_df, width="stretch", hide_index=True)
 
-trend_df = nodes_df[["node_id", "mean_utility"]].dropna()
+trend_df = nodes_df[nodes_df["n_evals"] > 0][["node_id", "mean_utility"]]
 if not trend_df.empty:
     st.line_chart(trend_df.set_index("node_id"))
 

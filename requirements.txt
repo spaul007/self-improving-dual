@@ -3,3 +3,8 @@ pyyaml>=6.0
 openai>=1.50
 # Used by projects/shopping/tools/search_products.py for BM25 semantic search.
 rank-bm25>=0.2
+# Static undefined-name checking in meta_agent/editor_validators.py's
+# UndefinedNameValidator -- ast.parse()/compile() only check grammar, not
+# name binding, so a NameError inside a function body (only resolved at
+# call time) is otherwise invisible until real evaluation.
+pyflakes>=3.0

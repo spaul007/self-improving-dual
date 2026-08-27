@@ -1,0 +1,116 @@
+# Full-scale run: travel_mas_refactored, adaptive (Thompson-sampling) block
+# selection + repeat-eligible dripping, using the FULL 120-case benchmark
+# split 60 train / 60 held-out validation (stratified by trip length so both
+# halves keep the same day-length mix, seed=42).
+#
+# X/Y sizing (see report.md's "sizing by target tree shape" section):
+# X=100 target good-enough agents, Y=600 evals each on average (10 full
+# passes over the 60-case train set per node on average -- eval_repeats is
+# what makes that possible instead of capping each node at 60 evals).
+# eval_budget = X*Y = 60000, alpha = ln(X)/ln(eval_budget) = ln(100)/ln(60000)
+# = 0.41857.
+#
+# eval_repeats is an on/off switch (any value > 1), not a literal cap -- see
+# meta_agent/managers/hgm.py::_evaluate. Once enabled, a node's candidate
+# case pool never excludes an already-seen case, so it can keep accumulating
+# real repeat evidence past one pass over all 60 train cases; the total
+# eval_budget is what bounds spend, same as any other eval.
+#
+# max_rounds=130 clears both of HGMManager.evolve()'s asserts:
+# max_rounds > eval_budget**alpha (60000**0.41857 = 100) and
+# max_rounds > 1+init_expansions (3).
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_full_scale_adaptive.yaml
+#
+# Double-check the task_agent/editor vLLM endpoints below against whatever's
+# actually live before running -- this is a long, expensive run.
+
+experiment_name: "travel_mas_refactored_full_scale_adaptive_X100Y600_p32_test"
+project: "travel_mas_refactored"
+
+mutable_exclude:
+  - "workflow.py"
+  - "benchmark/"
+  - "agents/immutable/"
+
+loop:
+  max_rounds: 130
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.5-35B-A3B"
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 60000
+    init_expansions: 2
+    alpha: 0.41857
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 32
+    eval_repeats: 2
+    finalize_top_k: 5
+    full_eval_top_k: 0
+    seed: 42
+    block_selection_strategy: "adaptive"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    parallelism: 32
+    scorer: "travel_mas_refactored_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    max_attempts: 2
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+block_suggester:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-35B-A3B"
+
+split:
+  seed: 42
+  train_size: 60
+  eval_size: 60
+  stratify_by: "meta_info.days"
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+    config:
+      workflow_filenames: ["workflow.py", "mas_workflow.py"]
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import difflib
 import json
+import math
 import re
 import time
 from dataclasses import dataclass
@@ -108,9 +109,22 @@ def load_tree_snapshots(experiment_dir: Path) -> list[dict[str, Any]]:
     return out
 
 
-def run_is_active(experiment_dir: Path, *, staleness_s: float = 120.0) -> bool:
+def run_is_active(experiment_dir: Path, *, staleness_s: float = 4500.0) -> bool:
     """Best-effort liveness heuristic (documented as such -- no PID/`ps`
     involved, so a killed-but-not-cleaned-up run can look briefly "live").
+
+    ``staleness_s`` needs to comfortably exceed the evaluator's own
+    ``wall_time_s_per_case`` (3600s in every travel_mas_refactored config):
+    a single slow straggler case within a batch legitimately blocks any new
+    file write until it finishes OR the evaluator's timeout kills it --
+    observed directly, live, growing past 40+ minutes with no sign of
+    finishing before hitting that ceiling. A short threshold (this used to
+    be 120s, then 1800s -- still not enough) makes a perfectly healthy,
+    actively-running process falsely show as "STOPPED". 4500s = the 3600s
+    timeout plus real margin for subprocess cleanup and the manager's own
+    post-batch processing (writing eval_result.json, failure_summarizer,
+    etc.) before the next file write lands.
+
     A finished run always has ``run_summary.md`` -- that's checked first and
     is authoritative. Absent that, "active" means *some* file under the
     experiment dir was modified more recently than ``staleness_s`` seconds
@@ -147,6 +161,10 @@ class RoundInfo:
     behavior_memory: Optional[str] = None
     has_task_agent: bool = False
     has_variants: bool = False  # HGM-dual marker, tolerated not visualized
+    # Per-block Beta posterior snapshot at the moment this EXPAND's block was
+    # selected (see meta_agent/block_bandit.py::AdaptiveStrategy) -- only
+    # present when manager.config.block_selection_strategy == "adaptive".
+    adaptive_strategy: Optional[dict[str, Any]] = None
 
     @property
     def parent_id(self) -> Optional[int]:
@@ -253,6 +271,7 @@ def discover_rounds(experiment_dir: Path) -> list[RoundInfo]:
         behavior_memory = (
             behavior_path.read_text(encoding="utf-8") if behavior_path.exists() else None
         )
+        adaptive_strategy = _read_json(round_dir / "adaptive_strategy.json")
         rounds.append(
             RoundInfo(
                 round_dir=round_dir,
@@ -264,6 +283,7 @@ def discover_rounds(experiment_dir: Path) -> list[RoundInfo]:
                 behavior_memory=behavior_memory,
                 has_task_agent=(round_dir / "task_agent").is_dir(),
                 has_variants=(round_dir / "variants").is_dir(),
+                adaptive_strategy=adaptive_strategy,
             )
         )
     rounds.sort(key=lambda r: r.node_id)
@@ -370,11 +390,20 @@ class Alert:
     message: str
 
 
-def extract_diagnostics(rounds: list[RoundInfo]) -> list[Alert]:
+def extract_diagnostics(rounds: list[RoundInfo], *, is_active: bool) -> list[Alert]:
     """Automated, severity-ranked (error > warning > info) sweep for the
     problems this session repeatedly found by hand: edit-failed nodes (with
     their validator errors), per-case runtime/agent errors, crashed eval
-    results, and zero-mean evaluated nodes."""
+    results, and zero-mean evaluated nodes.
+
+    ``is_active`` disambiguates a case a single filesystem snapshot can't:
+    a node whose eval_result.json is behind its logs/case_*.json (backfilled
+    by discover_rounds, flagged ``_synthesized_from_case_logs``) looks
+    IDENTICAL whether it's genuinely mid-crash or simply still being
+    evaluated right now -- the batch just hasn't finished and persisted its
+    aggregate yet. Only the run's own liveness (``ri.run_is_active``, based
+    on file mtimes) can tell those apart; a live run's in-progress node is
+    completely normal and must not be reported as an error."""
     alerts: list[Alert] = []
 
     for r in rounds:
@@ -384,12 +413,14 @@ def extract_diagnostics(rounds: list[RoundInfo]) -> list[Alert]:
             alerts.append(Alert("error", r.node_id, msg))
 
         er = r.eval_result or {}
-        if er.get("_synthesized_from_case_logs"):
+        if er.get("_synthesized_from_case_logs") and not is_active:
             alerts.append(
                 Alert(
                     "error", r.node_id,
-                    "eval_result.json missing -- likely crashed mid-evaluation "
-                    "(per-case results reconstructed from logs/case_*.json)",
+                    "eval_result.json missing/behind -- likely crashed "
+                    "mid-evaluation (per-case results reconstructed from "
+                    "logs/case_*.json; run is no longer active, so this "
+                    "will never catch up)",
                 )
             )
         if er.get("crashed"):
@@ -456,3 +487,34 @@ def budget_progress(cfg: dict[str, Any], snapshots: list[dict[str, Any]], rounds
 def load_run_summary(experiment_dir: Path) -> Optional[str]:
     path = experiment_dir / "run_summary.md"
     return path.read_text(encoding="utf-8") if path.exists() else None
+
+
+# --------------------------------------------------------------------------- #
+# Adaptive (Thompson-sampling) block-selection posteriors
+# --------------------------------------------------------------------------- #
+
+
+def latest_adaptive_strategy(rounds: list[RoundInfo]) -> Optional[dict[str, Any]]:
+    """The most recent round's ``adaptive_strategy.json`` (see
+    meta_agent/block_bandit.py::AdaptiveStrategy) -- the freshest snapshot of
+    every block's Beta posterior. ``None`` when the run isn't using
+    ``block_selection_strategy: "adaptive"``, or no round has EXPANDed yet."""
+    for r in sorted(rounds, key=lambda r: r.node_id, reverse=True):
+        if r.adaptive_strategy is not None:
+            return r.adaptive_strategy
+    return None
+
+
+def beta_pdf_curve(a: float, b: float, *, n_points: int = 200) -> tuple[list[float], list[float]]:
+    """(x, pdf(x)) over (0, 1) exclusive for Beta(a, b), computed from
+    ``math.lgamma`` (stdlib only -- no scipy dependency). ``a``/``b`` are
+    always >= beta_prior (default 1.0) here, so the density never blows up
+    at the boundaries the way it could for a Beta with a shape parameter
+    below 1."""
+    log_norm = math.lgamma(a) + math.lgamma(b) - math.lgamma(a + b)
+    xs = [(i + 0.5) / n_points for i in range(n_points)]  # avoid exact 0/1
+    ys = [
+        math.exp((a - 1) * math.log(x) + (b - 1) * math.log(1 - x) - log_norm)
+        for x in xs
+    ]
+    return xs, ys
