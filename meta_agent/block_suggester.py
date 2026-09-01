@@ -85,6 +85,43 @@ _SYSTEM_CLOSING = (
     "siblings' -- that reconciliation is your job, not its."
 )
 
+
+def _parse_strategies_md(text: str) -> dict[str, str]:
+    """Parse strategies.md's ``## General`` / ``## Block: <name>`` sections
+    into ``{"general": body, "<block_name>": body, ...}``. A section's body
+    is everything up to the next top-level (``## ``) header, trailing
+    whitespace stripped. Any content before the first recognized header,
+    or under an unrecognized header, is ignored (safe to have a preamble
+    or commentary in the file). Malformed/empty input yields ``{}``, never
+    an exception -- callers treat a missing section the same as a missing
+    file."""
+    sections: dict[str, str] = {}
+    current_key: Optional[str] = None
+    body_lines: list[str] = []
+
+    def _flush() -> None:
+        if current_key is not None:
+            body = "\n".join(body_lines).strip()
+            if body:
+                sections[current_key] = body
+
+    for line in text.splitlines():
+        if line.startswith("## "):
+            _flush()
+            header = line[3:].strip()
+            if header.lower() == "general":
+                current_key = "general"
+            elif header.lower().startswith("block:"):
+                current_key = header.split(":", 1)[1].strip()
+            else:
+                current_key = None  # unrecognized header -- ignore its body
+            body_lines = []
+        elif current_key is not None:
+            body_lines.append(line)
+    _flush()
+    return sections
+
+
 _BLOCK_BODIES: dict[str, str] = {
     "individual_subagent": (
         "## Block: individual_subagent\n\n"
@@ -369,6 +406,13 @@ class BlockSuggester:
         # produced a 60KB suggestion before this cap existed. 16384 matches
         # the task_agent default. None disables the cap.
         max_output_tokens: Optional[int] = 16384,
+        # Path (relative to the repo root if not absolute) to a curated,
+        # human-editable strategies file -- see strategies.md's own header
+        # for the format. None (default -- zero behavior change for every
+        # existing config) disables this section entirely. Read fresh on
+        # every suggest() call, not cached at construction, so edits apply
+        # to the very next EXPAND without a restart.
+        strategies_path: Optional[str] = None,
     ) -> None:
         self.llm = llm_caller
         self.model = model
@@ -379,6 +423,7 @@ class BlockSuggester:
         self.scorer_source = scorer_source
         self.mutable_exclude = mutable_exclude
         self.max_output_tokens = max_output_tokens
+        self.strategies_path = strategies_path
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -424,7 +469,10 @@ class BlockSuggester:
             print(f"[block_suggester] failed to read sources: {exc!r}", flush=True)
             return None
 
-        system = _SYSTEM_PREAMBLE + "\n\n" + _BLOCK_BODIES[block] + _SYSTEM_CLOSING
+        system = (
+            _SYSTEM_PREAMBLE + "\n\n" + _BLOCK_BODIES[block]
+            + self._render_strategies(block) + _SYSTEM_CLOSING
+        )
 
         user_parts: list[str] = source_context.format_project_context(
             tools_source=self.tools_source,
@@ -478,6 +526,37 @@ class BlockSuggester:
     # ------------------------------------------------------------------ #
     # Internals
     # ------------------------------------------------------------------ #
+
+    def _render_strategies(self, block: str) -> str:
+        """"General" + this block's section from ``self.strategies_path``,
+        formatted for splicing into the system prompt right after the
+        block body. Returns "" (no-op, never raises) when
+        ``strategies_path`` is unset, the file is missing/unreadable, or
+        neither section is present for this block -- reading a curated
+        strategies file is a nice-to-have, never a reason to fail the
+        round. Read fresh every call (not cached) so edits to the file
+        apply on the very next EXPAND."""
+        if not self.strategies_path:
+            return ""
+        path = Path(self.strategies_path)
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            return ""
+
+        sections = _parse_strategies_md(text)
+        parts: list[str] = []
+        general = sections.get("general")
+        if general:
+            parts.append(general)
+        specific = sections.get(block)
+        if specific:
+            parts.append(specific)
+        if not parts:
+            return ""
+        return "\n\n## Strategies to consider\n\n" + "\n\n".join(parts)
 
     def _format_feedback_digest(
         self, feedback: Optional[AgentFeedback], failure_summary: Optional[str]

@@ -46,12 +46,33 @@ class AdaptiveStrategy:
     posteriors: dict[str, BlockPosterior] = field(default_factory=dict)
 
 
+_ALLOWED_REWARD_METRICS = ("fractional_score", "boolean_increase")
+
+
 class BlockBandit:
     """Thompson-samples a block to target, from the accumulated per-block
     success/failure mass across every node evaluated so far. Stateless
     per call -- recomputes tallies fresh from ``tree``/``feedback`` each
     time rather than keeping a running total, so it can never drift out of
-    sync with the tree it's reading."""
+    sync with the tree it's reading.
+
+    ``reward_metric`` selects how one qualifying node contributes to its
+    block's success/failure tally:
+
+    - ``"fractional_score"`` (default -- today's exact behavior, zero
+      change for every existing config): a node's own accumulated
+      ``n_success``/``n_failure`` (continuous score mass, summed across
+      every eval of that node -- see ``HGMNode.record``) is added straight
+      into its block's tally. Nodes with more evals contribute more mass.
+    - ``"boolean_increase"``: each qualifying node contributes exactly ONE
+      Bernoulli trial -- success (1.0) if its ``mean_utility`` is >= its
+      *direct parent's* ``mean_utility`` (a tie counts as success: "didn't
+      regress"), failure (0.0) otherwise -- regardless of how many evals
+      backed that node's mean. A node whose parent hasn't been evaluated
+      yet (``n_evals == 0``, e.g. the root) has nothing to compare against
+      and is excluded from the tally entirely, same as any other
+      not-yet-qualifying node.
+    """
 
     def __init__(
         self,
@@ -60,6 +81,7 @@ class BlockBandit:
         beta_prior: float = 1.0,
         tau: float = 1.0,
         rng: random.Random,
+        reward_metric: str = "fractional_score",
     ) -> None:
         if blocks is None:
             # Canonical block-name source, same convention as the
@@ -72,6 +94,12 @@ class BlockBandit:
         self.beta_prior = beta_prior
         self.tau = tau
         self._rng = rng
+        if reward_metric not in _ALLOWED_REWARD_METRICS:
+            raise ValueError(
+                f"reward_metric must be one of {_ALLOWED_REWARD_METRICS}, "
+                f"got {reward_metric!r}"
+            )
+        self.reward_metric = reward_metric
 
     def _beta_sample(self, success: float, failure: float) -> float:
         # Same formula as HGMTree._beta_sample (hgm_tree.py) -- duplicated
@@ -98,10 +126,26 @@ class BlockBandit:
             if block not in tallies:
                 # Seed node (block is None) or any block not in self.blocks.
                 continue
+
+            if self.reward_metric == "boolean_increase":
+                parent = (
+                    tree.nodes.get(node.parent_id)
+                    if node.parent_id is not None else None
+                )
+                if parent is None or parent.n_evals == 0:
+                    # Nothing to compare against yet (root, or a parent not
+                    # evaluated) -- excluded from the tally entirely, same
+                    # as any other not-yet-qualifying node.
+                    continue
+                increase = 1.0 if node.mean_utility >= parent.mean_utility else 0.0
+                node_success, node_failure = increase, 1.0 - increase
+            else:
+                node_success, node_failure = node.n_success, node.n_failure
+
             success, failure, n = tallies[block]
             tallies[block] = (
-                success + node.n_success,
-                failure + node.n_failure,
+                success + node_success,
+                failure + node_failure,
                 n + 1,
             )
 

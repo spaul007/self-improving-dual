@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 
 from meta_agent.block_bandit import AdaptiveStrategy, BlockBandit, BlockPosterior
+from meta_agent.managers.hgm import HGMManager
 from meta_agent.managers.hgm_tree import HGMNode, HGMTree
 from meta_agent.models import CaseResult, EvolutionStrategy
 
@@ -149,6 +150,92 @@ class BlockBanditTests(unittest.TestCase):
 
         self.assertGreater(counts["verifiers"], 0)
 
+    def test_default_reward_metric_is_fractional_score(self) -> None:
+        bandit = BlockBandit(rng=random.Random(0))
+        self.assertEqual(bandit.reward_metric, "fractional_score")
+
+    def test_invalid_reward_metric_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            BlockBandit(rng=random.Random(0), reward_metric="not_a_real_metric")
+
+    def test_boolean_increase_success_when_at_or_above_parent(self) -> None:
+        # Parent mean=0.5. Child A (0.6, above) -> success. Child B (0.4,
+        # below) -> failure. Child C (0.5, exact tie) -> success (this
+        # project's explicit choice: a tie counts as "didn't regress").
+        tree, feedback = _tree_and_feedback(
+            [
+                (0, None, None, [], False),
+                (1, 0, "individual_subagent", [0.5, 0.5], False),  # parent, mean=0.5
+                (2, 1, "individual_subagent", [0.6], False),  # above -> success
+                (3, 1, "individual_subagent", [0.4], False),  # below -> failure
+                (4, 1, "individual_subagent", [0.5], False),  # tie -> success
+            ]
+        )
+        bandit = BlockBandit(
+            blocks=self.BLOCKS, rng=random.Random(1), reward_metric="boolean_increase",
+        )
+        result = bandit.select(tree, feedback)
+        post = result.posteriors["individual_subagent"]
+        # 3 qualifying children (node 1 itself is excluded -- its own
+        # parent, node 0, has n_evals == 0): 2 successes (above + tie), 1
+        # failure, one Bernoulli trial each regardless of each node's own
+        # eval count.
+        self.assertEqual(post.n_evals, 3)
+        self.assertEqual(post.n_success, 2.0)
+        self.assertEqual(post.n_failure, 1.0)
+
+    def test_boolean_increase_excludes_node_with_unevaluated_parent(self) -> None:
+        tree, feedback = _tree_and_feedback(
+            [
+                (0, None, None, [], False),
+                # Parent (1) has zero evals -- nothing to compare 2 against.
+                (1, 0, "individual_subagent", [], False),
+                (2, 1, "individual_subagent", [0.9], False),
+            ]
+        )
+        bandit = BlockBandit(
+            blocks=self.BLOCKS, rng=random.Random(1), reward_metric="boolean_increase",
+        )
+        result = bandit.select(tree, feedback)
+        post = result.posteriors["individual_subagent"]
+        self.assertEqual(post.n_evals, 0)
+
+    def test_boolean_increase_ignores_eval_count_unlike_fractional_score(self) -> None:
+        # Same tree under both metrics: node 2 has 100 strong evals (mean
+        # above parent), node 3 has 1 weak eval (mean below parent).
+        # fractional_score should weight node 2 far more heavily (100 evals
+        # of mass vs 1); boolean_increase must weight them identically (one
+        # trial each, regardless of eval count).
+        spec = [
+            (0, None, None, [], False),
+            (1, 0, "individual_subagent", [0.5] * 2, False),  # parent, mean=0.5
+            (2, 1, "individual_subagent", [0.9] * 100, False),  # far above, n=100
+            (3, 1, "individual_subagent", [0.1], False),  # below, n=1
+        ]
+        tree, feedback = _tree_and_feedback(spec)
+
+        boolean_bandit = BlockBandit(
+            blocks=self.BLOCKS, rng=random.Random(1), reward_metric="boolean_increase",
+        )
+        boolean_post = boolean_bandit.select(tree, feedback).posteriors[
+            "individual_subagent"
+        ]
+        self.assertEqual(boolean_post.n_evals, 2)
+        self.assertEqual(boolean_post.n_success, 1.0)
+        self.assertEqual(boolean_post.n_failure, 1.0)
+
+        fractional_bandit = BlockBandit(
+            blocks=self.BLOCKS, rng=random.Random(1), reward_metric="fractional_score",
+        )
+        fractional_post = fractional_bandit.select(tree, feedback).posteriors[
+            "individual_subagent"
+        ]
+        # fractional_score sums raw score mass: node 2 contributes ~90
+        # success / ~10 failure alone, dwarfing node 3's 0.1/0.9 -- a very
+        # different (eval-count-weighted) picture from boolean_increase's
+        # even 1-vs-1 split above.
+        self.assertGreater(fractional_post.n_success, 80.0)
+
     def test_reproducible_under_fixed_seed(self) -> None:
         tree, feedback = _tree_and_feedback(
             [
@@ -163,6 +250,25 @@ class BlockBanditTests(unittest.TestCase):
             return [bandit.select(tree, feedback).block for _ in range(20)]
 
         self.assertEqual(run(123), run(123))
+
+
+class HGMManagerBlockRewardMetricWiringTests(unittest.TestCase):
+    """End-to-end: the manager-level (YAML-facing) kwarg actually reaches
+    the bandit it constructs, at both the __init__ and evolve() re-seed
+    construction sites (meta_agent/managers/hgm.py)."""
+
+    def test_default_manager_uses_fractional_score(self) -> None:
+        m = HGMManager()
+        self.assertEqual(m.block_reward_metric, "fractional_score")
+        self.assertEqual(m._block_bandit.reward_metric, "fractional_score")
+
+    def test_manager_forwards_boolean_increase_to_the_bandit(self) -> None:
+        m = HGMManager(block_reward_metric="boolean_increase")
+        self.assertEqual(m._block_bandit.reward_metric, "boolean_increase")
+
+    def test_invalid_manager_level_reward_metric_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            HGMManager(block_reward_metric="nonsense")
 
 
 if __name__ == "__main__":

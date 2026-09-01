@@ -1,0 +1,102 @@
+# Ad-hoc reval config, cloned from hgm_dual_travel_mas_35b_4000.yaml.
+# node-1/node-2 (this config's original task_agent/editor endpoints) are
+# dead as of 2026-08-31 (curl -> connection refused); node-6/node-5 now
+# host the identical models (Qwen3.5-35B-A3B / Qwen3.5-122B-A10B
+# respectively, confirmed live via /v1/models) -- see
+# memory/vllm_endpoint.md. Only base_url values changed below; everything
+# else is byte-identical to the original run's config.snapshot.yaml, so
+# this is purely an endpoint-rotation fix, not a re-tuning.
+#
+# Used only via evaluate_task_agent.py (task_agent + evaluator + scorer +
+# gatherer path) -- editor/summarizer are not invoked for a standalone
+# eval, but their base_url is still updated for consistency/correctness.
+
+experiment_name: "travel_mas_hgm_dual_35b_4000"
+project: "travel_mas"
+
+eval_visibility: "blackbox"
+
+loop:
+  max_rounds: 1000
+  score_target: 0.99
+
+task_agent:
+  model: "Qwen/Qwen3.5-35B-A3B"
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+
+manager:
+  type: "hgm_dual"
+  config:
+    eval_budget: 4000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 3
+    seed: 42
+    num_variants: 2
+    intra_expand_eval_size: 16
+    variant_parallelism: 2
+    select_metric: "mean"
+    categorizer_max_representative_errors: 5
+    min_remaining_budget_for_dual: 16
+    category_selection: "balanced_by_type"
+    category_types: ["commonsense", "hard_constraint"]
+    snapshot_tree: true
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    # Kept at the original conservative value (not raised to 32 like the
+    # travel_mas_refactored production config) -- node-6 is already
+    # carrying two other concurrent parallelism=32 consumers right now
+    # (the production HGM run + the node52 reval); adding more load here
+    # isn't worth it for a one-off reval.
+    parallelism: 3
+    scorer: "travel_mas_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  TRAVEL_DATABASE_ROOT: "/groups/AIC-MV/v.kulkarni1/unified_framework/self-improving-dual/projects/travel/data/database_en"
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

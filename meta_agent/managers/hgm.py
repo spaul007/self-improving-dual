@@ -109,6 +109,16 @@ class HGMManager:
         # selection, applied to a new axis. See tier_based_hgm.md's
         # "Block-level Thompson sampling" section for the design.
         block_selection_strategy: str = "collaboration",
+        # Reward signal the "adaptive" strategy's BlockBandit uses to score
+        # each block. "fractional_score" (default -- zero change for every
+        # existing config) sums each qualifying node's own accumulated
+        # continuous score mass (HGMNode.n_success/n_failure) into its
+        # block's tally, so nodes with more evals contribute more.
+        # "boolean_increase" instead gives each qualifying node exactly one
+        # Bernoulli trial: success iff its mean_utility >= its direct
+        # parent's, regardless of how many evals backed that mean -- see
+        # meta_agent/block_bandit.py::BlockBandit for the full contrast.
+        block_reward_metric: str = "fractional_score",
     ) -> None:
         self.eval_budget = eval_budget
         self.init_expansions = init_expansions
@@ -127,6 +137,7 @@ class HGMManager:
                 f"{block_selection_strategy!r}"
             )
         self.block_selection_strategy = block_selection_strategy
+        self.block_reward_metric = block_reward_metric
         # τ scheduler: off by default, matching the reference's committed
         # config.yaml (`cool_down: false`). When on, τ = (B/b)**beta.
         self.cool_down = cool_down
@@ -179,7 +190,8 @@ class HGMManager:
         # self._block_rng with "non_adaptive" (both are the block-selection
         # RNG, kept isolated from _task_rng -- see above).
         self._block_bandit: BlockBandit = BlockBandit(
-            beta_prior=beta_prior, rng=self._block_rng
+            beta_prior=beta_prior, rng=self._block_rng,
+            reward_metric=block_reward_metric,
         )
         # Snapshot of the most recent adaptive selection (None for every
         # other strategy, and reset at the top of every _select_block call)
@@ -253,7 +265,8 @@ class HGMManager:
         # its rng by reference, so without this it would keep drawing from
         # the (stale) RNG object created in __init__.
         self._block_bandit = BlockBandit(
-            beta_prior=self.beta_prior, rng=self._block_rng
+            beta_prior=self.beta_prior, rng=self._block_rng,
+            reward_metric=self.block_reward_metric,
         )
         self._last_block_selection = None
         self._snapshotter = TreeSnapshotWriter(
