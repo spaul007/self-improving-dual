@@ -62,6 +62,28 @@ CONVERT_MODEL = "gpt-5-2025-08-07"
 # giving 31 attempts. Match that so transient JSON-parse failures don't drop
 # cases to score=0 on the first miss.
 DEFAULT_RETRIES = 31
+# Per-attempt HTTP timeout was the only guard before (see the comment in
+# _convert_plan_to_json below) -- 31 retries x a large per-attempt timeout
+# can still legitimately sum to hours even when every individual timeout
+# fires correctly. CONVERT_OVERALL_TIMEOUT_S is a hard wall-clock ceiling on
+# the WHOLE retry loop, checked every iteration, independent of how many of
+# the 31 attempts have run -- confirmed live: a real run stalled 6.6+ hours
+# on this exact loop despite the existing 300s per-attempt timeout.
+CONVERT_OVERALL_TIMEOUT_S = 600.0
+# Smaller than the overall ceiling on purpose, so more than one attempt can
+# actually fit inside CONVERT_OVERALL_TIMEOUT_S -- a 300s per-attempt
+# timeout with a 300s overall ceiling would only ever allow a single try.
+#
+# 150s, not 60s: measured live (2026-08-31, node-6, real vLLM/Qwen3.5-35B-A3B
+# traffic) that a genuine, eventually-successful conversion call for a short
+# (~600-token) plan took 96s wall-clock under realistic concurrent load --
+# 60s was tight enough to manufacture a timeout on nearly every real call
+# (confirmed live: a full 120-case reval of a known-good agent scored 0.0 on
+# effectively every case, all via "conversion timed out after ~366s", with
+# node-6 completely uncontended -- i.e. a self-inflicted false failure, not
+# a real quality signal). 150s x 2 attempts still fits the 300s ceiling
+# above, so the "5 min" hard cap this was built to guarantee is unchanged.
+CONVERT_PER_ATTEMPT_TIMEOUT_S = 300.0
 JSON_BLOCK_RE = re.compile(r"<JSON>(.*?)</JSON>", re.DOTALL | re.IGNORECASE)
 
 
@@ -123,15 +145,26 @@ def _convert_plan_to_json(plan_text: str, *, retries: int = DEFAULT_RETRIES) -> 
         else:
             return None, "OPENAI_API_KEY not set"
 
-    # Explicit timeout (SDK default is ~600s): without this, a single slow
-    # local-model completion combined with DEFAULT_RETRIES=31 attempts can
-    # block for many hours before ever raising an exception to advance the
-    # retry loop -- confirmed live, see platform_core/llm_wrapper.py's
-    # DEFAULT_REQUEST_TIMEOUT_S for the same fix on the task-agent side.
+    # Per-attempt timeout (SDK default is ~600s): without this, a single
+    # slow local-model completion blocks that one attempt indefinitely --
+    # see platform_core/llm_wrapper.py's DEFAULT_REQUEST_TIMEOUT_S for the
+    # same fix on the task-agent side. On its own this is NOT sufficient --
+    # see the overall deadline enforced in the loop below.
+    # max_retries=0: the SDK's own default (2) retries silently *inside* a
+    # single call, so one manual "attempt" here could actually cost up to
+    # 3x CONVERT_PER_ATTEMPT_TIMEOUT_S before raising -- confirmed live as
+    # part of the same 2026-08-31 investigation above (2 manual attempts
+    # summing to ~366s, not the expected ~2x60s=120s). The manual loop
+    # below already provides its own retry/backoff, deliberately timed
+    # against CONVERT_OVERALL_TIMEOUT_S; the SDK's internal retries just
+    # fight it for the same budget.
     client = (
-        OpenAI(api_key=api_key, base_url=base_url, timeout=300.0)
+        OpenAI(
+            api_key=api_key, base_url=base_url,
+            timeout=CONVERT_PER_ATTEMPT_TIMEOUT_S, max_retries=0,
+        )
         if base_url
-        else OpenAI(timeout=300.0)
+        else OpenAI(timeout=CONVERT_PER_ATTEMPT_TIMEOUT_S, max_retries=0)
     )
     messages = [
         {"role": "system", "content": FORMAT_CONVERT_PROMPT_EN},
@@ -139,7 +172,19 @@ def _convert_plan_to_json(plan_text: str, *, retries: int = DEFAULT_RETRIES) -> 
     ]
 
     last_err: Optional[str] = None
+    started = time.monotonic()
     for attempt in range(retries):
+        elapsed = time.monotonic() - started
+        if elapsed >= CONVERT_OVERALL_TIMEOUT_S:
+            # The hard ceiling this function exists to guarantee: give up
+            # after ~CONVERT_OVERALL_TIMEOUT_S total, no matter how many of
+            # `retries` attempts have actually run or how long any single
+            # per-attempt timeout takes to fire.
+            last_err = (
+                f"conversion timed out after {elapsed:.0f}s "
+                f"({attempt} attempt(s) made, last error: {last_err})"
+            )
+            break
         try:
             # gpt-5-2025-08-07 is a reasoning model — do not pass max_tokens.
             resp = client.chat.completions.create(

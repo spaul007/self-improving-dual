@@ -50,10 +50,35 @@ DEFAULT_MAX_OUTPUT_TOKENS: Optional[int] = None
 # network/server errors don't kill a case.
 DEFAULT_API_MAX_RETRIES = 30
 DEFAULT_API_BACKOFF_S = 1.5
-# 5 minutes -- generous for a real (even slow) MAS-stage or reasoning
-# call, but bounds how long a single hung/degenerate attempt can block
-# before the retry loop's exception handling ever gets a chance to run.
+# Per-attempt timeout -- bounds how long a single hung/degenerate attempt
+# can block before the retry loop's exception handling gets a chance to
+# run. Smaller than DEFAULT_OVERALL_TIMEOUT_S on purpose, so more than one
+# retry can actually fit inside the overall ceiling below.
+#
+# 300s, not 60s: 60s turned out too tight for real task-agent generations
+# under load -- confirmed live (2026-08-31, node-6, reduced to 4 GPUs from
+# 8, i.e. half the compute of when these calls were last tuned): a normal
+# multi-turn call sequence had several calls complete in 4-24s, then one
+# later call hit APITimeoutError twice in a row and the case crashed with
+# an uncaught exception (0 score, no plan) -- the same per-attempt-too-
+# tight failure class already found and fixed in scorer_impl.py's
+# CONVERT_PER_ATTEMPT_TIMEOUT_S, just discovered here later since this
+# file's overall ceiling (below) masked it until the hardware got slower.
+# 300s x 2 attempts fits the 600s overall ceiling below.
 DEFAULT_REQUEST_TIMEOUT_S = 300.0
+# Hard wall-clock ceiling on the WHOLE retry loop, independent of
+# DEFAULT_API_MAX_RETRIES or DEFAULT_REQUEST_TIMEOUT_S -- 30 retries x a
+# large per-attempt timeout can still legitimately sum to hours even when
+# every individual timeout fires correctly (same class of bug fixed in
+# projects/travel_mas_refactored/adapter/scorer_impl.py's
+# CONVERT_OVERALL_TIMEOUT_S; confirmed live there: a real run stalled 6.6+
+# hours in an analogous loop despite its own per-attempt timeout).
+#
+# 600s, not 300s: doubled alongside DEFAULT_REQUEST_TIMEOUT_S above so two
+# full-length attempts still fit inside the ceiling under the current
+# halved-compute reality (node-6 at 4 GPUs, not 8) -- a 300s/300s pairing
+# would only ever allow a single attempt.
+DEFAULT_OVERALL_TIMEOUT_S = 600.0
 
 
 def _env_default_model() -> str:
@@ -92,7 +117,10 @@ def _env_default_request_timeout() -> float:
     max_output_tokens budget) can legitimately stack up to hours before any
     exception is ever raised to trigger the retry-count logic. Confirmed
     live: one case stalled a real hgm_dual run for 3+ hours this way.
-    DEFAULT_REQUEST_TIMEOUT_S below caps each individual attempt instead."""
+    DEFAULT_REQUEST_TIMEOUT_S below caps each individual attempt -- but
+    that alone still isn't sufficient (30 retries x even a bounded
+    per-attempt timeout can still sum to hours); call_llm's retry loop also
+    enforces DEFAULT_OVERALL_TIMEOUT_S as a hard ceiling on the whole loop."""
     val = os.environ.get("LLM_REQUEST_TIMEOUT_S")
     if val is None or val == "":
         return DEFAULT_REQUEST_TIMEOUT_S
@@ -342,6 +370,14 @@ def call_llm(
     client_kwargs: dict[str, Any] = {
         "api_key": api_key,
         "timeout": _env_default_request_timeout(),
+        # The SDK's own default (2) retries silently *inside* a single
+        # call, so one manual attempt in the retry loop below could cost
+        # up to 3x the configured timeout before ever raising -- confirmed
+        # live as part of the same 2026-08-31 investigation that found
+        # DEFAULT_REQUEST_TIMEOUT_S=60s too tight (see its comment above).
+        # The retry loop below already provides its own retry/backoff,
+        # deliberately timed against DEFAULT_OVERALL_TIMEOUT_S.
+        "max_retries": 0,
     }
     if resolved_base_url:
         client_kwargs["base_url"] = resolved_base_url
@@ -367,6 +403,16 @@ def call_llm(
     last_err: Optional[Exception] = None
     response = None
     for attempt in range(DEFAULT_API_MAX_RETRIES):
+        elapsed_so_far = time.time() - started
+        if elapsed_so_far >= DEFAULT_OVERALL_TIMEOUT_S:
+            # Hard ceiling this loop exists to guarantee: give up after
+            # ~DEFAULT_OVERALL_TIMEOUT_S total, no matter how many of
+            # DEFAULT_API_MAX_RETRIES attempts have actually run or how
+            # long any single per-attempt timeout takes to fire.
+            raise TimeoutError(
+                f"call_llm timed out after {elapsed_so_far:.0f}s "
+                f"({attempt} attempt(s) made); last error: {last_err!r}"
+            ) from last_err
         try:
             response = client.responses.create(**request)
             break
