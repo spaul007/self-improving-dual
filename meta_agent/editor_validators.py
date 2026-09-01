@@ -104,24 +104,37 @@ class UndefinedNameValidator:
     name referenced inside a ``def`` until that function actually runs, so
     this class of bug is invisible to both, and to LoadTestValidator's bare
     ``importlib.import_module("workflow")`` (which never calls into the
-    function body where the bad reference lives). Real, concrete case that
-    motivated this: a collaboration_workflow edit added a new
-    ``_merge_transport_messages`` helper that returned
-    ``AgentMessage(...)`` without importing ``AgentMessage`` -- every
-    validator passed, and the node crashed on 100% of its real evaluations.
+    function body where the bad reference lives). Real, concrete cases that
+    motivated this:
+      * a collaboration_workflow edit added a new
+        ``_merge_transport_messages`` helper that returned
+        ``AgentMessage(...)`` without importing ``AgentMessage`` --
+        ``UndefinedName``.
+      * an individual_subagent edit added a local
+        ``from agents.common import run_tool_stage`` inside a retry branch
+        of a function that already called the module-level
+        ``run_tool_stage`` earlier in the same function -- Python treats
+        any name assigned anywhere in a function (including via a local
+        import) as local to the WHOLE function, so the earlier call raised
+        ``UnboundLocalError`` before the local import line ever ran --
+        ``ImportShadowedByLoopVar`` (pyflakes' name for this shape, despite
+        no loop being involved here).
+    Both passed every other validator and crashed on 100% of real
+    evaluations -- confirmed live by reproducing each directly.
 
     Deliberately narrow: only pyflakes message classes that map directly to
     a runtime NameError/UnboundLocalError (``UndefinedName``,
-    ``UndefinedLocal``, ``UndefinedExport``) gate the edit. Everything else
-    pyflakes reports (unused imports/variables, redefinitions, style-only
-    findings) is not a correctness bug and is intentionally ignored here --
-    those would just add rejection noise unrelated to whether the code
-    actually runs."""
+    ``UndefinedLocal``, ``UndefinedExport``, ``ImportShadowedByLoopVar``)
+    gate the edit. Everything else pyflakes reports (unused imports/
+    variables, redefinitions, style-only findings) is not a correctness bug
+    and is intentionally ignored here -- those would just add rejection
+    noise unrelated to whether the code actually runs."""
 
     _GATING_MESSAGE_TYPES = (
         pyflakes_messages.UndefinedName,
         pyflakes_messages.UndefinedLocal,
         pyflakes_messages.UndefinedExport,
+        pyflakes_messages.ImportShadowedByLoopVar,
     )
 
     def validate(self, out_dir: Path, base_dir: Path) -> list[str]:

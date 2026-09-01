@@ -577,3 +577,57 @@ stopped manually once their pattern looked settled (round 44/80 and 59/80
 respectively) rather than run to exhaustion — in both cases the decision
 was made after the direction of the result was already clear, not to cut a
 still-forming signal short.
+
+## Full-scale run (`travel_mas_refactored_full_scale_adaptive_X100Y180`) — final status and 3x120 revals
+
+Terminated 2026-09-01 (killed manually) after plateauing: 80 EXPANDs /
+budget spent at termination, leaderboard unchanged across several hours of
+idle checks with node 76 holding the lead the entire time (mean=0.486,
+n=224) — judged to have run long enough with no further movement, not cut
+short mid-improvement.
+
+To get a trustworthy, apples-to-apples comparison (not a single noisy
+per-node draw — see the noise-floor discussion above), the three most
+relevant agents were each rereevaluated on the **full 120-case benchmark,
+3 independent repeats**, on an uncontended node-6 (production run paused
+for the duration). All outputs are saved under `runs/adhoc_eval/`:
+
+| Agent | Mean composite | Case_acc (avg) |
+|---|---|---|
+| Baseline (pristine seed) | 0.3835 (±0.0109) | 0/120 (0%) |
+| HGM Dual (H1 Aristotle with Child Gen+Behav mem) — node 17 of `20260802_175007_travel_mas_hgm_dual_35b_4000` | 0.4941 (±0.0242) | ~1.1% (1, 2, 1 out of 120 across the 3 runs) |
+| Barebones Block HGM (H2) — node 52 of this run | 0.4701 (±0.0225) | 0/120 (0%) |
+
+Both evolved agents clear the pristine-seed baseline by a comfortable
+margin relative to the measured noise floor (~0.03–0.13 per the section
+above). HGM Dual's node 17 is the only one of the three to ever pass a
+case outright (commonsense == hard == 1.0), consistent with it coming from
+a different lineage/manager (`hgm_dual`, with child-generation + behavior
+memory) than the block-tiered barebones run.
+
+For calibration, a reference system built specifically for this benchmark
+(`Travel-MAS-main-aounon`: four cooperating LLM agents around a
+deterministic core — typed JSON artifacts between stages, a deterministic
+scheduler/superlative-resolver, and a repair loop closed against a local
+port of the real evaluator) reports composite 0.807 / case_acc 0.500 on
+this same 120-case split. The gap is architectural, not a prompt-tuning
+gap: our current seed asks the LLM to compute times, superlatives, and
+verify its own constraints with no deterministic backstop and no in-loop
+repair anywhere in `seed/mas_workflow.py` or `seed/agents/`. A scoped
+(non-full-rewrite) path toward closing part of that gap — a real
+verifier-repair loop, a deterministic hotel/cost resolver tool, informed
+by the two dimensions (Itinerary Structure, Time Feasibility) where even
+the reference system is weakest — was scoped conversationally but not
+implemented; see session notes for the full reasoning and estimated ~0.65
+composite ceiling for that scoped approach (case_acc likely to lag
+proportionally further behind, since it needs every constraint
+simultaneously perfect).
+
+Two infra bugs were found and fixed in the course of these revals (same
+root-cause class in three files: `platform_core/llm_wrapper.py` and both
+`projects/travel_mas*/adapter/scorer_impl.py`): a per-attempt LLM-call
+timeout tuned too tight (60s) plus a missing `max_retries=0` on the OpenAI
+client silently let the SDK's own default retries triple the effective
+wait per attempt — manufacturing timeouts/zero-scores that looked like
+real quality signal but weren't. Retuned to 300s per-attempt / 600s
+overall after node-6's GPU allocation was halved (4 GPUs, not 8) mid-session.

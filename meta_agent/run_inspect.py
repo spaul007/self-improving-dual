@@ -53,10 +53,26 @@ def _round_number(round_dir: Path) -> Optional[int]:
 
 def list_experiments(runs_root: Path) -> list[Path]:
     """``runs/*`` directories, newest-mtime first. Skips anything that isn't
-    a directory (stray files) and doesn't crash if ``runs_root`` is missing."""
+    a directory (stray files) and doesn't crash if ``runs_root`` is missing.
+
+    Also skips directories with no ``config.snapshot.yaml`` -- every real
+    HGM/HGM-dual experiment writes one at its top level, but ad-hoc eval
+    containers (``runs/adhoc_eval/``, ``runs/node17_full120_eval/``, etc. --
+    produced by ``evaluate_task_agent.py``/``snapshot_eval.py``, which nest
+    their own per-run ``config.snapshot.yaml`` one level deeper instead)
+    don't. Without this filter, a container like ``runs/adhoc_eval/`` -- which
+    gets its mtime bumped on every write by an unrelated ad-hoc eval -- can
+    outrank and mask the actual live experiment in the dashboard's
+    newest-first, auto-select-active picker (confirmed live: an in-progress
+    ``evaluate_task_agent.py`` run made ``runs/adhoc_eval/`` both the
+    newest AND "active" directory, hijacking the auto-selected experiment).
+    """
     if not runs_root.is_dir():
         return []
-    dirs = [p for p in runs_root.iterdir() if p.is_dir()]
+    dirs = [
+        p for p in runs_root.iterdir()
+        if p.is_dir() and (p / "config.snapshot.yaml").is_file()
+    ]
     dirs.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return dirs
 

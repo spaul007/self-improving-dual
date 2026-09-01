@@ -44,6 +44,34 @@ class UndefinedNameValidatorTests(unittest.TestCase):
         self.assertIn("AgentMessage", errors[0])
         self.assertIn("mas_workflow.py", errors[0])
 
+    def test_flags_local_import_shadowing_an_earlier_use_in_the_same_function(
+        self,
+    ) -> None:
+        # The second real bug this validator was extended for: a function
+        # calls a module-level-imported name, then LATER (e.g. in a retry
+        # branch) does a local `from x import name` for that same name.
+        # Python treats any name assigned anywhere in a function -- including
+        # via a local import -- as local to the WHOLE function, so the
+        # EARLIER call raises UnboundLocalError before the local import line
+        # ever runs. Reproduced live: agents/flight.py's retry loop crashed
+        # 100% of real evaluations this exact way; pyflakes reports it as
+        # ImportShadowedByLoopVar (its name for this shape, despite no loop
+        # being involved here).
+        self._write(
+            "mas_workflow.py",
+            "from agents.common import run_tool_stage\n\n"
+            "def run_flight_stage(task):\n"
+            "    text = run_tool_stage(task)\n"
+            "    for _ in range(2):\n"
+            "        from agents.common import run_tool_stage\n"
+            "        text = run_tool_stage(task)\n"
+            "    return text\n",
+        )
+        errors = self.validator.validate(self.out_dir, self.tmp)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("run_tool_stage", errors[0])
+        self.assertIn("mas_workflow.py", errors[0])
+
     def test_clean_when_name_is_properly_imported(self) -> None:
         self._write(
             "mas_workflow.py",
