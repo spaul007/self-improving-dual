@@ -51,6 +51,27 @@ def _imports_in(tree: ast.AST) -> Iterable[str]:
                 yield node.module
 
 
+def _import_hint(module: str, allowed_prefixes: tuple[str, ...]) -> str:
+    """Corrective spelling for the one mistake that dominates real failures.
+
+    ``from platform_core import trace`` imports the *bare* package, so the
+    validator sees ``platform_core`` and rejects it while the allowlist it
+    prints contains ``platform_core.trace`` — which reads as self-refuting and
+    tells the editor nothing about the actual problem. The retry replays this
+    string verbatim, so the fix has to be in it or attempt 2 repeats attempt 1.
+    """
+    if module != "platform_core":
+        return ""
+    subs = [p.split(".", 1)[1] for p in allowed_prefixes
+            if p.startswith("platform_core.")]
+    if not subs:
+        return ""
+    return (". `from platform_core import X` imports the bare package and is "
+            "rejected even when platform_core.X is allowed — write "
+            "`from platform_core.X import name` or `import platform_core.X`, "
+            f"where X is one of: {', '.join(subs)}")
+
+
 def _allowed_import(module: str, allowed_prefixes: tuple[str, ...]) -> bool:
     if not module:
         return True
@@ -137,6 +158,7 @@ class ImportValidator:
                     errors.append(
                         f"{fname}: forbidden import {mod!r} "
                         f"(allowed platform paths: {', '.join(allowed)})"
+                        + _import_hint(mod, allowed)
                     )
         return errors
 
@@ -190,7 +212,9 @@ class SchemaWrapperConsistencyValidator:
             elif not in_imm and not in_mut:
                 errors.append(
                     f"tools_schema.json lists {name!r} but no immutable tool nor "
-                    f"mutable_tools/{name}.py provides it"
+                    f"mutable_tools/{name}.py provides it — either add "
+                    f"mutable_tools/{name}.py (with a module-level run(**kwargs)) "
+                    f"or remove the {name!r} entry from tools_schema.json"
                 )
         return errors
 
@@ -217,8 +241,9 @@ class MutableToolImportValidator:
                 ):
                     errors.append(
                         f"mutable_tools/{py.name}: forbidden import {mod!r} "
-                        f"(mutable tools may only import platform_core.tools, "
-                        f"sibling mutable_tools.*, or stdlib)"
+                        f"(mutable tools may only import "
+                        f"{', '.join(self.ALLOWED_PREFIXES)}, or stdlib)"
+                        + _import_hint(mod, self.ALLOWED_PREFIXES)
                     )
         return errors
 

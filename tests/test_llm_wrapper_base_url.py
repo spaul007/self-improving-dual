@@ -75,9 +75,10 @@ class BaseUrlPlumbingTests(unittest.TestCase):
         self._env_snapshot = {
             k: os.environ.get(k)
             for k in ("OPENAI_API_KEY", "LLM_BASE_URL", "LLM_MODEL",
-                      "LLM_REASONING_EFFORT", "META_AGENT_TRACE_PATH")
+                      "LLM_REASONING_EFFORT", "LLM_TEMPERATURE",
+                      "META_AGENT_TRACE_PATH")
         }
-        for k in ("LLM_BASE_URL", "LLM_REASONING_EFFORT",
+        for k in ("LLM_BASE_URL", "LLM_REASONING_EFFORT", "LLM_TEMPERATURE",
                   "META_AGENT_TRACE_PATH"):
             os.environ.pop(k, None)
         os.environ["OPENAI_API_KEY"] = "sk-test"
@@ -234,6 +235,163 @@ class BaseUrlPlumbingTests(unittest.TestCase):
         llm_calls = [e for e in events if e.get("kind") == "llm_call"]
         self.assertEqual(len(llm_calls), 1)
         self.assertIsNone(llm_calls[0]["payload"].get("base_url"))
+
+
+class TemperaturePlumbingTests(unittest.TestCase):
+    """Task-agent greedy-temperature plumbing (LLM_TEMPERATURE env var).
+
+    Contract (see call_llm docstring): explicit arg > env > legacy default.
+    With reasoning effort active, only an ENV-sourced temperature is sent —
+    and only for models that tolerate temperature alongside reasoning
+    (OpenAI first-party reasoning families gpt-5*/o-series are denylisted;
+    gpt-oss and open-weights reasoners are not). An explicit temperature
+    arg with effort set keeps the historical omit behaviour so meta-agent
+    call sites are byte-identical.
+    """
+
+    def setUp(self) -> None:
+        self._env_snapshot = {
+            k: os.environ.get(k)
+            for k in ("OPENAI_API_KEY", "LLM_BASE_URL", "LLM_MODEL",
+                      "LLM_REASONING_EFFORT", "LLM_TEMPERATURE",
+                      "META_AGENT_TRACE_PATH")
+        }
+        for k in ("LLM_BASE_URL", "LLM_REASONING_EFFORT", "LLM_TEMPERATURE",
+                  "META_AGENT_TRACE_PATH"):
+            os.environ.pop(k, None)
+        os.environ["OPENAI_API_KEY"] = "sk-test"
+        os.environ["LLM_MODEL"] = "gpt-5.4-mini"
+
+        _FakeOpenAI.instances.clear()
+        self._openai_patch = mock.patch("openai.OpenAI", new=_FakeOpenAI)
+        self._openai_patch.start()
+        self.tmp = Path(tempfile.mkdtemp(prefix="llm_temperature_test_"))
+
+    def tearDown(self) -> None:
+        self._openai_patch.stop()
+        for k, v in self._env_snapshot.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        import shutil
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _create_kwargs(self, **call_kwargs) -> dict:
+        from platform_core import llm_wrapper
+
+        llm_wrapper.call_llm(
+            messages=[{"role": "user", "content": "hi"}], **call_kwargs
+        )
+        return _FakeOpenAI.instances[-1].sink["create_kwargs"]
+
+    # ----- reasoning branch ---------------------------------------------
+
+    def test_env_temp_with_effort_sent_for_tolerant_model(self) -> None:
+        os.environ["LLM_TEMPERATURE"] = "0"
+        os.environ["LLM_REASONING_EFFORT"] = "medium"
+        os.environ["LLM_MODEL"] = "qwen/qwen3.5-122b-a10b"
+        kwargs = self._create_kwargs()
+        self.assertEqual(kwargs.get("reasoning"), {"effort": "medium"})
+        self.assertEqual(kwargs.get("temperature"), 0.0)
+
+    def test_env_temp_with_effort_omitted_for_openai_reasoning(self) -> None:
+        os.environ["LLM_TEMPERATURE"] = "0"
+        os.environ["LLM_REASONING_EFFORT"] = "medium"
+        for model in ("gpt-5.4-mini", "openai/o3-mini"):
+            os.environ["LLM_MODEL"] = model
+            kwargs = self._create_kwargs()
+            self.assertNotIn("temperature", kwargs, model)
+            self.assertEqual(kwargs.get("reasoning"), {"effort": "medium"})
+
+    def test_env_temp_with_effort_sent_for_gpt_oss(self) -> None:
+        # gpt-oss is an open-weights family that accepts temperature; it
+        # must NOT be caught by the gpt-5 denylist prefix.
+        os.environ["LLM_TEMPERATURE"] = "0"
+        os.environ["LLM_REASONING_EFFORT"] = "medium"
+        os.environ["LLM_MODEL"] = "gpt-oss-120b"
+        kwargs = self._create_kwargs()
+        self.assertEqual(kwargs.get("temperature"), 0.0)
+
+    def test_no_env_with_effort_keeps_omit_behavior(self) -> None:
+        os.environ["LLM_REASONING_EFFORT"] = "medium"
+        os.environ["LLM_MODEL"] = "qwen/qwen3.5-122b-a10b"
+        kwargs = self._create_kwargs()
+        self.assertNotIn("temperature", kwargs)
+
+    def test_explicit_arg_with_effort_still_omitted(self) -> None:
+        # The meta-agent invariant: editor/edit_memory/summarizer pass
+        # temperature=0.2 explicitly; with a global reasoning effort their
+        # requests must stay byte-identical (no temperature) even when
+        # LLM_TEMPERATURE happens to be set.
+        os.environ["LLM_TEMPERATURE"] = "0"
+        os.environ["LLM_REASONING_EFFORT"] = "medium"
+        os.environ["LLM_MODEL"] = "qwen/qwen3.5-122b-a10b"
+        kwargs = self._create_kwargs(temperature=0.2)
+        self.assertNotIn("temperature", kwargs)
+        self.assertEqual(kwargs.get("reasoning"), {"effort": "medium"})
+
+    # ----- non-reasoning branch -----------------------------------------
+
+    def test_env_temp_without_effort_sent(self) -> None:
+        os.environ["LLM_TEMPERATURE"] = "0"
+        kwargs = self._create_kwargs()
+        self.assertEqual(kwargs.get("temperature"), 0.0)
+
+    def test_legacy_default_without_env_or_arg(self) -> None:
+        kwargs = self._create_kwargs()
+        self.assertEqual(kwargs.get("temperature"), 1.0)
+
+    def test_explicit_arg_wins_over_env_without_effort(self) -> None:
+        os.environ["LLM_TEMPERATURE"] = "0"
+        kwargs = self._create_kwargs(temperature=0.7)
+        self.assertEqual(kwargs.get("temperature"), 0.7)
+
+    def test_unparseable_env_treated_as_unset(self) -> None:
+        os.environ["LLM_TEMPERATURE"] = "abc"
+        kwargs = self._create_kwargs()
+        self.assertEqual(kwargs.get("temperature"), 1.0)
+        os.environ["LLM_REASONING_EFFORT"] = "medium"
+        os.environ["LLM_MODEL"] = "qwen/qwen3.5-122b-a10b"
+        kwargs = self._create_kwargs()
+        self.assertNotIn("temperature", kwargs)
+
+    # ----- trace ---------------------------------------------------------
+
+    def test_trace_records_temperature_sent_and_omitted(self) -> None:
+        trace_path = self.tmp / "trace.jsonl"
+        os.environ["META_AGENT_TRACE_PATH"] = str(trace_path)
+        os.environ["LLM_TEMPERATURE"] = "0"
+        os.environ["LLM_REASONING_EFFORT"] = "medium"
+
+        os.environ["LLM_MODEL"] = "qwen/qwen3.5-122b-a10b"
+        self._create_kwargs()
+        os.environ["LLM_MODEL"] = "gpt-5.4-mini"
+        self._create_kwargs()
+
+        events = [
+            json.loads(line)
+            for line in trace_path.read_text().splitlines()
+            if line.strip()
+        ]
+        llm_calls = [e for e in events if e.get("kind") == "llm_call"]
+        self.assertEqual(len(llm_calls), 2)
+        self.assertEqual(llm_calls[0]["payload"].get("temperature"), 0.0)
+        self.assertIsNone(llm_calls[1]["payload"].get("temperature"))
+
+    # ----- denylist helper ----------------------------------------------
+
+    def test_rejects_temperature_with_reasoning(self) -> None:
+        from platform_core.llm_wrapper import _rejects_temperature_with_reasoning
+
+        for model in ("gpt-5", "gpt-5.4-mini", "GPT-5-turbo", "o1",
+                      "o3-mini", "o4-mini", "openai/gpt-5.4-mini",
+                      "openai/o1-preview"):
+            self.assertTrue(_rejects_temperature_with_reasoning(model), model)
+        for model in ("gpt-oss-120b", "openai/gpt-oss-120b",
+                      "qwen/qwen3.5-122b-a10b", "z-ai/glm-5.3-flash",
+                      "deepseek/deepseek-v4-flash", "olmo-2", "o40-custom"):
+            self.assertFalse(_rejects_temperature_with_reasoning(model), model)
 
 
 class ReasoningFallbackTests(unittest.TestCase):

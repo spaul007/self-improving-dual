@@ -6,6 +6,8 @@ Each benchmark case spawns a fresh Python child running
     cwd      = round_dir/task_agent
     PYTHONPATH ⊇ platform_core's parent
     env META_AGENT_TRACE_PATH = round_dir/logs/trace.jsonl
+    env LLM_TEMPERATURE = task-agent sampling temperature (child env only,
+        when configured — see ``task_agent_temperature``)
     stdin    = JSON Task (description, case_id, context)
 
 The runner imports ``workflow.run_task``, calls it with the Task, and
@@ -86,6 +88,7 @@ class SubprocessEvaluator:
         parallelism: int = 1,
         max_cases: int | None = None,
         scorer: Any = None,
+        task_agent_temperature: float | None = None,
     ) -> None:
         self.wall_time_s = float(wall_time_s_per_case)
         self.memory_bytes = int(memory_mb) * 1024 * 1024
@@ -97,6 +100,16 @@ class SubprocessEvaluator:
         # the evaluator falls back to the module-level ``score()`` function
         # in ``benchmark_dir/scorer.py``.
         self.scorer = scorer
+        # Task-agent-only sampling temperature, injected by
+        # config.build_components from cfg.task_agent.temperature (YAML
+        # default 0.2 = low-variance sampling). Constructor default is
+        # None (= don't set) so directly-constructed evaluators behave
+        # exactly as before.
+        self.task_agent_temperature = (
+            float(task_agent_temperature)
+            if task_agent_temperature is not None
+            else None
+        )
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -198,6 +211,14 @@ class SubprocessEvaluator:
             f"{platform_parent}{os.pathsep}{existing}" if existing else platform_parent
         )
         env["META_AGENT_TRACE_PATH"] = str(trace_path)
+        # Task-agent sampling temperature. Set only on this local env dict —
+        # never os.environ — so it reaches the case subprocesses while
+        # meta-agent components (editor, edit_memory, summarizer) running in
+        # this parent process never see it. When None we deliberately do not
+        # pop an inherited LLM_TEMPERATURE: a user exporting one globally
+        # (e.g. via the YAML env: block) has chosen a global override.
+        if self.task_agent_temperature is not None:
+            env["LLM_TEMPERATURE"] = str(self.task_agent_temperature)
         return env
 
     def _preexec(self):

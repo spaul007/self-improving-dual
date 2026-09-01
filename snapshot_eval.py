@@ -192,7 +192,13 @@ def _resolve_budgets(args: argparse.Namespace, records: list[dict[str, Any]]) ->
 
 
 def run(args: argparse.Namespace) -> None:
-    experiment_dir: Path = args.experiment_dir
+    # Absolute from here on: the isolated round dir derived from this path is
+    # handed to the evaluator, which exports META_AGENT_TRACE_PATH /
+    # META_AGENT_SCRATCH_DIR to each case subprocess *verbatim* while running it
+    # with cwd=<round_dir>/task_agent. A relative --experiment-dir therefore
+    # resolves against the agent dir in the child and every case dies at the
+    # first trace.emit (FileNotFoundError) -> a silent 0.0 composite.
+    experiment_dir: Path = args.experiment_dir.resolve()
     records = load_snapshots(experiment_dir)
     budgets = _resolve_budgets(args, records)
     if not budgets:

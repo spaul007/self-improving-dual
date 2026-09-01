@@ -1,0 +1,80 @@
+# Variance study: 5 independent evaluate.py runs of the UNEDITED travel seed
+# (projects/travel/seed) against the full 120-case benchmark, all through
+# OpenRouter, to measure run-to-run score variance from the served LLM.
+# One shared config for all five runs (tmux sudipta-0..4, 2026-08-28).
+#
+#   PYTHONPATH=. python3 evaluate.py \
+#       --config configs/eval_travel_or_qwen122b_medium_var.yaml \
+#       --agent projects/travel/seed
+#
+# Task agent + scorer conversion -> qwen/qwen3.5-122b-a10b via OpenRouter,
+# reasoning_effort medium, temperature 0.2 (the evaluator exports
+# task_agent.temperature as LLM_TEMPERATURE on each case subprocess; an
+# env-sourced temperature IS sent alongside reasoning effort — see
+# platform_core/llm_wrapper.py).
+#
+# AUTH: platform_core/llm_wrapper.py reads ONE global OPENAI_API_KEY for every
+# LLM site. Export the OpenRouter key as OPENAI_API_KEY before launching.
+experiment_name: "eval_travel_or_qwen122b_medium_var"
+project: "travel"
+
+loop:
+  max_rounds: 1
+  score_target: 1.0
+
+task_agent:
+  model: "qwen/qwen3.5-122b-a10b"
+  reasoning_effort: "medium"
+  temperature: 0.2
+  base_url: "https://openrouter.ai/api/v1"
+
+manager:
+  type: "hill_climbing"
+  config:
+    branch_policy: "best"
+    strategy_history_window: 5
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    # 40-way per run; five concurrent runs = 200 in-flight OpenRouter requests.
+    parallelism: 40
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "qwen/qwen3.5-122b-a10b"
+    reasoning_effort: "medium"
+    max_attempts: 2
+    base_url: "https://openrouter.ai/api/v1"
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  # Scorer's plan->JSON conversion on the same Qwen via OpenRouter — no
+  # dependency on the local vLLM nodes.
+  TRAVEL_CONVERT_MODEL: "qwen/qwen3.5-122b-a10b"
+  TRAVEL_CONVERT_BASE_URL: "https://openrouter.ai/api/v1"
+  # Case subprocesses run under RLIMIT_AS = memory_mb (2 GB); OpenBLAS
+  # per-core thread buffers on this many-core node alone exceed that limit.
+  OPENBLAS_NUM_THREADS: "1"
+  OMP_NUM_THREADS: "1"
+
+split:
+  train_ids_path: "configs/travel_train_ids.json"
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

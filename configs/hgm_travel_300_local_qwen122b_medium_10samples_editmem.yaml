@@ -1,0 +1,137 @@
+experiment_name: "travel_hgm_300_LOCAL_qwen122b_medium_10samples_editmem"
+
+# TREATMENT arm of the 10-sample / 300-budget edit-memory A/B pair
+# (vs ..._10samples_no_editmem — identical except this file's edit_memory
+# block).
+#
+# Derived from hgm_travel_1000_local_qwen122b_medium_editmem.yaml with five
+# changes: eval_budget 1000 -> 300, eval_batch_size 16 -> 10, evaluator
+# parallelism 16 -> 10, split -> the fixed 10-case set, and this header.
+# Every HGM knob (seed 42, alpha 0.5, init_expansions 3, epsilon 0.25,
+# finalize_top_k 3) is unchanged, so the only manipulated variable across the
+# pair is the presence of `edit_memory:`.
+#
+# SERVING — every LLM site (task agent, editor, conversion, edit memory) on the locally
+# served Qwen/Qwen3.5-122B-A10B at gpu-aic-mv-02-st-p5-node-5:8000 (262144
+# ctx). Both arms share this endpoint, so serving conditions are identical.
+# No OpenRouter anywhere in this run.
+#
+# NOTE on reasoning_effort: the node-5 vLLM accepts reasoning.effort at any
+# level (no 400) but was launched with --reasoning-parser qwen3, which strips
+# thinking tokens rather than implementing effort tiers. Measured output-token
+# means show no separation between medium and high on this server, so "medium"
+# here is run metadata, not a behavioral setting. Same caveat as
+# configs/eval_travel_qwen122b_node5_low.yaml.
+#
+# BUDGET SIZING — the budget is counted in rollouts (one agent-case subprocess),
+# not nodes. EXPAND is free in vanilla HGM; only the bandit's EVALUATE spends,
+# taking min(eval_batch_size, unevaluated, remaining) cases. With a 10-case
+# train split that is always 10, so ONE evaluate fully scores ONE node and
+# retires it. The tree then runs out of evaluable nodes and falls through to
+# the `elif can_grow` branch, settling into a strict expand -> evaluate
+# alternation. Growth is therefore LINEAR, not the usual sqrt widening:
+#     real nodes ~= 1 + eval_budget / n_train
+# 300 / 10 + 1 = 31 real nodes (root + 30 children), plus ~4 edit-failed
+# placeholders that burn a round_NNN slot and an editor call but zero budget.
+# Not charged to eval_budget: the root's free full-train pre-eval and the
+# finalize_top_k top-up.
+#
+# AUTH: platform_core/llm_wrapper.py reads ONE global OPENAI_API_KEY for every
+# LLM site, but it is not needed here — runtime_env.py defaults it to "EMPTY"
+# when task_agent.base_url is set, and vLLM ignores the key.
+project: "travel"
+
+eval_visibility: "blackbox"
+
+loop:
+  max_rounds: 1000
+  score_target: 0.99
+
+task_agent:
+  model: "Qwen/Qwen3.5-122B-A10B"
+  reasoning_effort: "medium"
+  base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 300
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    # == the full train split, so one EVALUATE fully scores one node.
+    eval_batch_size: 10
+    finalize_top_k: 3
+    snapshot_tree: true
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    # Matches eval_batch_size — a batch runs in one wave. Keeping this at 16
+    # would waste 6 workers and needlessly double the concurrent load on the
+    # shared node-5 server when both arms run at once.
+    parallelism: 10
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    max_attempts: 2
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+# summarizer: INTENTIONALLY ABSENT — behavioral summary stays off.
+
+# Reworked edit memory (the approved "v4" preview format), copied verbatim from
+# hgm_travel_1000_local_qwen122b_medium_editmem.yaml. usage_tracking and
+# analysis_mode="refresh" are the defaults.
+# min_shared: 8 is safe on a 10-case split — every node ends up scored on all
+# 10 cases, so parent/child overlap is always 10.
+edit_memory:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    steering: true
+    steering_token_budget: 32000
+    verdict_threshold: 0.02
+    min_shared: 8
+    max_strategies: 18
+    max_subedits: 3
+    diff_char_cap: 6000
+    setup_pass: true
+    per_check_recipe: null
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  # Conversion is part of evaluation; keep it on the same locally served Qwen.
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-122B-A10B"
+  TRAVEL_CONVERT_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+split:
+  # 10 fixed cases, difficulty-stratified from the 60-case pool; see the
+  # _provenance block in the file. Seed agent scores 0.631 on these vs 0.626
+  # on all 60. Both arms MUST point at this same file.
+  train_ids_path: "configs/travel_train_ids_10.json"
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

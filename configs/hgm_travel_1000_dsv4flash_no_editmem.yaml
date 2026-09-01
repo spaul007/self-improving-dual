@@ -1,0 +1,94 @@
+experiment_name: "travel_hgm_1000_dsv4flash_no_editmem"
+
+# CONTROL arm of the DeepSeek-V4-Flash meta-agent pair.
+#
+# Split of labour:
+#   meta agent (editor)     -> deepseek/deepseek-v4-flash via OpenRouter
+#   task agent + conversion -> Qwen/Qwen3.5-122B-A10B on vLLM node-5 (:8000)
+#
+# Identical to configs/hgm_travel_1000_dsv4flash_editmem.yaml except for
+#   (a) the absent `edit_memory:` block  <- the variable under test
+#   (b) the vLLM endpoint, so the two arms can run concurrently without
+#       contending for the same GPU node.
+# Both endpoints serve the same Qwen/Qwen3.5-122B-A10B weights at the same
+# 262144 context, so (b) affects throughput, not what the task agent produces.
+#
+# Vanilla HGM (manager type "hgm", NOT "hgm_dual") so there is no
+# error-conditioned child generation, and no `summarizer:` block so there is no
+# behavioral summary.
+#
+# AUTH: platform_core/llm_wrapper.py reads ONE global OPENAI_API_KEY for every
+# LLM site — there is no per-site key. Export the OpenRouter key as
+# OPENAI_API_KEY before launching; the local vLLM ignores the value.
+project: "travel"
+
+eval_visibility: "blackbox"
+
+loop:
+  max_rounds: 1000
+  score_target: 0.99
+
+task_agent:
+  model: "Qwen/Qwen3.5-122B-A10B"
+  reasoning_effort: "high"
+  base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 1000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 3
+    snapshot_tree: true
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+editor:
+  type: "default"
+  config:
+    model: "deepseek/deepseek-v4-pro"
+    # Verified against the live endpoint through platform_core.llm_wrapper:
+    # tool calling works and reasoning_effort is accepted (no 400).
+    reasoning_effort: "medium"
+    max_attempts: 2
+    base_url: "https://openrouter.ai/api/v1"
+
+# summarizer:   INTENTIONALLY ABSENT — behavioral summary stays off.
+# edit_memory:  INTENTIONALLY ABSENT — this is the control arm.
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  # Conversion is part of evaluation, not the meta agent, so it stays on the
+  # local 122B — on this arm's own endpoint.
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-122B-A10B"
+  TRAVEL_CONVERT_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+split:
+  train_ids_path: "configs/travel_train_ids.json"   # 60 predetermined cases
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

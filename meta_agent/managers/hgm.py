@@ -126,6 +126,11 @@ class HGMManager:
         # inject the lineage's behavior_memory.md files. ``None`` keeps
         # the legacy behavior (no memory written, no memory in prompts).
         self._summarizer: Any = None
+        # Optional edit memory. When set, ``_expand`` records one memory per
+        # node (one LLM call), ``_refresh_node_feedback`` refreshes the
+        # affected outcomes deterministically, and steering contexts inject
+        # the accumulated block. ``None`` changes nothing.
+        self._edit_memory: Any = None
         # Time-series tree snapshotter (a no-op unless snapshot_tree is on);
         # (re)created at the top of evolve() once experiment_dir is known.
         self._snapshotter: Optional[TreeSnapshotWriter] = None
@@ -147,11 +152,13 @@ class HGMManager:
         train_case_ids: Optional[list[str]] = None,
         eval_case_ids: Optional[list[str]] = None,
         summarizer: Any = None,
+        edit_memory: Any = None,
     ) -> EvolutionOutcome:
         self._benchmark_dir = benchmark_dir
         self._experiment_dir = experiment_dir
         self._eval_case_ids = eval_case_ids
         self._summarizer = summarizer
+        self._edit_memory = edit_memory
         self._tree = HGMTree(
             beta_prior=self.beta_prior,
             clade_pseudo_count=self.clade_pseudo_count,
@@ -187,6 +194,16 @@ class HGMManager:
         # branch off the freshly pre-evaluated root.
         self._run_seed(seed_dir, evaluator, gatherer)
         self._snapshot("seed")
+        # One call per run: proxy categories + the per-check extraction recipe,
+        # derived from the seed agent and its first evaluation.
+        if self._edit_memory is not None:
+            try:
+                root = self._tree[0]
+                self._edit_memory.setup(
+                    self._experiment_dir, root.round_dir, root.case_results
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(f"[edit_memory] setup skipped: {exc!r}", flush=True)
         for _ in range(self.init_expansions):
             expandable = self._expandable()
             if not expandable or self._tree.n_real_nodes() > max_rounds:
@@ -289,8 +306,34 @@ class HGMManager:
             node_id, parent_id, strategy, self._empty_eval(), out_dir
         )
         self._write_node_sidecar(node)
+        # One LLM call per node, on the validated edit. Best-effort: a failure
+        # here must never cost the round its child.
+        if self._edit_memory is not None:
+            try:
+                self._edit_memory.record_node(
+                    round_dir=out_dir,
+                    parent_round_dir=parent.round_dir,
+                    node_id=node_id,
+                    parent_id=parent_id,
+                    ancestors=self._lineage_ids(parent_id),
+                    goal=strategy.optimization_goal,
+                    proposed=strategy.proposed_changes,
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(f"[edit_memory] unexpected error on node {node_id}: {exc!r}",
+                      flush=True)
         print(f"node {node_id}: EXPAND from {parent_id}", flush=True)
         return node_id
+
+    def _lineage_ids(self, node_id: int) -> list[int]:
+        """Root -> ``node_id`` inclusive. Used to stamp lineage into a record
+        so it stays self-locating once records from all branches are pooled."""
+        chain: list[int] = []
+        nid: Optional[int] = node_id
+        while nid is not None and nid in self._tree.nodes:
+            chain.append(nid)
+            nid = self._tree[nid].parent_id
+        return list(reversed(chain))
 
     def _evaluate(
         self, node_id: int, evaluator: Evaluator, gatherer: FeedbackGatherer
@@ -426,11 +469,42 @@ class HGMManager:
         if memory_block:
             parts.append(memory_block)
 
+        # Tree-global edit memory: what has been tried on EVERY branch and what
+        # it did to the score. Silently absent when unconfigured.
+        edit_block = self._render_edit_memory(parent)
+        if edit_block:
+            parts.append(edit_block)
+
         parts.append(
             "\nMake targeted improvement to this parent agent. Keep the "
             "scope small enough to apply correctly in one pass."
         )
         return "\n".join(parts)
+
+    def _render_edit_memory(self, parent: HGMNode) -> str:
+        """Accumulated edit memory across the whole tree, as one block.
+
+        Unlike the lineage behavior memory this is run-global — seeing what a
+        sibling branch already tried is the point. Returns ``""`` when the
+        component is disabled, steering is off, or nothing has been recorded.
+        """
+        em = self._edit_memory
+        if em is None or not getattr(em, "steering", False):
+            return ""
+        try:
+            from ..edit_memory_render import render_edit_memory
+            from ..edit_outcome import run_context
+            return render_edit_memory(
+                self._experiment_dir,
+                token_budget=getattr(em, "steering_token_budget", 12000),
+                threshold=getattr(em, "verdict_threshold", 0.02),
+                min_shared=getattr(em, "min_shared", 8),
+                focus_node_id=parent.node_id,
+                run_context=run_context(self._tree) or None,
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(f"[edit_memory] steering render failed: {exc!r}", flush=True)
+            return ""
 
     def _render_lineage_memory(
         self,
@@ -608,6 +682,13 @@ class HGMManager:
         # Rewrite every sidecar so clade stats are final and consistent.
         for node in self._tree.nodes.values():
             self._write_node_sidecar(node)
+        # Authoritative outcome sweep: by now every node's case coverage is
+        # final. A no-op under the skip guard when nothing moved.
+        if self._edit_memory is not None:
+            try:
+                self._edit_memory.finalize(self._tree)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[edit_memory] finalize failed: {exc!r}", flush=True)
 
         # Select only among fully-train-evaluated nodes (the root + the
         # finalists `_finalize_top_k` just topped up). A thinly-evaluated
@@ -871,6 +952,16 @@ class HGMManager:
             self._build_eval_result(node), node.round_dir,
         )
         self._write_node_sidecar(node)
+        # Delta is measured over cases the parent and child BOTH ran, so this
+        # node's new batch also moves its children's numbers. Radius is exactly
+        # 1 downward — grandchildren depend on their own parent's cases, which
+        # did not change. Deterministic; no LLM call.
+        if self._edit_memory is not None:
+            try:
+                self._edit_memory.refresh_outcomes(self._tree, node.node_id)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[edit_memory] refresh failed for node {node.node_id}: {exc!r}",
+                      flush=True)
 
     @staticmethod
     def _empty_eval() -> EvaluationResult:

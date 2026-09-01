@@ -894,7 +894,18 @@ class HGMDualManager(HGMManager):
         train_case_ids: Optional[list[str]] = None,
         eval_case_ids: Optional[list[str]] = None,
         summarizer: Any = None,
+        edit_memory: Any = None,
     ) -> Any:
+        if edit_memory is not None:
+            # Dual makes two editor calls per node (Stage A intermediate, then
+            # per-category Stage B variants), so it cannot honour edit memory's
+            # one-LLM-call-per-node contract, and only the promoted winner has
+            # a meaningful diff. Fail loudly rather than silently record nothing.
+            raise ValueError(
+                "edit_memory is not supported by the hgm_dual manager: it makes "
+                "more than one editor call per node. Use manager.type='hgm', or "
+                "remove the edit_memory block from the config."
+            )
         # Stash the evaluator so _expand can call _evaluate_candidate
         # without changing the HGMManager._expand signature.
         self._evaluator = evaluator  # type: ignore[attr-defined]

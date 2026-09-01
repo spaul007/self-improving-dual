@@ -1,0 +1,99 @@
+# Full 120-case evaluation of the travel seed agent against the local
+# vLLM server hosting Qwen/Qwen3.8-27B (served model id "qwen38-27b")
+# on gpu-aic-mv-01 node-1, port 8200. Run with evaluate.py:
+#
+#   PYTHONPATH=. python3 evaluate.py \
+#       --config configs/eval_travel_qwen38_27b_node1.yaml \
+#       --agent projects/travel/seed
+#
+# Like configs/eval_local_qwen3_6_35b.yaml, this hard-wires the server URL
+# in task_agent.base_url so evaluate.py runs directly with no discovery /
+# SLURM plumbing. The travel scorer's plan->JSON conversion is routed to
+# the same server + model via TRAVEL_CONVERT_MODEL below (its base_url
+# comes from task_agent.base_url -> LLM_BASE_URL, see
+# meta_agent/runtime_env.py).
+
+experiment_name: "eval_travel_qwen38_27b_node1"
+project: "travel"
+# runs_root omitted -> repo-local ./runs
+
+loop:
+  max_rounds: 1
+  score_target: 1.0
+
+task_agent:
+  model: "qwen38-27b"
+  # This server DOES honour reasoning.effort for Qwen; its accepted values are
+  # xhigh (default), medium, low -- there is no "high", and leaving the field
+  # unset means xhigh, the most expensive tier. The 2026-08-20 run left it
+  # unset and lost 26/43 cases to the 1800s timeout.
+  # Side effect (platform_core/llm_wrapper.py): with effort set, the task
+  # agent's temperature comes from task_agent.temperature (default 0.2 via
+  # the child-only LLM_TEMPERATURE env var); `temperature: null`
+  # restores the old omit-temperature behavior (provider default sampling).
+  reasoning_effort: "medium"
+  base_url: "http://gpu-aic-mv-01-st-p5-node-1:8200/v1"
+
+manager:
+  type: "hill_climbing"
+  config:
+    branch_policy: "best"
+    strategy_history_window: 5
+
+evaluator:
+  type: "subprocess"
+  config:
+    # 1800s killed 26/43 cases on 2026-08-20. Measured: a median case emits
+    # ~75k output tokens, and per-stream decode at parallelism 20 is ~45.6
+    # tok/s (vs 78.6 solo -- 20-way concurrency costs 1.72x), so the median
+    # case needs ~1645s and the p90 case ~3450s. 3600s covers ~94% of the
+    # observed distribution.
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    # max_cases unset -> all 120 benchmark cases.
+    # Kept at 20 deliberately: aggregate throughput is 20 x 45.6 = ~912 tok/s
+    # vs 78.6 solo, so lowering it would fix per-case timeouts by making the
+    # whole sweep ~10x longer. Raise the timeout instead, not the concurrency.
+    parallelism: 20
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "qwen38-27b"
+    max_attempts: 2
+
+# Local models (Qwen3.x, gpt-oss) misread echoed `reasoning` items in the
+# conversation history as a "wrap up" signal — they exit the tool loop
+# without writing the formal <plan> block. Strip them before the next call.
+# TRAVEL_CONVERT_MODEL routes the scorer's plan->JSON conversion at the same
+# model. Per-case travel CSV databases resolve to projects/travel/data/
+# database_en by default, so no TRAVEL_DATABASE_ROOT override is needed.
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "qwen38-27b"
+  # Each case subprocess runs under RLIMIT_AS = memory_mb (2 GB). The openai
+  # SDK import chain pulls numpy -> OpenBLAS, whose per-core thread buffers
+  # on a many-core node alone exceed that limit ("OpenBLAS error: Memory
+  # allocation still failed", child exit 1, 0/120). One BLAS thread avoids
+  # the allocation; the agent does no BLAS math.
+  OPENBLAS_NUM_THREADS: "1"
+  OMP_NUM_THREADS: "1"
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

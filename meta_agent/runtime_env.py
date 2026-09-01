@@ -21,6 +21,12 @@ The framework only knows three categories of env vars:
   Project-specific config (database paths, API keys, etc.) flows
   through here. Project tools that want a default should compute it
   themselves, not fall back to a framework helper.
+
+Deliberately NOT exported here: ``LLM_TEMPERATURE``. It is task-agent-only
+by design — ``SubprocessEvaluator._child_env`` sets it on each case
+subprocess's env from ``task_agent.temperature`` — because a global export
+would leak into the meta-agent's own ``call_llm`` invocations in this
+process. Putting it in the YAML ``env:`` block defeats that isolation.
 """
 from __future__ import annotations
 

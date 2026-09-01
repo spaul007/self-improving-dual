@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from ..agent_editor import AgentEditor, fallback_strategy
 from ..evaluator import Evaluator
@@ -78,7 +78,15 @@ class HillClimbingManager:
         score_target: float | None,
         train_case_ids: Optional[list[str]] = None,
         eval_case_ids: Optional[list[str]] = None,
+        summarizer: Any = None,
+        edit_memory: Any = None,
     ) -> EvolutionOutcome:
+        # Accepted and ignored: main_loop passes both unconditionally, so
+        # without these parameters this manager raises TypeError before it
+        # starts. Neither subsystem is wired into the hill-climbing loop.
+        if summarizer is not None or edit_memory is not None:
+            print("[hill_climbing] summarizer/edit_memory are not supported by this "
+                  "manager and will be ignored", flush=True)
         self._history = []
         self._train_case_ids = train_case_ids
         self._eval_case_ids = eval_case_ids

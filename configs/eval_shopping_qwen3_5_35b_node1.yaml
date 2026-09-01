@@ -1,0 +1,87 @@
+# Full 120-case evaluation of the shopping seed against the local vLLM
+# server hosting Qwen/Qwen3.5-35B-A3B on node-1. Run with evaluate.py:
+#
+#   PYTHONPATH=. python3 evaluate.py \
+#       --config configs/eval_shopping_qwen3_5_35b_node1.yaml \
+#       --agent projects/shopping/seed
+#
+# Like configs/eval_local_qwen3_6_35b.yaml, this hard-wires the server
+# URL in task_agent.base_url so evaluate.py can be run directly with no
+# discovery/SLURM plumbing. The shopping scorer is deterministic (no
+# LLM-judge conversion step), so only the task agent needs routing.
+
+experiment_name: "eval_shopping_qwen3_5_35b_node1"
+project: "shopping"
+# runs_root omitted -> repo-local ./runs
+
+loop:
+  max_rounds: 1
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.5-35B-A3B"
+  reasoning_effort: "medium"
+  base_url: "http://gpu-aic-mv-02-st-p5-node-1:8000/v1"
+
+manager:
+  type: "hill_climbing"
+  config:
+    branch_policy: "best"
+    strategy_history_window: 5
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    # max_cases unset -> all 120 benchmark cases.
+    # A single 35B server saturates fast (see eval_local_qwen3_6_35b.yaml:
+    # parallelism 8 produced ~140 APIConnectionError retries and 0/10).
+    # Keep concurrency low; raise only if the server is scaled up.
+    parallelism: 2
+    scorer: "shopping_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-35B-A3B"
+    reasoning_effort: "medium"
+    max_attempts: 2
+
+# Local models (Qwen3.x, gpt-oss) misread echoed `reasoning` items in the
+# conversation history as a "wrap up" signal — they exit the tool loop
+# without writing the formal answer. Strip them before the next call.
+# Per-case shopping databases + validation_cases.json ground truth live
+# at the project default projects/shopping/data/ (verified identical to
+# /groups/AIC-MV/aounon/HGM-generic/shopping_agent/database), so no
+# SHOPPING_DATABASE_ROOT override is needed. If that directory is ever
+# absent, every case scores 0 ("validation_cases.json not found").
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  # The evaluator caps each case subprocess at RLIMIT_AS = memory_mb
+  # (2 GB). In the hgm-dual env the openai SDK import chain pulls in
+  # numpy -> OpenBLAS, which pre-allocates thread buffers for every
+  # core; on a 192-core node that alone exceeds the limit and every
+  # child dies with "OpenBLAS error: Memory allocation still failed"
+  # (child exit code 1, 0/120). One BLAS thread avoids the allocation;
+  # the agent does no BLAS math, so there is no performance cost.
+  OPENBLAS_NUM_THREADS: "1"
+  OMP_NUM_THREADS: "1"
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

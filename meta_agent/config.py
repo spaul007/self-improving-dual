@@ -55,7 +55,27 @@ class LLMSpec(BaseModel):
 
 
 class TaskAgentSpec(LLMSpec):
-    """Settings the task-agent subprocess inherits via env vars."""
+    """Settings the task-agent subprocess inherits via env vars.
+
+    ``temperature`` applies to task-agent inference/evaluation ONLY: the
+    evaluator exports it as ``LLM_TEMPERATURE`` on each case subprocess's
+    env (never globally), so meta-agent components are unaffected. The
+    default ``0.2`` pins low-variance (near-deterministic) sampling
+    wherever the serving model permits an explicit temperature alongside
+    active reasoning (DeepSeek, GLM, Qwen, gpt-oss ...); OpenAI
+    first-party reasoning models (gpt-5*, o-series) reject the
+    combination and keep the omit-temperature behaviour regardless of
+    this setting. Set ``null`` to restore the pre-pinned behaviour
+    (provider-default sampling), or another float — ``0.0`` for fully
+    greedy decoding (note some thinking-mode model cards, e.g. Qwen,
+    recommend ~0.6 and warn greedy can cause repetition loops on long
+    reasoning chains), or e.g. ``0.6`` to match those recommendations.
+
+    Deliberately declared here and not on ``LLMSpec`` so editor /
+    summarizer / edit-memory specs cannot grow a config-driven
+    temperature by accident.
+    """
+    temperature: Optional[float] = 0.2
 
 
 class SplitSpec(BaseModel):
@@ -132,6 +152,11 @@ class FrameworkConfig(BaseModel):
     # contexts. Omit (or null) to disable; existing configs keep current
     # behavior without changes.
     summarizer: Optional[ComponentSpec] = None
+    # Optional. When set, a per-node "edit_memory.md" is written recording what
+    # each edit changed and what it did to the score, plus a run-global category
+    # registry; the accumulated memory is injected into the editor's steering
+    # context. Omit (or null) to disable — no files written, no behavior change.
+    edit_memory: Optional[ComponentSpec] = None
     plugins: list[str] = Field(default_factory=list)
 
     task_agent: TaskAgentSpec = Field(default_factory=TaskAgentSpec)
@@ -173,6 +198,7 @@ class AssembledFramework:
     benchmark_dir: Path
     runs_root: Path
     summarizer: Any = None
+    edit_memory: Any = None
     train_case_ids: Optional[list[str]] = None
     eval_case_ids: Optional[list[str]] = None
 
@@ -185,6 +211,7 @@ def _ensure_builtins_loaded() -> None:
     importlib.import_module("meta_agent.feedback_gatherer")
     importlib.import_module("meta_agent.agent_editor")
     importlib.import_module("meta_agent.behavior_summarizer")
+    importlib.import_module("meta_agent.edit_memory")
     importlib.import_module("meta_agent.managers")  # imports submodules
 
 
@@ -241,7 +268,14 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         config={k: v for k, v in cfg.evaluator.config.items() if k != "scorer"},
     )
     evaluator_obj = _build_with_injection(
-        evaluator_spec, "evaluator", {"scorer": scorer_obj}
+        evaluator_spec,
+        "evaluator",
+        {
+            "scorer": scorer_obj,
+            # Task-agent-only sampling temperature; the evaluator exports it
+            # to each case subprocess as LLM_TEMPERATURE (child env only).
+            "task_agent_temperature": cfg.task_agent.temperature,
+        },
     )
 
     gatherer_obj = _build_with_injection(
@@ -291,6 +325,12 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
             cfg.summarizer, "summarizer", {"llm_caller": call_llm}
         )
 
+    edit_memory_obj: Any = None
+    if cfg.edit_memory is not None:
+        edit_memory_obj = _build_with_injection(
+            cfg.edit_memory, "edit_memory", {"llm_caller": call_llm}
+        )
+
     manager_obj = registry.get("manager", cfg.manager.type)(**cfg.manager.config)
 
     train_ids: Optional[list[str]] = None
@@ -325,6 +365,7 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         benchmark_dir=benchmark_dir,
         runs_root=runs_root,
         summarizer=summarizer_obj,
+        edit_memory=edit_memory_obj,
         train_case_ids=train_ids,
         eval_case_ids=eval_ids,
     )

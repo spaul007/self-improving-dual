@@ -1,0 +1,102 @@
+experiment_name: "travel_hgm_1000_qwen122b_node5_no_errcond_no_behsum"
+
+# ABLATION run (travel, 1000 eval budget) removing TWO mechanisms:
+#
+#   (i)  error-conditioned child generation  -> manager.type: "hgm" (vanilla)
+#        instead of "hgm_dual". The dual manager's Stage B is exactly the
+#        error-conditioned step: evaluate the Stage A intermediate, group its
+#        failures into error categories via the project categorizer, and spawn
+#        one editor-applied variant PER CATEGORY. Vanilla HGM does a single
+#        unconditioned parent -> editor.apply -> child expansion, so no child
+#        is ever conditioned on an error category.
+#
+#   (ii) behavioral summary -> the `summarizer:` block is omitted entirely.
+#        meta_agent/config.py treats `summarizer` as Optional; when it is None
+#        no behavior_memory.md is written after a round, and
+#        HGMManager._render_lineage_memory returns "" so the editor's steering
+#        context carries no lineage behavior memory at all.
+#
+# Everything else mirrors configs/hgm_dual_travel_1000_qwen122b_node2.yaml
+# (same 60-case predetermined train set, same budget/bandit hyper-params,
+# same seed) so this is an apples-to-apples ablation against that run.
+#
+# All LLM call sites -- task agent, agent editor (meta agent), and the
+# scorer's plan->JSON conversion -- point at Qwen/Qwen3.5-122B-A10B on
+# gpu-aic-mv-02-st-p5-node-5.
+project: "travel"
+
+eval_visibility: "blackbox"
+
+loop:
+  max_rounds: 1000
+  score_target: 0.99
+
+task_agent:
+  model: "Qwen/Qwen3.5-122B-A10B"
+  reasoning_effort: "high"
+  base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+manager:
+  type: "hgm"          # <-- (i) no dual Stage B = no error-conditioned children
+  config:
+    eval_budget: 1000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 3
+    snapshot_tree: true
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "travel_default"
+
+# NOTE: this categorizer only drives the FAILURE REPORT inside the editor's
+# feedback (top failure categories + representative examples). It does NOT
+# generate children -- that was the dual manager's Stage B, removed above.
+# Drop this line too if the ablation is meant to hide error categories from
+# the editor entirely.
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    max_attempts: 2
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+# (ii) summarizer: INTENTIONALLY ABSENT -- behavioral summary disabled.
+
+# Local models (Qwen3.x, gpt-oss) misread echoed `reasoning` items in the
+# conversation history as a "wrap up" signal and exit the tool loop without
+# writing the formal <plan> block -- strip them before the next call.
+# TRAVEL_CONVERT_* routes the scorer's plan->JSON conversion at the same
+# 122B model/endpoint.
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-122B-A10B"
+  TRAVEL_CONVERT_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+split:
+  train_ids_path: "configs/travel_train_ids.json"   # 60 predetermined cases; no held-out eval
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

@@ -1,0 +1,111 @@
+experiment_name: "travel_hgm_1000_qwen122b_node5_editmem"
+
+# Treatment arm for the edit-memory experiment. Identical to
+# configs/hgm_travel_1000_qwen122b_node5_no_errcond_no_behsum.yaml (same 60-case
+# predetermined train set, same budget, same seed, same bandit hyper-params)
+# except that the `edit_memory:` block below is present.
+#
+# The two arms differ in exactly one thing, so any score difference is
+# attributable to the edit memory:
+#   control   : ..._no_errcond_no_behsum.yaml  (no summarizer, no edit_memory)
+#   treatment : this file                      (no summarizer, edit_memory on)
+#
+# Still vanilla HGM (no error-conditioned Stage B) and still no behavioral
+# summary, so edit memory is the only accumulated memory the editor sees.
+project: "travel"
+
+eval_visibility: "blackbox"
+
+loop:
+  max_rounds: 1000
+  score_target: 0.99
+
+task_agent:
+  model: "Qwen/Qwen3.5-122B-A10B"
+  reasoning_effort: "high"
+  base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 1000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 3
+    snapshot_tree: true
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    max_attempts: 2
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+# summarizer: INTENTIONALLY ABSENT — behavioral summary stays off.
+
+# Per-node edit memory. Writes round_NNN/edit_memory.md plus a run-global
+# edit_memory_registry.json, and injects the accumulated memory into the
+# editor's steering context. One LLM call per node, plus one for setup.
+#
+# Costs roughly one extra editor-sized call per expansion, so budget for
+# ~max_rounds additional calls over the run.
+edit_memory:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    steering: true
+    # ~20k tokens of record bodies (72-record measurement) plus per-node usage
+    # lines and the compact Analysis section (~150-250 tokens/node); the old
+    # "checks moved" lines (~6.7k) are gone. 48k keeps headroom to ~100 nodes;
+    # past the cap the renderer compacts and logs that it did.
+    steering_token_budget: 48000
+    # helped/hurt/neutral boundary. Calibrated on a 75-node travel run; it
+    # assumes scores on [0,1] and MUST be re-checked for a different scale.
+    verdict_threshold: 0.02
+    min_shared: 8
+    max_strategies: 18
+    max_subedits: 3
+    diff_char_cap: 6000
+    setup_pass: true
+    # Optional pin for the per-check extraction recipe. Left null, the setup
+    # pass chooses and validates it against real cases.
+    per_check_recipe: null
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-122B-A10B"
+  TRAVEL_CONVERT_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+split:
+  train_ids_path: "configs/travel_train_ids.json"   # 60 predetermined cases
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

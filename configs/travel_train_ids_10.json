@@ -1,0 +1,34 @@
+{
+  "train_ids": [
+    "11",
+    "14",
+    "46",
+    "54",
+    "73",
+    "75",
+    "89",
+    "110",
+    "117",
+    "119"
+  ],
+  "_provenance": {
+    "drawn": "2026-08-28",
+    "source_pool": "configs/travel_train_ids.json (60 predetermined travel train cases)",
+    "method": "difficulty-stratified: sort the 60 by the seed agent's per-case score (round_000/eval_result.json of runs/20260827_003441_travel_hgm_1000_or_medium_no_editmem), split into 10 bins of 6, random.Random(42).choice one per bin",
+    "seed_scores": {
+      "11": 0.75,
+      "14": 0.8125,
+      "46": 0.875,
+      "54": 0.9375,
+      "73": 0.9375,
+      "75": 0.8125,
+      "89": 0.1875,
+      "110": 0.1875,
+      "117": 0.3125,
+      "119": 0.5
+    },
+    "seed_mean_on_these_10": 0.6312,
+    "seed_mean_on_all_60": 0.626,
+    "note": "Fixed set -- reuse verbatim for every run that must be comparable to the travel_hgm_300_LOCAL_qwen122b_medium_10samples A/B pair. Do not re-draw."
+  }
+}

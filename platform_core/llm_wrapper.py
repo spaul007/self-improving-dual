@@ -16,6 +16,18 @@ needing to thread config through:
                            ``OPENAI_API_KEY`` check is relaxed because
                            local servers ignore auth — any non-empty
                            string ("EMPTY" by convention) is accepted.
+    LLM_TEMPERATURE        sampling temperature used when the caller does
+                           not pass ``temperature=`` explicitly. Unlike the
+                           vars above it is NOT exported globally by
+                           runtime_env — the evaluator sets it on each case
+                           subprocess's env only (see
+                           ``SubprocessEvaluator._child_env``), so task-agent
+                           calls get it while meta-agent calls in the parent
+                           process do not. With reasoning effort active it is
+                           sent alongside ``reasoning`` — except for OpenAI
+                           first-party reasoning models (gpt-5*, o-series),
+                           which reject explicit temperature and keep the
+                           omit behaviour.
 
 Trace events ("llm_call", "llm_response") are emitted via
 :mod:`platform_core.trace` whenever ``META_AGENT_TRACE_PATH`` is set.
@@ -40,11 +52,29 @@ DEFAULT_MODEL_FALLBACK = "gpt-5.4-mini"
 # so reasoning-heavy cases don't hit a self-imposed cap.
 DEFAULT_MAX_OUTPUT_TOKENS: Optional[int] = None
 
+# Legacy default for the non-reasoning branch when neither the caller nor
+# the LLM_TEMPERATURE env var supplies a value.
+DEFAULT_TEMPERATURE = 1.0
+
 # API-error retry policy for `client.responses.create`. Mirrors the reference
 # agent's `call_llm` (max_retries=30, backoff=1.5s) so transient
 # network/server errors don't kill a case.
 DEFAULT_API_MAX_RETRIES = 30
 DEFAULT_API_BACKOFF_S = 1.5
+
+# Per-request wall clock. The SDK's own default is 600s, which is not enough
+# headroom for a reasoning meta-agent: one measured editor call on
+# deepseek-v4-pro took 456s and emitted 27,480 reasoning tokens, leaving ~24%
+# margin. A legitimate call that overran would be retried by the loop below —
+# up to 30 times, each one billed — so too tight a timeout is far more
+# expensive than too loose a one.
+#
+# 3600s is ~8x the measured call. The margin is deliberate: reasoning output
+# scales with prompt size, and the edit-memory arm's prompt grows all run as
+# the steering block fills, so the slowest call comes last. This is an upper
+# bound, not a wait — fast endpoints are unaffected. Override with
+# LLM_TIMEOUT_S.
+DEFAULT_API_TIMEOUT_S = 3600.0
 
 
 def _env_default_model() -> str:
@@ -59,6 +89,52 @@ def _env_default_reasoning_effort() -> Optional[str]:
 def _env_default_base_url() -> Optional[str]:
     val = os.environ.get("LLM_BASE_URL")
     return val if val else None
+
+
+def _env_default_temperature() -> Optional[float]:
+    """Sampling temperature from ``LLM_TEMPERATURE``. Falls back to ``None``
+    (= unset) on a missing or unparseable value — degrading to the legacy
+    behaviour, never to an accidental greedy/zero."""
+    raw = os.environ.get("LLM_TEMPERATURE")
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+# OpenAI first-party reasoning families that 400 on an explicit temperature
+# when reasoning is active. Matched as exact name or "<family>-"/"<family>."
+# prefix after lowercasing and stripping an optional "openai/" route prefix —
+# so "gpt-oss-120b" (which accepts temperature) inherently does not match
+# "gpt-5", and non-OpenAI routes like "z-ai/..." are never touched.
+# Extend this tuple when new OpenAI reasoning families ship (gpt-6, o5, ...).
+_TEMPERATURE_REJECTING_FAMILIES = ("gpt-5", "o1", "o3", "o4")
+
+
+def _rejects_temperature_with_reasoning(model: str) -> bool:
+    name = (model or "").lower()
+    if name.startswith("openai/"):
+        name = name[len("openai/"):]
+    return any(
+        name == fam or name.startswith(fam + "-") or name.startswith(fam + ".")
+        for fam in _TEMPERATURE_REJECTING_FAMILIES
+    )
+
+
+def _env_default_timeout_s() -> float:
+    """Per-request timeout, from ``LLM_TIMEOUT_S``. Falls back to the default
+    on anything unparseable or non-positive rather than disabling the timeout —
+    a missing timeout is what leaves a hung request blocking forever."""
+    raw = os.environ.get("LLM_TIMEOUT_S")
+    if not raw:
+        return DEFAULT_API_TIMEOUT_S
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_API_TIMEOUT_S
+    return val if val > 0 else DEFAULT_API_TIMEOUT_S
 
 
 @dataclass
@@ -231,7 +307,7 @@ def call_llm(
     *,
     tools: Optional[list[dict[str, Any]]] = None,
     model: Optional[str] = None,
-    temperature: float = 1.0,
+    temperature: Optional[float] = None,
     reasoning_effort: Optional[str] = None,
     base_url: Optional[str] = None,
     max_output_tokens: Optional[int] = DEFAULT_MAX_OUTPUT_TOKENS,
@@ -248,6 +324,16 @@ def call_llm(
     variables, which lets the meta-agent set them once for the whole run
     and have them propagate into every evaluator subprocess without
     threading them through the seed code.
+
+    ``temperature`` resolution: explicit argument > ``LLM_TEMPERATURE`` env
+    var > legacy default (1.0 without reasoning effort; omitted with it).
+    With reasoning effort active, only an env-sourced temperature is sent
+    alongside ``reasoning`` (and only for models that tolerate the
+    combination — see ``_rejects_temperature_with_reasoning``); an explicit
+    argument keeps the historical omit behaviour so meta-agent call sites
+    that pass ``temperature=`` are byte-identical whether or not a global
+    reasoning effort is configured. ``LLM_TEMPERATURE`` is set per evaluator
+    child process, never globally (see module docstring).
     """
     try:
         from openai import OpenAI
@@ -259,6 +345,27 @@ def call_llm(
     resolved_model = model or _env_default_model()
     resolved_effort = reasoning_effort or _env_default_reasoning_effort()
     resolved_base_url = base_url or _env_default_base_url()
+
+    # The temperature actually sent, or None when omitted (see docstring
+    # for the resolution rules). Computed up front so the llm_call trace
+    # event can record it.
+    env_temperature = _env_default_temperature()
+    if resolved_effort:
+        if (
+            temperature is None
+            and env_temperature is not None
+            and not _rejects_temperature_with_reasoning(resolved_model)
+        ):
+            resolved_temperature: Optional[float] = env_temperature
+        else:
+            resolved_temperature = None
+    else:
+        if temperature is not None:
+            resolved_temperature = temperature
+        elif env_temperature is not None:
+            resolved_temperature = env_temperature
+        else:
+            resolved_temperature = DEFAULT_TEMPERATURE
 
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -279,6 +386,7 @@ def call_llm(
             "model": resolved_model,
             "reasoning_effort": resolved_effort,
             "base_url": resolved_base_url,
+            "temperature": resolved_temperature,
             "tool_names": [t["name"] for t in norm_tools],
             "num_messages": len(messages),
         },
@@ -293,7 +401,15 @@ def call_llm(
             },
         )
 
-    client_kwargs: dict[str, Any] = {"api_key": api_key}
+    client_kwargs: dict[str, Any] = {
+        "api_key": api_key,
+        "timeout": _env_default_timeout_s(),
+        # The retry loop below is the single source of retry truth. The SDK
+        # defaults to 2 of its own retries *per* iteration of that loop, so
+        # leaving it on multiplies the effective attempt count (30 -> 90) and
+        # with it the worst-case wall clock and the bill.
+        "max_retries": 0,
+    }
     if resolved_base_url:
         client_kwargs["base_url"] = resolved_base_url
     client = OpenAI(**client_kwargs)
@@ -309,10 +425,14 @@ def call_llm(
     if norm_tools:
         request["tools"] = norm_tools
     if resolved_effort:
-        # Reasoning models reject explicit temperature; let them default.
         request["reasoning"] = {"effort": resolved_effort}
-    else:
-        request["temperature"] = temperature
+    # resolved_temperature is None when the temperature must be omitted:
+    # OpenAI first-party reasoning models reject the combination, and an
+    # explicit temperature arg keeps the historical drop-with-effort
+    # behaviour (meta-agent call sites). Open-weights reasoners (DeepSeek,
+    # GLM, Qwen, gpt-oss) accept reasoning + temperature together.
+    if resolved_temperature is not None:
+        request["temperature"] = resolved_temperature
 
     started = time.time()
     last_err: Optional[Exception] = None

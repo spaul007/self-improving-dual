@@ -72,10 +72,16 @@ runs/20260504_153012_math_default/
 │   ├── strategy.json             # null for round 0
 │   ├── eval_result.json          # full EvaluationResult (per-case + aggregate)
 │   ├── eval_score.json           # only when split: enabled — held-out composite
-│   └── feedback.json
+│   ├── feedback.json
+│   └── hgm_node.json             # HGM only — authoritative per-node tallies
 ├── round_001/
 │   ├── task_agent/               # editor's mutation of round_000
+│   ├── behavior_memory.md        # only when summarizer: enabled
+│   ├── behavior_aggregate.json   # ditto — the structured pre-aggregation
+│   ├── edit_memory.md            # only when edit_memory: enabled
 │   └── ...
+├── edit_memory_registry.json     # only when edit_memory: enabled (see below)
+├── edit_memory_candidates.json   # ditto
 └── ...
 ```
 
@@ -201,6 +207,58 @@ PYTHONPATH=. python3 snapshot_eval.py \
 
 Per-budget results are written to `runs/<exp>/snapshots/eval_at_budget_<B>.json`.
 
+## Edit memory (optional)
+
+A tree-global record of **what edits were attempted and what they did to the
+score**. Distinct from the behavior summarizer: that describes how an agent
+*behaved at runtime* along one lineage; this describes *what was changed and
+whether it paid off*, across every branch. Both can run together or apart.
+
+```yaml
+edit_memory:
+  type: "default"
+  config:
+    model: "gpt-5.4"
+    reasoning_effort: "medium"
+    steering: true              # inject the accumulated memory into the editor
+    steering_token_budget: 32000
+    verdict_threshold: 0.02     # helped/hurt boundary — see the caveat below
+    min_shared: 8
+    max_strategies: 18          # ceiling on the category vocabulary
+    max_subedits: 3             # a node may bundle several distinct changes
+    setup_pass: true            # one call per run: proxy categories + recipe
+```
+
+**Off by default.** Omit the block and nothing changes: no LLM calls, no files
+written, and the editor's prompt is byte-identical to before.
+
+Cost is **one LLM call per node**, plus one per run for setup. Outcomes are
+recomputed continuously but always deterministically — no LLM sits in that path.
+
+Artifacts:
+
+- `round_NNN/edit_memory.md` — one record per node: the sub-edits it made, each
+  with a name, a two-level category, what it did and which failure it targeted;
+  then the measured outcome.
+- `edit_memory_registry.json` — the run-global category vocabulary. Contains
+  **only categories some edit actually used**, so it is safe to show the editor.
+- `edit_memory_candidates.json` — proxy categories proposed by the setup pass.
+  **Tagger-only, never shown to the editor**: they are hypotheses, and letting
+  the editor read them as though they were tried history biases the tree search.
+
+Two things to know before enabling it:
+
+- **`verdict_threshold` assumes scores on `[0,1]` where higher is better.** It
+  is calibrated against a travel run; on a different scoring scale the
+  helped/hurt/neutral split becomes meaningless until re-checked. The same
+  threshold applied to one reference run gives "31 of 75 edits hurt" at 0.02
+  and "2 hurt" at 0.10.
+- **Edit memory requires the per-round `round_NNN/task_agent/` layout the
+  managers write**, since it diffs a node against its parent. A manager that
+  does not produce that layout silently produces no edit memory. It is
+  supported by `hgm` only — `hgm_dual` raises, because it makes more than one
+  editor call per node and cannot honour one-call-per-node.
+
 ## Train/eval split (optional)
 
 Add a top-level `split:` block to the YAML to hold out a deterministic
@@ -323,7 +381,12 @@ class RandomSearchManager:
                train_case_ids=None, eval_case_ids=None):
         # own the entire round loop; write per-round folders matching the
         # disk layout contract (see meta_agent/managers/__init__.py for
-        # the EvolutionManager Protocol).
+        # the EvolutionManager Protocol). `round_NNN/task_agent/` is the
+        # load-bearing part: the behavior summarizer and edit memory both
+        # diff a node against its parent through it, and silently produce
+        # nothing for a manager that does not write it.
+        # Accept (and ignore, if unused) `summarizer=` and `edit_memory=`:
+        # main_loop passes both unconditionally.
         ...
 ```
 
@@ -464,8 +527,13 @@ so the registration runs when the project is loaded.
 Both go through `platform_core.llm_wrapper.call_llm`. It uses OpenAI's
 **Responses API** (`client.responses.create`), accepts tool schemas in any of
 three shapes (Responses-API, Chat-Completions, Anthropic), and emits trace
-events that the feedback gatherer reads back. Reasoning models (gpt-5 family)
-get `reasoning={"effort": ...}` instead of `temperature`.
+events that the feedback gatherer reads back. With reasoning effort set the
+wrapper sends `reasoning={"effort": ...}`; a temperature rides alongside it
+only when sourced from the `LLM_TEMPERATURE` env var (which the evaluator
+sets per case subprocess from `task_agent.temperature`, default 0.2 =
+low-variance sampling) and the model tolerates the combination — OpenAI first-party
+reasoning models (gpt-5 family, o-series) always get `reasoning` without
+`temperature`.
 
 Defaults are sourced from `LLM_MODEL` and `LLM_REASONING_EFFORT` env vars so
 the same workflow code runs in the meta-agent and in evaluator subprocesses

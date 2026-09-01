@@ -46,6 +46,7 @@ def run(config_path: Path) -> EvolutionOutcome:
         train_case_ids=fw.train_case_ids,
         eval_case_ids=fw.eval_case_ids,
         summarizer=fw.summarizer,
+        edit_memory=fw.edit_memory,
     )
 
     summary_path: Optional[Path] = None

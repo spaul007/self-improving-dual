@@ -29,8 +29,6 @@ Hook points:
 """
 from __future__ import annotations
 
-import ast
-import difflib
 import json
 import os
 import re
@@ -40,13 +38,13 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 from . import verbose_log
-from .editor_validators import MUTABLE_DIRS, MUTABLE_FILES
+from .edit_diff import DIFF_CHAR_CAP, changed_mutable_files, diff_mutable_files
 from .models import EvaluationResult, CaseResult
 from .registry import register
 
 
 # Per-section caps that bound the prompt size sent to the summarizer LLM.
-_DIFF_CHAR_CAP = 3000
+_DIFF_CHAR_CAP = DIFF_CHAR_CAP
 _TRACE_LABEL_CAP = 12          # at most N distinct labels surfaced
 _EVENTS_PER_LABEL_SAMPLE = 3   # sample events per label included verbatim
 _PER_CASE_LINE_CAP = 25        # at most N per-case outcome lines
@@ -268,83 +266,14 @@ class BehaviorSummarizer:
     def _changed_mutable_files(
         self, parent_round_dir: Path, round_dir: Path
     ) -> list[str]:
-        """List of mutable file paths (relative to task_agent/) that differ
-        between parent and child (added, removed, or modified)."""
-        out: list[str] = []
-        parent_root = parent_round_dir / "task_agent"
-        child_root = round_dir / "task_agent"
-        if not child_root.exists():
-            return out
-
-        candidates: set[str] = set()
-        for name in MUTABLE_FILES:
-            candidates.add(name)
-        for sub in MUTABLE_DIRS:
-            for src in (parent_root / sub, child_root / sub):
-                if src.exists():
-                    for p in src.glob("*.py"):
-                        if p.name == "__init__.py":
-                            continue
-                        candidates.add(f"{sub}/{p.name}")
-
-        for rel in sorted(candidates):
-            p_path = parent_root / rel
-            c_path = child_root / rel
-            p_exists, c_exists = p_path.exists(), c_path.exists()
-            if not p_exists and not c_exists:
-                continue
-            if p_exists != c_exists:
-                out.append(rel)
-            else:
-                try:
-                    if p_path.read_text(encoding="utf-8") != c_path.read_text(encoding="utf-8"):
-                        out.append(rel)
-                except OSError:
-                    out.append(rel)
-        return out
+        """Thin wrapper — see :func:`meta_agent.edit_diff.changed_mutable_files`."""
+        return changed_mutable_files(parent_round_dir, round_dir)
 
     def _diff_mutable_files(
         self, parent_round_dir: Path, round_dir: Path
     ) -> str:
-        """Unified diff of changed mutable files, capped to ``_DIFF_CHAR_CAP``.
-
-        When the cap fires, the head and tail of the diff are kept and the
-        middle is replaced with ``<... N chars elided ...>`` so the LLM sees
-        both ends of the change and knows about the truncation.
-        """
-        parent_root = parent_round_dir / "task_agent"
-        child_root = round_dir / "task_agent"
-        changed = self._changed_mutable_files(parent_round_dir, round_dir)
-
-        parts: list[str] = []
-        for rel in changed:
-            try:
-                old_lines = (
-                    (parent_root / rel).read_text(encoding="utf-8").splitlines()
-                    if (parent_root / rel).exists() else []
-                )
-                new_lines = (
-                    (child_root / rel).read_text(encoding="utf-8").splitlines()
-                    if (child_root / rel).exists() else []
-                )
-            except OSError:
-                continue
-            diff = difflib.unified_diff(
-                old_lines, new_lines, fromfile=f"parent/{rel}", tofile=f"child/{rel}",
-                n=3, lineterm="",
-            )
-            parts.append("\n".join(diff))
-
-        full = "\n\n".join(p for p in parts if p)
-        if len(full) <= _DIFF_CHAR_CAP:
-            return full
-        # Keep head and tail; elide the middle so the LLM still sees both
-        # ends of the change (the diff order is per-file, so the last file's
-        # changes wouldn't show up at all with a head-only truncation).
-        keep = (_DIFF_CHAR_CAP - 80) // 2
-        head, tail = full[:keep], full[-keep:]
-        elided = len(full) - 2 * keep
-        return f"{head}\n<... {elided} chars elided ...>\n{tail}"
+        """Thin wrapper — see :func:`meta_agent.edit_diff.diff_mutable_files`."""
+        return diff_mutable_files(parent_round_dir, round_dir, char_cap=_DIFF_CHAR_CAP)
 
     def _read_trace(self, path: Path) -> list[dict[str, Any]]:
         if not path.exists():
