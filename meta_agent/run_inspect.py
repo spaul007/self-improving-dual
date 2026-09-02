@@ -175,6 +175,13 @@ class RoundInfo:
     eval_result: Optional[dict[str, Any]] = None
     feedback: Optional[dict[str, Any]] = None
     behavior_memory: Optional[str] = None
+    # Structured pre-aggregation behind behavior_memory.md (see
+    # meta_agent/behavior_summarizer.py::_aggregate) -- includes
+    # "check_reliability" (this round's per-check failure counts) and
+    # "check_reliability_vs_parent" (parent-vs-child comparison with
+    # Fisher's-exact-test significance already computed), when the
+    # project's scorer reports per-case "failed_checks".
+    behavior_aggregate: Optional[dict[str, Any]] = None
     has_task_agent: bool = False
     has_variants: bool = False  # HGM-dual marker, tolerated not visualized
     # Per-block Beta posterior snapshot at the moment this EXPAND's block was
@@ -288,6 +295,7 @@ def discover_rounds(experiment_dir: Path) -> list[RoundInfo]:
             behavior_path.read_text(encoding="utf-8") if behavior_path.exists() else None
         )
         adaptive_strategy = _read_json(round_dir / "adaptive_strategy.json")
+        behavior_aggregate = _read_json(round_dir / "behavior_aggregate.json")
         rounds.append(
             RoundInfo(
                 round_dir=round_dir,
@@ -297,6 +305,7 @@ def discover_rounds(experiment_dir: Path) -> list[RoundInfo]:
                 eval_result=eval_result,
                 feedback=feedback,
                 behavior_memory=behavior_memory,
+                behavior_aggregate=behavior_aggregate,
                 has_task_agent=(round_dir / "task_agent").is_dir(),
                 has_variants=(round_dir / "variants").is_dir(),
                 adaptive_strategy=adaptive_strategy,

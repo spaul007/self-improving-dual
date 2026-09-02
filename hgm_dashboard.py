@@ -374,9 +374,48 @@ with tab_feedback:
         st.info("No feedback.json yet for this round.")
 
 with tab_memory:
+    agg = round_.behavior_aggregate or {}
+    check_reliability = agg.get("check_reliability") or {}
+    vs_parent = agg.get("check_reliability_vs_parent") or {}
+
+    if vs_parent:
+        st.markdown(
+            "**Check/constraint reliability vs. parent** — significance "
+            "via Fisher's exact test (pre-computed, not LLM judgment)"
+        )
+        vs_parent_rows = [
+            {
+                "check": check,
+                "parent (failed/n)": f"{e['parent_failed_in_n_cases']}/{e['parent_n_cases']}",
+                "child (failed/n)": f"{e['child_failed_in_n_cases']}/{e['child_n_cases']}",
+                "direction": e["direction"],
+                "significance": "✅ significant" if e["significant"] else "— within noise",
+            }
+            for check, e in vs_parent.items()
+        ]
+        st.dataframe(pd.DataFrame(vs_parent_rows), width="stretch", hide_index=True)
+
+    if check_reliability.get("checks"):
+        st.markdown(
+            f"**Check/constraint reliability, this round alone** "
+            f"(n={check_reliability.get('n_cases')} cases; rarest failures first)"
+        )
+        check_rows = [
+            {
+                "check": check,
+                "failed_in_n_cases": e["failed_in_n_cases"],
+                "sample_failing_case_ids": ", ".join(e["sample_failing_case_ids"]),
+            }
+            for check, e in check_reliability["checks"].items()
+        ]
+        st.dataframe(pd.DataFrame(check_rows), width="stretch", hide_index=True)
+
+    if vs_parent or check_reliability.get("checks"):
+        st.markdown("---")
+
     if round_.behavior_memory:
         st.markdown(round_.behavior_memory)
-    else:
+    elif not (vs_parent or check_reliability.get("checks")):
         st.info(
             "No behavior_memory.md — root round (nothing to diff against), "
             "no summarizer configured, or not written yet."

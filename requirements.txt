@@ -8,3 +8,8 @@ rank-bm25>=0.2
 # name binding, so a NameError inside a function body (only resolved at
 # call time) is otherwise invisible until real evaluation.
 pyflakes>=3.0
+# Fisher's exact test in meta_agent/behavior_summarizer.py's
+# _rate_change_significance -- exact (not a large-sample approximation),
+# so it stays valid at the small counts / extreme rates a per-check
+# parent-vs-child failure-rate comparison often lands in.
+scipy>=1.10

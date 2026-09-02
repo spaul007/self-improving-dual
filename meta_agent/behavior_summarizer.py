@@ -51,6 +51,8 @@ _TRACE_LABEL_CAP = 12          # at most N distinct labels surfaced
 _EVENTS_PER_LABEL_SAMPLE = 3   # sample events per label included verbatim
 _PER_CASE_LINE_CAP = 25        # at most N per-case outcome lines
 _TOOL_CALL_CAP = 20            # at most N distinct tools in the usage table
+_CHECK_RELIABILITY_CAP = 15    # at most N distinct checks in the reliability table
+_CHECK_SAMPLE_CASE_IDS = 5     # sample failing case_ids shown per check
 
 # A tool_result.result_preview that looks like an error (mirrors the gatherer).
 _TOOL_ERROR_RE = re.compile(r'^Error\b|"error"\s*:', re.IGNORECASE)
@@ -259,6 +261,13 @@ class BehaviorSummarizer:
             events, eval_result.per_case, events_by_case
         )
 
+        check_reliability_aggregate = self._aggregate_check_reliability(
+            eval_result.per_case
+        )
+        check_reliability_vs_parent = self._compare_check_reliability_to_parent(
+            eval_result.per_case, parent_round_dir
+        )
+
         per_case = self._per_case_summary(eval_result.per_case, events_by_case)
 
         # Identify which mutable files actually changed vs parent — useful
@@ -276,6 +285,8 @@ class BehaviorSummarizer:
             "diff": diff_text,
             "mutable_log": mutable_log_aggregate,
             "tool_calls": tool_calls_aggregate,
+            "check_reliability": check_reliability_aggregate,
+            "check_reliability_vs_parent": check_reliability_vs_parent,
             "per_case": per_case,
         }
 
@@ -566,6 +577,203 @@ class BehaviorSummarizer:
             }
         return out
 
+    @staticmethod
+    def _check_fail_case_ids(
+        per_case: list[CaseResult],
+    ) -> tuple[dict[str, set[str]], int]:
+        """``(check -> set of case_ids it failed in, n_cases)``, reading the
+        generic ``case.details["failed_checks"]`` key (a flat list of
+        strings, e.g. ``"commonsense:DIM:CHECK"`` / ``"hard:CONSTRAINT"``)
+        that a project's scorer may optionally emit -- the same key the
+        block suggester's error categorizers read. Task-agnostic: works for
+        any project that populates this key, degrades to an empty dict
+        (never raises) for any project that doesn't. Shared by
+        ``_aggregate_check_reliability`` (this round alone) and
+        ``_compare_check_reliability_to_parent`` (this round vs. parent)
+        so both read the exact same per-case data the exact same way.
+
+        An information-ceiling guard: ``n_cases`` only counts cases whose
+        ``details`` actually HAS a ``failed_checks`` key (even if empty --
+        that's a case that ran the scorer's real constraint checks and
+        genuinely passed all of them). A case whose ``details`` lacks the
+        key entirely -- a harness-level crash (details={}), or a scorer
+        short-circuit like "no plan"/"conversion failed" that never reached
+        real constraint evaluation -- carries NO information about any
+        check and must not silently count as "passed" for every check.
+        Confirmed live as a real bug: a node whose edit crashed 32/32 cases
+        (a total regression) showed every check "improving to 0% failure"
+        against the parent, because 0 crashed cases ever had a chance to
+        fail anything -- the fix is to exclude such cases from the
+        denominator entirely, not count silence as success."""
+        fail_case_ids: dict[str, set[str]] = defaultdict(set)
+        n_scored = 0
+        for case in per_case:
+            details = case.details or {}
+            if "failed_checks" not in details:
+                continue
+            n_scored += 1
+            for check in details.get("failed_checks") or []:
+                if isinstance(check, str):
+                    fail_case_ids[check].add(str(case.case_id))
+        return dict(fail_case_ids), n_scored
+
+    def _aggregate_check_reliability(
+        self, per_case: list[CaseResult]
+    ) -> dict[str, Any]:
+        """Cross-tab each project-reported failed check against how many
+        DISTINCT cases it failed in, out of the total cases this batch.
+
+        Deliberately decoupled from whether the CASE as a whole passed: a
+        specific check can fail rarely -- a real, reportable reliability
+        signal -- even when every case still fails overall on some OTHER
+        check, which is exactly the situation where the whole-case
+        pass/fail cross-tabs above (``_aggregate_mutable_log``/
+        ``_aggregate_tool_calls``) have nothing positive to show (confirmed
+        live: a node with case_acc=0/120 still had several checks failing
+        in 0 of the batch's cases -- a genuine "this works reliably" finding
+        a case-pass-only view can never surface). Sorted ascending by
+        failure count so the rarest failures (= most reliable checks) sort
+        first. See ``_compare_check_reliability_to_parent`` for the
+        (more informative, when available) round-over-round delta version
+        of this same idea.
+
+        Returns ``{}`` when no case's ``details`` carries a ``failed_checks``
+        list at all -- most projects don't define one; this degrades
+        silently, same as the rest of this module's optional inputs.
+        """
+        fail_case_ids, n_cases = self._check_fail_case_ids(per_case)
+        if n_cases == 0 or not fail_case_ids:
+            return {}
+
+        ranked = sorted(
+            fail_case_ids.items(), key=lambda kv: (len(kv[1]), kv[0])
+        )[:_CHECK_RELIABILITY_CAP]
+        return {
+            "n_cases": n_cases,
+            "checks": {
+                check: {
+                    "failed_in_n_cases": len(case_ids),
+                    "sample_failing_case_ids": sorted(case_ids)[
+                        :_CHECK_SAMPLE_CASE_IDS
+                    ],
+                }
+                for check, case_ids in ranked
+            },
+        }
+
+    @staticmethod
+    def _rate_change_significance(
+        n_parent_fail: int, n_parent: int, n_child_fail: int, n_child: int,
+        *, alpha: float = 0.05,
+    ) -> tuple[bool, str]:
+        """Fisher's exact test on the parent-vs-child 2x2 contingency table
+        (failed / not-failed x parent / child) for this check: is the
+        failure-rate change bigger than sampling noise would plausibly
+        produce? Computed in code rather than left to the LLM to eyeball
+        raw counts -- separating "dropped from 40/60 to 38/60, probably
+        noise" from "dropped from 40/60 to 5/60, clearly real" is exactly
+        the kind of arithmetic judgment an LLM is unreliable at and code
+        does cheaply and exactly (the same principle strategies.md's
+        General section states: prefer code over LLM judgment for anything
+        mechanically computable).
+
+        Fisher's exact test (not a z/chi-square approximation) because it's
+        exact at small n and extreme rates near 0/1 -- exactly the regime
+        this comparison often lands in (e.g. a check failing 2/60 times).
+        Requires scipy (see requirements.txt); imported lazily here (not
+        at module level) so the rest of this module -- and everything
+        that imports it -- stays usable in an environment without scipy;
+        only this specific comparison needs it. ``alpha=0.05`` is the
+        conventional ~95%-confidence threshold.
+
+        Returns ``(significant, direction)`` where direction is
+        "improved" (rate dropped), "regressed" (rate rose), or
+        "unchanged". Symmetric on purpose: the same computation serves
+        both "What helped" (significant improvements) and "What didn't
+        help (or hurt)" (significant regressions) -- this function doesn't
+        favor good news over bad.
+        """
+        if n_parent == 0 or n_child == 0:
+            return False, "unchanged"
+        parent_rate = n_parent_fail / n_parent
+        child_rate = n_child_fail / n_child
+        if parent_rate > child_rate:
+            direction = "improved"
+        elif parent_rate < child_rate:
+            direction = "regressed"
+        else:
+            direction = "unchanged"
+        from scipy.stats import fisher_exact
+
+        table = [
+            [n_parent_fail, n_parent - n_parent_fail],
+            [n_child_fail, n_child - n_child_fail],
+        ]
+        _, p_value = fisher_exact(table)
+        return p_value < alpha, direction
+
+    def _compare_check_reliability_to_parent(
+        self, per_case: list[CaseResult], parent_round_dir: Path,
+    ) -> dict[str, Any]:
+        """Per-check failure-rate comparison against the PARENT's own
+        persisted ``eval_result.json``, flagging which changes are likely
+        real (``significant=True``, per ``_rate_change_significance``) vs.
+        within noise. This is the mechanism for the case the plain
+        case-pass/fail view structurally can't see: "no case passed
+        outright, but check X's failure rate dropped from 67% to 8% --
+        beyond noise -- so this edit made real progress even though
+        case_acc is still 0." Computed over the UNION of check names seen
+        in EITHER round (not just this round's), so a check that improved
+        all the way to zero failures -- and so no longer appears in this
+        round's own failure data at all -- still shows up here.
+
+        Returns ``{}`` when the parent's eval_result.json is missing,
+        unreadable, empty, or reports no failed_checks at all -- degrades
+        silently, same as every other optional input in this module.
+        """
+        child_fails, n_child = self._check_fail_case_ids(per_case)
+        if n_child == 0:
+            return {}
+
+        parent_path = parent_round_dir / "eval_result.json"
+        if not parent_path.is_file():
+            return {}
+        try:
+            parent_result = EvaluationResult.model_validate_json(
+                parent_path.read_text(encoding="utf-8")
+            )
+        except Exception:
+            return {}
+        parent_fails, n_parent = self._check_fail_case_ids(parent_result.per_case)
+        if n_parent == 0 or (not parent_fails and not child_fails):
+            return {}
+
+        rows: list[tuple[str, dict[str, Any], bool, float]] = []
+        for check in set(parent_fails) | set(child_fails):
+            n_parent_fail = len(parent_fails.get(check, ()))
+            n_child_fail = len(child_fails.get(check, ()))
+            parent_rate = n_parent_fail / n_parent
+            child_rate = n_child_fail / n_child
+            significant, direction = self._rate_change_significance(
+                n_parent_fail, n_parent, n_child_fail, n_child
+            )
+            row = {
+                "parent_failed_in_n_cases": n_parent_fail,
+                "parent_n_cases": n_parent,
+                "child_failed_in_n_cases": n_child_fail,
+                "child_n_cases": n_child,
+                "direction": direction,
+                "significant": significant,
+            }
+            # Rank: significant changes first (biggest rate swing first),
+            # then everything else by how much it's currently failing (the
+            # checks most worth knowing about either way).
+            sort_key = abs(parent_rate - child_rate)
+            rows.append((check, row, significant, sort_key))
+
+        ranked = sorted(rows, key=lambda r: (not r[2], -r[3]))[:_CHECK_RELIABILITY_CAP]
+        return {check: row for check, row, _sig, _key in ranked}
+
     def _per_case_summary(
         self,
         per_case: list[CaseResult],
@@ -675,9 +883,12 @@ class BehaviorSummarizer:
             "and child agent code, (b) a structured table of in-code "
             "instrumentation events (`mutable_log`) cross-tabbed against case "
             "outcomes, (c) a per-case roll-up of what passed/failed and "
-            "which instrumentation fired, and (d) a per-tool call-usage table "
+            "which instrumentation fired, (d) a per-tool call-usage table "
             "(immutable and mutable tools; mutable = editor-added) cross-tabbed "
-            "against case outcomes.\n\n"
+            "against case outcomes, (e) a check/constraint reliability table for "
+            "this round alone (when the project's scorer reports per-check "
+            "failures), and (f) that SAME table compared against the parent's "
+            "round, with significance already computed for you.\n\n"
             "Produce a concise markdown memo for the NEXT editor. Sections:\n"
             "  ## What was added — one bullet per new/changed tool, helper, or "
             "verifier: name it and give a one-line description of what it does "
@@ -706,7 +917,38 @@ class BehaviorSummarizer:
             "attribute a skip/verdict to a particular case unless a "
             "`sample_event` names that case_id. Do not invent verdicts, counts, "
             "case_ids, or component names the data doesn't support; state only "
-            "what these fields show."
+            "what these fields show.\n"
+            "CRITICAL — do not default to 'nothing helped' just because no case "
+            "passed outright: 'no case passed' and 'no progress was made' are "
+            "DIFFERENT claims. Check the 'this round vs. PARENT' table first — "
+            "a check whose failure rate dropped and is marked SIGNIFICANT is "
+            "real, reportable progress under '## What helped' even when "
+            "case_acc is still 0, because it means a specific constraint is now "
+            "being satisfied much more reliably than before. Only say 'None' / "
+            "'no help observed' in that section if every entry in that table is "
+            "'within noise' or 'unchanged' — never because the case-level pass "
+            "count alone was zero. Symmetrically, a check marked SIGNIFICANT "
+            "with direction=regressed is real evidence for '## What didn't help "
+            "(or hurt)', even if the round's overall score barely moved. Do NOT "
+            "compute or guess significance yourself from the raw counts in the "
+            "per-round-alone table — `significant`/`direction` in the "
+            "vs.-PARENT table are already computed for you from the actual "
+            "counts; treat them as authoritative and just report what they say, "
+            "citing the specific check name and the parent->child counts.\n"
+            "CRITICAL — a check 'improving to 0 failures' is NOT progress if the "
+            "cases crashed instead of passing: both tables EXCLUDE cases that "
+            "never reached real constraint evaluation (a crash, or a scorer "
+            "short-circuit) from their counts entirely — a check can show 0/N "
+            "child failures purely because N cases crashed before that check "
+            "could even run, not because it's newly reliable. If either table "
+            "has a 'NOTE: n/m cases ... had NO check data' line, or the round "
+            "summary's score/passed count is 0 or near-0 while `mutable_log` "
+            "shows Tracebacks or the per-case table shows errors, do NOT report "
+            "the check-reliability numbers as '## What helped' — a crash "
+            "explains the whole picture and check-level 'improvement' is an "
+            "artifact of missing data, not a real signal. Always sanity-check a "
+            "significant improvement against whether the round's cases actually "
+            "ran before crediting it."
             + update_clause
         )
 
@@ -750,6 +992,55 @@ class BehaviorSummarizer:
         if not tool_call_lines:
             tool_call_lines.append("  (no tool calls recorded)")
 
+        n_scored_child = (aggregate.get("check_reliability") or {}).get("n_cases", 0)
+        n_attempted_child = aggregate.get("n_cases", 0)
+        n_unscored_child = max(0, n_attempted_child - n_scored_child)
+
+        check_lines = []
+        for check, entry in (aggregate.get("check_reliability") or {}).get(
+            "checks", {}
+        ).items():
+            check_lines.append(
+                f"  - {check}: failed_in={entry['failed_in_n_cases']}/"
+                f"{n_scored_child} scored cases  "
+                f"sample_case_ids={entry['sample_failing_case_ids']}"
+            )
+        if not check_lines:
+            check_lines.append(
+                "  (no failed_checks reported by the scorer for this project)"
+            )
+        if n_unscored_child > 0:
+            check_lines.append(
+                f"  NOTE: {n_unscored_child}/{n_attempted_child} cases this round "
+                "had NO check data at all (crashed, or the scorer short-circuited "
+                "before real constraint evaluation) -- excluded from every count "
+                "above. This is missing information, not evidence those checks "
+                "passed."
+            )
+
+        vs_parent_lines = []
+        for check, entry in (aggregate.get("check_reliability_vs_parent") or {}).items():
+            flag = "SIGNIFICANT" if entry["significant"] else "within noise"
+            vs_parent_lines.append(
+                f"  - {check}: parent={entry['parent_failed_in_n_cases']}/"
+                f"{entry['parent_n_cases']} -> child={entry['child_failed_in_n_cases']}/"
+                f"{entry['child_n_cases']}  direction={entry['direction']}  ({flag})"
+            )
+        if not vs_parent_lines:
+            vs_parent_lines.append(
+                "  (no parent comparison available -- parent eval_result.json "
+                "missing, or neither round reported failed_checks)"
+            )
+        if n_unscored_child > 0:
+            vs_parent_lines.append(
+                f"  NOTE: {n_unscored_child}/{n_attempted_child} cases this round "
+                "were never actually scored (crash or scorer short-circuit) -- "
+                "'child' counts above are over the remaining scored cases only. "
+                "A check showing 0 child failures because most/all cases crashed "
+                "is NOT an improvement -- check `passed`/`score` in the round "
+                "summary before calling this progress."
+            )
+
         user = (
             f"## Round summary\n"
             f"node {aggregate['node_id']} (parent={aggregate['parent_id']})  "
@@ -761,6 +1052,12 @@ class BehaviorSummarizer:
             + "\n".join(mutable_log_lines)
             + "\n\n## Tool usage (cross-tabbed with case outcomes)\n"
             + "\n".join(tool_call_lines)
+            + "\n\n## Check/constraint reliability, this round alone "
+            "(NOT cross-tabbed with case pass/fail -- see below for that)\n"
+            + "\n".join(check_lines)
+            + "\n\n## Check/constraint reliability, this round vs. PARENT "
+            "(pre-computed significance -- see system prompt)\n"
+            + "\n".join(vs_parent_lines)
             + "\n\n## Per-case outcomes\n"
             + "\n".join(per_case_lines)
         )
