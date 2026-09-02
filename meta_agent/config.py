@@ -290,6 +290,25 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
     for plugin in cfg.plugins:
         importlib.import_module(plugin)
 
+    # Resolve project paths up front — needed below both by validators
+    # (SmokeTestValidator's benchmark_dir) and further down by the editor's
+    # static project context (tool implementations, DB schema, optional
+    # scorer code).
+    runs_root = _resolve_root(cfg.runs_root)
+    project_root = REPO_ROOT / "projects" / cfg.project
+    seed_dir = resolve_seed_dir(cfg)
+    benchmark_dir = project_root / "benchmark"
+    if not seed_dir.exists():
+        raise FileNotFoundError(
+            f"seed directory not found: {seed_dir} "
+            f"(check `project: \"{cfg.project}\"` and `seed_dir_name` in the YAML)"
+        )
+    if not benchmark_dir.exists():
+        raise FileNotFoundError(
+            f"benchmark directory not found: {benchmark_dir} "
+            f"(check `project: \"{cfg.project}\"` in the YAML)"
+        )
+
     # Construct the scorer once and inject the same instance into both
     # the evaluator (per-case ``score()``) and the gatherer (round-level
     # ``aggregate()``). This keeps the per-case shape and the round-level
@@ -313,30 +332,26 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         cfg.gatherer, "gatherer", {"scorer": scorer_obj}
     )
     validators_obj = [
-        _build_with_injection(v, "validator", {"mutable_exclude": cfg.mutable_exclude})
+        _build_with_injection(
+            v,
+            "validator",
+            {
+                "mutable_exclude": cfg.mutable_exclude,
+                # Only SmokeTestValidator declares these; every other
+                # validator's __init__ doesn't accept them, so
+                # _build_with_injection's own "only inject params the
+                # constructor actually declares" rule leaves them unused
+                # everywhere else.
+                "evaluator": evaluator_obj,
+                "benchmark_dir": benchmark_dir,
+            },
+        )
         for v in cfg.validators
     ]
 
     # Lazy import: keeps the YAML loader free of an OpenAI import for
     # tests that don't build components.
     from platform_core.llm_wrapper import call_llm
-
-    # Resolve project paths up front — the editor's static project context
-    # (tool implementations, DB schema, optional scorer code) is read from here.
-    runs_root = _resolve_root(cfg.runs_root)
-    project_root = REPO_ROOT / "projects" / cfg.project
-    seed_dir = resolve_seed_dir(cfg)
-    benchmark_dir = project_root / "benchmark"
-    if not seed_dir.exists():
-        raise FileNotFoundError(
-            f"seed directory not found: {seed_dir} "
-            f"(check `project: \"{cfg.project}\"` and `seed_dir_name` in the YAML)"
-        )
-    if not benchmark_dir.exists():
-        raise FileNotFoundError(
-            f"benchmark directory not found: {benchmark_dir} "
-            f"(check `project: \"{cfg.project}\"` in the YAML)"
-        )
 
     # Static project context for the editor. tools_source + db_schema are
     # shown in both modes; scorer_source only in whitebox. None of these

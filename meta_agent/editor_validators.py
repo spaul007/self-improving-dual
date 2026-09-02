@@ -18,11 +18,12 @@ import ast
 import filecmp
 import json
 import os
+import shutil
 import subprocess
 import sys
 import textwrap
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Optional
 
 from pyflakes import checker as pyflakes_checker
 from pyflakes import messages as pyflakes_messages
@@ -552,6 +553,112 @@ class LoadTestValidator:
             f"{platform_parent}{os.pathsep}{existing}" if existing else platform_parent
         )
         return env
+
+
+@register("validator", "smoke_test")
+class SmokeTestValidator:
+    """Actually runs the agent on ONE real benchmark case and checks for a
+    genuine code-level crash -- not whether the case scored well.
+
+    Catches what no static validator can: a runtime error that only
+    manifests when the edited code actually executes end-to-end -- e.g. a
+    shared helper's return-tuple arity changed but not every call site was
+    updated. Confirmed live: a real round crashed 100% of its 32-case
+    batch this exact way (``ValueError: too many values to unpack``),
+    invisible to every static/import-based validator here since none of
+    them ever CALL the edited functions, only parse or import them.
+
+    Deliberately narrow: a case that runs to completion and scores 0 (a
+    bad plan, a wrong answer, a scorer-level "conversion failed") is NOT a
+    validator failure -- that is real evaluation's job, and this validator
+    must not reject an edit just because the model's OUTPUT was
+    imperfect. Only a genuine harness/agent-code exception counts, which
+    is exactly what ``CaseResult.error`` (the top-level field, set only by
+    ``SubprocessEvaluator._run_one``'s crash paths -- a timeout, a nonzero
+    child exit, unparseable child stdout, or ``payload["ok"] is False``
+    from an uncaught exception in the agent's own code) already
+    distinguishes from a scorer's own low-score judgment call (which lives
+    in ``details["error"]`` instead and leaves the top-level field unset).
+
+    Not free: this is the only validator here that makes a REAL LLM call.
+    Put it LAST in ``validators:`` so cheap static checks reject an
+    obviously-broken edit before this one ever runs -- ``_run_validators``
+    (agent_editor.py) runs every configured validator unconditionally, it
+    does not short-circuit on an earlier failure.
+
+    Requires ``evaluator``/``benchmark_dir`` to be injected (see
+    ``meta_agent/config.py::build_components``) -- degrades to a no-op
+    (returns ``[]``) when either is missing, same as any other optional
+    dependency in this module never crashes the round for its own sake.
+    """
+
+    def __init__(
+        self,
+        *,
+        evaluator: Any = None,
+        benchmark_dir: Optional[Path] = None,
+        # Which case to smoke-test with. None (default) picks the first
+        # case in the benchmark's cases.jsonl -- deterministic, and which
+        # specific case is used barely matters here since its SCORE is
+        # never read, only whether running it raises.
+        case_id: Optional[str] = None,
+    ) -> None:
+        self.evaluator = evaluator
+        self.benchmark_dir = benchmark_dir
+        self.case_id = case_id
+
+    def validate(self, out_dir: Path, base_dir: Path) -> list[str]:
+        if self.evaluator is None or self.benchmark_dir is None:
+            return []
+        agent_dir = out_dir / "task_agent"
+        if not agent_dir.exists():
+            return ["smoke_test: task_agent directory missing"]
+
+        case_id = self.case_id
+        if case_id is None:
+            from .evaluator import load_cases
+
+            try:
+                cases = load_cases(self.benchmark_dir)
+            except Exception as exc:  # noqa: BLE001
+                return [f"smoke_test: could not load benchmark cases: {exc!r}"]
+            if not cases:
+                return []
+            case_id = str(cases[0].get("id") or cases[0].get("case_id"))
+
+        # Isolated scratch dir (task_agent symlinked in) so the smoke run's
+        # own logs/trace.jsonl never land in -- and can't be overwritten
+        # by, or confused with -- this round's REAL evaluation logs. Same
+        # pattern as evaluate_task_agent.py's own isolated-round-dir helper.
+        scratch = out_dir / "_smoke_test"
+        shutil.rmtree(scratch, ignore_errors=True)
+        scratch.mkdir(parents=True)
+        try:
+            (scratch / "task_agent").symlink_to(
+                agent_dir.resolve(), target_is_directory=True
+            )
+            try:
+                result = self.evaluator.run(
+                    scratch, self.benchmark_dir, case_ids=[case_id]
+                )
+            except Exception:  # noqa: BLE001
+                # An evaluator/infra-level problem (bad benchmark_dir,
+                # disk error, ...) -- not an agent crash. Don't fail the
+                # edit over trouble that isn't the agent's own code.
+                return []
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+
+        if not result.per_case:
+            return []
+        case = result.per_case[0]
+        if case.error:
+            return [
+                f"smoke_test: agent crashed on case {case_id} (a real code "
+                f"exception, not a low score -- this must be fixed): "
+                f"{case.error[:1000]}"
+            ]
+        return []
 
 
 DEFAULT_VALIDATOR_NAMES = [
