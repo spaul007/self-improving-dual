@@ -744,6 +744,17 @@ class HGMManager:
         )
         return "\n".join(parts)
 
+    def _lineage_memory_label(self, node_id: int) -> str:
+        """Label shown before an ancestor's behavior-memory block in
+        ``_render_lineage_memory``'s rendered output. Default: just the
+        round number -- carries no indication of which block (if any)
+        that round's creating edit targeted. Factored out as its own
+        overridable hook (rather than inlined in the walk loop below) so
+        a subclass can add more context -- e.g. the block name -- without
+        duplicating the walk/budget logic. See
+        ``meta_agent/managers/hgm_block_tagged.py`` for that override."""
+        return f"round {node_id}"
+
     def _render_lineage_memory(
         self,
         parent: HGMNode,
@@ -777,7 +788,7 @@ class HGMManager:
         nid: Optional[int] = parent.node_id
         while nid is not None and nid in self._tree.nodes:
             node = self._tree.nodes[nid]
-            chain.append((f"round {nid}", node.round_dir))
+            chain.append((self._lineage_memory_label(nid), node.round_dir))
             nid = node.parent_id
 
         included: list[tuple[str, str]] = []  # (label, text), most-recent-first
