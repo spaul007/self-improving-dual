@@ -165,6 +165,96 @@ def _areas_for(registry: Mapping[str, Any], nodes: list[int]) -> list[tuple[str,
     return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
 
 
+def _ledger_lines(ledger: list[dict[str, Any]], registry: Mapping[str, Any],
+                  level2_min_nodes: int) -> list[str]:
+    """The per-strategy ledger rows, shared verbatim by both render modes."""
+    out: list[str] = []
+    for r in ledger:
+        if r["abs_median"] is not None:
+            lo, hi = r["n_range"]
+            nrange = f"n {lo}" if lo == hi else f"n {lo}–{hi}"
+            stat = ("child median %.3f · best %.3f (%s)"
+                    % (r["abs_median"], r["abs_best"], nrange))
+            if r["median"] is not None:
+                stat += " · Δ median %+.4f" % r["median"]
+        elif r["median"] is not None:
+            stat = "Δ median %+.4f · best %+.4f · worst %+.4f" % (
+                r["median"], r["best"], r["worst"])
+        else:
+            stat = "no measured outcome yet"
+        tally = ", ".join(f"{k} {v}" for k, v in r["tally"].items())
+        bundle = (f" ({r['bundled']} bundled with other strategies)"
+                  if r["bundled"] else "")
+        flag = (f" · suspect-verifier in {r['suspect']} node(s)"
+                if r.get("suspect") else "")
+        out.append(f"- **`{r['id']}`** — {r['n_nodes']}×{bundle} · {stat} · "
+                   f"{tally}{flag}")
+        out.append(f"  - {r['definition']}")
+        # A dominant bucket's median sits near the run mean and says little, so
+        # its level-2 split is what carries the signal — always show it there.
+        if r["n_nodes"] >= level2_min_nodes:
+            areas = _areas_for(registry, r["nodes"])[:5]
+            if areas:
+                out.append("  - aimed at: "
+                           + ", ".join(f"{a} ×{n}" for a, n in areas))
+        out.append(f"  - nodes: {', '.join(str(n) for n in r['nodes'])}")
+    return out
+
+
+def _focus_lines(records: Mapping[int, Any], focus_node_id: Optional[int],
+                 threshold: float, min_shared: int) -> list[str]:
+    """The 'edits already tried off this parent' block, shared by both modes."""
+    if focus_node_id is None:
+        return []
+    kids = [n for n, rec in sorted(records.items())
+            if rec["fm"].get("parent") == str(focus_node_id)]
+    if not kids:
+        return []
+    out = ["", f"### Edits already tried directly off node "
+               f"{focus_node_id} (the parent being edited now)"]
+    for n in kids:
+        rec = records[n]
+        v = _verdict(rec["delta"], rec["n_shared"], threshold, min_shared)
+        if rec["child_abs"] is not None and rec["delta"] is not None:
+            out.append(
+                f"- node {n}: child {rec['child_abs']:.4f}/"
+                f"{rec['n_abs']} (Δ {rec['delta']:+.4f} vs parent "
+                f"on {rec['n_shared']} shared, {v})")
+        elif rec["child_abs"] is not None:
+            out.append(
+                f"- node {n}: child {rec['child_abs']:.4f}/"
+                f"{rec['n_abs']} (Δ vs parent unmeasured)")
+        elif rec["delta"] is not None:
+            out.append(f"- node {n} (Δ {rec['delta']:+.4f}, {v})")
+        else:
+            out.append(f"- node {n} (unmeasured)")
+        block = rec["body"]
+        if rec["usage"]:
+            block += "\n" + rec["usage"]
+        if rec["analysis"]:
+            block += "\n" + rec["analysis"]
+        out.append("  " + block.replace("\n", "\n  "))
+    return out
+
+
+BELIEF_PREAMBLE = """How to read the belief document below:
+- It is maintained by a belief-maintainer LLM from this run's MEASURED edit
+  history and rewritten after every evaluation batch; its structure is that
+  maintainer's own choosing.
+- `### belief:<slug>` sections are its beliefs; the slug is the id to name in
+  a prediction when an edit relies on that belief.
+- `[node N: Δx/y]` citations are machine-verified against the actual records.
+  When the machine appendix at the bottom reports a mismatch, trust the
+  appendix's numbers over the body text.
+- The machine appendix is code-generated fact tables (citation checks,
+  evidence bases, proposal outcomes) — not the belief maintainer's opinion.
+- Beliefs are judgments over noisy evidence and can be wrong: weigh each
+  against its cited evidence base. `unproven` means untested — an invitation
+  to try, never a rejection.
+- Next-move lines are suggestions to build on, repair, or avoid; you may
+  override them with better judgment grounded in the code you see."""
+
+
 def render_edit_memory(
     experiment_dir: Path,
     *,
@@ -174,8 +264,16 @@ def render_edit_memory(
     focus_node_id: Optional[int] = None,
     level2_min_nodes: int = 6,
     run_context: Optional[Mapping[str, Any]] = None,
+    mode: str = "full",
+    belief_block: str = "",
 ) -> str:
-    """The editor-facing block. ``""`` when there is nothing to show."""
+    """The editor-facing block. ``""`` when there is nothing to show.
+
+    ``mode="full"`` (default) renders the legacy layout, byte-identical to
+    before the belief layer existed. ``mode="belief"`` replaces the per-node
+    record dump with the belief document: head guidance + interpretation
+    preamble + ``belief_block`` + the per-strategy ledger + the focus block.
+    """
     experiment_dir = Path(experiment_dir)
     reg_path = experiment_dir / REGISTRY_NAME
     if token_budget <= 0 or not reg_path.exists():
@@ -190,6 +288,47 @@ def render_edit_memory(
 
     budget = token_budget * _CHARS_PER_TOKEN
     ledger = build_ledger(registry, records, threshold=threshold, min_shared=min_shared)
+
+    if mode == "belief":
+        # Belief-led steering: the maintained belief document replaces the
+        # per-node record dump entirely; full records reach the editor only
+        # through the retrieval stage.
+        out = ["\n## Edit memory — the run's digested edit history: beliefs "
+               "over what was tried, plus the deterministic ledger"]
+        if run_context:
+            out.append(
+                "Run context: seed %.4f/%d · best so far %.4f/%d (node %d). "
+                "The goal is the highest ABSOLUTE score."
+                % (run_context.get("seed_mean", 0.0), run_context.get("seed_n", 0),
+                   run_context.get("best_mean", 0.0), run_context.get("best_n", 0),
+                   run_context.get("best_node", -1)))
+        out += [
+            "",
+            "You can use this to guide the next edit — for example:",
+            "1. BUILD ON an influential edit: extend what the numbers show "
+            "already works.",
+            "2. REPAIR a promising category: when a strategy's intent is sound "
+            "but its implementations are broken — gates passing outputs the "
+            "scorer rejects, detectors whose flagged problems never get "
+            "fixed, dead components — fix the implementation instead of "
+            "abandoning the idea or repeating it unchanged.",
+            "3. DIVERSIFY: try something different from everything recorded "
+            "here.",
+            "When you draw on the history, weight the measured evidence "
+            "rather than how often something was tried.",
+        ]
+        if belief_block:
+            out += ["", BELIEF_PREAMBLE, "", "### Belief document",
+                    belief_block]
+        out += ["", "### What has been tried, by strategy (deterministic "
+                    "ledger)"]
+        out += _ledger_lines(ledger, registry, level2_min_nodes)
+        out += _focus_lines(records, focus_node_id, threshold, min_shared)
+        text = "\n".join(out)
+        if len(text) > budget:
+            from .edit_diff import truncate_middle
+            text = truncate_middle(text, budget)
+        return text
 
     head = [
         "\n## Edit memory — the run's global edit history: what was tried, "
@@ -261,65 +400,9 @@ def render_edit_memory(
         "",
         "### What has been tried, by strategy",
     ]
-    for r in ledger:
-        if r["abs_median"] is not None:
-            lo, hi = r["n_range"]
-            nrange = f"n {lo}" if lo == hi else f"n {lo}–{hi}"
-            stat = ("child median %.3f · best %.3f (%s)"
-                    % (r["abs_median"], r["abs_best"], nrange))
-            if r["median"] is not None:
-                stat += " · Δ median %+.4f" % r["median"]
-        elif r["median"] is not None:
-            stat = "Δ median %+.4f · best %+.4f · worst %+.4f" % (
-                r["median"], r["best"], r["worst"])
-        else:
-            stat = "no measured outcome yet"
-        tally = ", ".join(f"{k} {v}" for k, v in r["tally"].items())
-        bundle = (f" ({r['bundled']} bundled with other strategies)"
-                  if r["bundled"] else "")
-        flag = (f" · suspect-verifier in {r['suspect']} node(s)"
-                if r.get("suspect") else "")
-        head.append(f"- **`{r['id']}`** — {r['n_nodes']}×{bundle} · {stat} · "
-                    f"{tally}{flag}")
-        head.append(f"  - {r['definition']}")
-        # A dominant bucket's median sits near the run mean and says little, so
-        # its level-2 split is what carries the signal — always show it there.
-        if r["n_nodes"] >= level2_min_nodes:
-            areas = _areas_for(registry, r["nodes"])[:5]
-            if areas:
-                head.append("  - aimed at: "
-                            + ", ".join(f"{a} ×{n}" for a, n in areas))
-        head.append(f"  - nodes: {', '.join(str(n) for n in r['nodes'])}")
+    head += _ledger_lines(ledger, registry, level2_min_nodes)
 
-    focus_block: list[str] = []
-    if focus_node_id is not None:
-        kids = [n for n, rec in sorted(records.items())
-                if rec["fm"].get("parent") == str(focus_node_id)]
-        if kids:
-            focus_block = ["", f"### Edits already tried directly off node "
-                               f"{focus_node_id} (the parent being edited now)"]
-            for n in kids:
-                rec = records[n]
-                v = _verdict(rec["delta"], rec["n_shared"], threshold, min_shared)
-                if rec["child_abs"] is not None and rec["delta"] is not None:
-                    focus_block.append(
-                        f"- node {n}: child {rec['child_abs']:.4f}/"
-                        f"{rec['n_abs']} (Δ {rec['delta']:+.4f} vs parent "
-                        f"on {rec['n_shared']} shared, {v})")
-                elif rec["child_abs"] is not None:
-                    focus_block.append(
-                        f"- node {n}: child {rec['child_abs']:.4f}/"
-                        f"{rec['n_abs']} (Δ vs parent unmeasured)")
-                elif rec["delta"] is not None:
-                    focus_block.append(f"- node {n} (Δ {rec['delta']:+.4f}, {v})")
-                else:
-                    focus_block.append(f"- node {n} (unmeasured)")
-                block = rec["body"]
-                if rec["usage"]:
-                    block += "\n" + rec["usage"]
-                if rec["analysis"]:
-                    block += "\n" + rec["analysis"]
-                focus_block.append("  " + block.replace("\n", "\n  "))
+    focus_block = _focus_lines(records, focus_node_id, threshold, min_shared)
 
     detail = ["", "### Every edit, oldest first"]
     for n in sorted(records):

@@ -322,6 +322,15 @@ class HGMManager:
             except Exception as exc:  # noqa: BLE001
                 print(f"[edit_memory] unexpected error on node {node_id}: {exc!r}",
                       flush=True)
+            # Belief layer: register the new attempt (as tried, unmeasured)
+            # before any sibling expand reads the belief document. Sig-gated
+            # inside — a no-change call costs no LLM tokens.
+            try:
+                getattr(self._edit_memory, "update_beliefs",
+                        lambda _t: False)(self._tree)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[edit_beliefs] post-expand update failed: {exc!r}",
+                      flush=True)
         print(f"node {node_id}: EXPAND from {parent_id}", flush=True)
         return node_id
 
@@ -494,13 +503,20 @@ class HGMManager:
         try:
             from ..edit_memory_render import render_edit_memory
             from ..edit_outcome import run_context
+            mode = getattr(em, "steering_mode", "full")
+            belief_block = ""
+            if mode == "belief":
+                belief_block = getattr(em, "render_belief_block",
+                                       lambda: "")()
             return render_edit_memory(
                 self._experiment_dir,
-                token_budget=getattr(em, "steering_token_budget", 12000),
+                token_budget=getattr(em, "steering_token_budget", 48000),
                 threshold=getattr(em, "verdict_threshold", 0.02),
                 min_shared=getattr(em, "min_shared", 8),
                 focus_node_id=parent.node_id,
                 run_context=run_context(self._tree) or None,
+                mode=mode,
+                belief_block=belief_block,
             )
         except Exception as exc:  # noqa: BLE001
             print(f"[edit_memory] steering render failed: {exc!r}", flush=True)
@@ -961,6 +977,15 @@ class HGMManager:
                 self._edit_memory.refresh_outcomes(self._tree, node.node_id)
             except Exception as exc:  # noqa: BLE001
                 print(f"[edit_memory] refresh failed for node {node.node_id}: {exc!r}",
+                      flush=True)
+            # Belief layer: fold this batch's outcomes in NOW — the per-eval
+            # local update. Sig-gated inside, so it only spends an LLM call
+            # when the refresh above actually moved evidence.
+            try:
+                getattr(self._edit_memory, "update_beliefs",
+                        lambda _t: False)(self._tree)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[edit_beliefs] post-eval update failed: {exc!r}",
                       flush=True)
 
     @staticmethod

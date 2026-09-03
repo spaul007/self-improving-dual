@@ -1,0 +1,122 @@
+experiment_name: "travel_hgm_1000_local_qwen122b_medium_beliefs2stage"
+
+# Meta-cognitive (belief registry + two-stage editor) arm at the full 1000-eval
+# budget. Hyper-parameters mirror the OpenRouter reference arm
+#   runs/20260827_005240_travel_hgm_1000_or_medium_editmem/config.snapshot.yaml
+# (same budget/bandit/batching/steering budget/split/validators, everything at
+# reasoning_effort medium) with two deltas:
+#   1. Every LLM site goes to the LOCAL vLLM node-5 serving of the same
+#      weights (Qwen/Qwen3.5-122B-A10B, 262144 ctx) instead of OpenRouter —
+#      no OPENAI_API_KEY / OpenRouter dependency.
+#   2. The meta-cognitive stack is ON: editor type two_stage (propose ->
+#      deterministic retrieval -> edit, with per-round edit_prediction.json +
+#      retrieval_manifest.json), edit_memory writes per-node edit_code.md,
+#      steering_mode "belief" (LLM-maintained edit_memory_beliefs.md + ledger
+#      replaces the full record dump), belief updates after every eval batch
+#      and expand (sig-gated), reflection every 10 updates.
+#
+# Comparable arms:
+#   record-dump steering, single-call editor : ..._or_medium_editmem (OR)
+#   no edit memory                           : ..._or_medium_no_editmem (OR)
+project: "travel"
+
+eval_visibility: "blackbox"
+
+loop:
+  max_rounds: 1000
+  score_target: 0.99
+
+task_agent:
+  model: "Qwen/Qwen3.5-122B-A10B"
+  reasoning_effort: "medium"
+  base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 1000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 3
+    snapshot_tree: true
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+editor:
+  type: "two_stage"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    max_attempts: 2
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    # Stage-1 planning pass at low effort: it directs retrieval and records
+    # the prediction; the medium-effort stage-2 call sees the full code and
+    # may override it.
+    propose_reasoning_effort: "low"
+    retrieval_char_budget: 60000     # ~15k tokens of retrieved records+code
+    max_retrieved_nodes: 8
+
+# summarizer: INTENTIONALLY ABSENT — behavioral summary stays off (as in the
+# reference arm; edit memory is the only accumulated memory the editor sees).
+
+edit_memory:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    steering: true
+    # 32000 as in the reference arm. Belief-mode steering never carries the
+    # per-node record dump, so this is generous headroom for the belief doc
+    # (doc_char_cap below) + ledger + focus block.
+    steering_token_budget: 32000
+    verdict_threshold: 0.02
+    min_shared: 8
+    max_strategies: 18
+    max_subedits: 3
+    diff_char_cap: 6000
+    setup_pass: true
+    per_check_recipe: null
+    # --- meta-cognitive stack ---
+    code_record: true                # per-node edit_code.md (retrieval-only)
+    code_diff_char_cap: 20000
+    steering_mode: "belief"
+    beliefs:
+      enabled: true
+      reflect_every: 10              # representation reflection cadence
+      doc_char_cap: 48000            # chars (~12k tokens) for the belief doc
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  # Conversion is part of evaluation; same Qwen on the same local node.
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-122B-A10B"
+  TRAVEL_CONVERT_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+split:
+  train_ids_path: "configs/travel_train_ids.json"   # 60 predetermined cases
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

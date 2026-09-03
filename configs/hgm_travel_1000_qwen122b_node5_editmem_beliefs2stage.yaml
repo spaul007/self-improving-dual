@@ -1,0 +1,118 @@
+experiment_name: "travel_hgm_1000_qwen122b_node5_editmem_beliefs2stage"
+
+# Belief-registry + two-stage-editor arm (full treatment, arm C). Identical to
+# configs/hgm_travel_1000_qwen122b_node5_editmem.yaml (same 60-case train set,
+# budget, seed, bandit hyper-params, validators, task agent) except:
+#   * editor: two_stage — a propose+retrieve planning pass (prediction +
+#     memory query, deterministic retrieval from the archive) in front of the
+#     unchanged single-call edit.
+#   * edit_memory: steering_mode "belief" — the editor sees the LLM-maintained
+#     belief document + deterministic ledger instead of the full record dump —
+#     plus per-node edit_code.md records and the belief layer itself
+#     (updated after every eval batch and expand, sig-gated).
+#
+# Ablation ladder against the same control:
+#   control : ..._no_errcond_no_behsum.yaml   (no edit_memory)
+#   arm 1   : ..._editmem.yaml                (record dump steering)
+#   arm C   : this file                       (beliefs + two-stage + reflection)
+# Intermediate arms (belief steering only / no reflection) are this file with
+# editor.type "default" and/or beliefs.reflect_every 0.
+#
+# Extra cost per expand: one propose call + (evidence-gated) one belief-update
+# call per eval batch; both sized like editor calls at low/medium effort.
+project: "travel"
+
+eval_visibility: "blackbox"
+
+loop:
+  max_rounds: 1000
+  score_target: 0.99
+
+task_agent:
+  model: "Qwen/Qwen3.5-122B-A10B"
+  reasoning_effort: "high"
+  base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 1000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 3
+    snapshot_tree: true
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+editor:
+  type: "two_stage"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    max_attempts: 2
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    # Stage-1 planning pass: cheaper effort; it directs retrieval, the
+    # stage-2 call still sees everything and may override.
+    propose_reasoning_effort: "low"
+    retrieval_char_budget: 60000     # ~15k tokens of retrieved records+code
+    max_retrieved_nodes: 8
+
+# summarizer: INTENTIONALLY ABSENT — behavioral summary stays off.
+
+edit_memory:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    steering: true
+    steering_token_budget: 48000
+    verdict_threshold: 0.02
+    min_shared: 8
+    max_strategies: 18
+    max_subedits: 3
+    diff_char_cap: 6000
+    setup_pass: true
+    per_check_recipe: null
+    # --- belief/two-stage additions ---
+    code_record: true                # per-node edit_code.md (retrieval-only)
+    code_diff_char_cap: 20000
+    steering_mode: "belief"          # belief doc + ledger replaces the dump
+    beliefs:
+      enabled: true
+      reflect_every: 10              # representation reflection every 10 updates
+      doc_char_cap: 48000
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-122B-A10B"
+  TRAVEL_CONVERT_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+split:
+  train_ids_path: "configs/travel_train_ids.json"   # 60 predetermined cases
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

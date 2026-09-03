@@ -32,7 +32,8 @@ from hashlib import blake2b
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping, Optional
 
-from . import edit_usage, verbose_log
+from . import edit_code, edit_usage, verbose_log
+from .edit_beliefs import BeliefStore
 from .edit_diff import changed_mutable_files, diff_mutable_files
 from .edit_outcome import (
     MIN_SHARED_FOR_VERDICT,
@@ -350,6 +351,16 @@ class EditMemory:
             batch per node); "final" only during finalize; "off" disables.
         analysis_max_cases / analysis_max_event_lines: evidence caps for
             that call's prompt.
+        code_record: write a per-node ``edit_code.md`` (verbatim diff at a
+            higher cap + final-state source of added/changed defs). Read only
+            by the retrieval stage, never injected into steering.
+        code_diff_char_cap: diff cap for that record.
+        steering_mode: "full" renders the legacy every-record dump;
+            "belief" renders the belief document + ledger + focus block
+            instead (requires ``beliefs``).
+        beliefs: config dict for the belief layer (``BeliefStore`` kwargs;
+            model/effort/base_url default to this component's). ``None``
+            disables beliefs entirely.
     """
 
     def __init__(
@@ -374,6 +385,10 @@ class EditMemory:
         analysis_mode: str = "refresh",
         analysis_max_cases: int = edit_usage.MAX_ANALYSIS_CASES,
         analysis_max_event_lines: int = edit_usage.MAX_ANALYSIS_EVENT_LINES,
+        code_record: bool = True,
+        code_diff_char_cap: int = edit_code.CODE_DIFF_CHAR_CAP,
+        steering_mode: str = "full",
+        beliefs: Optional[dict] = None,
     ) -> None:
         self.llm = llm_caller
         self.model = model
@@ -395,6 +410,21 @@ class EditMemory:
                               in ("refresh", "final", "off") else "off")
         self.analysis_max_cases = int(analysis_max_cases)
         self.analysis_max_event_lines = int(analysis_max_event_lines)
+        self.code_record = bool(code_record)
+        self.code_diff_char_cap = int(code_diff_char_cap)
+        self.steering_mode = (steering_mode if steering_mode
+                              in ("full", "belief") else "full")
+        self._beliefs: Optional[BeliefStore] = None
+        if beliefs is not None:
+            try:
+                b = dict(beliefs)
+                b.setdefault("model", model)
+                b.setdefault("reasoning_effort", reasoning_effort)
+                b.setdefault("base_url", base_url)
+                self._beliefs = BeliefStore(llm_caller, **b)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[edit_memory] belief store init failed: {exc!r}",
+                      flush=True)
 
         self._dir: Optional[Path] = None
         self._reg: dict[str, Any] = {"strategies": {}, "areas": {}}
@@ -472,6 +502,15 @@ class EditMemory:
             if not files:
                 return None
 
+            # Deterministic code record, written BEFORE the tagger call so the
+            # artifact exists even when the LLM step fails; rewritten with the
+            # sub-edit map once tagging succeeds (idempotent — same inputs,
+            # same bytes plus the map).
+            if self.code_record:
+                edit_code.write_edit_code(
+                    parent_round_dir, round_dir, node_id=node_id,
+                    parent_id=parent_id, diff_char_cap=self.code_diff_char_cap)
+
             if self.usage_tracking:
                 try:
                     edit_usage.ensure_store(round_dir, parent_round_dir,
@@ -507,6 +546,11 @@ class EditMemory:
             from .edit_outcome import EditOutcome
             _atomic_write(dest, render_record(fm, render_edits(sub), EditOutcome()))
             self._save_stores()  # record first, registry second
+            if self.code_record:
+                edit_code.write_edit_code(
+                    parent_round_dir, round_dir, node_id=node_id,
+                    parent_id=parent_id, sub_edits=sub,
+                    diff_char_cap=self.code_diff_char_cap)
             if verbose_log.is_enabled():
                 verbose_log.write_json(Path(round_dir), "edit_memory_response.json", got)
             print(f"[edit_memory] node {node_id}: "
@@ -811,6 +855,30 @@ class EditMemory:
             print(f"[edit_memory] analysis failed for node "
                   f"{getattr(child, 'node_id', '?')}: {exc!r}", flush=True)
             return None
+
+    # ------------------------------------------------------------------ #
+    # Belief layer — delegates; both best-effort, never raise
+    # ------------------------------------------------------------------ #
+    def update_beliefs(self, tree: Any) -> bool:
+        """Run one sig-gated belief update against the current evidence.
+        No-op (False) when the belief layer is disabled or setup never ran."""
+        if self._beliefs is None or self._dir is None:
+            return False
+        try:
+            return self._beliefs.update(self._dir, tree)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[edit_memory] belief update failed: {exc!r}", flush=True)
+            return False
+
+    def render_belief_block(self) -> str:
+        """The belief document for steering; ``""`` on any failure/absence."""
+        if self._beliefs is None or self._dir is None:
+            return ""
+        try:
+            return self._beliefs.render_block(self._dir)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[edit_memory] belief render failed: {exc!r}", flush=True)
+            return ""
 
     def finalize(self, tree: Any) -> None:
         """Full sweep — a no-op under the skip guard when nothing moved. In

@@ -210,6 +210,7 @@ def _ensure_builtins_loaded() -> None:
     importlib.import_module("meta_agent.evaluator")
     importlib.import_module("meta_agent.feedback_gatherer")
     importlib.import_module("meta_agent.agent_editor")
+    importlib.import_module("meta_agent.agent_editor_two_stage")
     importlib.import_module("meta_agent.behavior_summarizer")
     importlib.import_module("meta_agent.edit_memory")
     importlib.import_module("meta_agent.managers")  # imports submodules
