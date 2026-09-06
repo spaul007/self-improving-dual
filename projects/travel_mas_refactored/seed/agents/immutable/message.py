@@ -36,6 +36,8 @@ class AgentMessage:
     ok: bool = True
     iterations: int = 0
     budget_exhausted: bool = False
+    error: str | None = None
+    output_truncated: bool = False
 
 
 def from_sender(inbox: list[AgentMessage], sender: str) -> AgentMessage:

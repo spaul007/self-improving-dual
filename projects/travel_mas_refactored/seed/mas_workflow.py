@@ -59,6 +59,21 @@ def run_task(task: Task) -> AgentOutput:
         # Mirrors the single agent's own "no lenient fallback" contract:
         # an honest empty result, not a fabricated one.
         metadata["sightseeing_failed"] = True
+        if sightseeing_msg.output_truncated:
+            # The wrap-up retry's own completion was cut off (see
+            # agents/sightseeing.py's AgentMessage.output_truncated) --
+            # distinct from both budget_exhausted (the earlier tool-calling
+            # loop) and a generic task_failure: this specific call's output
+            # token budget was too small, not a reasoning/compliance issue.
+            metadata["output_truncated"] = True
+        if not sightseeing_msg.budget_exhausted:
+            # Distinct from running out of iteration budget: the stage (and
+            # its own wrap-up retry) simply never produced valid output.
+            # Surface the actual failure text so a diagnosis doesn't have to
+            # guess -- see agents/sightseeing.py's AgentMessage.error.
+            metadata["task_failure"] = True
+            if sightseeing_msg.error:
+                metadata["task_failure_reason"] = sightseeing_msg.error
         return AgentOutput(result="", metadata=metadata)
 
     accounting_msg = run_accounting_stage(task, [sightseeing_msg])

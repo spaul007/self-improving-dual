@@ -183,10 +183,34 @@ def run_sightseeing_stage(
     })
     response = call_llm(messages=messages)
     itinerary = _extract_itinerary(response.content or "")
+    if itinerary:
+        return AgentMessage(sender="sightseeing", content=itinerary, ok=True, iterations=iters, budget_exhausted=exhausted)
+
+    # Genuinely distinct from budget exhaustion: the wrap-up retry ran with
+    # no iteration limit of its own and still did not produce a valid
+    # <itinerary> tag. Reporting this as budget_exhausted would be false --
+    # confirmed live, several such failures had used well under half the
+    # iteration cap. Report it as its own task_failure with the actual
+    # response text, so a diagnosis never has to guess which of these two
+    # unrelated things went wrong.
+    # response.stop_reason ("completed"/"incomplete"/... from the Responses
+    # API's own status field, see platform_core/llm_wrapper.py) was already
+    # being computed by the LLM wrapper and then silently discarded here --
+    # the only way anything downstream could ever tell a truncated
+    # completion (which looks like the model got cut off mid-reasoning)
+    # apart from the model simply not complying was to guess from where the
+    # raw text happens to stop. Surface it explicitly instead.
+    truncated = response.stop_reason == "incomplete"
     return AgentMessage(
         sender="sightseeing",
-        content=itinerary,
-        ok=bool(itinerary),
+        content="",
+        ok=False,
         iterations=iters,
-        budget_exhausted=(exhausted or not itinerary),
+        budget_exhausted=exhausted,
+        output_truncated=truncated,
+        error=(
+            "sightseeing wrap-up retry produced no <itinerary> tag "
+            f"(stop_reason={response.stop_reason!r}); raw response: "
+            f"{(response.content or '')[:500]!r}"
+        ),
     )
