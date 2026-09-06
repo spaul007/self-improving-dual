@@ -1,0 +1,115 @@
+# Same sanity bed as hgm_travel_deepseek_editor_sanity_1case.yaml (kept
+# untouched for comparison), but with the editor's new opt-in agentic
+# mode turned on: instead of one tool call bundling every changed file's
+# full content (confirmed this session to cause a ~65% malformed-JSON
+# failure rate on this exact task with DeepSeek v4), the editor now makes
+# a multi-turn read_file/write_file/run_code_validators loop, one file's
+# content per write_file call. See meta_agent/agent_editor.py's
+# `agentic_editing`/`_self_improve_agentic` and
+# debug_deepseek_agentic_prototype.py's standalone prototype that
+# originally validated this (0/40 malformed calls across single- and
+# multi-file trials).
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_deepseek_agentic_editor_sanity_1case.yaml
+
+experiment_name: "travel_deepseek_agentic_editor_sanity_1case"
+project: "travel_mas_refactored"
+verbose: true
+
+mutable_exclude:
+  - "workflow.py"
+  - "benchmark/"
+  - "agents/immutable/"
+
+loop:
+  max_rounds: 60
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.5-35B-A3B"
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+
+manager:
+  type: "hgm_block_tagged"
+  config:
+    eval_budget: 250
+    init_expansions: 2
+    alpha: 0.70852
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 4
+    eval_repeats: 3
+    finalize_top_k: 1
+    full_eval_top_k: 0
+    seed: 42
+    block_selection_strategy: "adaptive"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    parallelism: 4
+    scorer: "travel_mas_refactored_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+    n_hard_cases: 1
+
+editor:
+  type: "default"
+  config:
+    model: "deepseek/deepseek-v4-pro-0813"
+    reasoning_effort: "medium"
+    base_url: "https://openrouter.ai/api/v1"
+    max_attempts: 2
+    agentic_editing: true
+    agentic_max_turns: 20
+
+summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+block_suggester:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    strategies_path: "strategies.md"
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-35B-A3B"
+
+split:
+  train_ids: ["1"]
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+    config:
+      workflow_filenames: ["workflow.py", "mas_workflow.py"]
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"
+  - type: "undefined_names"
+  - type: "smoke_test"

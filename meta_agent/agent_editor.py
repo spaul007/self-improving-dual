@@ -129,6 +129,80 @@ SELF_IMPROVEMENT_TOOL: dict[str, Any] = {
 }
 
 
+# Tool schemas for the opt-in agentic self-improvement flow (see
+# ``agentic_editing`` on ``AgentEditor.__init__`` and
+# ``_self_improve_agentic``). One file's content per ``write_file`` call —
+# never bundled — is the entire point: confirmed live this session that
+# bundling every changed file's full content into one large tool call
+# (SELF_IMPROVEMENT_TOOL's ``files`` array above) causes a real,
+# reproducible malformed-JSON failure rate on large multi-file edits
+# (~65% over 81 EXPANDs with DeepSeek v4), root-caused to that shape
+# specifically and eliminated by switching to one-file-per-call. Kept
+# deliberately model-agnostic (no diagnosis content, no provider-specific
+# wording) so this works the same for GPT, Qwen, or DeepSeek editors.
+AGENTIC_READ_FILE_TOOL: dict[str, Any] = {
+    "name": "read_file",
+    "description": "Read one file's current content from the task agent workspace.",
+    "input_schema": {
+        "type": "object",
+        "properties": {"path": {"type": "string"}},
+        "required": ["path"],
+    },
+}
+
+AGENTIC_WRITE_FILE_TOOL: dict[str, Any] = {
+    "name": "write_file",
+    "description": (
+        "Submit ONE file's full new content. Call once per changed file — "
+        "never bundle multiple files into one call."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "content": {"type": "string"},
+        },
+        "required": ["path", "content"],
+    },
+}
+
+AGENTIC_RUN_VALIDATORS_TOOL: dict[str, Any] = {
+    "name": "run_code_validators",
+    "description": (
+        "Run the project's real validator suite against your changes so "
+        "far (syntax, imports, signatures, etc.)."
+    ),
+    "input_schema": {"type": "object", "properties": {}},
+}
+
+AGENTIC_SUBMIT_SUMMARY_TOOL: dict[str, Any] = {
+    "name": "submit_self_improvement_summary",
+    "description": (
+        "Finish: state what you changed and why, once all edits are "
+        "written and validators pass."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "optimization_goal": {"type": "string"},
+            "proposed_changes": {"type": "string"},
+            "rationale": {"type": "string"},
+        },
+        "required": ["optimization_goal", "proposed_changes", "rationale"],
+    },
+}
+
+_AGENTIC_TOOLS: list[dict[str, Any]] = [
+    AGENTIC_READ_FILE_TOOL,
+    AGENTIC_WRITE_FILE_TOOL,
+    AGENTIC_RUN_VALIDATORS_TOOL,
+    AGENTIC_SUBMIT_SUMMARY_TOOL,
+]
+
+_AGENTIC_TURN_BUDGET_GOAL = "(editor exceeded agentic turn budget without submitting a summary)"
+_AGENTIC_MALFORMED_SUMMARY_GOAL = "(summary call had malformed JSON; edits below were still applied)"
+
+
 @register("editor", "default")
 class AgentEditor:
     MUTABLE_FILES = MUTABLE_FILES
@@ -158,6 +232,18 @@ class AgentEditor:
         # Caps runaway generation (e.g. a reasoning-model repetition loop) --
         # 16384 matches the task_agent default. None disables the cap.
         max_output_tokens: Optional[int] = 16384,
+        # Opt-in: replace the single bundled submit_self_improvement call
+        # (all changed files' full content in one `files` array) with a
+        # multi-turn loop of read_file/write_file/run_code_validators calls,
+        # one file's content per call. False (default) reproduces today's
+        # exact behavior for every existing config. See
+        # ``_self_improve_agentic`` and the module-level AGENTIC_*_TOOL
+        # schemas above.
+        agentic_editing: bool = False,
+        # Bounds the agentic loop (one LLM round-trip per turn). 20 is
+        # generous relative to what real trials needed (typically 3-6 turns
+        # even for a genuine 4-file fix, confirmed live this session).
+        agentic_max_turns: int = 20,
     ) -> None:
         self.llm = llm_caller
         self.validators = list(validators)
@@ -170,6 +256,8 @@ class AgentEditor:
         self.scorer_source = scorer_source
         self.mutable_exclude = mutable_exclude
         self.max_output_tokens = max_output_tokens
+        self.agentic_editing = agentic_editing
+        self.agentic_max_turns = agentic_max_turns
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -214,9 +302,13 @@ class AgentEditor:
 
         attempt_errors: list[str] = []
         last_strategy: Optional[EvolutionStrategy] = None
+        self_improve = (
+            self._self_improve_agentic if self.agentic_editing else self._self_improve
+        )
         for attempt in range(1, self.max_attempts + 1):
-            strategy, files = self._self_improve(
+            strategy, files = self_improve(
                 out_dir=out_dir,
+                base_dir=base_dir,
                 feedback=feedback,
                 context=context,
                 has_suggestion=has_suggestion,
@@ -276,6 +368,10 @@ class AgentEditor:
         self,
         *,
         out_dir: Path,
+        # Unused here; shared signature with _self_improve_agentic (see
+        # apply()'s dispatch) -- defaulted so direct-call test sites that
+        # predate this parameter keep working unchanged.
+        base_dir: Optional[Path] = None,
         feedback: Optional[AgentFeedback],
         context: Optional[str],
         prior_errors: list[str],
@@ -578,6 +674,392 @@ class AgentEditor:
             rationale="",
         )
         return fallback, files
+
+    # ------------------------------------------------------------------ #
+    # Agentic self-improvement (opt-in, see AgentEditor.agentic_editing)
+    # ------------------------------------------------------------------ #
+
+    def _diagnosis_rules(self) -> str:
+        """The shared 'how to diagnose and what you may edit' rules,
+        independent of *how* the model submits its edits. Kept separate
+        from ``_self_improve``'s own inline system-prompt strings (which
+        are left completely untouched by this method's existence) so the
+        single-shot path carries zero refactor risk; this text is used
+        only by ``_self_improve_agentic``. Mirrors the same two
+        ``mutable_exclude`` vs. legacy-``MUTABLE_FILES`` branching
+        ``_self_improve`` already does, and the same numbered hard rules
+        1-9, minus anything naming a specific submission tool (each mode
+        states its own tool-usage instructions separately)."""
+        if self.mutable_exclude is not None:
+            excl = ", ".join(sorted(self.mutable_exclude)) or "(nothing)"
+            return (
+                "You are the self-improvement module of a self-evolving agent. "
+                "Diagnose what to change from the feedback and the current code.\n"
+                "First understand the task: read the agent's own code, and "
+                "(when provided below) the tool implementations, database "
+                "schema, and evaluation scoring code — together they show what "
+                "the system does, what the data looks like, and how output is "
+                "graded. Target edits at the failures that most affect the score.\n"
+                "You may edit ANY file in the task_agent workspace EXCEPT:\n"
+                f"  - {excl}\n"
+                "This includes prompt/config text AND the actual orchestration "
+                "code (workflow logic, tool implementations, retry/decision "
+                "branches, control flow) — not just one or the other. If the "
+                "failure pattern points to a structural or logical problem "
+                "(e.g. how evidence is gathered, when a retry fires, how a "
+                "decision is made), change the code that implements it; don't "
+                "default to a prompt-only wording tweak just because it is the "
+                "easiest edit to make. Pick whichever kind of change actually "
+                "fixes the diagnosed failure, or both together.\n\n"
+                "Hard rules:\n"
+                "  1. The workspace MUST keep exposing "
+                "`def run_task(task: Task) -> AgentOutput` from its top-level "
+                "`workflow.py` (the single arg must be named `task` — the "
+                "validator enforces this); it may delegate to any other file "
+                "you're allowed to edit.\n\n"
+                "If this workspace uses, or you introduce, a `tool_wrapper.py` + "
+                "`tools_schema.json` + `mutable_tools/` pattern (the framework's "
+                "generic tool-calling convention), these additional rules apply "
+                "to that pattern specifically — irrelevant otherwise:\n"
+                "  2. workflow.py may import only: "
+                "platform_core.llm_wrapper.call_llm, platform_core.runner "
+                "(Task, AgentOutput), tool_wrapper, plus stdlib.\n"
+                "  3. tool_wrapper.py may import only: platform_core.tools, "
+                "mutable_tools.*, plus stdlib.\n"
+                "  4. Mutable tools (mutable_tools/*.py) may import only: "
+                "platform_core.tools, sibling mutable_tools.*, plus stdlib.\n"
+                "  5. Reach capabilities only via `platform_core.tools`: "
+                "`call_tool(name, **kwargs)` for immutable tools, and "
+                "`call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never "
+                "invoke a mutable tool's `run()` directly — routing through "
+                "`call_mutable_tool` keeps its calls recorded in the trace.\n"
+                "  6. tools_schema.json: every entry's `name` must be backed by "
+                "either an immutable tool OR a `mutable_tools/<name>.py` file. "
+                "No collisions between immutable and mutable names.\n\n"
+                "  7. Instrument your edits for the behavior summarizer. When "
+                "you add a verifier, helper, or decision branch, call "
+                "`platform_core.trace.log(label='your_label', "
+                "verdict='pass'|'fail'|'skip', name='specific_check_name', "
+                "**context)` at the decision point. Conventions: pick a stable "
+                "`label` (e.g. 'verifier_fired', 'decision_branch'); use `name` "
+                "to disambiguate within a label; set `verdict` to `pass`, "
+                "`fail`, or `skip`. The summarizer cross-tabs these logs "
+                "against case outcomes so the next editor knows which of your "
+                "additions helped, which didn't, and why. Skip instrumentation "
+                "only for trivial edits (renames, docstrings).\n\n"
+                "  8. Double-check your own rationale before submitting. Every "
+                "factual claim in `rationale`/`proposed_changes` (e.g. \"the tag "
+                "is malformed\", \"case X failed because of Y\") must be verified "
+                "against the actual current source shown above or the "
+                "feedback/metrics below — re-read the specific line or field "
+                "you are citing and confirm it really says what you're about "
+                "to claim. Do not invent a plausible-sounding diagnosis you "
+                "have not checked. If a claim doesn't hold up on re-reading, "
+                "drop it or soften it (e.g. \"possibly\", \"this may "
+                "contribute\") rather than stating it as settled fact — a "
+                "correct edit with an honest, hedged rationale is better than "
+                "a confident but unverified one.\n\n"
+                "  9. If the steering context above includes a specific "
+                "suggestion or recommendation for what to change, state in "
+                "your `rationale` whether your edit follows it. If your "
+                "edit departs from it in any way — a different target, a "
+                "different mechanism, or scope beyond what it proposed — "
+                "say so explicitly: what you changed instead and why. "
+                "Silently doing something else is not acceptable; an "
+                "honest \"I deviated from the suggestion because X\" is.\n"
+            )
+        return (
+            "You are the self-improvement module of a self-evolving agent. "
+            "Diagnose what to change from the feedback and the current code.\n"
+            "First understand the task: read the agent's system prompt in "
+            "workflow.py, and (when provided below) the tool implementations, "
+            "database schema, and evaluation scoring code — together they show "
+            "what each tool does, what the data looks like, and how output is "
+            "graded. Target edits at the failures that most affect the score.\n"
+            "You may only modify these "
+            "files in the task_agent workspace:\n"
+            f"  - {', '.join(sorted(MUTABLE_FILES))}\n"
+            f"  - any *.py file under mutable_tools/\n\n"
+            "Hard rules:\n"
+            "  1. workflow.py MUST define "
+            "`def run_task(task: Task) -> AgentOutput`. The single arg must "
+            "be named `task` (the validator enforces this).\n"
+            "  2. workflow.py may import only: "
+            "platform_core.llm_wrapper.call_llm, platform_core.runner "
+            "(Task, AgentOutput), tool_wrapper, plus stdlib.\n"
+            "  3. tool_wrapper.py may import only: platform_core.tools, "
+            "mutable_tools.*, plus stdlib.\n"
+            "  4. Mutable tools (mutable_tools/*.py) may import only: "
+            "platform_core.tools, sibling mutable_tools.*, plus stdlib.\n"
+            "  5. Reach capabilities only via `platform_core.tools`: "
+            "`call_tool(name, **kwargs)` for immutable tools, and "
+            "`call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never "
+            "invoke a mutable tool's `run()` directly — routing through "
+            "`call_mutable_tool` keeps its calls recorded in the trace.\n"
+            "  6. tools_schema.json: every entry's `name` must be backed by "
+            "either an immutable tool OR a `mutable_tools/<name>.py` file. "
+            "No collisions between immutable and mutable names.\n"
+            "  7. Instrument your edits for the behavior summarizer. When you "
+            "add a verifier, helper, or decision branch in workflow.py or a "
+            "mutable_tools/*.py file, call "
+            "`platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', "
+            "name='specific_check_name', **context)` at the decision point. "
+            "Conventions: pick a stable `label` (e.g. 'verifier_fired', "
+            "'decision_branch'); use `name` to disambiguate within a label; "
+            "set `verdict` to `pass`, `fail`, or `skip`. The summarizer "
+            "cross-tabs these logs against case outcomes so the next editor "
+            "knows which of your additions helped, which didn't, and why. "
+            "Skip instrumentation only for trivial edits (renames, docstrings).\n\n"
+            "  8. Double-check your own rationale before submitting. Every "
+            "factual claim in `rationale`/`proposed_changes` (e.g. \"the tag "
+            "is malformed\", \"case X failed because of Y\") must be verified "
+            "against the actual current source shown above or the "
+            "feedback/metrics below — re-read the specific line or field "
+            "you are citing and confirm it really says what you're about "
+            "to claim. Do not invent a plausible-sounding diagnosis you "
+            "have not checked. If a claim doesn't hold up on re-reading, "
+            "drop it or soften it (e.g. \"possibly\", \"this may "
+            "contribute\") rather than stating it as settled fact — a "
+            "correct edit with an honest, hedged rationale is better than "
+            "a confident but unverified one.\n\n"
+            "  9. If the steering context above includes a specific "
+            "suggestion or recommendation for what to change, state in "
+            "your `rationale` whether your edit follows it. If your "
+            "edit departs from it in any way — a different target, a "
+            "different mechanism, or scope beyond what it proposed — "
+            "say so explicitly: what you changed instead and why. "
+            "Silently doing something else is not acceptable; an "
+            "honest \"I deviated from the suggestion because X\" is.\n"
+        )
+
+    _AGENTIC_CLOSING = (
+        "\nYou have these tools: `read_file` to inspect any of the files "
+        "listed below before editing it; `write_file` to submit ONE file's "
+        "FULL new content (call once per changed file — never bundle "
+        "multiple files' content into one call); `run_code_validators` to "
+        "check your changes so far (syntax, imports, signatures, etc.); "
+        "and `submit_self_improvement_summary` to finish.\n\n"
+        "Work in this order: call `read_file` on each file you plan to "
+        "change (you don't need to read files you won't touch). Then call "
+        "`write_file` once per changed file with that file's complete new "
+        "content — not a diff. After writing your changes, call "
+        "`run_code_validators`; if it reports problems, fix them with "
+        "another `write_file` call to the relevant file(s) and check again. "
+        "When everything is written and validators pass, call "
+        "`submit_self_improvement_summary` with a one-line optimization_goal, "
+        "a proposed_changes summary, and a rationale to finish."
+    )
+
+    def _self_improve_agentic(
+        self,
+        *,
+        out_dir: Path,
+        base_dir: Path,
+        feedback: Optional[AgentFeedback],
+        context: Optional[str],
+        prior_errors: list[str],
+        attempt: int = 1,
+        has_suggestion: bool = False,
+    ) -> tuple[EvolutionStrategy, list[dict]]:
+        """Multi-turn analogue of ``_self_improve``: instead of one call
+        bundling every changed file's full content into a single
+        ``submit_self_improvement`` tool call (confirmed live this session
+        to cause a real, reproducible malformed-JSON failure rate on large
+        multi-file edits), the model reads/writes one file at a time across
+        several turns, with the real validator suite available as a tool so
+        it can self-correct before finishing. Returns the exact same
+        ``(EvolutionStrategy, files)`` shape ``_self_improve`` does, so
+        every line of ``apply()`` after the dispatch is unchanged."""
+        agent_dir = out_dir / "task_agent"
+        available_paths = sorted(self._read_mutable_sources(agent_dir).keys())
+
+        system = self._diagnosis_rules() + self._AGENTIC_CLOSING
+
+        user_parts: list[str] = []
+        if context:
+            user_parts.append(f"## Steering context\n{context}\n")
+        if feedback is not None:
+            user_parts.append(
+                self._format_feedback(feedback, has_suggestion=has_suggestion)
+            )
+        user_parts.extend(self._format_project_context())
+        listing = "\n".join(f"  - {p}" for p in available_paths) or "  (none)"
+        user_parts.append(
+            "## Files you may read/edit\n"
+            f"{listing}\n\n"
+            "Use `read_file` to see any of these before editing it -- their "
+            "content isn't shown here.\n"
+        )
+        if prior_errors:
+            joined = "\n".join(f"  - {e}" for e in prior_errors)
+            user_parts.append(
+                "## Previous attempt failed validation. Fix these errors:\n"
+                f"{joined}\n"
+            )
+
+        history: list[dict[str, Any]] = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": "\n".join(user_parts)},
+        ]
+
+        if verbose_log.is_enabled():
+            verbose_log.write_text(
+                out_dir, f"editor_attempt_{attempt}_system.txt", system
+            )
+            verbose_log.write_text(
+                out_dir, f"editor_attempt_{attempt}_user.txt", "\n".join(user_parts)
+            )
+
+        written: dict[str, str] = {}
+
+        for turn in range(self.agentic_max_turns):
+            llm_kwargs: dict[str, Any] = {
+                "messages": history,
+                "tools": _AGENTIC_TOOLS,
+            }
+            if self.model:
+                llm_kwargs["model"] = self.model
+            if self.reasoning_effort:
+                llm_kwargs["reasoning_effort"] = self.reasoning_effort
+            else:
+                llm_kwargs["temperature"] = 0.2
+            if self.base_url:
+                llm_kwargs["base_url"] = self.base_url
+            if self.max_output_tokens is not None:
+                llm_kwargs["max_output_tokens"] = self.max_output_tokens
+            response = self.llm(**llm_kwargs)
+
+            calls = getattr(response, "tool_calls", None) or []
+            if verbose_log.is_enabled():
+                verbose_log.write_json(
+                    out_dir,
+                    f"editor_attempt_{attempt}_turn_{turn}_response.json",
+                    {
+                        "content": getattr(response, "content", None),
+                        "tool_calls": [
+                            {"name": c.name, "arguments": c.arguments} for c in calls
+                        ],
+                    },
+                )
+            if not calls:
+                break
+
+            for idx, call in enumerate(calls):
+                call_id = (
+                    getattr(call, "id", None)
+                    or getattr(call, "call_id", None)
+                    or f"call_{turn}_{idx}"
+                )
+                args = call.arguments
+                # Same two malformed shapes _self_improve already guards
+                # against: platform_core.llm_wrapper.call_llm wraps a
+                # genuine JSON-parse failure as {"_raw_arguments": raw},
+                # and a non-dict `args` (bare list/string/None) would
+                # otherwise crash a `.get()` call below.
+                malformed = not isinstance(args, dict) or "_raw_arguments" in args
+                history.append({
+                    "type": "function_call",
+                    "call_id": call_id,
+                    "name": call.name,
+                    "arguments": json.dumps(args if isinstance(args, dict) else {}),
+                })
+
+                if malformed and call.name == "submit_self_improvement_summary":
+                    # Unlike the bundled single-shot mode, a malformed
+                    # closing summary here is a small loss, not a total
+                    # one: every write_file call already succeeded and was
+                    # validated independently. Return the real recovered
+                    # files immediately rather than burning turns retrying
+                    # a narrative-only payload.
+                    strategy = EvolutionStrategy(
+                        target_files=sorted(written),
+                        optimization_goal=_AGENTIC_MALFORMED_SUMMARY_GOAL,
+                        proposed_changes="",
+                        rationale="",
+                    )
+                    files = [{"path": p, "content": c} for p, c in written.items()]
+                    return strategy, files
+                if malformed:
+                    output = (
+                        "ERROR: your arguments were not valid JSON and could "
+                        "not be parsed. Make sure you return a valid JSON "
+                        "object: double-check that every string value -- "
+                        "especially `content` -- has its quotes, "
+                        "backslashes, and newlines properly escaped. Retry "
+                        f"this {call.name} call."
+                    )
+                elif call.name == "read_file":
+                    path = (args.get("path") or "").lstrip("/")
+                    if self._is_path_allowed(path):
+                        fpath = agent_dir / path
+                        output = (
+                            fpath.read_text(encoding="utf-8")
+                            if fpath.exists() else f"(file not found: {path})"
+                        )
+                    else:
+                        output = (
+                            f"ERROR: {path!r} is not readable/editable here -- "
+                            "see the '## Files you may read/edit' list above "
+                            "for what's available."
+                        )
+                elif call.name == "write_file":
+                    path = (args.get("path") or "").lstrip("/")
+                    content = args.get("content")
+                    if content is None or not path:
+                        output = (
+                            "ERROR: write_file requires both a non-empty "
+                            "`path` and a `content` string."
+                        )
+                    elif self._is_path_allowed(path):
+                        target = agent_dir / path
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_text(content, encoding="utf-8")
+                        written[path] = content
+                        output = f"written {path} ({len(content)} chars)"
+                    else:
+                        output = (
+                            f"ERROR: forbidden edit path {path!r} -- allowed "
+                            f"paths are: {', '.join(available_paths) or '(none)'}"
+                        )
+                elif call.name == "run_code_validators":
+                    errors = self._run_validators(out_dir, base_dir)
+                    output = (
+                        "All validators passed." if not errors
+                        else "Validator errors:\n" + "\n".join(f"- {e}" for e in errors)
+                    )
+                elif call.name == "submit_self_improvement_summary":
+                    strategy = EvolutionStrategy(
+                        target_files=sorted(written),
+                        optimization_goal=_coerce_str(args.get("optimization_goal")),
+                        proposed_changes=_coerce_str(args.get("proposed_changes")),
+                        rationale=_coerce_str(args.get("rationale")),
+                    )
+                    files = [{"path": p, "content": c} for p, c in written.items()]
+                    return strategy, files
+                else:
+                    output = f"ERROR: unknown tool {call.name!r}."
+
+                history.append({
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": output,
+                })
+
+        # Turn budget exhausted (or the model stopped calling tools) without
+        # ever calling submit_self_improvement_summary -- reflect whatever
+        # was ACTUALLY written via write_file, same "never claim more than
+        # really happened" principle as _self_improve's own fallbacks.
+        # Naturally degrades to target_files=[]/files=[] (handled by
+        # apply()'s existing "editor returned no file edits" branch) when
+        # nothing was ever written.
+        files = [{"path": p, "content": c} for p, c in written.items()]
+        strategy = EvolutionStrategy(
+            target_files=sorted(written),
+            optimization_goal=_AGENTIC_TURN_BUDGET_GOAL,
+            proposed_changes="",
+            rationale="",
+        )
+        return strategy, files
 
     def _parse_self_improvement(
         self, args: dict[str, Any]
