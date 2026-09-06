@@ -82,6 +82,24 @@ class BlockBandit:
         tau: float = 1.0,
         rng: random.Random,
         reward_metric: str = "fractional_score",
+        # Opt-in initial preference order among blocks, most-preferred
+        # first (e.g. ["foundation_capability", "individual_subagent",
+        # "verifiers", "collaboration_workflow"]) -- must be a permutation
+        # of ``blocks``. None (default -- zero behavior change): every
+        # block starts from the same symmetric Beta(beta_prior,
+        # beta_prior), exactly today's behavior. When given, each block
+        # gets a one-time prior SUCCESS pseudo-count bonus based on its
+        # rank (highest for rank 0, zero for the last-ranked block,
+        # spaced by ``initial_rank_strength``) -- folded into the same
+        # Beta-Bernoulli posterior as real evidence, so it biases early
+        # selection while real per-block evals accumulate, and gets
+        # washed out by that real evidence over time (the same dynamic
+        # ``beta_prior`` itself already has) rather than being a
+        # permanent, hardcoded preference.
+        initial_block_ranking: Optional[Sequence[str]] = None,
+        # Prior-success-count gap between adjacent ranks. Only meaningful
+        # when ``initial_block_ranking`` is set.
+        initial_rank_strength: float = 2.0,
     ) -> None:
         if blocks is None:
             # Canonical block-name source, same convention as the
@@ -100,6 +118,23 @@ class BlockBandit:
                 f"got {reward_metric!r}"
             )
         self.reward_metric = reward_metric
+        self.initial_block_ranking = (
+            tuple(initial_block_ranking) if initial_block_ranking is not None else None
+        )
+        self.initial_rank_strength = initial_rank_strength
+        self._initial_success_bonus: dict[str, float] = dict.fromkeys(self.blocks, 0.0)
+        if self.initial_block_ranking is not None:
+            if set(self.initial_block_ranking) != set(self.blocks):
+                raise ValueError(
+                    "initial_block_ranking must be a permutation of "
+                    f"blocks {sorted(self.blocks)!r}, got "
+                    f"{list(self.initial_block_ranking)!r}"
+                )
+            n = len(self.initial_block_ranking)
+            for rank, block in enumerate(self.initial_block_ranking):
+                self._initial_success_bonus[block] = (
+                    (n - 1 - rank) * self.initial_rank_strength
+                )
 
     def _beta_sample(self, success: float, failure: float) -> float:
         # Same formula as HGMTree._beta_sample (hgm_tree.py) -- duplicated
@@ -152,6 +187,12 @@ class BlockBandit:
         posteriors: dict[str, BlockPosterior] = {}
         for block in self.blocks:
             success, failure, n = tallies[block]
+            # Fold in the one-time initial-ranking bonus (0.0 for every
+            # block when initial_block_ranking is unset) as if it were
+            # prior pseudo-successes -- same treatment as beta_prior
+            # itself, so it biases early selection but is progressively
+            # outweighed as real success/failure mass accumulates.
+            success += self._initial_success_bonus[block]
             sampled_value = self._beta_sample(success, failure)
             mean = (self.beta_prior + success) / (
                 2 * self.beta_prior + success + failure

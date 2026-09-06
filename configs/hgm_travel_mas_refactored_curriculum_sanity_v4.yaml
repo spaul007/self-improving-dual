@@ -1,0 +1,138 @@
+# Fourth live sanity check for the curriculum feature -- same 10-case
+# pool (split.seed=42, train_size=10) and the same block_initial_ranking
+# (Foundational > Single Agent > Verifier > Collaboration) as
+# configs/hgm_travel_mas_refactored_curriculum_sanity_v3.yaml, but the
+# curriculum's forced sub-goal is now the special NO_PLAN_GOAL sentinel
+# (meta_agent/curriculum.py) instead of a specific check name: reduce
+# no_plan_rate directly (the fraction of evaluated cases whose agent
+# produced no plan at all -- a crash the scorer never got to evaluate
+# any real check against). v3's own seed run on this exact case pool
+# showed no_plan_rate=0.3 (3/10) -- real signal, well above the 0.15
+# resolution threshold.
+#
+# Two supporting fixes landed alongside this feature so the diagnosing
+# LLM can actually see and act on this goal:
+#   - Curriculum.failure_rate_for special-cases NO_PLAN_GOAL to read
+#     project_metrics["no_plan_rate"] directly (it was never a real
+#     "check" that could appear in top_failed_checks to begin with).
+#   - block_suggester.py's feedback digest now includes a
+#     `no_plan_rate=X` line when present -- previously project_metrics
+#     was never rendered into that digest at all, so a curriculum goal
+#     targeting this rate would have been invisible to the LLM being
+#     asked to reduce it.
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_mas_refactored_curriculum_sanity_v4.yaml
+#
+# Double-check the task_agent/editor vLLM endpoints below against whatever's
+# actually live before running.
+
+experiment_name: "travel_mas_refactored_curriculum_sanity_v4"
+project: "travel_mas_refactored"
+
+mutable_exclude:
+  - "workflow.py"
+  - "benchmark/"
+  - "agents/immutable/"
+
+loop:
+  max_rounds: 14
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.5-35B-A3B"
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 40
+    init_expansions: 1
+    alpha: 0.6
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 4
+    finalize_top_k: 1
+    full_eval_top_k: 0
+    seed: 42
+    block_selection_strategy: "adaptive"
+    block_initial_ranking:
+      - "foundation_capability"
+      - "individual_subagent"
+      - "verifiers"
+      - "collaboration_workflow"
+    block_initial_rank_strength: 2.0
+    curriculum_enabled: true
+    curriculum_resolution_threshold: 0.15
+    curriculum_patience: 4
+    curriculum_goals_override:
+      - "no_plan"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    parallelism: 8
+    scorer: "travel_mas_refactored_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+    n_hard_cases: 1
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+block_suggester:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    strategies_path: "strategies.md"
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-35B-A3B"
+
+split:
+  seed: 42
+  train_size: 10
+  eval_size: 0
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+    config:
+      workflow_filenames: ["workflow.py", "mas_workflow.py"]
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"
+  - type: "undefined_names"
+  - type: "smoke_test"

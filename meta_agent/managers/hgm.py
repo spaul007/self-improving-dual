@@ -42,6 +42,7 @@ from typing import Optional
 
 from ..agent_editor import AgentEditor, fallback_strategy
 from ..block_bandit import AdaptiveStrategy, BlockBandit
+from ..curriculum import Curriculum, _combined_check_counts, infer_curriculum
 from ..evaluator import Evaluator, load_cases
 from ..feedback_gatherer import FeedbackGatherer, persist_round_artifacts, render_metrics
 from ..models import (
@@ -119,6 +120,101 @@ class HGMManager:
         # parent's, regardless of how many evals backed that mean -- see
         # meta_agent/block_bandit.py::BlockBandit for the full contrast.
         block_reward_metric: str = "fractional_score",
+        # Opt-in curriculum layer: decomposes "maximize composite score"
+        # into an ORDERED list of sub-goals -- one per failing check in the
+        # seed's own top_failed_checks ranking (computed ONCE, right after
+        # the seed's free pre-evaluation; never re-merged across the tree)
+        # -- and steers every EXPAND toward the current sub-goal until it
+        # is resolved (or patience runs out), before advancing to the
+        # next. False (default -- zero behavior change for every existing
+        # config): no curriculum state is built, _render_expand_context/
+        # block_suggester.suggest see no curriculum text, identical to
+        # today. Note: HGMDualManager has its own separate Stage A/B
+        # expand path that never consults the curriculum -- enabling this
+        # on an hgm_dual config builds the curriculum harmlessly but it is
+        # never actually used there (a no-op, not a regression).
+        curriculum_enabled: bool = False,
+        # A check counts as "sufficiently resolved" once the current best
+        # node's failure rate on it (its own cumulative top_failed_checks
+        # occurrence count / its own n_evals) drops to or below this
+        # threshold.
+        curriculum_resolution_threshold: float = 0.15,
+        # Patience fallback: max EXPANDs spent on one sub-goal before
+        # force-advancing regardless of resolution -- guarantees the
+        # curriculum can never get stuck forever on a check that never
+        # improves.
+        curriculum_patience: int = 5,
+        # Debug/sanity-testing override: an explicit ordered list of check
+        # names to use as the curriculum's goals INSTEAD of the seed's own
+        # top_failed_checks ranking (e.g. to force a single hand-picked
+        # "easy" check for a live sanity run). Each name's seed occurrence
+        # count is looked up from the seed's real top_failed_checks (0 if
+        # the check didn't appear there at all -- still usable, just starts
+        # with no seed evidence). None (default): use the seed ranking
+        # verbatim, identical to today. No effect when curriculum_enabled
+        # is False.
+        curriculum_goals_override: Optional[list[str]] = None,
+        # Cap on how many sub-goals infer_curriculum returns (see
+        # meta_agent/curriculum.py::infer_curriculum) -- the top-K merge
+        # of task-level constraint failures (top_failed_checks) and
+        # harness-level crash causes (harness_checks), by raw occurrence
+        # count. No effect when curriculum_goals_override is set (that
+        # path uses its own explicit list, unbounded) or curriculum is
+        # disabled. 15 matches the pre-merge cap the project's own scorer
+        # already applies to top_failed_checks.
+        curriculum_max_goals: int = 15,
+        # Harness crash-rate (project_metrics["no_plan_rate"]) at or above
+        # which infer_curriculum ranks every harness-level goal ahead of
+        # every task-level goal, regardless of occurrence count -- see
+        # meta_agent/curriculum.py::infer_curriculum's harness_priority_
+        # threshold. Below it, harness and task goals compete on the flat
+        # combined-count ranking as before. No effect when
+        # curriculum_goals_override is set or curriculum is disabled.
+        # 0.15 matches Curriculum's own resolution_threshold's "good
+        # enough" spirit.
+        curriculum_harness_priority_threshold: float = 0.15,
+        # Optional path to a project-specific JSON file mapping a
+        # TASK-based error name (a check/constraint from
+        # project_metrics["top_failed_checks"] -- comes from the
+        # project's immutable scorer, so these names never change) to a
+        # human-readable description of what it verifies and when it
+        # fires (see e.g.
+        # projects/travel_mas_refactored/adapter/error_semantics.json).
+        curriculum_check_descriptions_path: Optional[str] = None,
+        # Optional path to a SIBLING JSON file, same shape, but for
+        # HARNESS-based error names (a flag from
+        # project_metrics["harness_checks"] -- comes from the SEED's own
+        # mutable workflow code, so unlike the task-error file above,
+        # these names can go stale if the seed workflow is later edited
+        # to add/rename/remove a flag; see e.g.
+        # projects/travel_mas_refactored/adapter/harness_error_semantics.json).
+        # Both files (when given) are loaded ONCE and merged into a
+        # single dict, right when the curriculum itself is built (same
+        # post-seed construction point), and handed to Curriculum's own
+        # check_descriptions param so its directive() text can explain a
+        # sub-goal concretely instead of just quoting a bare identifier.
+        # Both None (default): directive() falls back to its existing
+        # generic, project-agnostic explanation -- zero behavior change.
+        # Either file missing/unreadable/malformed degrades silently to
+        # the same fallback for its own entries, same convention as
+        # block_suggester.py's strategies_path (a nice-to-have, never a
+        # reason to fail).
+        curriculum_harness_error_descriptions_path: Optional[str] = None,
+        # Opt-in initial preference order for the "adaptive" block
+        # bandit's Thompson sampling, most-preferred block first (e.g.
+        # ["foundation_capability", "individual_subagent", "verifiers",
+        # "collaboration_workflow"]) -- must be a permutation of the 4
+        # canonical block names. None (default -- zero behavior change):
+        # every block starts symmetric, identical to today. Only affects
+        # BlockBandit; block_selection_strategy values other than
+        # "adaptive" never construct one, so this is a no-op there. See
+        # meta_agent/block_bandit.py::BlockBandit for how the ranking
+        # becomes a one-time prior pseudo-count bonus that real per-block
+        # evidence washes out over time, not a permanent override.
+        block_initial_ranking: Optional[list[str]] = None,
+        # Prior-success-count gap between adjacent ranks in
+        # block_initial_ranking. Only meaningful when that's set.
+        block_initial_rank_strength: float = 2.0,
     ) -> None:
         self.eval_budget = eval_budget
         self.init_expansions = init_expansions
@@ -138,6 +234,36 @@ class HGMManager:
             )
         self.block_selection_strategy = block_selection_strategy
         self.block_reward_metric = block_reward_metric
+        self.block_initial_ranking = block_initial_ranking
+        self.block_initial_rank_strength = block_initial_rank_strength
+        if not (0.0 <= curriculum_resolution_threshold <= 1.0):
+            raise ValueError(
+                "curriculum_resolution_threshold must be in [0.0, 1.0], got "
+                f"{curriculum_resolution_threshold!r}"
+            )
+        if curriculum_patience < 1:
+            raise ValueError(
+                f"curriculum_patience must be >= 1, got {curriculum_patience!r}"
+            )
+        if curriculum_max_goals < 1:
+            raise ValueError(
+                f"curriculum_max_goals must be >= 1, got {curriculum_max_goals!r}"
+            )
+        if not (0.0 <= curriculum_harness_priority_threshold <= 1.0):
+            raise ValueError(
+                "curriculum_harness_priority_threshold must be in [0.0, 1.0], "
+                f"got {curriculum_harness_priority_threshold!r}"
+            )
+        self.curriculum_enabled = curriculum_enabled
+        self.curriculum_resolution_threshold = curriculum_resolution_threshold
+        self.curriculum_patience = curriculum_patience
+        self.curriculum_goals_override = curriculum_goals_override
+        self.curriculum_max_goals = curriculum_max_goals
+        self.curriculum_harness_priority_threshold = curriculum_harness_priority_threshold
+        self.curriculum_check_descriptions_path = curriculum_check_descriptions_path
+        self.curriculum_harness_error_descriptions_path = (
+            curriculum_harness_error_descriptions_path
+        )
         # τ scheduler: off by default, matching the reference's committed
         # config.yaml (`cool_down: false`). When on, τ = (B/b)**beta.
         self.cool_down = cool_down
@@ -192,12 +318,25 @@ class HGMManager:
         self._block_bandit: BlockBandit = BlockBandit(
             beta_prior=beta_prior, rng=self._block_rng,
             reward_metric=block_reward_metric,
+            initial_block_ranking=block_initial_ranking,
+            initial_rank_strength=block_initial_rank_strength,
         )
         # Snapshot of the most recent adaptive selection (None for every
         # other strategy, and reset at the top of every _select_block call)
         # so _expand can persist it to adaptive_strategy.json without
         # _select_block's return type changing from plain str.
         self._last_block_selection: Optional[AdaptiveStrategy] = None
+        # Whether _render_expand_context's most recent call actually
+        # produced a block-scoped suggestion (see block_suggester.py) --
+        # same "most-recent-result-of-a-helper-call" pattern as
+        # _last_block_selection above. False both when no block_suggester
+        # is configured AND when a configured one's call fails/returns
+        # empty. Read by _expand (and HGMDualManager's Stage A) right
+        # after _render_expand_context returns, to set editor.apply's
+        # has_suggestion= kwarg -- so the editor's own project_metrics
+        # digest is trimmed only when a suggestion genuinely steered this
+        # EXPAND, never as a guess.
+        self._last_suggestion_produced: bool = False
         # Optional per-round behavior summarizer. When set, ``_evaluate``
         # fires it after a node's feedback is final, and steering contexts
         # inject the lineage's behavior_memory.md files. ``None`` keeps
@@ -216,6 +355,11 @@ class HGMManager:
         # block" line, ``EvolutionStrategy.block`` stays set but unsupported
         # by any suggestion text.
         self._block_suggester: Any = None
+        # Opt-in curriculum state (see meta_agent/curriculum.py) -- built
+        # once right after the seed's pre-evaluation in evolve(), None for
+        # the whole run when curriculum_enabled is False (or the seed had
+        # no failing checks to build a curriculum from).
+        self._curriculum: Optional[Curriculum] = None
         # Time-series tree snapshotter (a no-op unless snapshot_tree is on);
         # (re)created at the top of evolve() once experiment_dir is known.
         self._snapshotter: Optional[TreeSnapshotWriter] = None
@@ -267,8 +411,12 @@ class HGMManager:
         self._block_bandit = BlockBandit(
             beta_prior=self.beta_prior, rng=self._block_rng,
             reward_metric=self.block_reward_metric,
+            initial_block_ranking=self.block_initial_ranking,
+            initial_rank_strength=self.block_initial_rank_strength,
         )
         self._last_block_selection = None
+        self._last_suggestion_produced = False
+        self._curriculum = None
         self._snapshotter = TreeSnapshotWriter(
             experiment_dir, enabled=self.snapshot_tree
         )
@@ -335,6 +483,19 @@ class HGMManager:
         # only evaluated, positive-mean nodes are expandable, so these all
         # branch off the freshly pre-evaluated root.
         self._run_seed(seed_dir, evaluator, gatherer)
+        if self.curriculum_enabled:
+            top_checks = self._curriculum_seed_goals(self._feedback.get(0))
+            if top_checks:
+                self._curriculum = Curriculum(
+                    top_checks,
+                    resolution_threshold=self.curriculum_resolution_threshold,
+                    patience=self.curriculum_patience,
+                    check_descriptions=self._load_curriculum_check_descriptions(),
+                )
+            # else: nothing failing at seed time (or no project_metrics
+            # support from this project's scorer) -- curriculum stays
+            # None, _curriculum_directive_for_expand() no-ops gracefully,
+            # identical to curriculum_enabled=False.
         self._snapshot("seed")
         for _ in range(self.init_expansions):
             expandable = self._expandable()
@@ -417,10 +578,17 @@ class HGMManager:
                     dataclasses.asdict(self._last_block_selection), indent=2
                 )
             )
-        context = self._render_expand_context(parent, block, out_dir, node_id)
+        curriculum_directive, curriculum_snapshot = self._curriculum_directive_for_expand()
+        if curriculum_snapshot is not None:
+            (out_dir / "curriculum_status.json").write_text(
+                json.dumps(curriculum_snapshot, indent=2)
+            )
+        context = self._render_expand_context(
+            parent, block, out_dir, node_id, curriculum_directive=curriculum_directive,
+        )
         edit_result = editor.apply(
             self._feedback.get(parent_id), parent.round_dir, out_dir,
-            context=context,
+            context=context, has_suggestion=self._last_suggestion_produced,
         )
         strategy = edit_result.strategy or fallback_strategy()
         strategy.block = block
@@ -584,12 +752,18 @@ class HGMManager:
     # ------------------------------------------------------------------ #
 
     def _render_expand_context(
-        self, parent: HGMNode, block: str, out_dir: Path, node_id: int
+        self, parent: HGMNode, block: str, out_dir: Path, node_id: int,
+        *, curriculum_directive: Optional[str] = None,
     ) -> str:
         """Build the manager's steering context for an EXPAND: the parent's
         edit lineage, performance + clade metaproductivity, the best node
         so far, and the parent's feedback digest. Pure string assembly —
-        the editor reads the parent's actual code itself."""
+        the editor reads the parent's actual code itself.
+
+        ``curriculum_directive`` (see meta_agent/curriculum.py) is ``None``
+        for every caller that doesn't pass it (e.g. HGMDualManager's own
+        Stage A/B call sites) -- identical to the curriculum being
+        disabled."""
         parts: list[str] = []
 
         # Edit lineage — the chain of optimization goals already applied
@@ -670,6 +844,8 @@ class HGMManager:
         # lightweight steer, degrading gracefully to "no suggestion
         # available" rather than silently vanishing.
         parts.append(f"\n## Selected block for this EXPAND: {block}")
+        if curriculum_directive:
+            parts.append(f"\n## Current curriculum focus\n{curriculum_directive}")
         # Tracks whether a real suggestion was actually produced -- stays
         # None both when no suggester is configured AND when a configured
         # suggester's call fails/errors, so the sibling-directive fallback
@@ -693,6 +869,7 @@ class HGMManager:
                         (sib.strategy.block, sib.strategy.optimization_goal)
                         for sib in siblings
                     ],
+                    curriculum_directive=curriculum_directive,
                 )
             except Exception as exc:  # noqa: BLE001
                 print(
@@ -714,6 +891,14 @@ class HGMManager:
                     "rationale (per the editor's own hard rules).\n\n"
                     + suggestion
                 )
+
+        # See self._last_suggestion_produced's own docstring (next to its
+        # declaration in __init__) -- read by _expand (and
+        # HGMDualManager's Stage A) right after this method returns, to
+        # set editor.apply's has_suggestion= kwarg. Correct whether or not
+        # a suggester is configured: `suggestion` is None by construction
+        # when self._block_suggester is None.
+        self._last_suggestion_produced = bool(suggestion)
 
         # Fallback: fires whenever no ACTUAL suggestion made it into the
         # context above -- either no suggester is configured, or one is
@@ -840,6 +1025,131 @@ class HGMManager:
             if not n.edit_failed and n.n_evals > 0
         ]
         return max(scored, key=lambda kv: kv[1]) if scored else None
+
+    def _curriculum_seed_goals(
+        self, seed_fb: Optional[AgentFeedback],
+    ) -> list[tuple[str, int]]:
+        """The ``(name, count)`` ranking used to build the curriculum:
+        ``infer_curriculum``'s merge of the seed's own ``top_failed_checks``
+        (task-level constraint failures) and ``harness_checks``
+        (harness-level crash causes), capped at ``curriculum_max_goals`` --
+        unless ``curriculum_goals_override`` names an explicit ordered
+        subset instead, in which case each named goal's seed occurrence
+        count is looked up from that same combined ranking (0 if it never
+        appeared in either). When the seed's own ``no_plan_rate`` is at or
+        above ``curriculum_harness_priority_threshold``, every harness
+        goal is ranked ahead of every task goal instead of competing on
+        raw count -- see infer_curriculum's own docstring."""
+        metrics = (
+            seed_fb.project_metrics if seed_fb is not None else None
+        ) or {}
+        if not self.curriculum_goals_override:
+            return infer_curriculum(
+                metrics,
+                k=self.curriculum_max_goals,
+                harness_priority_threshold=self.curriculum_harness_priority_threshold,
+            )
+        combined_counts = _combined_check_counts(metrics)
+        return [
+            (goal, combined_counts.get(goal, 0))
+            for goal in self.curriculum_goals_override
+        ]
+
+    @staticmethod
+    def _load_json_string_map(path_str: Optional[str]) -> dict[str, str]:
+        """Load a single JSON-object-of-strings file (a project's error-
+        semantics registry) for ``_load_curriculum_check_descriptions``.
+        Returns ``{}`` when ``path_str`` is unset, the file is missing/
+        unreadable, or its content isn't a JSON object -- same "nice-to-
+        have, never a reason to fail" convention as block_suggester.py's
+        strategies_path. Non-string keys/values inside an otherwise-valid
+        object are dropped individually rather than rejecting the whole
+        file."""
+        if not path_str:
+            return {}
+        path = Path(path_str)
+        if not path.is_absolute():
+            path = Path.cwd() / path
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        return {
+            k: v for k, v in data.items()
+            if isinstance(k, str) and isinstance(v, str)
+        }
+
+    def _load_curriculum_check_descriptions(self) -> Optional[dict[str, str]]:
+        """Load and merge ``curriculum_check_descriptions_path`` (task-
+        based errors, from the project's immutable scorer -- see e.g.
+        projects/travel_mas_refactored/adapter/error_semantics.json) and
+        ``curriculum_harness_error_descriptions_path`` (harness-based
+        errors, from the SEED's own mutable workflow -- see e.g.
+        projects/travel_mas_refactored/adapter/
+        harness_error_semantics.json) into the single flat dict
+        ``Curriculum``'s own ``check_descriptions`` param expects -- that
+        class doesn't distinguish the two kinds of goal itself, it just
+        looks a goal name up in whatever mapping it's handed. Returns
+        ``None`` (not ``{}``) when the merge is empty, matching
+        ``Curriculum.__init__``'s own "falsy means no descriptions at
+        all" contract. Read ONCE (curriculum is itself built only once
+        per run), not on every EXPAND. A name present in both files
+        (shouldn't happen -- the two namespaces are disjoint by
+        construction) resolves to the harness-error file's entry, loaded
+        second."""
+        merged = {
+            **self._load_json_string_map(self.curriculum_check_descriptions_path),
+            **self._load_json_string_map(
+                self.curriculum_harness_error_descriptions_path
+            ),
+        }
+        return merged or None
+
+    def _curriculum_directive_for_expand(self) -> tuple[Optional[str], Optional[dict]]:
+        """Advance the curriculum (if the current goal is already resolved
+        or patience-exhausted per the BEST node's latest stats), record
+        this EXPAND against the (possibly just-advanced) current goal, and
+        return ``(directive_text_or_None, persisted_snapshot_dict_or_None)``.
+        All threshold/patience logic lives in ``Curriculum``
+        (meta_agent/curriculum.py) -- this method only wires it to the
+        tree/feedback the manager already has, and never makes an LLM
+        call. Returns ``(None, None)`` whenever the curriculum is
+        disabled/unbuilt (``curriculum_enabled=False``, or the seed had
+        nothing failing) -- callers must treat that identically to "no
+        curriculum"."""
+        if self._curriculum is None:
+            return None, None
+
+        best = self._best_evaluated()
+        best_node = self._tree[best[0]] if best is not None else None
+        best_fb = self._feedback.get(best[0]) if best is not None else None
+
+        # Advance through any number of already-resolved goals in one call
+        # (e.g. a big eval-coverage jump resolved several checks at once
+        # between EXPANDs) -- loop until the current goal genuinely still
+        # needs work or the whole curriculum is exhausted.
+        advance_reason: Optional[str] = None
+        rate: Optional[float] = None
+        while not self._curriculum.done:
+            rate = self._curriculum.failure_rate_for(
+                self._curriculum.current_goal,
+                best_fb.project_metrics if best_fb is not None else {},
+                best_node.n_evals if best_node is not None else 0,
+            )
+            reason = self._curriculum.advance_if_ready(failure_rate=rate)
+            if reason is None:
+                break
+            advance_reason = reason
+            rate = None  # recomputed for the new current_goal next loop turn
+
+        self._curriculum.record_expand()
+        directive = self._curriculum.directive()
+        snapshot = self._curriculum.snapshot(
+            current_failure_rate=rate, advance_reason=advance_reason,
+        )
+        return directive, dataclasses.asdict(snapshot)
 
     def _snapshot(self, event: str) -> None:
         """Append a full-tree snapshot keyed by the current eval budget. A

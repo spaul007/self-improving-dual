@@ -83,6 +83,23 @@ class FailureSummarizer:
         # Caps runaway generation. 16384 matches the task_agent default.
         # None disables the cap.
         max_output_tokens: Optional[int] = 16384,
+        # How many of the hardest (worst-scoring) shown cases also get
+        # their literal trace.jsonl tool_call -> tool_result narrative
+        # appended to their digest -- e.g. an argument value copied
+        # verbatim from an earlier tool's own free-text output that then
+        # 404'd, followed by a silent substitution, is a concrete,
+        # correctly-diagnosable story a final score/error string alone
+        # can't tell (confirmed live this session: a hard-constraint
+        # failure whose error just named a missing attraction turned out,
+        # via the trace, to be a tool-output-format bug plus a bad-
+        # recovery-strategy bug -- two fixable things a generic "verify
+        # names better" diagnosis would have missed). 0 (default)
+        # disables this entirely -- byte-identical to today.
+        trace_digest_case_count: int = 0,
+        # Bounds prompt size per digested case.
+        trace_digest_max_calls: int = 15,
+        # No point exceeding trace.jsonl's own result_preview truncation.
+        trace_digest_preview_chars: int = 200,
     ) -> None:
         self.llm = llm_caller
         self.model = model
@@ -92,6 +109,9 @@ class FailureSummarizer:
             domain_label or os.environ.get("META_AGENT_PROJECT") or "agent"
         )
         self.max_output_tokens = max_output_tokens
+        self.trace_digest_case_count = trace_digest_case_count
+        self.trace_digest_max_calls = trace_digest_max_calls
+        self.trace_digest_preview_chars = trace_digest_preview_chars
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -117,7 +137,15 @@ class FailureSummarizer:
         failing.sort(key=lambda c: (float(c.score), str(c.case_id)))
         shown = failing[:_MAX_CASES]
 
-        aggregate = self._aggregate(cases, shown, node_id)
+        case_events_by_id: dict[str, list[dict[str, Any]]] = {}
+        if self.trace_digest_case_count > 0:
+            try:
+                events = self._read_trace(round_dir / "logs" / "trace.jsonl")
+                case_events_by_id = self._group_tool_events_by_case(events)
+            except Exception:
+                case_events_by_id = {}
+
+        aggregate = self._aggregate(cases, shown, node_id, case_events_by_id)
 
         try:
             (round_dir / "failure_summary_aggregate.json").write_text(
@@ -168,22 +196,45 @@ class FailureSummarizer:
     # ------------------------------------------------------------------ #
 
     def _aggregate(
-        self, all_cases: list[CaseResult], shown: list[CaseResult], node_id: int
+        self,
+        all_cases: list[CaseResult],
+        shown: list[CaseResult],
+        node_id: int,
+        case_events_by_id: Optional[dict[str, list[dict[str, Any]]]] = None,
     ) -> dict[str, Any]:
+        case_events_by_id = case_events_by_id or {}
         case_records = []
-        for c in shown:
+        for i, c in enumerate(shown):
             det = c.details or {}
-            case_records.append(
-                {
-                    "case_id": str(c.case_id),
-                    "score": round(float(c.score), 4),
-                    "error": c.error,
-                    "query": _truncate_middle(_as_text(det.get("query")), _QUERY_CAP),
-                    "raw_output": _truncate_middle(
-                        _as_text(det.get("raw_result")), _RAW_OUTPUT_CAP
-                    ),
-                }
-            )
+            # c.error (top-level CaseResult.error) is reserved for
+            # harness-level crashes and is None for a scorer-judged
+            # failure -- the actual descriptive message (e.g. "plan
+            # conversion failed: agent produced no plan (agent_metadata:
+            # ...)") lives in details["error"] instead. Previously this
+            # read c.error only, so every scorer-judged failure (the
+            # common case) showed up here as error=None -- the LLM had
+            # nothing but an empty raw_output to reason from, unable to
+            # distinguish "nothing was ever generated" from "a complete
+            # plan was generated and then discarded by the workflow's own
+            # validation gate" (confirmed live: both looked identical).
+            record = {
+                "case_id": str(c.case_id),
+                "score": round(float(c.score), 4),
+                "error": det.get("error") or c.error,
+                "query": _truncate_middle(_as_text(det.get("query")), _QUERY_CAP),
+                "raw_output": _truncate_middle(
+                    _as_text(det.get("raw_result")), _RAW_OUTPUT_CAP
+                ),
+            }
+            if i < self.trace_digest_case_count:
+                case_events = case_events_by_id.get(str(c.case_id))
+                if case_events:
+                    record["tool_trace"] = self._render_case_tool_trace(
+                        case_events,
+                        self.trace_digest_max_calls,
+                        self.trace_digest_preview_chars,
+                    )
+            case_records.append(record)
         n_failing_total = sum(
             1 for c in all_cases if (not c.passed) or float(c.score) < 1.0
         )
@@ -200,6 +251,93 @@ class FailureSummarizer:
             "cases": case_records,
         }
 
+    # ------------------------------------------------------------------ #
+    # Trace digest (opt-in via trace_digest_case_count)
+    # ------------------------------------------------------------------ #
+
+    def _read_trace(self, path: Path) -> list[dict[str, Any]]:
+        """Parse a trace.jsonl file into a list of event dicts. Tolerates
+        malformed lines (skipped, not fatal) and a missing file (returns
+        ``[]``) -- same convention as the independent copies of this
+        helper in ``behavior_summarizer.py``/``feedback_gatherer.py``."""
+        if not path.exists():
+            return []
+        events: list[dict[str, Any]] = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict):
+                events.append(event)
+        return events
+
+    def _group_tool_events_by_case(
+        self, events: list[dict[str, Any]]
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Bucket ``tool_call``/``tool_result`` events by their payload's
+        ``case_id``, preserving original (chronological) order within each
+        bucket. Events of other kinds, or without a usable payload/case_id,
+        are dropped -- this is only ever used to render a tool-call
+        narrative, not a full trace."""
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        for event in events:
+            if event.get("kind") not in ("tool_call", "tool_result"):
+                continue
+            payload = event.get("payload")
+            if not isinstance(payload, dict):
+                continue
+            case_id = payload.get("case_id")
+            if not isinstance(case_id, str):
+                continue
+            grouped.setdefault(case_id, []).append(event)
+        return grouped
+
+    def _render_case_tool_trace(
+        self,
+        events_for_case: list[dict[str, Any]],
+        max_calls: int,
+        preview_chars: int,
+    ) -> str:
+        """Render one case's ordered tool_call -> tool_result narrative,
+        e.g.:
+            1. query_attraction_details(attraction_name='Nanbin Road...')
+               -> Detailed information not found for attraction Nanbin...
+        Pairs a tool_call with its tool_result by their shared ``id``; an
+        unmatched call renders ``-> (no result)``. Capped at ``max_calls``
+        calls and ``preview_chars`` chars of each result -- this exists to
+        bound prompt size, not to be a complete trace."""
+        results_by_id: dict[str, dict[str, Any]] = {}
+        for event in events_for_case:
+            if event.get("kind") == "tool_result":
+                payload = event.get("payload") or {}
+                call_id = payload.get("id")
+                if isinstance(call_id, str):
+                    results_by_id[call_id] = payload
+
+        calls = [
+            event.get("payload") or {}
+            for event in events_for_case
+            if event.get("kind") == "tool_call"
+        ]
+        lines: list[str] = []
+        for i, call in enumerate(calls[:max_calls], 1):
+            name = call.get("name", "(unknown tool)")
+            arguments = call.get("arguments", {})
+            lines.append(f"{i}. {name}({arguments})")
+            call_id = call.get("id")
+            result = results_by_id.get(call_id) if isinstance(call_id, str) else None
+            if result is None:
+                lines.append("   -> (no result)")
+                continue
+            preview = result.get("result_preview")
+            preview = preview if isinstance(preview, str) else ""
+            lines.append(f"   -> {preview[:preview_chars]}")
+        return "\n".join(lines)
+
     def _build_prompt(self, aggregate: dict[str, Any]) -> tuple[str, str]:
         system = (
             f"You are summarizing evaluation failures for a self-evolving "
@@ -207,6 +345,16 @@ class FailureSummarizer:
             "to read. You are given the failing cases from this round's "
             "evaluation, worst-scoring first: each case's query, its (near-)"
             "full raw agent output, its score, and any runtime error.\n\n"
+            "When `error` is present for an empty-output case, it often "
+            "distinguishes WHY nothing was produced (e.g. an "
+            "`agent_metadata` annotation showing which internal stage "
+            "failed, or that a complete result WAS generated internally "
+            "but was rejected by the workflow's own validation logic "
+            "before being returned) -- use this to correctly separate "
+            "'the agent never managed to produce anything' from 'the "
+            "agent produced something reasonable but the workflow itself "
+            "discarded it,' since those call for very different fixes. "
+            "Don't guess at a cause the error text doesn't support.\n\n"
             "Produce a concise markdown summary with exactly two sections:\n"
             "  ## Main failure patterns — group the failing cases into 1-4 "
             "recurring themes you can actually support from the text shown "
@@ -233,7 +381,18 @@ class FailureSummarizer:
             "extraction problem. Only call out an actual formatting issue if "
             "the real text CONTENT shows one (e.g. a required tag is truly "
             "missing from the text, or the text is garbled/cut off) — judge "
-            "the prose content, not the debug wrapper around it."
+            "the prose content, not the debug wrapper around it.\n\n"
+            "Some of the hardest cases also show a `tool call trace` — the "
+            "literal, ordered sequence of tool calls the agent made and "
+            "what each tool actually returned. Use it to tell apart 'the "
+            "agent's own reasoning went wrong' from 'the agent behaved "
+            "reasonably given what a tool actually told it': e.g. an "
+            "argument value copied verbatim from an earlier tool's own "
+            "output that then failed/came back empty, followed by the "
+            "agent silently substituting something else, is a different, "
+            "more specific failure than a generic reasoning slip — say so "
+            "explicitly when the trace shows it, don't default to a vaguer "
+            "'didn't verify carefully' framing when the trace shows it did."
         )
         lines = [
             f"## Round summary\nnode {aggregate['node_id']}  "
@@ -247,6 +406,8 @@ class FailureSummarizer:
                 lines.append(f"error: {c['error']}")
             lines.append(f"query: {c['query']}")
             lines.append(f"raw_output: {c['raw_output']}")
+            if c.get("tool_trace"):
+                lines.append(f"tool call trace:\n{c['tool_trace']}")
         return "\n".join(lines), system
 
     def _call_llm(self, system: str, user: str) -> str:

@@ -81,6 +81,9 @@ def _coerce_str(value: Any) -> str:
     return str(value)
 
 
+_MALFORMED_JSON_GOAL = "(malformed JSON: tool call arguments failed to parse)"
+
+
 def fallback_strategy() -> EvolutionStrategy:
     """A constant placeholder ``EvolutionStrategy`` — used by managers when
     an ``EditResult`` carries no summary (defensive; ``apply`` always sets
@@ -179,6 +182,14 @@ class AgentEditor:
         out_dir: Path,
         *,
         context: Optional[str] = None,
+        # True only when the caller's manager actually produced a
+        # block-scoped suggestion (see block_suggester.py) for THIS
+        # apply() call -- see hgm.py::HGMManager._last_suggestion_produced.
+        # Default False reproduces today's exact behavior for every
+        # caller that omits it: HGMDualManager's Stage B and
+        # HillClimbingManager never pass this at all, since neither path
+        # ever computes a suggestion.
+        has_suggestion: bool = False,
     ) -> EditResult:
         """Produce one self-improvement of the agent in ``base_dir``.
 
@@ -188,6 +199,13 @@ class AgentEditor:
         optional manager-supplied steering text (history, lineage, scores) —
         the editor reads the actual code itself, so ``context`` carries only
         cheap signal, never source.
+
+        ``has_suggestion`` (default False) tells the editor's own feedback
+        digest that a block-scoped diagnosis (see block_suggester.py) was
+        already produced for this call -- when True, ``project_metrics`` is
+        omitted from ``_format_feedback`` (the suggester already showed it
+        the same raw numbers, and the suggestion text itself is already in
+        ``context``); ``failure_report`` is always shown regardless.
 
         Returns ``EditResult``; ``.strategy`` carries the editor's emitted
         summary (the last attempt's, on failure).
@@ -201,12 +219,27 @@ class AgentEditor:
                 out_dir=out_dir,
                 feedback=feedback,
                 context=context,
+                has_suggestion=has_suggestion,
                 prior_errors=attempt_errors,
                 attempt=attempt,
             )
             last_strategy = strategy
             if not files:
-                attempt_errors = ["editor returned no file edits"]
+                if strategy.optimization_goal == _MALFORMED_JSON_GOAL:
+                    # Give the retry something actionable instead of a
+                    # generic "no edits" message -- the model's own JSON
+                    # was broken, not its diagnosis or code.
+                    attempt_errors = [
+                        "Your previous response's tool call arguments were "
+                        "not valid JSON and could not be parsed at all, so "
+                        "none of it (not even the diagnosis) could be used. "
+                        "Make sure you return a valid JSON object: "
+                        "double-check that every string value — especially "
+                        "each file's `content` — has its quotes, "
+                        "backslashes, and newlines properly escaped."
+                    ]
+                else:
+                    attempt_errors = ["editor returned no file edits"]
                 continue
 
             written, write_errors = self._write_edits(out_dir, files)
@@ -247,6 +280,7 @@ class AgentEditor:
         context: Optional[str],
         prior_errors: list[str],
         attempt: int = 1,
+        has_suggestion: bool = False,
     ) -> tuple[EvolutionStrategy, list[dict]]:
         """One self-improvement LLM call: diagnose + edit.
 
@@ -416,7 +450,9 @@ class AgentEditor:
         if context:
             user_parts.append(f"## Steering context\n{context}\n")
         if feedback is not None:
-            user_parts.append(self._format_feedback(feedback))
+            user_parts.append(
+                self._format_feedback(feedback, has_suggestion=has_suggestion)
+            )
         user_parts.extend(self._format_project_context())
         user_parts.append(self._format_current_sources(current))
         if prior_errors:
@@ -467,6 +503,49 @@ class AgentEditor:
 
         for call in getattr(response, "tool_calls", []) or []:
             if call.name == "submit_self_improvement":
+                # Two distinct ways a tool call's arguments can fail to be
+                # a usable JSON object, both handled the same way here:
+                #   1. platform_core.llm_wrapper.call_llm wraps them as
+                #      {"_raw_arguments": <raw string>} when they fail to
+                #      json.loads at all -- confirmed live: a model
+                #      (DeepSeek v4, via OpenRouter) can produce a
+                #      complete, well-reasoned fix and still have this
+                #      happen from a single mis-escaped character deep in
+                #      a large embedded-code string.
+                #   2. The arguments DO parse as valid JSON, but the
+                #      top-level value isn't an object (e.g. a bare list,
+                #      string, or null) -- json.loads succeeds so (1)
+                #      never fires, but `_parse_self_improvement`'s
+                #      `args.get("files")` would raise AttributeError on
+                #      anything without a `.get` method. Previously
+                #      unguarded: this crashed the whole HGM run (no
+                #      try/except wraps editor.apply() anywhere up to
+                #      main_loop.py's fw.manager.evolve() call), not just
+                #      one EXPAND.
+                # In both cases the real content (if any) is unusable
+                # without a hand-rolled JSON repair (risking silently
+                # corrupted code), so this is surfaced as a distinct,
+                # actionable error for the retry loop below rather than
+                # crashing or silently falling through to the generic
+                # empty-files path.
+                if not isinstance(call.arguments, dict) or "_raw_arguments" in call.arguments:
+                    raw_len = (
+                        len(call.arguments.get("_raw_arguments") or "")
+                        if isinstance(call.arguments, dict)
+                        else len(repr(call.arguments))
+                    )
+                    print(
+                        "[editor] warning: submit_self_improvement's "
+                        f"arguments were not a valid JSON object ({raw_len} "
+                        "raw chars) -- treating as a malformed-JSON attempt",
+                        flush=True,
+                    )
+                    return EvolutionStrategy(
+                        target_files=[],
+                        optimization_goal=_MALFORMED_JSON_GOAL,
+                        proposed_changes="",
+                        rationale="",
+                    ), []
                 return self._parse_self_improvement(call.arguments)
 
         # Fallback: the model didn't tool-call. Try to recover a files
@@ -484,8 +563,16 @@ class AgentEditor:
             f"recovered {len(files)} file(s) from fenced JSON",
             flush=True,
         )
+        # Reflect whatever was ACTUALLY recovered -- a hardcoded
+        # "workflow.py" placeholder would misrepresent real recovered
+        # paths when the fenced-JSON recovery above did find files, and
+        # falsely claim a (frozen, normally-excluded) target when it
+        # found none at all.
+        recovered_paths = [
+            f.get("path", "") for f in files if isinstance(f, dict) and f.get("path")
+        ]
         fallback = EvolutionStrategy(
-            target_files=["workflow.py"],
+            target_files=recovered_paths,
             optimization_goal="(editor produced no structured proposal)",
             proposed_changes=text[:500],
             rationale="",
@@ -535,10 +622,13 @@ class AgentEditor:
     def _format_current_sources(self, sources: dict[str, str]) -> str:
         return source_context.format_current_sources(sources)
 
-    def _format_feedback(self, feedback: AgentFeedback) -> str:
+    def _format_feedback(
+        self, feedback: AgentFeedback, *, has_suggestion: bool = False
+    ) -> str:
         """Render the previous round's ``AgentFeedback`` into a compact
-        prompt section — score, tool usage/errors, project metrics,
-        exceptions, validator complaints, and a trace excerpt."""
+        prompt section — score, tool usage/errors, project metrics (unless
+        ``has_suggestion``), exceptions, validator complaints, and a trace
+        excerpt."""
         ev = feedback.eval_result
         lines = [
             "## Last round's feedback",
@@ -570,7 +660,19 @@ class AgentEditor:
             err_lines = [f"{n}={r:.2f}" for n, r in ranked[:5] if r > 0]
             if err_lines:
                 lines.append("tool error rates: " + ", ".join(err_lines))
-        if feedback.project_metrics:
+        # Trimmed only when a block-scoped suggestion (block_suggester.py)
+        # was actually produced for THIS apply() call -- that module now
+        # owns diagnosis grounded in this same project_metrics data (see
+        # its own _format_feedback_digest), so repeating it here would be
+        # redundant with the "## Block-scoped suggestion" section already
+        # in `context` (see hgm.py::_render_expand_context). Defaults to
+        # False (today's exact behavior) for every caller that never
+        # computes a suggestion -- HGMDualManager's Stage B and
+        # HillClimbingManager -- and for any round where no block_suggester
+        # is configured, or a configured one's call failed/returned empty.
+        # failure_report (below) is NEVER trimmed, regardless of
+        # has_suggestion.
+        if feedback.project_metrics and not has_suggestion:
             lines.append("project metrics:")
             lines.extend(render_metrics(feedback.project_metrics, cap=5, indent="  "))
         if feedback.runtime_exceptions:

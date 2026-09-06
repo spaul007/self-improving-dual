@@ -234,11 +234,18 @@ class HGMDualManager(HGMManager):
                 json.dumps(asdict(self._last_block_selection), indent=2)
             )
         context_a = self._render_expand_context(parent, block_a, intermediate_dir, node_id)
+        # See hgm.py::HGMManager._last_suggestion_produced -- Stage A here
+        # is the ONLY hgm_dual.py call site that reuses the inherited
+        # _render_expand_context (Stage B below uses its own separate
+        # _render_variant_context, which never calls
+        # BlockSuggester.suggest and so never needs to read this
+        # attribute).
         res_a = editor.apply(
             self._feedback.get(parent_id),
             parent.round_dir,
             intermediate_dir,
             context=context_a,
+            has_suggestion=self._last_suggestion_produced,
         )
         strategy_a = res_a.strategy or fallback_strategy()
         strategy_a.block = block_a

@@ -44,6 +44,8 @@ docs/
 # --- Vendored MAS output artifacts (transient per-task results, not source) ---
 projects/db_mas/db-mas/results/
 projects/math_mas/math_mas/results/
+projects/math_mas_pathology/math_mas_pathology/results/
+communication_traces/
 
 # --- Local-only working notes (do not check in) ---
 CLAUDE.md

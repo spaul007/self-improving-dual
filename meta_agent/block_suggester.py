@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from . import source_context
+from .feedback_gatherer import render_metrics
 from .models import AgentFeedback
 from .registry import register
 
@@ -439,6 +440,7 @@ class BlockSuggester:
         feedback: Optional[AgentFeedback] = None,
         failure_summary: Optional[str] = None,
         siblings: Optional[list[tuple[Optional[str], str]]] = None,
+        curriculum_directive: Optional[str] = None,
     ) -> Optional[str]:
         """Produce a block-scoped suggestion, persisted into ``out_dir``.
 
@@ -452,10 +454,13 @@ class BlockSuggester:
         owned entirely by this component, not the caller; the manager no
         longer shows the editor a separate, potentially-conflicting
         differentiation directive when a suggester is configured (see
-        ``hgm.py::_render_expand_context``). Returns the suggestion text,
-        or None on error/empty response/unknown block -- callers should
-        treat this the same as the other summarizers: skip silently, never
-        fail the round.
+        ``hgm.py::_render_expand_context``). ``curriculum_directive`` (see
+        meta_agent/curriculum.py), when set, steers this diagnosis toward
+        one specific failing check -- ``None`` (the default, and every
+        caller when the curriculum is disabled) is a no-op. Returns the
+        suggestion text, or None on error/empty response/unknown block --
+        callers should treat this the same as the other summarizers: skip
+        silently, never fail the round.
         """
         if block not in _BLOCK_BODIES:
             print(f"[block_suggester] unknown block {block!r} — skipped", flush=True)
@@ -471,7 +476,9 @@ class BlockSuggester:
 
         system = (
             _SYSTEM_PREAMBLE + "\n\n" + _BLOCK_BODIES[block]
-            + self._render_strategies(block) + _SYSTEM_CLOSING
+            + self._render_strategies(block)
+            + self._render_curriculum_focus(curriculum_directive)
+            + _SYSTEM_CLOSING
         )
 
         user_parts: list[str] = source_context.format_project_context(
@@ -558,6 +565,17 @@ class BlockSuggester:
             return ""
         return "\n\n## Strategies to consider\n\n" + "\n\n".join(parts)
 
+    def _render_curriculum_focus(self, curriculum_directive: Optional[str]) -> str:
+        """Splice the manager's curriculum directive (see
+        hgm.py::_curriculum_directive_for_expand / meta_agent/curriculum.py)
+        into the system prompt, right after strategies.md's section.
+        Returns "" (no-op) when ``curriculum_directive`` is None/empty --
+        the common case (curriculum disabled) that must reproduce today's
+        system prompt byte-for-byte."""
+        if not curriculum_directive:
+            return ""
+        return "\n\n## Current curriculum focus\n\n" + curriculum_directive
+
     def _format_feedback_digest(
         self, feedback: Optional[AgentFeedback], failure_summary: Optional[str]
     ) -> str:
@@ -567,6 +585,19 @@ class BlockSuggester:
         else:
             ev = feedback.eval_result
             lines.append(f"score={ev.score:.3f}  passed={ev.passed}  failed={ev.failed}")
+            # project_metrics, generically -- this module now OWNS
+            # diagnosis (agent_editor.py's own project_metrics rendering
+            # is trimmed once a suggestion is produced here, see
+            # AgentEditor._format_feedback's has_suggestion param), so it
+            # needs the same raw signal the editor used to see alone.
+            # cap=10 (vs. the editor's own cap=5 in its terser digest) --
+            # matches the cap already used for the "parent project
+            # metrics" section in hgm.py::_render_expand_context.
+            if feedback.project_metrics:
+                lines.append("project metrics:")
+                lines.extend(
+                    render_metrics(feedback.project_metrics, cap=10, indent="  ")
+                )
             if feedback.tool_error_rate:
                 ranked = sorted(
                     ((n, r) for n, r in feedback.tool_error_rate.items() if r > 0),

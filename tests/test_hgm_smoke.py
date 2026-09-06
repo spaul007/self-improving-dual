@@ -153,8 +153,10 @@ class _StubEditor:
     def __init__(self, fail_call: int | None = None) -> None:
         self.calls = 0
         self.fail_call = fail_call
+        self.received_has_suggestion: list[bool] = []
 
-    def apply(self, feedback, base_dir, out_dir, *, context=None):
+    def apply(self, feedback, base_dir, out_dir, *, context=None, has_suggestion=False):
+        self.received_has_suggestion.append(has_suggestion)
         from meta_agent.models import EditResult, EvolutionStrategy
 
         self.calls += 1

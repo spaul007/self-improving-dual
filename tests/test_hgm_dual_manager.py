@@ -124,9 +124,11 @@ class _StubEditor:
     def __init__(self, *, fail_predicate=None) -> None:
         self.calls = 0
         self.fail_predicate = fail_predicate or (lambda out_dir: False)
+        self.received_has_suggestion: list[bool] = []
 
-    def apply(self, feedback, base_dir, out_dir, *, context=None):
+    def apply(self, feedback, base_dir, out_dir, *, context=None, has_suggestion=False):
         self.calls += 1
+        self.received_has_suggestion.append(has_suggestion)
         out = Path(out_dir)
         src = Path(base_dir) / "task_agent"
         dst = out / "task_agent"

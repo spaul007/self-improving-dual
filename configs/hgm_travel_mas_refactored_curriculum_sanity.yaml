@@ -1,0 +1,135 @@
+# Live sanity check for the curriculum feature (meta_agent/curriculum.py +
+# its wiring in meta_agent/managers/hgm.py) against travel_mas_refactored --
+# forced onto exactly ONE hand-picked "easy" sub-goal via
+# curriculum_goals_override, rather than the full seed-derived ranking, so
+# we can directly observe whether steering a single check actually works
+# before trusting it on the full multi-goal list.
+#
+# Chosen check: commonsense:Sandbox Compliance:validated_meals -- "the
+# named restaurant must be a real one returned by the search tool, not a
+# hallucinated name" (see check_meals_from_search in
+# projects/travel_mas_refactored/benchmark/_eval/constraints_commonsense.py).
+# Picked over the seed's #1 dominant check (reasonable_transfer_time, a
+# much harder time-feasibility constraint already seen to resist repeated
+# fixes) because it's a simple, mechanical grounding check -- exactly the
+# "named_restaurant-style, should be easy" class of constraint requested.
+# Confirmed live in the real production seed eval (2026-09-02): 17/60
+# cases failed this check, giving the curriculum genuine signal to work
+# with (not already-resolved, not overwhelming).
+#
+# Modeled on configs/hgm_travel_mas_refactored_block_sanity.yaml (same
+# structure/endpoints), with train_size bumped 6 -> 24 so the sampled
+# cases actually contain a meaningful number of validated_meals failures,
+# and eval_budget/max_rounds bumped accordingly for a handful of EXPANDs
+# to observe curriculum_status.json's current_goal staying fixed across
+# rounds and (ideally) reaching "resolved".
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_mas_refactored_curriculum_sanity.yaml
+#
+# Double-check the task_agent/editor vLLM endpoints below against whatever's
+# actually live before running.
+
+experiment_name: "travel_mas_refactored_curriculum_sanity"
+project: "travel_mas_refactored"
+
+mutable_exclude:
+  - "workflow.py"
+  - "benchmark/"
+  - "agents/immutable/"
+
+loop:
+  max_rounds: 14
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.5-35B-A3B"
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 72
+    init_expansions: 1
+    alpha: 0.6
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 4
+    finalize_top_k: 1
+    full_eval_top_k: 0
+    seed: 42
+    block_selection_strategy: "adaptive"
+    curriculum_enabled: true
+    curriculum_resolution_threshold: 0.15
+    curriculum_patience: 4
+    curriculum_goals_override:
+      - "commonsense:Sandbox Compliance:validated_meals"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    parallelism: 8
+    scorer: "travel_mas_refactored_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+    n_hard_cases: 1
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+block_suggester:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    strategies_path: "strategies.md"
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-35B-A3B"
+
+split:
+  seed: 42
+  train_size: 24
+  eval_size: 0
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+    config:
+      workflow_filenames: ["workflow.py", "mas_workflow.py"]
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"
+  - type: "undefined_names"
+  - type: "smoke_test"

@@ -1,0 +1,128 @@
+# Sanity check: does HGM still find a working fix on ONE easy case when the
+# agent_editor is swapped for a different, external model (DeepSeek v4 via
+# OpenRouter) while block_suggester stays on the current Qwen3.5-122B-A10B
+# endpoint? Verified live 2026-09-04 that OpenRouter supports the OpenAI
+# Responses API (client.responses.create) for deepseek/deepseek-v4-pro-0813,
+# including the reasoning_effort field -- no proxy needed.
+#
+# Sanity-only sizing: X=50 target good-enough agents, Y=5 evals each ->
+# eval_budget = 250, alpha = ln(50)/ln(250) = 0.70852.
+# max_rounds must exceed eval_budget**alpha (=50) and 1+init_expansions (=3).
+#
+# Case "1" (2-day Hefei->Nanjing trip) chosen as an easy, structurally
+# minimal case: exactly 4 hard constraints (train_seat_status,
+# hotel_newest_decoration, restaurant_specific_tag_nearby,
+# attraction_all_of_type), none stacking multiple superlative conditions
+# the way some other 2-day cases do (e.g. "cheapest" + "must-eat-named"
+# combined). split.train_ids pins it exactly -- no held-out eval, no need
+# for one on a single-case sanity run.
+#
+# ONLY this sanity config changes -- the production config
+# (hgm_travel_full_scale_block_tagged_X100Y180.yaml) is untouched.
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_deepseek_editor_sanity_1case.yaml
+
+experiment_name: "travel_deepseek_editor_sanity_1case"
+project: "travel_mas_refactored"
+# Writes editor_attempt_{N}_system.txt / _user.txt / _response.json (and the
+# equivalent for other components) to round_NNN/verbose/ -- needed to
+# forensically diagnose a flaky/malformed editor response like node 1's,
+# which otherwise leaves nothing but empty post-parse fields.
+verbose: true
+
+mutable_exclude:
+  - "workflow.py"
+  - "benchmark/"
+  - "agents/immutable/"
+
+loop:
+  max_rounds: 60
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.5-35B-A3B"
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+
+manager:
+  type: "hgm_block_tagged"
+  config:
+    eval_budget: 250
+    init_expansions: 2
+    alpha: 0.70852
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 4
+    eval_repeats: 3  # >1 = repeats enabled -- see repeated case 9 crash-rate
+                     # measurement technique used earlier this session.
+    finalize_top_k: 1
+    full_eval_top_k: 0  # no full-120 finalize needed for a toy sanity run
+    seed: 42
+    block_selection_strategy: "adaptive"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    parallelism: 4
+    scorer: "travel_mas_refactored_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+    n_hard_cases: 1
+
+editor:
+  type: "default"
+  config:
+    model: "deepseek/deepseek-v4-pro-0813"
+    reasoning_effort: "medium"
+    base_url: "https://openrouter.ai/api/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+block_suggester:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    strategies_path: "strategies.md"
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-35B-A3B"
+
+split:
+  train_ids: ["1"]
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+    config:
+      workflow_filenames: ["workflow.py", "mas_workflow.py"]
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"
+  - type: "undefined_names"
+  - type: "smoke_test"

@@ -252,6 +252,104 @@ class BlockBanditTests(unittest.TestCase):
         self.assertEqual(run(123), run(123))
 
 
+class InitialBlockRankingTests(unittest.TestCase):
+    BLOCKS = (
+        "collaboration_workflow",
+        "foundation_capability",
+        "individual_subagent",
+        "verifiers",
+    )
+    RANKING = (
+        "foundation_capability", "individual_subagent",
+        "verifiers", "collaboration_workflow",
+    )
+
+    def test_default_none_gives_every_block_zero_bonus(self) -> None:
+        bandit = BlockBandit(blocks=self.BLOCKS, rng=random.Random(0))
+        self.assertEqual(
+            bandit._initial_success_bonus, dict.fromkeys(self.BLOCKS, 0.0)
+        )
+
+    def test_ranking_assigns_decreasing_bonus_by_rank(self) -> None:
+        bandit = BlockBandit(
+            blocks=self.BLOCKS, rng=random.Random(0),
+            initial_block_ranking=self.RANKING, initial_rank_strength=2.0,
+        )
+        bonus = bandit._initial_success_bonus
+        self.assertEqual(bonus["foundation_capability"], 6.0)
+        self.assertEqual(bonus["individual_subagent"], 4.0)
+        self.assertEqual(bonus["verifiers"], 2.0)
+        self.assertEqual(bonus["collaboration_workflow"], 0.0)
+
+    def test_ranking_biases_the_posterior_mean_before_any_real_evidence(self) -> None:
+        bandit = BlockBandit(
+            blocks=self.BLOCKS, rng=random.Random(0),
+            initial_block_ranking=self.RANKING, initial_rank_strength=2.0,
+        )
+        tree, feedback = _tree_and_feedback([(0, None, None, [1.0], False)])
+        strategy = bandit.select(tree, feedback)
+        means = {b: p.mean for b, p in strategy.posteriors.items()}
+        self.assertGreater(means["foundation_capability"], means["individual_subagent"])
+        self.assertGreater(means["individual_subagent"], means["verifiers"])
+        self.assertGreater(means["verifiers"], means["collaboration_workflow"])
+
+    def test_real_evidence_can_overturn_the_initial_bias(self) -> None:
+        # A block ranked last but with strong real evidence must still be
+        # able to win out -- the bonus is a one-time nudge, not a
+        # permanent override, same dynamic as beta_prior itself.
+        bandit = BlockBandit(
+            blocks=self.BLOCKS, rng=random.Random(0),
+            initial_block_ranking=self.RANKING, initial_rank_strength=2.0,
+        )
+        tree, feedback = _tree_and_feedback([
+            (0, None, None, [0.5], False),
+            (1, 0, "collaboration_workflow", [1.0] * 50, False),
+        ])
+        strategy = bandit.select(tree, feedback)
+        means = strategy.posteriors
+        self.assertGreater(
+            means["collaboration_workflow"].mean, means["foundation_capability"].mean
+        )
+
+    def test_mismatched_ranking_is_rejected(self) -> None:
+        with self.assertRaises(ValueError):
+            BlockBandit(
+                blocks=self.BLOCKS, rng=random.Random(0),
+                initial_block_ranking=("foundation_capability", "verifiers"),
+            )
+        with self.assertRaises(ValueError):
+            BlockBandit(
+                blocks=self.BLOCKS, rng=random.Random(0),
+                initial_block_ranking=self.RANKING + ("nonexistent_block",),
+            )
+
+
+class HGMManagerBlockInitialRankingWiringTests(unittest.TestCase):
+    """End-to-end: the manager-level (YAML-facing) kwargs reach the bandit
+    it constructs, at both the __init__ and evolve() re-seed construction
+    sites (meta_agent/managers/hgm.py)."""
+
+    def test_default_manager_has_no_initial_ranking(self) -> None:
+        m = HGMManager()
+        self.assertIsNone(m.block_initial_ranking)
+        self.assertIsNone(m._block_bandit.initial_block_ranking)
+
+    def test_manager_forwards_ranking_and_strength_to_the_bandit(self) -> None:
+        ranking = [
+            "foundation_capability", "individual_subagent",
+            "verifiers", "collaboration_workflow",
+        ]
+        m = HGMManager(
+            block_initial_ranking=ranking, block_initial_rank_strength=3.0,
+        )
+        self.assertEqual(m._block_bandit.initial_block_ranking, tuple(ranking))
+        self.assertEqual(m._block_bandit._initial_success_bonus["foundation_capability"], 9.0)
+
+    def test_invalid_ranking_rejected_at_construction(self) -> None:
+        with self.assertRaises(ValueError):
+            HGMManager(block_initial_ranking=["not_a_real_block"])
+
+
 class HGMManagerBlockRewardMetricWiringTests(unittest.TestCase):
     """End-to-end: the manager-level (YAML-facing) kwarg actually reaches
     the bandit it constructs, at both the __init__ and evolve() re-seed

@@ -167,6 +167,157 @@ class SuggestIntegrationTests(unittest.TestCase):
         )
         self.assertNotIn("Strategies to consider", captured["system"])
 
+    def test_curriculum_directive_reaches_the_system_prompt(self) -> None:
+        captured: dict[str, str] = {}
+
+        def fake_llm(**kwargs):
+            captured["system"] = kwargs["messages"][0]["content"]
+            return SimpleNamespace(content="a suggestion")
+
+        bs = BlockSuggester(llm_caller=fake_llm)  # strategies_path unset
+        bs.suggest(
+            block="verifiers", agent_dir=self.agent_dir, out_dir=self.out_dir, node_id=0,
+            curriculum_directive="Focus on `reasonable_transfer_time`.",
+        )
+        self.assertIn("## Current curriculum focus", captured["system"])
+        self.assertIn("reasonable_transfer_time", captured["system"])
+
+    def test_curriculum_directive_none_reproduces_byte_identical_system_prompt(
+        self,
+    ) -> None:
+        captured: dict[str, str] = {}
+
+        def fake_llm(**kwargs):
+            captured["system"] = kwargs["messages"][0]["content"]
+            return SimpleNamespace(content="a suggestion")
+
+        bs = BlockSuggester(llm_caller=fake_llm)
+
+        bs.suggest(
+            block="verifiers", agent_dir=self.agent_dir, out_dir=self.out_dir, node_id=0,
+        )
+        system_omitted = captured["system"]
+
+        bs.suggest(
+            block="verifiers", agent_dir=self.agent_dir, out_dir=self.out_dir, node_id=0,
+            curriculum_directive=None,
+        )
+        system_explicit_none = captured["system"]
+
+        self.assertEqual(system_omitted, system_explicit_none)
+        self.assertNotIn("Current curriculum focus", system_omitted)
+
+    def test_no_plan_rate_reaches_the_feedback_digest(self) -> None:
+        # no_plan_rate is a plain float inside project_metrics -- now
+        # rendered generically via render_metrics (colon format), not the
+        # old special-cased "no_plan_rate=X" line.
+        from meta_agent.models import AgentFeedback, EvaluationResult, EvolutionStrategy
+
+        captured: dict[str, str] = {}
+
+        def fake_llm(**kwargs):
+            captured["user"] = kwargs["messages"][1]["content"]
+            return SimpleNamespace(content="a suggestion")
+
+        bs = BlockSuggester(llm_caller=fake_llm)
+        feedback = AgentFeedback(
+            round_number=0, base_round=0,
+            strategy=EvolutionStrategy(
+                target_files=[], optimization_goal="g", proposed_changes="x",
+            ),
+            eval_result=EvaluationResult(score=0.3, passed=0, failed=10),
+            project_metrics={"no_plan_rate": 0.42},
+        )
+        bs.suggest(
+            block="verifiers", agent_dir=self.agent_dir, out_dir=self.out_dir,
+            node_id=0, feedback=feedback,
+        )
+        self.assertIn("project metrics:", captured["user"])
+        self.assertIn("no_plan_rate: 0.420", captured["user"])
+
+    def test_no_plan_rate_absent_omits_the_project_metrics_section(self) -> None:
+        from meta_agent.models import AgentFeedback, EvaluationResult, EvolutionStrategy
+
+        captured: dict[str, str] = {}
+
+        def fake_llm(**kwargs):
+            captured["user"] = kwargs["messages"][1]["content"]
+            return SimpleNamespace(content="a suggestion")
+
+        bs = BlockSuggester(llm_caller=fake_llm)
+        feedback = AgentFeedback(
+            round_number=0, base_round=0,
+            strategy=EvolutionStrategy(
+                target_files=[], optimization_goal="g", proposed_changes="x",
+            ),
+            eval_result=EvaluationResult(score=0.3, passed=0, failed=10),
+        )
+        bs.suggest(
+            block="verifiers", agent_dir=self.agent_dir, out_dir=self.out_dir,
+            node_id=0, feedback=feedback,
+        )
+        self.assertNotIn("no_plan_rate", captured["user"])
+        self.assertNotIn("project metrics:", captured["user"])
+
+    def test_project_metrics_top_failed_checks_reaches_the_feedback_digest(self) -> None:
+        # The core regression this change fixes: top_failed_checks (and
+        # anything else in project_metrics) used to be entirely invisible
+        # to the block suggester -- only no_plan_rate was special-cased.
+        from meta_agent.models import AgentFeedback, EvaluationResult, EvolutionStrategy
+
+        captured: dict[str, str] = {}
+
+        def fake_llm(**kwargs):
+            captured["user"] = kwargs["messages"][1]["content"]
+            return SimpleNamespace(content="a suggestion")
+
+        bs = BlockSuggester(llm_caller=fake_llm)
+        feedback = AgentFeedback(
+            round_number=0, base_round=0,
+            strategy=EvolutionStrategy(
+                target_files=[], optimization_goal="g", proposed_changes="x",
+            ),
+            eval_result=EvaluationResult(score=0.3, passed=0, failed=10),
+            project_metrics={
+                "top_failed_checks": [["check_a", 5], ["check_b", 2]]
+            },
+        )
+        bs.suggest(
+            block="verifiers", agent_dir=self.agent_dir, out_dir=self.out_dir,
+            node_id=0, feedback=feedback,
+        )
+        self.assertIn("check_a", captured["user"])
+        self.assertIn("check_b", captured["user"])
+
+    def test_project_metrics_cap_is_ten_not_five_or_fifteen(self) -> None:
+        from meta_agent.models import AgentFeedback, EvaluationResult, EvolutionStrategy
+
+        captured: dict[str, str] = {}
+
+        def fake_llm(**kwargs):
+            captured["user"] = kwargs["messages"][1]["content"]
+            return SimpleNamespace(content="a suggestion")
+
+        bs = BlockSuggester(llm_caller=fake_llm)
+        feedback = AgentFeedback(
+            round_number=0, base_round=0,
+            strategy=EvolutionStrategy(
+                target_files=[], optimization_goal="g", proposed_changes="x",
+            ),
+            eval_result=EvaluationResult(score=0.3, passed=0, failed=10),
+            project_metrics={
+                "top_failed_checks": [[f"check_{i}", 15 - i] for i in range(15)]
+            },
+        )
+        bs.suggest(
+            block="verifiers", agent_dir=self.agent_dir, out_dir=self.out_dir,
+            node_id=0, feedback=feedback,
+        )
+        shown = sum(
+            1 for i in range(15) if f"check_{i}:" in captured["user"]
+        )
+        self.assertEqual(shown, 10)
+
 
 if __name__ == "__main__":
     unittest.main()

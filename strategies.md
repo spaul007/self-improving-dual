@@ -75,5 +75,15 @@ suggester is assigned that block). Block names must match
 - A retry loop needs both a per-attempt limit and an overall limit, not
   just one — otherwise many bounded attempts can still add up to an
   unbounded wait.
+- Consider whether an existing budget/capacity knob is simply set too
+  tight before adding new logic — retry counts, tool-calling iteration
+  caps, and max output tokens are all easy to under-provision, and a
+  capacity limit hit mid-task can silently discard otherwise-good
+  progress rather than failing loudly.
+- If a role's own tool-calling via the LLM is unreliable (skipped calls,
+  wrong arguments, inconsistent invocation), consider having the code
+  call the tool directly and deterministically instead, then pass its
+  result into the prompt as context — this removes the LLM from a step
+  it doesn't actually need to perform itself.
 - Be cautious with shared/foundational changes — they affect every role at
   once.
