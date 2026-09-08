@@ -102,6 +102,28 @@ class RenderStrategiesTests(unittest.TestCase):
         bs = self._bs(strategies_path=str(self.path))
         self.assertEqual(bs._render_strategies("individual_subagent"), "")
 
+    def test_mixed_gets_every_block_section_not_just_one(self) -> None:
+        self.path.write_text(
+            "## General\n- gen rule\n\n"
+            "## Block: verifiers\n- verifiers rule\n\n"
+            "## Block: individual_subagent\n- subagent rule\n\n"
+            "## Block: collaboration_workflow\n- collab rule\n\n"
+            "## Block: foundation_capability\n- foundation rule\n",
+            encoding="utf-8",
+        )
+        bs = self._bs(strategies_path=str(self.path))
+        rendered = bs._render_strategies("mixed")
+        for expected in (
+            "gen rule", "verifiers rule", "subagent rule",
+            "collab rule", "foundation rule",
+        ):
+            self.assertIn(expected, rendered)
+
+    def test_mixed_with_no_sections_at_all_yields_empty_string(self) -> None:
+        self.path.write_text("no headers here\n", encoding="utf-8")
+        bs = self._bs(strategies_path=str(self.path))
+        self.assertEqual(bs._render_strategies("mixed"), "")
+
     def test_relative_path_resolved_against_cwd(self) -> None:
         self.path.write_text("## General\n- rel rule\n", encoding="utf-8")
         import os
@@ -151,6 +173,27 @@ class SuggestIntegrationTests(unittest.TestCase):
             node_id=0,
         )
         self.assertEqual(result, "a suggestion")
+        self.assertIn("always ground values in real data", captured["system"])
+        self.assertIn("make sure checks are acted on downstream", captured["system"])
+
+    def test_mixed_block_is_accepted_and_gets_every_strategies_section(self) -> None:
+        captured: dict[str, str] = {}
+
+        def fake_llm(**kwargs):
+            captured["system"] = kwargs["messages"][0]["content"]
+            return SimpleNamespace(content="a mixed suggestion")
+
+        bs = BlockSuggester(
+            llm_caller=fake_llm, strategies_path=str(self.strategies_path)
+        )
+        result = bs.suggest(
+            block="mixed", agent_dir=self.agent_dir, out_dir=self.out_dir, node_id=0,
+        )
+        self.assertEqual(result, "a mixed suggestion")
+        self.assertIn("## Block: mixed", captured["system"])
+        self.assertIn("All strategies in strategies.md are applicable", captured["system"])
+        # Both sections from self.strategies_path reach a mixed-block
+        # prompt, not just one filtered slice.
         self.assertIn("always ground values in real data", captured["system"])
         self.assertIn("make sure checks are acted on downstream", captured["system"])
 

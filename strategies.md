@@ -13,9 +13,10 @@ particular run's results.
 
 Format: a `## General` section (always shown, every block), plus one
 `## Block: <name>` section per canonical block (shown only when the
-suggester is assigned that block). Block names must match
+suggester is assigned that block; `mixed` sees every block's section at
+once, not just its own). Block names must match
 `block_suggester.py::_BLOCK_BODIES`'s keys exactly: `individual_subagent`,
-`collaboration_workflow`, `foundation_capability`, `verifiers`.
+`collaboration_workflow`, `foundation_capability`, `verifiers`, `mixed`.
 
 ## General
 
@@ -26,6 +27,13 @@ suggester is assigned that block). Block names must match
 - To make an inherently stochastic step more reliable, consider retries,
   backoff, or sampling multiple times and picking the most consistent
   answer.
+- When the model already knows a rule but doesn't reliably follow it,
+  retrying with explicit feedback on exactly which constraint(s) failed
+  typically helps more than only re-wording the original instruction.
+- Some violations in an already-generated output can be corrected directly
+  in code after the fact (no LLM call needed) rather than asking the model
+  to redo it — e.g. rewriting a mismatched value once the correct one is
+  known deterministically.
 - Prefer the smallest change that addresses the diagnosed problem.
 - Ground the diagnosis in something actually observed, not a plausible
   guess.

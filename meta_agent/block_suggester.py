@@ -376,6 +376,58 @@ _BLOCK_BODIES: dict[str, str] = {
         "(the specific stage/function and point within it). Concrete "
         "enough to implement, described in prose, not code."
     ),
+    "mixed": (
+        "## Block: mixed\n\n"
+        "Scope: the ENTIRE harness -- every role's own prompt/logic "
+        "(individual_subagent), the sequencing and message handoffs "
+        "between roles (collaboration_workflow), shared substrate used "
+        "by every role (foundation_capability), and quality-enforcing "
+        "checks (verifiers), all simultaneously in scope for ONE "
+        "suggestion. This block exists for a real, common case the other "
+        "four deliberately cannot cover: a single failure whose correct "
+        "fix genuinely spans more than one of them at once -- e.g. a "
+        "shared retry primitive (foundation_capability) that ALSO needs "
+        "one specific role's prompt updated to use it correctly "
+        "(individual_subagent), or a verifier you're adding "
+        "(verifiers) that ALSO requires a new field in what one stage "
+        "sends another so the verifier has something to check "
+        "(collaboration_workflow). Where the other four blocks force you "
+        "to justify staying within one layer, this block is exactly the "
+        "escape valve for when that scoping would produce an incomplete, "
+        "half-working fix.\n\n"
+        "This is NOT a default or a shortcut. Reserve it for a diagnosis "
+        "that is GENUINELY cross-cutting -- where you can name, "
+        "specifically, which two or more of the other four blocks the "
+        "fix touches and why each part is necessary for the fix to work "
+        "at all (cutting either part would leave the problem "
+        "unresolved). If, on reflection, your diagnosis actually fits "
+        "cleanly within ONE of the other four blocks, use that block "
+        "instead and say so -- picking `mixed` merely because a broad "
+        "fix is easier to describe, or because you'd rather not commit "
+        "to one layer, is not a valid reason and defeats the purpose of "
+        "block-scoped diagnosis.\n\n"
+        "All strategies in strategies.md are applicable here, not a "
+        "single filtered section -- since a mixed-block fix can touch "
+        "any layer, every block's own strategies are in scope "
+        "simultaneously; use whichever combination the diagnosis "
+        "actually calls for.\n\n"
+        "Diagnose a real, specific problem whose fix necessarily spans "
+        "multiple layers, and be explicit about the split: which part of "
+        "the fix belongs to which of the other four blocks' territory, "
+        "and why each part alone would be insufficient.\n\n"
+        "Output a short markdown suggestion with:\n"
+        "  - **Target**: every component you are diagnosing across "
+        "layers (name each shared constant/function, role file, "
+        "sequencing call site, or check, and which of the other four "
+        "blocks' territory it belongs to).\n"
+        "  - **Diagnosis**: the specific, evidence-grounded problem, and "
+        "why a fix confined to just one of those layers would be "
+        "incomplete (cite what you read).\n"
+        "  - **Proposed change**: what to change in EACH touched layer, "
+        "concrete enough to implement, described in prose, not code -- "
+        "structure this as one sub-bullet per layer touched so the "
+        "editor can implement each part."
+    ),
 }
 
 
@@ -542,7 +594,13 @@ class BlockSuggester:
         neither section is present for this block -- reading a curated
         strategies file is a nice-to-have, never a reason to fail the
         round. Read fresh every call (not cached) so edits to the file
-        apply on the very next EXPAND."""
+        apply on the very next EXPAND.
+
+        ``block == "mixed"`` is a special case: since a mixed-block
+        suggestion may legitimately span any of the other blocks' own
+        territory, EVERY block-specific section is included (not just one),
+        sorted by section name for determinism -- "all strategies are
+        applicable" for this block, not a single filtered slice."""
         if not self.strategies_path:
             return ""
         path = Path(self.strategies_path)
@@ -558,9 +616,14 @@ class BlockSuggester:
         general = sections.get("general")
         if general:
             parts.append(general)
-        specific = sections.get(block)
-        if specific:
-            parts.append(specific)
+        if block == "mixed":
+            for name in sorted(sections):
+                if name != "general":
+                    parts.append(sections[name])
+        else:
+            specific = sections.get(block)
+            if specific:
+                parts.append(specific)
         if not parts:
             return ""
         return "\n\n## Strategies to consider\n\n" + "\n\n".join(parts)

@@ -335,15 +335,29 @@ class HGMManagerBlockInitialRankingWiringTests(unittest.TestCase):
         self.assertIsNone(m._block_bandit.initial_block_ranking)
 
     def test_manager_forwards_ranking_and_strength_to_the_bandit(self) -> None:
+        # Must be a permutation of ALL of block_suggester's current blocks
+        # (BlockBandit's default `blocks` -- see
+        # test_default_blocks_come_from_block_suggester), not a fixed
+        # literal 4 -- keeps this test correct automatically as blocks are
+        # added/renamed there (e.g. "mixed").
+        from meta_agent.block_suggester import _BLOCK_BODIES
+
         ranking = [
             "foundation_capability", "individual_subagent",
             "verifiers", "collaboration_workflow",
-        ]
+        ] + sorted(set(_BLOCK_BODIES) - {
+            "foundation_capability", "individual_subagent",
+            "verifiers", "collaboration_workflow",
+        })
         m = HGMManager(
             block_initial_ranking=ranking, block_initial_rank_strength=3.0,
         )
         self.assertEqual(m._block_bandit.initial_block_ranking, tuple(ranking))
-        self.assertEqual(m._block_bandit._initial_success_bonus["foundation_capability"], 9.0)
+        # Rank 0 (most-preferred) gets (len(ranking) - 1) * strength.
+        self.assertEqual(
+            m._block_bandit._initial_success_bonus["foundation_capability"],
+            (len(ranking) - 1) * 3.0,
+        )
 
     def test_invalid_ranking_rejected_at_construction(self) -> None:
         with self.assertRaises(ValueError):
