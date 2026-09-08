@@ -1078,7 +1078,7 @@ class HGMManager:
             return {}
         return {
             k: v for k, v in data.items()
-            if isinstance(k, str) and isinstance(v, str)
+            if isinstance(k, str) and isinstance(v, str) and k != "_comment"
         }
 
     def _load_curriculum_check_descriptions(self) -> Optional[dict[str, str]]:
