@@ -1039,65 +1039,103 @@ class AgentEditor:
                     )
                     files = [{"path": p, "content": c} for p, c in written.items()]
                     return strategy, files
-                if malformed:
-                    output = (
-                        "ERROR: your arguments were not valid JSON and could "
-                        "not be parsed. Make sure you return a valid JSON "
-                        "object: double-check that every string value -- "
-                        "especially `content` -- has its quotes, "
-                        "backslashes, and newlines properly escaped. Retry "
-                        f"this {call.name} call."
-                    )
-                elif call.name == "read_file":
-                    path = (args.get("path") or "").lstrip("/")
-                    if self._is_path_allowed(path):
-                        fpath = agent_dir / path
+                try:
+                    if malformed:
                         output = (
-                            fpath.read_text(encoding="utf-8")
-                            if fpath.exists() else f"(file not found: {path})"
+                            "ERROR: your arguments were not valid JSON and could "
+                            "not be parsed. Make sure you return a valid JSON "
+                            "object: double-check that every string value -- "
+                            "especially `content` -- has its quotes, "
+                            "backslashes, and newlines properly escaped. Retry "
+                            f"this {call.name} call."
                         )
+                    elif call.name == "read_file":
+                        path = (args.get("path") or "").lstrip("/")
+                        if not self._is_path_allowed(path):
+                            output = (
+                                f"ERROR: {path!r} is not readable/editable "
+                                "here -- see the '## Files you may "
+                                "read/edit' list above for what's available."
+                            )
+                        else:
+                            fpath = agent_dir / path
+                            if fpath.is_dir():
+                                # A real, reproducible crash otherwise: the
+                                # model can ask for a bare directory name
+                                # (e.g. "agents") since _is_path_allowed
+                                # only checks the exclude list, not whether
+                                # the path is actually a file -- read_text()
+                                # on a directory raises IsADirectoryError,
+                                # which would kill the whole HGM process
+                                # uncaught. Confirmed live in production.
+                                try:
+                                    entries = sorted(
+                                        e.name + ("/" if e.is_dir() else "")
+                                        for e in fpath.iterdir()
+                                    )
+                                except OSError:
+                                    entries = []
+                                output = (
+                                    f"ERROR: {path!r} is a directory, not a "
+                                    "file -- read one of its contents "
+                                    "instead: " + (", ".join(entries) or "(empty)")
+                                )
+                            elif fpath.exists():
+                                output = fpath.read_text(encoding="utf-8")
+                            else:
+                                output = f"(file not found: {path})"
+                    elif call.name == "write_file":
+                        path = (args.get("path") or "").lstrip("/")
+                        content = args.get("content")
+                        if content is None or not path:
+                            output = (
+                                "ERROR: write_file requires both a non-empty "
+                                "`path` and a `content` string."
+                            )
+                        elif not self._is_path_allowed(path):
+                            output = (
+                                f"ERROR: forbidden edit path {path!r} -- allowed "
+                                f"paths are: {', '.join(available_paths) or '(none)'}"
+                            )
+                        else:
+                            target = agent_dir / path
+                            if target.is_dir():
+                                output = (
+                                    f"ERROR: {path!r} is a directory, not a "
+                                    "file -- specify a file path inside it."
+                                )
+                            else:
+                                target.parent.mkdir(parents=True, exist_ok=True)
+                                target.write_text(content, encoding="utf-8")
+                                written[path] = content
+                                output = f"written {path} ({len(content)} chars)"
+                    elif call.name == "run_code_validators":
+                        errors = self._run_validators(out_dir, base_dir)
+                        output = (
+                            "All validators passed." if not errors
+                            else "Validator errors:\n" + "\n".join(f"- {e}" for e in errors)
+                        )
+                    elif call.name == "submit_self_improvement_summary":
+                        strategy = EvolutionStrategy(
+                            target_files=sorted(written),
+                            optimization_goal=_coerce_str(args.get("optimization_goal")),
+                            proposed_changes=_coerce_str(args.get("proposed_changes")),
+                            rationale=_coerce_str(args.get("rationale")),
+                        )
+                        files = [{"path": p, "content": c} for p, c in written.items()]
+                        return strategy, files
                     else:
-                        output = (
-                            f"ERROR: {path!r} is not readable/editable here -- "
-                            "see the '## Files you may read/edit' list above "
-                            "for what's available."
-                        )
-                elif call.name == "write_file":
-                    path = (args.get("path") or "").lstrip("/")
-                    content = args.get("content")
-                    if content is None or not path:
-                        output = (
-                            "ERROR: write_file requires both a non-empty "
-                            "`path` and a `content` string."
-                        )
-                    elif self._is_path_allowed(path):
-                        target = agent_dir / path
-                        target.parent.mkdir(parents=True, exist_ok=True)
-                        target.write_text(content, encoding="utf-8")
-                        written[path] = content
-                        output = f"written {path} ({len(content)} chars)"
-                    else:
-                        output = (
-                            f"ERROR: forbidden edit path {path!r} -- allowed "
-                            f"paths are: {', '.join(available_paths) or '(none)'}"
-                        )
-                elif call.name == "run_code_validators":
-                    errors = self._run_validators(out_dir, base_dir)
+                        output = f"ERROR: unknown tool {call.name!r}."
+                except Exception as exc:  # noqa: BLE001 -- any other
+                    # unexpected OS/filesystem error from a single tool
+                    # call (permissions, encoding, etc.) must degrade to an
+                    # in-conversation error the model can react to, never
+                    # crash the whole HGM process -- same principle as the
+                    # outer LLM-call-failure guard above.
                     output = (
-                        "All validators passed." if not errors
-                        else "Validator errors:\n" + "\n".join(f"- {e}" for e in errors)
+                        f"ERROR: {call.name} raised {exc!r} on this call -- "
+                        "try different arguments."
                     )
-                elif call.name == "submit_self_improvement_summary":
-                    strategy = EvolutionStrategy(
-                        target_files=sorted(written),
-                        optimization_goal=_coerce_str(args.get("optimization_goal")),
-                        proposed_changes=_coerce_str(args.get("proposed_changes")),
-                        rationale=_coerce_str(args.get("rationale")),
-                    )
-                    files = [{"path": p, "content": c} for p, c in written.items()]
-                    return strategy, files
-                else:
-                    output = f"ERROR: unknown tool {call.name!r}."
 
                 history.append({
                     "type": "function_call_output",

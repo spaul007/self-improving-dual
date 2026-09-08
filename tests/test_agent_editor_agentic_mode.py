@@ -169,6 +169,74 @@ class AgenticModeTests(unittest.TestCase):
         result = self._apply(fake_llm, agentic_editing=True)
         self.assertEqual(result.edited_files, [])
 
+    def test_read_file_on_a_directory_path_does_not_crash(self) -> None:
+        """Real production crash (confirmed live 2026-09-08): in
+        mutable_exclude mode, _is_path_allowed only checks the exclude
+        list, not whether the path is actually a file -- a bare directory
+        name like "agents" is allowed (nothing excludes it) but
+        Path.read_text() on a directory raises IsADirectoryError, which
+        used to propagate uncaught and kill the whole HGM process the
+        first time an agentic-editing model asked to read a directory
+        instead of one of its files."""
+        agents_dir = self.tmp_base / "base" / "task_agent" / "agents"
+        agents_dir.mkdir()
+        (agents_dir / "sightseeing.py").write_text("X = 1\n", encoding="utf-8")
+
+        turns: list[dict] = []
+
+        def fake_llm(**kwargs):
+            turns.append(kwargs)
+            if len(turns) == 1:
+                return SimpleNamespace(
+                    content="", tool_calls=[_call("read_file", {"path": "agents"}, "c1")]
+                )
+            last_output = kwargs["messages"][-1]
+            self.assertIn("directory", last_output["output"])
+            return SimpleNamespace(content="", tool_calls=[_call(
+                "submit_self_improvement_summary",
+                {"optimization_goal": "g", "proposed_changes": "p", "rationale": "r"},
+                "c2",
+            )])
+
+        # The real point of this test: apply() returns a normal result
+        # object at all -- IsADirectoryError never propagates and crashes
+        # the whole HGM process. Since the model never wrote a real file
+        # in this scripted trial, apply()'s existing "no file edits"
+        # outcome is the expected (not a new) failure mode here.
+        result = self._apply(fake_llm, agentic_editing=True, mutable_exclude=[])
+        self.assertEqual(result.errors, ["editor returned no file edits"])
+        self.assertEqual(result.edited_files, [])
+
+    def test_write_file_on_a_directory_path_does_not_crash(self) -> None:
+        agents_dir = self.tmp_base / "base" / "task_agent" / "agents"
+        agents_dir.mkdir()
+
+        turns: list[dict] = []
+
+        def fake_llm(**kwargs):
+            turns.append(kwargs)
+            if len(turns) == 1:
+                return SimpleNamespace(
+                    content="",
+                    tool_calls=[_call("write_file", {"path": "agents", "content": "x = 1\n"}, "c1")],
+                )
+            last_output = kwargs["messages"][-1]
+            self.assertIn("directory", last_output["output"])
+            return SimpleNamespace(content="", tool_calls=[_call(
+                "submit_self_improvement_summary",
+                {"optimization_goal": "g", "proposed_changes": "p", "rationale": "r"},
+                "c2",
+            )])
+
+        # The real point of this test: apply() returns a normal result
+        # object at all -- IsADirectoryError never propagates and crashes
+        # the whole HGM process. Since the model never wrote a real file
+        # in this scripted trial, apply()'s existing "no file edits"
+        # outcome is the expected (not a new) failure mode here.
+        result = self._apply(fake_llm, agentic_editing=True, mutable_exclude=[])
+        self.assertEqual(result.errors, ["editor returned no file edits"])
+        self.assertEqual(result.edited_files, [])
+
     def test_malformed_write_file_args_recovers_on_retry(self) -> None:
         def fake_llm(**kwargs):
             n = sum(1 for m in kwargs["messages"] if m.get("type") == "function_call_output")
