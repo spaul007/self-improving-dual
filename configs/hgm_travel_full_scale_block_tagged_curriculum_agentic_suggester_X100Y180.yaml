@@ -1,0 +1,162 @@
+# Production run: same sizing/manager/models as
+# hgm_travel_full_scale_block_tagged_no_summarizer_X100Y180.yaml (the
+# local-vLLM production run: eval_budget=18000, hgm_block_tagged manager,
+# adaptive block selection + repeat-eligible dripping, full 120-case
+# benchmark, 60 train / 60 held-out validation, stratified by trip length,
+# seed=42, behavior summarizer omitted), with two deliberate differences
+# requested 2026-09-08:
+#
+#   1. Curriculum (meta_agent/curriculum.py) is turned ON, wired the same
+#      way as hgm_travel_full_scale_openrouter_deepseek_editor_curriculum_
+#      X100Y180.yaml (curriculum_enabled: true, code defaults for
+#      resolution_threshold/patience, goals auto-inferred from the seed's
+#      own project_metrics, error_semantics.json /
+#      harness_error_semantics.json for concrete per-goal descriptions).
+#
+#   2. block_suggester's new opt-in agentic_access mode is turned ON
+#      (meta_agent/block_suggester.py) -- instead of a single upfront dump
+#      of every mutable source file, the suggester gets read-only
+#      `read_file`/`grep` tools over the harness source AND (new, never
+#      available in non-agentic mode) this parent node's own real
+#      evaluation logs (eval_result.json, per-case logs, trace.jsonl), so
+#      it can ground a diagnosis in a specific cited case/violation
+#      instead of the curated feedback digest alone. Confirmed live this
+#      session (see test_qwen_agentic_diagnosis.py / MEMORY) that this
+#      kind of access lets Qwen3.5-122B-A10B independently derive
+#      concrete root causes the digest alone never surfaced.
+#
+#   3. editor's opt-in agentic_editing mode is also turned ON
+#      (meta_agent/agent_editor.py) -- one `write_file` call per changed
+#      file in a multi-turn loop with the real validator suite available
+#      as a tool, instead of one `submit_self_improvement` call bundling
+#      every changed file's full content (the shape that caused a real,
+#      reproducible malformed-JSON failure rate with DeepSeek as editor;
+#      already running in production for the OpenRouter/DeepSeek
+#      curriculum run). Same Qwen3.5-122B-A10B editor model as the
+#      no_summarizer production config, just with this mode on.
+#
+# Every other component (task_agent, failure_summarizer, all local-vLLM
+# endpoints, no summarizer, same validators) is unchanged from the
+# no_summarizer production config -- this is its curriculum+agentic
+# counterpart, not a redesign.
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_full_scale_block_tagged_curriculum_agentic_suggester_X100Y180.yaml
+#
+# Double-check the task_agent/editor/block_suggester vLLM endpoints below
+# against whatever's actually live before running -- this is a long,
+# expensive run.
+
+experiment_name: "travel_mas_refactored_full_scale_block_tagged_curriculum_agentic_suggester_X100Y180"
+project: "travel_mas_refactored"
+
+mutable_exclude:
+  - "workflow.py"
+  - "benchmark/"
+  - "agents/immutable/"
+
+loop:
+  max_rounds: 130
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.5-35B-A3B"
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+
+manager:
+  type: "hgm_block_tagged"
+  config:
+    eval_budget: 18000
+    init_expansions: 2
+    alpha: 0.470005
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 32
+    eval_repeats: 2  # >1 = repeats enabled (on/off switch, not a cap)
+    finalize_top_k: 5
+    full_eval_top_k: 0
+    seed: 42
+    block_selection_strategy: "adaptive"
+    curriculum_enabled: true
+    curriculum_resolution_threshold: 0.15
+    curriculum_patience: 5
+    curriculum_check_descriptions_path: "projects/travel_mas_refactored/adapter/error_semantics.json"
+    curriculum_harness_error_descriptions_path: "projects/travel_mas_refactored/adapter/harness_error_semantics.json"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    parallelism: 32
+    scorer: "travel_mas_refactored_default"
+
+gatherer:
+  type: "default"
+  config:
+    # Groups per-case failures by category (e.g. reasonable_transfer_time,
+    # traceable_accommodation) with representative examples, instead of
+    # degrading to 3 arbitrary hardest-cases -- reused verbatim from
+    # projects/travel (pure schema-logic over dimension_details/
+    # hard_constraints/failed_checks, which travel_mas_refactored's own
+    # scorer emits identically).
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+    n_hard_cases: 1
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    max_attempts: 2
+    agentic_editing: true
+    agentic_max_turns: 100
+
+# behavior summarizer (`summarizer:`) DELIBERATELY OMITTED, matching the
+# production config this run is the curriculum+agentic counterpart of --
+# meta_agent/config.py's cfg.summarizer stays None. error_categorizer and
+# failure_summarizer are both kept on.
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+block_suggester:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    strategies_path: "strategies.md"
+    agentic_access: true
+    agentic_max_turns: 100
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-35B-A3B"
+
+split:
+  seed: 42
+  train_size: 60
+  eval_size: 60
+  stratify_by: "meta_info.days"
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+    config:
+      workflow_filenames: ["workflow.py", "mas_workflow.py"]
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"
+  - type: "undefined_names"
+  - type: "smoke_test"

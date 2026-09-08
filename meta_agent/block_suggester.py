@@ -26,6 +26,8 @@ per-node evaluation artifacts.
 """
 from __future__ import annotations
 
+import json
+import re
 import traceback
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -85,6 +87,89 @@ _SYSTEM_CLOSING = (
     "conflict between 'follow the suggestion' and 'be different from "
     "siblings' -- that reconciliation is your job, not its."
 )
+
+# Opt-in agentic mode (see AgentEditor.agentic_editing for the sibling
+# feature this mirrors): instead of the full mutable-source dump being
+# shown upfront, the model gets a `read_file` tool to inspect it on
+# demand, PLUS access this non-agentic mode never had at all -- this
+# parent node's own real evaluation logs (per-case results, converted
+# plans, and execution traces), via `grep`/`read_file` over the same
+# eval_result.json/logs/ artifacts feedback_gatherer.py already writes for
+# every node. Confirmed live this session: giving a model this kind of
+# access let it independently derive root-cause diagnoses (a specific
+# regex bug in a harness validator, an exact prompt-rule violation) that
+# the curated feedback digest alone never surfaced a single concrete
+# example of.
+_SYSTEM_CLOSING_AGENTIC = (
+    "\n\nYou have two read-only tools: `read_file(path)` and "
+    "`grep(path, pattern)` (grep returns a window centered on each match, "
+    "not just a line's start -- use it for any file too large to read "
+    "whole, especially 'logs/trace.jsonl'). Paths are alias-rooted -- call "
+    "read_file('.') is not needed, the aliases are exactly: 'harness/...' "
+    "(the current mutable source you're diagnosing -- read any file "
+    "before citing it, don't guess at its contents), 'logs/...' (this "
+    "parent node's own real per-case evaluation logs -- each "
+    "'logs/case_<id>.json' has a 'converted_plan' field with the exact "
+    "structured output that was scored and a 'raw_plan_text' field with "
+    "the literal text, plus 'logs/trace.jsonl', real tool_call/"
+    "tool_result/llm_call events -- use grep on it, it can be large), and "
+    "'eval_result.json' (every case's score and, per check, its exact "
+    "pass/fail and violation message). Use these to ground your diagnosis "
+    "in a real, specific, cited example -- a concrete case_id and the "
+    "exact evidence you found for it -- rather than the feedback digest "
+    "alone.\n\n"
+    "When you are ready, respond with your final answer as plain markdown "
+    "text (NOT a tool call) -- stay under 400 words. If the evidence "
+    "available to you is too thin to support a specific diagnosis for "
+    "this block (e.g. no failing case actually touches it yet), say so "
+    "explicitly rather than inventing one; a hedged 'no strong signal for "
+    "this block yet' is a valid and useful answer.\n\n"
+    "If sibling edits already tried off this same parent are shown below, "
+    "your suggestion must differ from them -- but this NEVER means "
+    "leaving the block described above. Siblings may have targeted a "
+    "DIFFERENT block entirely (e.g. one sibling touched "
+    "individual_subagent while you are assigned collaboration_workflow) "
+    "-- in that case it already differs from yours by construction and "
+    "does not need to change anything about your diagnosis; do not let "
+    "it pull you toward that other block's territory. When a sibling DID "
+    "target this SAME block, differentiate within it: a different aspect "
+    "of the diagnosis, a different failing case, or a different specific "
+    "bug -- never by switching to a different block just to be "
+    "different. The downstream editor is expected to implement your "
+    "suggestion largely as given, not to independently resolve a "
+    "conflict between 'follow the suggestion' and 'be different from "
+    "siblings' -- that reconciliation is your job, not its."
+)
+
+AGENTIC_READ_FILE_TOOL: dict[str, Any] = {
+    "name": "read_file",
+    "description": "Read a text file. Paths are alias-rooted: 'harness/<rel>', 'logs/<rel>', or 'eval_result.json'.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "offset": {"type": "integer", "description": "Starting line number (0-indexed)."},
+            "limit": {"type": "integer", "description": "Max lines to return."},
+        },
+        "required": ["path"],
+    },
+}
+
+AGENTIC_GREP_TOOL: dict[str, Any] = {
+    "name": "grep",
+    "description": "Search a file line-by-line for a regex pattern, returning a window around each match (not just the line's start -- safe for a very long single line).",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "pattern": {"type": "string"},
+            "max_matches": {"type": "integer"},
+        },
+        "required": ["path", "pattern"],
+    },
+}
+
+_AGENTIC_TOOLS: list[dict[str, Any]] = [AGENTIC_READ_FILE_TOOL, AGENTIC_GREP_TOOL]
 
 
 def _parse_strategies_md(text: str) -> dict[str, str]:
@@ -466,6 +551,16 @@ class BlockSuggester:
         # every suggest() call, not cached at construction, so edits apply
         # to the very next EXPAND without a restart.
         strategies_path: Optional[str] = None,
+        # Opt-in: replace the upfront full-mutable-source dump with an
+        # on-demand read_file tool, and additionally expose this parent
+        # node's own real evaluation logs (eval_result.json, per-case
+        # logs, trace.jsonl) via read_file/grep -- data the non-agentic
+        # path never sees at all. False (default) reproduces today's
+        # exact behavior for every existing config. See
+        # _suggest_agentic and the module-level AGENTIC_*_TOOL schemas.
+        agentic_access: bool = False,
+        # Bounds the agentic loop (one LLM round-trip per turn).
+        agentic_max_turns: int = 20,
     ) -> None:
         self.llm = llm_caller
         self.model = model
@@ -477,6 +572,8 @@ class BlockSuggester:
         self.mutable_exclude = mutable_exclude
         self.max_output_tokens = max_output_tokens
         self.strategies_path = strategies_path
+        self.agentic_access = agentic_access
+        self.agentic_max_turns = agentic_max_turns
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -525,6 +622,19 @@ class BlockSuggester:
         except OSError as exc:
             print(f"[block_suggester] failed to read sources: {exc!r}", flush=True)
             return None
+
+        if self.agentic_access:
+            return self._suggest_agentic(
+                block=block,
+                agent_dir=agent_dir,
+                out_dir=out_dir,
+                node_id=node_id,
+                feedback=feedback,
+                failure_summary=failure_summary,
+                siblings=siblings,
+                curriculum_directive=curriculum_directive,
+                sources=sources,
+            )
 
         system = (
             _SYSTEM_PREAMBLE + "\n\n" + _BLOCK_BODIES[block]
@@ -716,3 +826,280 @@ class BlockSuggester:
             kwargs["max_output_tokens"] = self.max_output_tokens
         response = self.llm(**kwargs)
         return getattr(response, "content", None) or ""
+
+    # ------------------------------------------------------------------ #
+    # Agentic mode (opt-in via agentic_access -- see __init__)
+    # ------------------------------------------------------------------ #
+
+    def _suggest_agentic(
+        self,
+        *,
+        block: str,
+        agent_dir: Path,
+        out_dir: Path,
+        node_id: int,
+        feedback: Optional[AgentFeedback],
+        failure_summary: Optional[str],
+        siblings: Optional[list[tuple[Optional[str], str]]],
+        curriculum_directive: Optional[str],
+        sources: dict[str, str],
+    ) -> Optional[str]:
+        """Agentic analogue of ``suggest()``: instead of dumping every
+        mutable source file's full content upfront, the model gets
+        `read_file`/`grep` tools to explore on demand -- plus access the
+        non-agentic path never has at all, this parent node's own real
+        evaluation logs (``agent_dir.parent`` is the parent's own
+        round_dir, which has its own eval_result.json/logs/ from when it
+        was last evaluated). A turn with no tool calls is the normal,
+        successful terminal case -- ``suggest()`` only ever needs
+        free-text output here, never a structured tool call. Returns None
+        under the same conditions ``suggest()`` does (LLM-call failure,
+        empty response) plus turn-budget exhaustion with no usable text."""
+        round_dir = agent_dir.parent
+
+        system = (
+            _SYSTEM_PREAMBLE + "\n\n" + _BLOCK_BODIES[block]
+            + self._render_strategies(block)
+            + self._render_curriculum_focus(curriculum_directive)
+            + _SYSTEM_CLOSING_AGENTIC
+        )
+
+        user_parts: list[str] = source_context.format_project_context(
+            tools_source=self.tools_source,
+            db_schema=self.db_schema,
+            scorer_source=self.scorer_source,
+        )
+        listing = "\n".join(f"  - harness/{p}" for p in sorted(sources)) or "  (none)"
+        user_parts.append(
+            "## Files you may read (via read_file/grep)\n"
+            f"{listing}\n\n"
+            "Plus 'logs/...' (this node's own real per-case evaluation "
+            "logs and trace.jsonl) and 'eval_result.json' (every case's "
+            "pass/fail and violation messages) -- see the tool "
+            "instructions above.\n"
+        )
+        user_parts.append(self._format_feedback_digest(feedback, failure_summary))
+        if siblings:
+            user_parts.append(self._format_siblings(block, siblings))
+
+        prompt_user = "\n".join(p for p in user_parts if p)
+
+        try:
+            (out_dir / "block_suggestion_prompt.txt").write_text(
+                f"### SYSTEM\n{system}\n\n### USER\n{prompt_user}", encoding="utf-8"
+            )
+        except OSError:
+            pass
+
+        history: list[dict[str, Any]] = [
+            {"role": "system", "content": system},
+            {"role": "user", "content": prompt_user},
+        ]
+
+        text = ""
+        for turn in range(self.agentic_max_turns):
+            kwargs: dict[str, Any] = {"messages": history, "tools": _AGENTIC_TOOLS}
+            if self.model:
+                kwargs["model"] = self.model
+            if self.reasoning_effort:
+                kwargs["reasoning_effort"] = self.reasoning_effort
+            else:
+                kwargs["temperature"] = 0.2
+            if self.base_url:
+                kwargs["base_url"] = self.base_url
+            if self.max_output_tokens is not None:
+                kwargs["max_output_tokens"] = self.max_output_tokens
+            try:
+                response = self.llm(**kwargs)
+            except Exception:
+                print(
+                    f"[block_suggester] agentic LLM call failed for node "
+                    f"{node_id} (block={block}, turn={turn}):\n"
+                    + traceback.format_exc(limit=3),
+                    flush=True,
+                )
+                return None
+
+            calls = getattr(response, "tool_calls", None) or []
+            if not calls:
+                text = (getattr(response, "content", None) or "").strip()
+                break
+
+            for idx, call in enumerate(calls):
+                call_id = (
+                    getattr(call, "id", None)
+                    or getattr(call, "call_id", None)
+                    or f"call_{turn}_{idx}"
+                )
+                args = call.arguments
+                # Same two malformed shapes agent_editor.py's own agentic
+                # loop guards against: platform_core.llm_wrapper.call_llm
+                # wraps a genuine JSON-parse failure as
+                # {"_raw_arguments": raw}, and a non-dict `args` (bare
+                # list/string/None) would otherwise crash a `.get()` call
+                # below.
+                malformed = not isinstance(args, dict) or "_raw_arguments" in args
+                history.append({
+                    "type": "function_call",
+                    "call_id": call_id,
+                    "name": call.name,
+                    "arguments": json.dumps(args if isinstance(args, dict) else {}),
+                })
+
+                if malformed:
+                    output = (
+                        "ERROR: your arguments were not valid JSON and "
+                        "could not be parsed. Make sure `path`/`pattern` "
+                        f"are valid JSON string values. Retry this "
+                        f"{call.name} call."
+                    )
+                elif call.name == "read_file":
+                    output = self._agentic_read_file(sources, round_dir, args)
+                elif call.name == "grep":
+                    output = self._agentic_grep(sources, round_dir, args)
+                else:
+                    output = f"ERROR: unknown tool {call.name!r}."
+
+                history.append({
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": output,
+                })
+
+        if not text:
+            print(
+                f"[block_suggester] agentic suggestion for node {node_id} "
+                f"(block={block}) exhausted {self.agentic_max_turns} turns "
+                "without a final answer — skipped",
+                flush=True,
+            )
+            return None
+
+        try:
+            (out_dir / "block_suggestion.md").write_text(text, encoding="utf-8")
+        except OSError:
+            pass
+        print(
+            f"[block_suggester] node {node_id}: wrote block_suggestion.md "
+            f"(block={block}, {len(text)} chars, agentic)",
+            flush=True,
+        )
+        return text
+
+    def _resolve_alias_path(
+        self, path: str, *, sources: dict[str, str], round_dir: Path
+    ) -> tuple[Optional[str], Any]:
+        """Resolve an alias-rooted path to either ``("harness", text)``
+        (served straight from the already-read ``sources`` dict, no disk
+        access) or ``("file", Path)`` (a real path under ``round_dir``,
+        still unresolved/unchecked-for-existence). Returns ``(None, error)``
+        when ``path`` doesn't match any known alias or a 'logs/' path
+        would escape its own root."""
+        path = (path or "").strip().lstrip("/")
+        if path == "eval_result.json":
+            return "file", round_dir / "eval_result.json"
+        if path.startswith("harness/"):
+            rel = path[len("harness/"):]
+            if rel not in sources:
+                return None, (
+                    f"ERROR: {path!r} not found -- available harness "
+                    f"files: {', '.join(sorted(sources)) or '(none)'}"
+                )
+            return "harness", sources[rel]
+        if path.startswith("logs/"):
+            rel = path[len("logs/"):]
+            logs_root = (round_dir / "logs").resolve()
+            target = (round_dir / "logs" / rel).resolve()
+            if target != logs_root and logs_root not in target.parents:
+                return None, f"ERROR: {path!r} escapes the logs/ root."
+            return "file", target
+        return None, (
+            f"ERROR: unrecognized path {path!r} -- paths must be exactly "
+            "'eval_result.json' or start with 'harness/' or 'logs/'."
+        )
+
+    def _agentic_read_file(
+        self, sources: dict[str, str], round_dir: Path, args: dict[str, Any]
+    ) -> str:
+        raw_path = args.get("path") or ""
+        kind, payload = self._resolve_alias_path(
+            raw_path, sources=sources, round_dir=round_dir
+        )
+        if kind is None:
+            return payload
+        if kind == "harness":
+            text = payload
+        else:
+            fpath = payload
+            if not fpath.exists() or not fpath.is_file():
+                return f"(file not found: {raw_path})"
+            try:
+                text = fpath.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                return f"ERROR reading {raw_path}: {exc!r}"
+        lines = text.splitlines()
+        offset = max(0, int(args.get("offset") or 0))
+        limit = args.get("limit")
+        limit = int(limit) if limit else 200
+        chunk_lines = lines[offset:offset + limit]
+        chunk = "\n".join(f"L{offset + i}: {line}" for i, line in enumerate(chunk_lines))
+        remaining = len(lines) - (offset + limit)
+        if remaining > 0:
+            chunk += (
+                f"\n\n[... {remaining} more lines -- call read_file again "
+                f"with offset={offset + limit} ...]"
+            )
+        return chunk if chunk else "(empty file or offset past end)"
+
+    def _agentic_grep(
+        self, sources: dict[str, str], round_dir: Path, args: dict[str, Any]
+    ) -> str:
+        raw_path = args.get("path") or ""
+        kind, payload = self._resolve_alias_path(
+            raw_path, sources=sources, round_dir=round_dir
+        )
+        if kind is None:
+            return payload
+        pattern = args.get("pattern") or ""
+        try:
+            rx = re.compile(pattern)
+        except re.error as exc:
+            return f"ERROR: invalid regex {pattern!r}: {exc!r}"
+        try:
+            max_matches = int(args.get("max_matches") or 12)
+        except (TypeError, ValueError):
+            max_matches = 12
+
+        matches: list[str] = []
+        if kind == "harness":
+            line_iter = enumerate(payload.splitlines())
+        else:
+            fpath = payload
+            if not fpath.exists() or not fpath.is_file():
+                return f"(file not found: {raw_path})"
+            try:
+                line_iter = enumerate(
+                    fpath.read_text(encoding="utf-8", errors="replace").splitlines()
+                )
+            except OSError as exc:
+                return f"ERROR reading {raw_path}: {exc!r}"
+
+        # Window CENTERED on the match, not the line's start -- a line can
+        # be thousands of chars long (e.g. a JSON string value holding an
+        # entire multi-day itinerary on one physical "line"), and the
+        # match can land far from its beginning. Confirmed live this
+        # session: returning only a line's first N chars made a real match
+        # deep in such a line undiscoverable.
+        for i, line in line_iter:
+            m = rx.search(line)
+            if not m:
+                continue
+            start = max(0, m.start() - 150)
+            end = min(len(line), m.end() + 350)
+            prefix = "..." if start > 0 else ""
+            suffix = "..." if end < len(line) else ""
+            snippet = f"{prefix}{line[start:end].strip()}{suffix}"
+            matches.append(f"L{i} (char {m.start()}): {snippet}")
+            if len(matches) >= max_matches:
+                break
+        return "\n".join(matches) if matches else "(no matches)"
