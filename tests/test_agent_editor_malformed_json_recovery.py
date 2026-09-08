@@ -206,5 +206,67 @@ class NoToolCallFallbackTargetFilesTests(unittest.TestCase):
         self.assertEqual(result.strategy.target_files, ["agents/sightseeing.py"])
 
 
+class LlmCallFailureDoesNotCrashTests(unittest.TestCase):
+    """Real bug this guards against: confirmed live 2026-09-07 -- a
+    75-generation-deep lineage's accumulated mutable source pushed a
+    single-shot editor prompt to 245K+ input tokens, exceeding
+    Qwen3.5-122B-A10B's 262144-token context window. OpenRouter/vLLM
+    raised openai.BadRequestError, and nothing caught it: it propagated
+    all the way up through apply() -> hgm.py::_expand() -> evolve() ->
+    main_loop.py, killing the entire multi-day HGM search process over a
+    single EXPAND's prompt being too large. Any llm_caller exception must
+    now degrade to a failed edit instead."""
+
+    def setUp(self) -> None:
+        self.tmp_base = Path(tempfile.mkdtemp(prefix="agent_editor_llm_failure_"))
+        self.addCleanup(lambda: shutil.rmtree(self.tmp_base, ignore_errors=True))
+        agent_dir = self.tmp_base / "base" / "task_agent"
+        agent_dir.mkdir(parents=True)
+        (agent_dir / "workflow.py").write_text(
+            "def run_task(task):\n    return None\n", encoding="utf-8"
+        )
+
+    def test_single_shot_llm_exception_degrades_to_failed_edit_not_a_crash(self) -> None:
+        def fake_llm(**kwargs):
+            raise RuntimeError(
+                "Error code: 400 - maximum context length is 262144 tokens..."
+            )
+
+        editor = AgentEditor(llm_caller=fake_llm, validators=[], max_attempts=1)
+        # Must not raise -- this is the entire point of the fix.
+        result = editor.apply(_feedback(), self.tmp_base / "base", self.tmp_base / "out")
+        self.assertFalse(result.success)
+        self.assertEqual(result.strategy.target_files, [])
+        self.assertIn("LLM call failed", result.strategy.optimization_goal)
+
+    def test_agentic_llm_exception_mid_conversation_keeps_files_already_written(self) -> None:
+        calls = {"n": 0}
+
+        def fake_llm(**kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return SimpleNamespace(
+                    content="",
+                    tool_calls=[
+                        SimpleNamespace(
+                            name="write_file",
+                            arguments={
+                                "path": "workflow.py",
+                                "content": "def run_task(task):\n    return 1\n",
+                            },
+                        )
+                    ],
+                )
+            raise RuntimeError("Error code: 400 - maximum context length...")
+
+        editor = AgentEditor(
+            llm_caller=fake_llm, validators=[], max_attempts=1,
+            agentic_editing=True, agentic_max_turns=5,
+        )
+        result = editor.apply(_feedback(), self.tmp_base / "base", self.tmp_base / "out")
+        self.assertEqual(result.edited_files, ["workflow.py"])
+        self.assertIn("LLM call failed", result.strategy.optimization_goal)
+
+
 if __name__ == "__main__":
     unittest.main()

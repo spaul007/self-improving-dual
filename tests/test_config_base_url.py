@@ -123,12 +123,15 @@ class EditorAndManagerBaseUrlTests(unittest.TestCase):
 
         captured: dict = {}
 
-        class _Stop(Exception):
-            pass
-
         def fake_llm(**kwargs):
             captured.update(kwargs)
-            raise _Stop()
+            # A raised exception here is now caught by _self_improve's own
+            # LLM-call-failure guard (any exception must degrade to a
+            # failed edit, never propagate and crash the whole HGM process
+            # -- see agent_editor.py's try/except around self.llm(...)),
+            # so this no longer needs a sentinel exception to stop early --
+            # any exception works, we just check the captured kwargs after.
+            raise RuntimeError("fake_llm intentionally stops here")
 
         editor = AgentEditor(
             llm_caller=fake_llm,
@@ -149,14 +152,13 @@ class EditorAndManagerBaseUrlTests(unittest.TestCase):
             )
             (out_dir / "task_agent" / "tool_wrapper.py").write_text("")
             (out_dir / "task_agent" / "tools_schema.json").write_text("[]")
-            with self.assertRaises(_Stop):
-                editor._self_improve(
-                    out_dir=out_dir,
-                    feedback=None,
-                    context=None,
-                    prior_errors=[],
-                    attempt=1,
-                )
+            editor._self_improve(
+                out_dir=out_dir,
+                feedback=None,
+                context=None,
+                prior_errors=[],
+                attempt=1,
+            )
 
         self.assertEqual(
             captured.get("base_url"), "http://editor-local:8000/v1"

@@ -201,6 +201,7 @@ _AGENTIC_TOOLS: list[dict[str, Any]] = [
 
 _AGENTIC_TURN_BUDGET_GOAL = "(editor exceeded agentic turn budget without submitting a summary)"
 _AGENTIC_MALFORMED_SUMMARY_GOAL = "(summary call had malformed JSON; edits below were still applied)"
+_AGENTIC_LLM_CALL_FAILED_GOAL_PREFIX = "(editor's LLM call failed mid-conversation"
 
 
 @register("editor", "default")
@@ -575,16 +576,46 @@ class AgentEditor:
             llm_kwargs["base_url"] = self.base_url
         if self.max_output_tokens is not None:
             llm_kwargs["max_output_tokens"] = self.max_output_tokens
-        response = self.llm(**llm_kwargs)
-
+        user_body = "\n".join(user_parts)
         if verbose_log.is_enabled():
-            user_body = "\n".join(user_parts)
             verbose_log.write_text(
                 out_dir, f"editor_attempt_{attempt}_system.txt", system
             )
             verbose_log.write_text(
                 out_dir, f"editor_attempt_{attempt}_user.txt", user_body
             )
+        try:
+            response = self.llm(**llm_kwargs)
+        except Exception as exc:  # noqa: BLE001 -- an LLM-call failure must
+            # degrade this ONE EXPAND to a failed edit, never crash the
+            # entire multi-day HGM process. Confirmed live this session: a
+            # 75-generation-deep lineage's accumulated mutable source
+            # pushed a single-shot prompt to 245K+ input tokens, exceeding
+            # Qwen3.5-122B-A10B's 262144-token context window and raising
+            # an uncaught openai.BadRequestError all the way up through
+            # apply() -> hgm.py::_expand() -> evolve() -> main_loop.py.
+            # No exception type is assumed here deliberately -- a context
+            # overflow, a connection error surviving call_llm's own retry
+            # loop, or any other LLM-call failure all get the same
+            # graceful-failure treatment as a malformed tool call already
+            # does (see the _raw_arguments handling below).
+            print(
+                f"[editor] warning: LLM call failed ({exc!r}) -- treating "
+                "as a failed self-improvement attempt",
+                flush=True,
+            )
+            if verbose_log.is_enabled():
+                verbose_log.write_text(
+                    out_dir, f"editor_attempt_{attempt}_llm_error.txt", repr(exc)
+                )
+            return EvolutionStrategy(
+                target_files=[],
+                optimization_goal=f"(editor's LLM call failed: {exc!r})"[:300],
+                proposed_changes="",
+                rationale="",
+            ), []
+
+        if verbose_log.is_enabled():
             verbose_log.write_json(
                 out_dir,
                 f"editor_attempt_{attempt}_response.json",
@@ -927,7 +958,36 @@ class AgentEditor:
                 llm_kwargs["base_url"] = self.base_url
             if self.max_output_tokens is not None:
                 llm_kwargs["max_output_tokens"] = self.max_output_tokens
-            response = self.llm(**llm_kwargs)
+            try:
+                response = self.llm(**llm_kwargs)
+            except Exception as exc:  # noqa: BLE001 -- same principle as
+                # _self_improve's own guard: an LLM-call failure (context
+                # overflow from accumulated multi-turn history, a
+                # connection error surviving call_llm's retries, etc.)
+                # must never crash the whole HGM process. Unlike
+                # _self_improve, files already written via write_file in
+                # earlier turns are real and independently validated, so
+                # they're preserved here rather than discarded.
+                print(
+                    f"[editor] warning: LLM call failed mid-conversation "
+                    f"({exc!r}) -- returning {len(written)} file(s) "
+                    "written so far",
+                    flush=True,
+                )
+                if verbose_log.is_enabled():
+                    verbose_log.write_text(
+                        out_dir,
+                        f"editor_attempt_{attempt}_turn_{turn}_llm_error.txt",
+                        repr(exc),
+                    )
+                strategy = EvolutionStrategy(
+                    target_files=sorted(written),
+                    optimization_goal=f"{_AGENTIC_LLM_CALL_FAILED_GOAL_PREFIX}: {exc!r})"[:300],
+                    proposed_changes="",
+                    rationale="",
+                )
+                files = [{"path": p, "content": c} for p, c in written.items()]
+                return strategy, files
 
             calls = getattr(response, "tool_calls", None) or []
             if verbose_log.is_enabled():
