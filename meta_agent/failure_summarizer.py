@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import traceback
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -51,6 +52,34 @@ from typing import Any, Callable, Optional
 from .failure_report import _as_text, _truncate_middle
 from .models import CaseResult, EvaluationResult
 from .registry import register
+
+# Matches the exact section header the system prompt in _build_prompt asks
+# for ("## Main failure patterns"), tolerant of heading level and case.
+# Confirmed live (Qwen3.5-122B-A10B via OpenRouter, 2026-09-07): a model can
+# leak its full chain-of-thought/draft-revision scratchpad ("Thinking
+# Process: 1. Analyze the Request... *Draft:* ... *Revised Draft:* ...")
+# ahead of -- and even containing multiple earlier copies of -- the actual
+# two-section answer, since nothing enforces the "concise, two sections"
+# contract on the way out. See _strip_reasoning_preamble.
+_MAIN_FAILURE_PATTERNS_HEADER_RE = re.compile(
+    r"^[ \t]*#{1,6}[ \t]*main failure patterns\b", re.IGNORECASE | re.MULTILINE
+)
+
+
+def _strip_reasoning_preamble(text: str) -> str:
+    """Discard everything before the LAST '## Main failure patterns'
+    occurrence in ``text``. When a model iterates on multiple drafts before
+    settling on a final answer, that header can appear more than once (one
+    per draft attempt) -- the last one is the model's own most-revised
+    version, so earlier drafts and the reasoning that led to them are pure
+    noise, not additional signal (every conclusion in them is already
+    restated in the final draft). A no-op (returns ``text`` unchanged) when
+    the header never appears at all, so a well-behaved response -- or one
+    that failed for an unrelated reason -- is never mangled."""
+    matches = list(_MAIN_FAILURE_PATTERNS_HEADER_RE.finditer(text))
+    if not matches:
+        return text
+    return text[matches[-1].start():]
 
 _QUERY_CAP = 800
 _RAW_OUTPUT_CAP = 4000
@@ -428,7 +457,8 @@ class FailureSummarizer:
         if self.max_output_tokens is not None:
             kwargs["max_output_tokens"] = self.max_output_tokens
         response = self.llm(**kwargs)
-        return getattr(response, "content", None) or ""
+        content = getattr(response, "content", None) or ""
+        return _strip_reasoning_preamble(content)
 
 
 def render_failure_summary_for_steering(
