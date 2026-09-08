@@ -1,0 +1,154 @@
+# Production run: same sizing/manager as
+# hgm_travel_full_scale_block_tagged_no_summarizer_X100Y180.yaml
+# (eval_budget=18000, hgm_block_tagged manager, adaptive block selection +
+# repeat-eligible dripping, full 120-case benchmark, 60 train / 60 held-out
+# validation, stratified by trip length, seed=42), with two deliberate
+# differences requested 2026-09-06:
+#
+#   1. Every backend LLM is now OpenRouter-hosted instead of the local
+#      vLLM cluster -- task_agent, block_suggester, and failure_summarizer
+#      all use the exact same model IDs as the local setup
+#      (Qwen/Qwen3.5-35B-A3B, Qwen/Qwen3.5-122B-A10B), just at their
+#      OpenRouter slugs (qwen/qwen3.5-35b-a3b, qwen/qwen3.5-122b-a10b --
+#      confirmed live on openrouter.ai/qwen) and base_url, EXCEPT:
+#   2. The coding agent (editor) uses DeepSeek v4 instead of Qwen -- same
+#      model/base_url as configs/hgm_travel_deepseek_agentic_editor_sanity_1case.yaml,
+#      with the new opt-in agentic_editing mode ALSO turned on (one
+#      write_file call per changed file instead of one bundled
+#      submit_self_improvement call), since this run's coding agent is
+#      exactly the DeepSeek-as-editor combination that motivated building
+#      that mode -- see deepseek_editor_observations.md's ~65%
+#      malformed-JSON failure rate on the bundled shape.
+#
+# Curriculum (meta_agent/curriculum.py) is turned ON for this run --
+# curriculum_enabled: true, using the code's own defaults for
+# resolution_threshold (0.15) / patience (5), goals auto-inferred from the
+# seed's own project_metrics (no curriculum_goals_override -- that knob is
+# for forcing a single check during a sanity test, not production), and
+# wired to the same error_semantics.json / harness_error_semantics.json
+# files the scorer's own check_semantics already uses, so a curriculum
+# directive can explain a sub-goal concretely instead of quoting a bare
+# check name.
+#
+# The behavior summarizer (`summarizer:`) is OMITTED for this run, matching
+# the ACTUAL currently-running local production config
+# (hgm_travel_full_scale_block_tagged_no_summarizer_X100Y180.yaml) that
+# this run is meant to be the OpenRouter/DeepSeek/curriculum counterpart
+# of -- error_categorizer and failure_summarizer are both kept on, only the
+# behavior summarizer is off, same as that local run.
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_full_scale_openrouter_deepseek_editor_curriculum_X100Y180.yaml
+#
+# ALL traffic for this run goes to OpenRouter (task_agent evaluations
+# included, at eval_budget=18000 -- a much larger call volume than any
+# prior OpenRouter sanity check this session) -- make sure
+# OPENAI_API_KEY is the OpenRouter key before launching (source
+# /groups/AIC-MV/v.kulkarni1/.env), and watch the first several rounds for
+# rate-limit errors given evaluator.config.parallelism=32 concurrent
+# connections; reduce parallelism if OpenRouter starts throttling.
+
+experiment_name: "travel_mas_refactored_full_scale_openrouter_deepseek_editor_curriculum_X100Y180"
+project: "travel_mas_refactored"
+verbose: true
+
+mutable_exclude:
+  - "workflow.py"
+  - "benchmark/"
+  - "agents/immutable/"
+
+loop:
+  max_rounds: 130
+  score_target: 1.0
+
+task_agent:
+  model: "qwen/qwen3.5-35b-a3b"
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "https://openrouter.ai/api/v1"
+
+manager:
+  type: "hgm_block_tagged"
+  config:
+    eval_budget: 18000
+    init_expansions: 2
+    alpha: 0.470005
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 32
+    eval_repeats: 2
+    finalize_top_k: 5
+    full_eval_top_k: 0
+    seed: 42
+    block_selection_strategy: "adaptive"
+    curriculum_enabled: true
+    curriculum_resolution_threshold: 0.15
+    curriculum_patience: 5
+    curriculum_check_descriptions_path: "projects/travel_mas_refactored/adapter/error_semantics.json"
+    curriculum_harness_error_descriptions_path: "projects/travel_mas_refactored/adapter/harness_error_semantics.json"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    parallelism: 32
+    scorer: "travel_mas_refactored_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+    n_hard_cases: 1
+
+editor:
+  type: "default"
+  config:
+    model: "deepseek/deepseek-v4-pro-0813"
+    reasoning_effort: "medium"
+    base_url: "https://openrouter.ai/api/v1"
+    max_attempts: 2
+    agentic_editing: true
+    agentic_max_turns: 20
+
+# behavior summarizer (`summarizer:`) DELIBERATELY OMITTED, matching the
+# currently-running local production config -- see the header comment.
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "qwen/qwen3.5-122b-a10b"
+    reasoning_effort: "medium"
+    base_url: "https://openrouter.ai/api/v1"
+
+block_suggester:
+  type: "default"
+  config:
+    model: "qwen/qwen3.5-122b-a10b"
+    reasoning_effort: "medium"
+    base_url: "https://openrouter.ai/api/v1"
+    strategies_path: "strategies.md"
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "qwen/qwen3.5-35b-a3b"
+
+split:
+  seed: 42
+  train_size: 60
+  eval_size: 60
+  stratify_by: "meta_info.days"
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+    config:
+      workflow_filenames: ["workflow.py", "mas_workflow.py"]
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"
+  - type: "undefined_names"
+  - type: "smoke_test"
