@@ -181,7 +181,7 @@ class AggregateCheckSemanticsTests(unittest.TestCase):
         per_case = [
             self._case(
                 "0", error="plan conversion failed: agent produced no plan",
-                agent_metadata={"budget_exhausted": True},
+                agent_metadata={"sightseeing_budget_exhausted": True},
             ),
             self._case(
                 "1",
@@ -198,10 +198,10 @@ class AggregateCheckSemanticsTests(unittest.TestCase):
             "doesn't match ground truth",
             semantics["commonsense:Sandbox Compliance:validated_meals"],
         )
-        self.assertIn("budget_exhausted", semantics)
+        self.assertIn("sightseeing_budget_exhausted", semantics)
         self.assertIn(
             "genuinely used up its entire tool-c",
-            semantics["budget_exhausted"],
+            semantics["sightseeing_budget_exhausted"],
         )
 
     def test_unknown_check_is_omitted_not_fabricated(self) -> None:

@@ -315,8 +315,8 @@ class CheckDescriptionsLoadingTests(unittest.TestCase):
         self.assertIn(
             "commonsense:Sandbox Compliance:validated_meals", merged,
         )
-        self.assertIn("sightseeing_failed", merged)
-        self.assertIn("budget_exhausted", merged)
+        self.assertIn("sightseeing_output_failure", merged)
+        self.assertIn("sightseeing_budget_exhausted", merged)
 
 
 class ValidationTests(unittest.TestCase):
