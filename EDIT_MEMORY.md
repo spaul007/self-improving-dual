@@ -1,318 +1,458 @@
-# Edit memory — 20260615_095317_travel_hgm_8000
+# EDIT_MEMORY.md — a worked example from one run
 
-Tree-global record of every edit attempted in this run: what was changed, why, and what it did to the benchmark. Deduped into recurring **motifs**. This is not a behavior summary — it describes *actions and their payoff*, not runtime behavior, and it covers **all** branches, not one lineage.
+Rendered by `study/render_edit_memory_example.py` from `20260907_212018_travel_hgm_1000_qwen122b_gpt54_beliefs2stage` (node 30). Mode: delta-labelled, pre-v7 code (no `strategy_label` key; analysis v6 — records carry implementation verdicts but no `effect` lines). Records with judge effect lines: 0 of 32. Judge lines (`effect`, `regressions`, `targets`) appear only in judge-mode runs — re-run this script on the first judge-mode run to refresh the example. The layouts themselves are specified in `EDIT_MEMORY_SPEC.md`.
 
 ## §0 Run
 
-- project **travel** · manager **hgm** · editor **gpt-5.4** · task agent **gpt-5.4-mini**
-- **76 nodes**, eval budget spent 4488
-- seed (node 0) **0.7635** → best **node 47** at **0.9292**
-- champion lineage: 0 → 3 → 11 → 23 → 26 → 36 → 37 → 46 → 47
-- of 75 edits: **16 helped**, 31 hurt, 28 neutral/inconclusive
+## Best round (LCB-selected)
+- Round: **030** (node 30)
+- Train mean: **0.707** over 60 case(s)
+- Optimization goal: Recover hallucinated `plan` tool calls into valid final `<plan>` outputs instead of tool errors or empty results.
 
-## §1 Motif ledger — what has been tried, and did it work
+models: task_agent=Qwen/Qwen3.5-122B-A10B, editor=gpt-5.4, edit_memory=gpt-5.4
+edit_memory keys: steering_mode=belief, strategy_label=None, analysis_min_own_evals=None, judge_min_evidence=None, min_shared=8, verdict_threshold=0.02, max_strategies=30, max_subedits=3
+beliefs keys: enabled=True, doc_char_cap=40000, optimize_enabled=True, optimize_every=8, optimize_min_scored=8, optimize_rollback_margin=0.02, instruction_char_cap=2500
 
-`Δ` is the mean score change measured **only on cases the parent and child both ran**, so it is not confounded by case sampling.
+## §1 The node record — `round_030/edit_memory.md`
 
-### `add-tool-backed-evidence-verifier` — 29× attempted
-*re-queries the real tools and fails the draft when the plan disagrees with tool data*
-
-- Δ median **-0.0260** · best +0.1031 · worst -0.1406
-- verdicts: hurt 16, neutral 7, helped 6
-- aimed at: intercity-transport ×14, restaurant ×13, transfer-time ×11, hotel ×11
-- nodes: 13, 16, 20, 22, 29, 34, 38, 42, 43, 44, 46, 47, 48, 50, 51, 52, 56, 60, 61, 62, 65, 67, 68, 69, 70, 71, 73, 74, 75 · **on champion lineage: [46, 47]**
-- net checks moved (summed over attempts, top-6 movers per attempt; the node count shows whether a figure is systematic or one bad edit): `commonsense:Time Feasibility:reasonable_transfer_time` +31 (25 nodes) · `commonsense:Itinerary Structure:traceable_accommodation` +15 (2 nodes) · `commonsense:Activity Diversity:diverse_attraction_options` +7 (19 nodes) · `hard:hotel_star_service_required` +7 (20 nodes) · `commonsense:Itinerary Structure:essential_meal_coverage` -65 (17 nodes) · `commonsense:Route Consistency:seamless_intercity_transfers` -135 (24 nodes) · `commonsense:Route Consistency:closed_loop_route_structure` -140 (4 nodes)
-- best instance: node 47 (+0.1031); that edit's largest new symbol is `workflow._verify_restaurant_constraints` (see §4 / the node record for its code)
-- **The run's dominant strategy and, on median, a losing one: 29 attempts, 16 hurt, median -0.026. Yet it produced the single best edit in the tree (node 47, +0.1031) and carries the champion lineage. Variance is the story, not the mean — the wins were narrow verifiers aimed at one failure family, the losses were broad suites re-querying everything (nodes 65, 71, 74 each added 400-800 lines and lost ground). Add one verifier, not a layer. Watch the side effect: seamless_intercity_transfers is net -135 across 24 of the 29 nodes, a systematic regression rather than a few bad edits — these verifiers keep pushing the model into repairs that drop the intercity leg.**
-
-### `add-textual-plan-verifier` — 21× attempted
-*parses the rendered plan and checks structural rules with no tool calls*
-
-- Δ median **-0.0063** · best +0.1177 · worst -0.0990
-- verdicts: neutral 11, hurt 7, helped 3
-- aimed at: plan-structure ×10, attraction-diversity ×7, budget-cost ×6, intercity-transport ×5
-- nodes: 1, 6, 12, 15, 18, 19, 21, 26, 27, 31, 35, 37, 41, 48, 49, 52, 54, 55, 58, 64, 72 · **on champion lineage: [26, 37]**
-- net checks moved (summed over attempts, top-6 movers per attempt; the node count shows whether a figure is systematic or one bad edit): `commonsense:Activity Diversity:diverse_attraction_options` +50 (18 nodes) · `commonsense:Itinerary Structure:traceable_accommodation` +30 (7 nodes) · `commonsense:Cost Calculation Accuracy:cost_calculation_correctness` +25 (16 nodes) · `hard:flight_departure_time_range` +4 (2 nodes) · `commonsense:Itinerary Structure:essential_meal_coverage` -30 (13 nodes) · `commonsense:Route Consistency:seamless_intercity_transfers` -89 (18 nodes) · `commonsense:Route Consistency:closed_loop_route_structure` -120 (4 nodes)
-- best instance: node 6 (+0.1177); that edit's largest new symbol is `workflow._describe_repair_reason` (see §4 / the node record for its code)
-- **Roughly break-even and cheap: 21 attempts, median -0.006, best +0.1177 (node 6). Needs no tool calls, so it costs nothing at eval time. Its record is best when paired with a repair loop that consumes the issues it finds, rather than shipped alone.**
-
-### `add-constraint-extractor` — 14× attempted
-*parses the user request into structured hard constraints before or during auditing*
-
-- Δ median **-0.0479** · best +0.0125 · worst -0.1406
-- verdicts: hurt 9, neutral 5
-- aimed at: restaurant ×9, hotel ×8, intercity-transport ×7, attraction-diversity ×2
-- nodes: 34, 36, 42, 49, 55, 61, 64, 67, 70, 71, 72, 73, 74, 75 · **on champion lineage: [36]**
-- net checks moved (summed over attempts, top-6 movers per attempt; the node count shows whether a figure is systematic or one bad edit): `hard:hotel_star_service_required` +11 (12 nodes) · `commonsense:Activity Diversity:diverse_attraction_options` +6 (8 nodes) · `commonsense:Cost Calculation Accuracy:cost_calculation_correctness` +6 (7 nodes) · `commonsense:Route Consistency:valid_trip_duration` +5 (4 nodes) · `commonsense:Itinerary Structure:essential_meal_coverage` -31 (9 nodes) · `commonsense:Route Consistency:seamless_intercity_transfers` -115 (9 nodes) · `commonsense:Route Consistency:closed_loop_route_structure` -118 (2 nodes)
-- best instance: node 36 (+0.0125); that edit's largest new symbol is `workflow._build_query_risk_block` (see §4 / the node record for its code)
-- **The clearest dead end in this run: 14 attempts, zero helped, median -0.048, worst -0.1406. Parsing the user's request into structured hard constraints by regex misfires often enough that the verifiers built on top reject good plans. Do not retry without changing the extraction mechanism itself.**
-
-### `add-deterministic-postprocessor` — 10× attempted
-*rewrites the plan in code without asking the model (headers, budget, buffers)*
-
-- Δ median **-0.0161** · best +0.1177 · worst -0.0990
-- verdicts: hurt 5, neutral 4, helped 1
-- aimed at: plan-structure ×5, budget-cost ×5, meal-coverage ×3, transfer-time ×2
-- nodes: 1, 6, 7, 18, 19, 27, 40, 53, 57, 59
-- net checks moved (summed over attempts, top-6 movers per attempt; the node count shows whether a figure is systematic or one bad edit): `commonsense:Activity Diversity:diverse_attraction_options` +24 (7 nodes) · `commonsense:Itinerary Structure:traceable_accommodation` +21 (4 nodes) · `commonsense:Cost Calculation Accuracy:cost_calculation_correctness` +12 (9 nodes) · `hard:train_latest_arrival_direct` +9 (4 nodes) · `hard:hotel_star_service_required` -8 (6 nodes) · `commonsense:Route Consistency:closed_loop_route_structure` -36 (4 nodes) · `commonsense:Route Consistency:seamless_intercity_transfers` -39 (9 nodes)
-- best instance: node 6 (+0.1177); that edit's largest new symbol is `workflow._describe_repair_reason` (see §4 / the node record for its code)
-- **Mostly negative with one large exception: node 6's header/accommodation normalizer (+0.1177) is the second-best edit in the tree, while the other nine attempts sit at median -0.016. Rewriting the plan in code pays when the target is a rigid format rule the grader checks literally, and backfires once it touches itinerary content.**
-
-### `add-selfcheck-repair-loop` — 9× attempted
-*feeds detected issues back to the model for a bounded repair/audit turn*
-
-- Δ median **+0.0073** · best +0.0896 · worst -0.0990
-- verdicts: neutral 5, helped 3, hurt 1
-- aimed at: plan-structure ×7, budget-cost ×3, transfer-time ×3, attraction-diversity ×3
-- nodes: 1, 4, 8, 12, 13, 21, 23, 26, 31 · **on champion lineage: [23, 26]**
-- net checks moved (summed over attempts, top-6 movers per attempt; the node count shows whether a figure is systematic or one bad edit): `commonsense:Activity Diversity:diverse_attraction_options` +31 (9 nodes) · `commonsense:Time Feasibility:reasonable_transfer_time` +25 (9 nodes) · `commonsense:Itinerary Structure:essential_attraction_coverage` +13 (5 nodes) · `commonsense:Sandbox Compliance:validated_transportation` +9 (6 nodes) · `commonsense:Itinerary Structure:traceable_accommodation` -33 (8 nodes) · `commonsense:Route Consistency:seamless_intercity_transfers` -33 (8 nodes) · `commonsense:Route Consistency:closed_loop_route_structure` -60 (1 node)
-- best instance: node 23 (+0.0896); that edit's largest new symbol is `workflow._build_audit_prompt` (see §4 / the node record for its code)
-- **One of only three motifs with a positive median (+0.0073 over 9 attempts) and just 1 hurt. Node 23 (+0.0896) introduced the bounded MAX_AUDIT_ROUNDS loop and sits on the champion lineage. The safest structural move in this run.**
-
-### `harden-existing-tool` — 9× attempted
-*fixes crashes, bad kwargs or brittle matching in a tool a previous edit added*
-
-- Δ median **-0.0469** · best +0.0021 · worst -0.0760
-- verdicts: hurt 5, neutral 4
-- aimed at: intercity-transport ×5, budget-cost ×3, robustness ×2, restaurant ×2
-- nodes: 11, 24, 28, 35, 39, 40, 43, 44, 53 · **on champion lineage: [11]**
-- net checks moved (summed over attempts, top-6 movers per attempt; the node count shows whether a figure is systematic or one bad edit): `commonsense:Activity Diversity:diverse_attraction_options` +17 (3 nodes) · `commonsense:Route Consistency:valid_trip_duration` +6 (1 node) · `commonsense:Cost Calculation Accuracy:cost_calculation_correctness` +4 (9 nodes) · `hard:train_latest_arrival_direct` +4 (6 nodes) · `commonsense:Itinerary Structure:essential_meal_coverage` -19 (6 nodes) · `commonsense:Route Consistency:seamless_intercity_transfers` -86 (9 nodes) · `commonsense:Route Consistency:closed_loop_route_structure` -93 (2 nodes)
-- best instance: node 39 (+0.0021); that edit's largest new symbol is `mutable_tools.select_intercity_option._normalize_sort_mode` (see §4 / the node record for its code)
-- **Nine attempts, none helped, median -0.047. Going back to patch a tool an earlier edit added never recovered the ground that tool lost — the crashes fixed were real but were not what was costing score. Treat an underperforming mutable tool as sunk cost rather than a repair target.**
-
-### `add-deterministic-selector-tool` — 8× attempted
-*new mutable tool that filters and ranks candidates instead of letting the model choose*
-
-- Δ median **-0.0177** · best +0.0208 · worst -0.0938
-- verdicts: hurt 4, neutral 3, helped 1
-- aimed at: intercity-transport ×6, hotel ×3, plan-structure ×2, restaurant ×2
-- nodes: 2, 7, 28, 32, 33, 41, 45, 63
-- net checks moved (summed over attempts, top-6 movers per attempt; the node count shows whether a figure is systematic or one bad edit): `commonsense:Itinerary Structure:traceable_accommodation` +17 (3 nodes) · `commonsense:Activity Diversity:diverse_attraction_options` +13 (7 nodes) · `hard:hotel_star_service_required` +6 (5 nodes) · `hard:train_latest_arrival_direct` +4 (1 node) · `commonsense:Itinerary Structure:essential_meal_coverage` -17 (2 nodes) · `commonsense:Route Consistency:closed_loop_route_structure` -60 (1 node) · `commonsense:Route Consistency:seamless_intercity_transfers` -65 (8 nodes)
-- best instance: node 2 (+0.0208); that edit's largest new symbol is `mutable_tools.select_intercity_transport.run` (see §4 / the node record for its code)
-- **Eight independent attempts (nodes 2, 7, 28, 32, 33, 41, 45, 63) at replacing the model's choice with coded filter/rank logic; only node 2 (+0.0208) helped, median -0.018. The idea is clearly attractive to editors and has repeatedly failed to pay off — strong dedup signal.**
-
-### `add-evidence-recorder` — 6× attempted
-*harvests tool outputs into an evidence store the verifiers later read*
-
-- Δ median **-0.0140** · best +0.0375 · worst -0.0385
-- verdicts: hurt 3, helped 2, neutral 1
-- aimed at: restaurant ×4, transfer-time ×3, intercity-transport ×3, budget-cost ×2
-- nodes: 29, 56, 65, 68, 69, 73
-- net checks moved (summed over attempts, top-6 movers per attempt; the node count shows whether a figure is systematic or one bad edit): `commonsense:Activity Diversity:diverse_attraction_options` +3 (4 nodes) · `commonsense:Sandbox Compliance:validated_meals` +2 (4 nodes) · `commonsense:Time Feasibility:reasonable_transfer_time` +2 (6 nodes) · `hard:train_departure_time_range` +2 (1 node) · `commonsense:Itinerary Structure:essential_meal_coverage` -17 (4 nodes) · `commonsense:Route Consistency:closed_loop_route_structure` -27 (1 node) · `commonsense:Route Consistency:seamless_intercity_transfers` -29 (6 nodes)
-- best instance: node 29 (+0.0375); that edit's largest new symbol is `workflow._verify_budget_summary` (see §4 / the node record for its code)
-- **Harvesting tool outputs into an evidence store is the prerequisite for the evidence verifiers and inherits their variance: 6 attempts, median -0.014, best +0.0375 (node 29). Never tried on its own, so its independent effect is unmeasured.**
-
-### `add-lookup-helper-tool` — 5× attempted
-*new mutable tool that resolves or fetches authoritative facts*
-
-- Δ median **+0.0250** · best +0.0396 · worst -0.0229
-- verdicts: helped 3, neutral 1, hurt 1
-- aimed at: transfer-time ×3, restaurant ×2
-- nodes: 3, 5, 17, 30, 66 · **on champion lineage: [3]**
-- net checks moved (summed over attempts, top-6 movers per attempt; the node count shows whether a figure is systematic or one bad edit): `commonsense:Time Feasibility:reasonable_transfer_time` +41 (5 nodes) · `commonsense:Itinerary Structure:traceable_accommodation` +7 (4 nodes) · `commonsense:Route Consistency:seamless_intercity_transfers` +2 (5 nodes) · `hard:restaurant_must_eat_named` +2 (1 node) · `commonsense:Sandbox Compliance:validated_meals` -2 (3 nodes) · `hard:train_cheapest_direct` -3 (1 node) · `commonsense:Itinerary Structure:essential_meal_coverage` -4 (1 node)
-- best instance: node 30 (+0.0396); that edit's largest new symbol is `mutable_tools.schedule_named_transfer.run` (see §4 / the node record for its code)
-- **The best-supported positive result in the run: 5 attempts, median +0.025, three helped and only one hurt. Giving the model a tool that resolves facts it was previously guessing beats checking its work afterwards. Node 30's schedule_named_transfer (+0.0396) and node 17's build_city_transfer (+0.0354) are the instances to copy.**
-
-### `add-validator-tool` — 3× attempted
-*new mutable tool whose job is to validate a drafted plan*
-
-- Δ median **-0.0021** · best +0.0021 · worst -0.0375
-- verdicts: neutral 2, hurt 1
-- aimed at: plan-structure ×3, attraction-diversity ×1, transfer-time ×1
-- nodes: 4, 8, 20
-- net checks moved (summed over attempts, top-6 movers per attempt; the node count shows whether a figure is systematic or one bad edit): `commonsense:Time Feasibility:reasonable_transfer_time` +22 (3 nodes) · `commonsense:Activity Diversity:diverse_attraction_options` +16 (3 nodes) · `hard:restaurant_specific_tag_nearby` +3 (1 node) · `hard:train_latest_arrival_direct` +2 (2 nodes) · `commonsense:Itinerary Structure:essential_meal_coverage` -19 (1 node) · `commonsense:Route Consistency:closed_loop_route_structure` -20 (1 node) · `commonsense:Route Consistency:seamless_intercity_transfers` -23 (3 nodes)
-- best instance: node 8 (+0.0021); that edit's largest new symbol is `mutable_tools.validate_travel_plan.run` (see §4 / the node record for its code)
-- **Three attempts at moving plan validation into a mutable tool; all roughly neutral (median -0.002). Functionally the same as add-textual-plan-verifier with the code relocated out of workflow.py, and the relocation bought nothing.**
-
-### `reduce-iteration-budget` — 2× attempted
-*lowers MAX_ITERATIONS or audit rounds to curb timeouts*
-
-- Δ median **+0.0052** · best +0.0823 · worst -0.0719
-- verdicts: hurt 1, helped 1
-- aimed at: restaurant ×2, budget-cost ×1, closure-hours ×1, transfer-time ×1
-- nodes: 49, 60
-- net checks moved (summed over attempts, top-6 movers per attempt; the node count shows whether a figure is systematic or one bad edit): `commonsense:Activity Diversity:diverse_attraction_options` +6 (2 nodes) · `hard:restaurant_must_eat_named` +4 (2 nodes) · `commonsense:Time Feasibility:reasonable_transfer_time` +2 (2 nodes) · `commonsense:Business Hours:avoidance_of_closure_days` +2 (1 node) · `hard:restaurant_closest_to_attraction` -2 (1 node) · `commonsense:Business Hours:dining_within_service_hours` -3 (2 nodes) · `commonsense:Itinerary Structure:essential_meal_coverage` -3 (2 nodes)
-- best instance: node 60 (+0.0823); that edit's largest new symbol is `workflow._verify_anchor_transfer_links` (see §4 / the node record for its code)
-- **Only ever bundled with other changes (nodes 49, 60), so its effect is not separable: node 60 helped (+0.0823), node 49 hurt (-0.0719). No usable prior.**
-
-### `add-shortlist-generator-tool` — 2× attempted
-*new mutable tool that returns a curated, de-duplicated candidate shortlist*
-
-- Δ median **+0.0172** · best +0.0219 · worst +0.0125
-- verdicts: neutral 1, helped 1
-- aimed at: attraction-diversity ×2
-- nodes: 9, 25
-- net checks moved (summed over attempts, top-6 movers per attempt; the node count shows whether a figure is systematic or one bad edit): `commonsense:Itinerary Structure:traceable_accommodation` +12 (2 nodes) · `commonsense:Time Feasibility:reasonable_transfer_time` +8 (2 nodes) · `commonsense:Activity Diversity:diverse_attraction_options` +3 (2 nodes) · `commonsense:Sandbox Compliance:validated_transportation` +2 (1 node) · `commonsense:Itinerary Structure:essential_attraction_coverage` -3 (1 node) · `commonsense:Sandbox Compliance:validated_meals` -3 (1 node) · `hard:restaurant_closest_to_attraction` -3 (1 node)
-- best instance: node 25 (+0.0219); that edit's largest new symbol is `mutable_tools.recommend_diverse_attractions.run` (see §4 / the node record for its code)
-- **Two attempts (nodes 9, 25), both non-negative, both aimed at attraction diversity. Thin evidence, but the only motif in the run with no negative instance.**
-
-### `tighten-system-prompt` — 2× attempted
-*the edit's main lever is rewriting SYSTEM_PROMPT / audit-prompt rules*
-
-- Δ median **+0.0047** · best +0.0125 · worst -0.0031
-- verdicts: neutral 2
-- aimed at: intercity-transport ×2, hotel ×1, plan-structure ×1
-- nodes: 36, 37 · **on champion lineage: [36, 37]**
-- net checks moved (summed over attempts, top-6 movers per attempt; the node count shows whether a figure is systematic or one bad edit): `hard:hotel_star_service_required` +4 (1 node) · `commonsense:Route Consistency:seamless_intercity_transfers` +3 (2 nodes) · `commonsense:Sandbox Compliance:validated_transportation` +2 (1 node) · `commonsense:Sandbox Compliance:validated_accommodation` +1 (1 node) · `hard:restaurant_closest_to_attraction` -1 (1 node) · `hard:flight_arrival_time_range` -2 (1 node) · `commonsense:Time Feasibility:reasonable_transfer_time` -4 (2 nodes)
-- best instance: node 36 (+0.0125); that edit's largest new symbol is `workflow._build_query_risk_block` (see §4 / the node record for its code)
-- **Counted only where prompt rewriting was the edit's main lever (nodes 36, 37); both neutral. Note 63 of 75 edits touched SYSTEM_PROMPT as a side effect, so this measures prompt-only edits, not prompt editing in general.**
-
-### `add-tool-result-cache` — 2× attempted
-*caches repeated tool lookups to cut latency and timeout risk*
-
-- Δ median **-0.0036** · best +0.0083 · worst -0.0156
-- verdicts: neutral 2
-- aimed at: transfer-time ×1, intercity-transport ×1, hotel ×1, restaurant ×1
-- nodes: 11, 32 · **on champion lineage: [11]**
-- net checks moved (summed over attempts, top-6 movers per attempt; the node count shows whether a figure is systematic or one bad edit): `hard:train_latest_arrival_direct` +3 (1 node) · `hard:restaurant_must_eat_named` +2 (1 node) · `commonsense:Itinerary Structure:traceable_accommodation` +1 (1 node) · `commonsense:Activity Diversity:diverse_attraction_options` +1 (2 nodes) · `commonsense:Sandbox Compliance:validated_transportation` -4 (1 node) · `commonsense:Cost Calculation Accuracy:cost_calculation_correctness` -6 (2 nodes) · `commonsense:Route Consistency:seamless_intercity_transfers` -7 (2 nodes)
-- best instance: node 32 (+0.0083); that edit's largest new symbol is `mutable_tools.select_intercity_option.run` (see §4 / the node record for its code)
-- **Two attempts, both neutral. Added for latency and timeout headroom rather than score, and score is indeed unmoved — judge it on wall-time, not on this number.**
-
-### `add-manifest-builder-tool` — 1× attempted
-*new mutable tool that renders an exact, copy-ready itinerary fragment*
-
-- Δ median **+0.0510** · best +0.0510 · worst +0.0510
-- verdicts: helped 1
-- aimed at: intercity-transport ×1
-- nodes: 10
-- net checks moved (summed over attempts, top-6 movers per attempt; the node count shows whether a figure is systematic or one bad edit): `commonsense:Route Consistency:seamless_intercity_transfers` +8 (1 node) · `commonsense:Cost Calculation Accuracy:cost_calculation_correctness` +3 (1 node) · `commonsense:Itinerary Structure:essential_attraction_coverage` +3 (1 node) · `commonsense:Time Feasibility:reasonable_transfer_time` +1 (1 node) · `commonsense:Sandbox Compliance:validated_meals` -2 (1 node) · `hard:restaurant_must_eat_named` -2 (1 node) · `commonsense:Itinerary Structure:traceable_accommodation` -3 (1 node)
-- best instance: node 10 (+0.0510); that edit's largest new symbol is `mutable_tools.build_intercity_manifest.run` (see §4 / the node record for its code)
-- **One attempt (node 10, +0.0510): a tool that renders an exact copy-ready intercity line instead of describing one. Promising but unreplicated, and the three later edits that modified it (28, 43, 44) all lost ground.**
-
-### `add-arithmetic-tool` — 1× attempted
-*new mutable tool that moves numeric computation out of the model*
-
-- Δ median **-0.0010** · best -0.0010 · worst -0.0010
-- verdicts: neutral 1
-- aimed at: budget-cost ×1
-- nodes: 14
-- net checks moved (summed over attempts, top-6 movers per attempt; the node count shows whether a figure is systematic or one bad edit): `commonsense:Sandbox Compliance:validated_meals` +3 (1 node) · `commonsense:Cost Calculation Accuracy:cost_calculation_correctness` +2 (1 node) · `commonsense:Itinerary Structure:traceable_accommodation` -1 (1 node) · `hard:restaurant_specific_tag_nearby` -3 (1 node) · `commonsense:Itinerary Structure:traceable_accommodation` -1 (1 node) · `hard:restaurant_specific_tag_nearby` -3 (1 node) · `commonsense:Time Feasibility:reasonable_transfer_time` -6 (1 node)
-- best instance: node 14 (-0.0010); that edit's largest new symbol is `mutable_tools.calculate_budget_summary.run` (see §4 / the node record for its code)
-- **One attempt (node 14), neutral. Moving budget arithmetic into a tool changed nothing on its own; later branches attacked the same budget failures with deterministic postprocessors instead.**
-
-### `add-conditional-prompt-injection` — 1× attempted
-*injects an extra system note only when the task text matches a pattern*
-
-- Δ median **-0.0229** · best -0.0229 · worst -0.0229
-- verdicts: hurt 1
-- aimed at: restaurant ×1
-- nodes: 5
-- net checks moved (summed over attempts, top-6 movers per attempt; the node count shows whether a figure is systematic or one bad edit): `commonsense:Sandbox Compliance:validated_transportation` +3 (1 node) · `commonsense:Itinerary Structure:traceable_accommodation` +3 (1 node) · `commonsense:Time Feasibility:reasonable_transfer_time` +2 (1 node) · `commonsense:Route Consistency:seamless_intercity_transfers` +2 (1 node) · `commonsense:Cost Calculation Accuracy:cost_calculation_correctness` -2 (1 node) · `commonsense:Itinerary Structure:essential_meal_coverage` -4 (1 node) · `commonsense:Sandbox Compliance:validated_meals` -5 (1 node)
-- best instance: node 5 (-0.0229); that edit's largest new symbol is `mutable_tools.restaurant_constraint_helper.run` (see §4 / the node record for its code)
-- **One attempt (node 5), hurt (-0.0229). The keyword-triggered system note fired on nearly every case, so it diluted the prompt rather than targeting the cases it was written for.**
-
-## §2 What the best agent (node 47) is made of
-
-Edits along the champion lineage, oldest first — this is the baseline a new edit would be stacking on top of.
-
-- **node 0** — seed agent
-- **node 3** (+0.0167) — Reduce transfer-time commonsense failures by giving the model a safer exact-route helper and stronger cluster-based scheduling gui
-  - added tools `query_route_by_place_names`; edited SYSTEM_PROMPT; 5 new symbols · motifs: `add-lookup-helper-tool`
-- **node 11** (-0.0156) — Harden named-place routing so hotel/attraction/restaurant transfers keep working when search_location lacks the exact POI.
-  - 12 new symbols · motifs: `harden-existing-tool`, `add-tool-result-cache`
-- **node 23** (+0.0896) — Raise pass rate by adding a targeted final audit pass for restaurant-constraint, transfer-duration, and budget-math failures.
-  - edited SYSTEM_PROMPT; 3 new symbols · motifs: `add-selfcheck-repair-loop`
-- **node 26** (+0.0250) — Raise success on itinerary-structure/route-consistency/time-feasibility failures with a targeted self-check + re-audit loop.
-  - edited SYSTEM_PROMPT; 10 new symbols · motifs: `add-textual-plan-verifier`, `add-selfcheck-repair-loop`
-- **node 36** (+0.0125) — Improve pass rate on hotel/train hard constraints and validation misses by making the final audit explicitly re-check request-deri
-  - edited SYSTEM_PROMPT; 14 new symbols · motifs: `tighten-system-prompt`, `add-constraint-extractor`
-- **node 37** (-0.0031) — Raise pass rate on remaining route-consistency and validation misses with a small audit/verifier upgrade focused on exact intercit
-  - edited SYSTEM_PROMPT; 6 new symbols · motifs: `tighten-system-prompt`, `add-textual-plan-verifier`
-- **node 46** (-0.0625) — Raise pass rate on transfer-feasibility and transport hard-constraint failures with evidence-based final verifiers.
-  - 26 new symbols · motifs: `add-tool-backed-evidence-verifier`
-- **node 47** (+0.1031) — Raise pass rate on remaining restaurant/train hard-constraint misses plus late-arrival meal coverage/time-feasibility misses.
-  - edited SYSTEM_PROMPT; 15 new symbols · motifs: `add-tool-backed-evidence-verifier`
-
-## §3 Worst track records — tried 3+ times, usually negative
-
-Weak priors, not prohibitions: a motif here may still be the right move if the specific instance is better executed than its predecessors.
-
-- `add-constraint-extractor` — 14 attempts (helped 0, hurt 9), median -0.0479, best +0.0125, on nodes 34, 36, 42, 49, 55, 61, 64, 67, 70, 71, 72, 73, 74, 75. The clearest dead end in this run: 14 attempts, zero helped, median -0.048, worst -0.1406. Parsing the user's request into structured hard constraints by regex misfires often enough that the verifiers built on top reject good plans. Do not retry without changing the extraction mechanism itself.
-- `harden-existing-tool` — 9 attempts (helped 0, hurt 5), median -0.0469, best +0.0021, on nodes 11, 24, 28, 35, 39, 40, 43, 44, 53. Nine attempts, none helped, median -0.047. Going back to patch a tool an earlier edit added never recovered the ground that tool lost — the crashes fixed were real but were not what was costing score. Treat an underperforming mutable tool as sunk cost rather than a repair target.
-- `add-deterministic-selector-tool` — 8 attempts (helped 1, hurt 4), median -0.0177, best +0.0208, on nodes 2, 7, 28, 32, 33, 41, 45, 63. Eight independent attempts (nodes 2, 7, 28, 32, 33, 41, 45, 63) at replacing the model's choice with coded filter/rank logic; only node 2 (+0.0208) helped, median -0.018. The idea is clearly attractive to editors and has repeatedly failed to pay off — strong dedup signal.
-- `add-deterministic-postprocessor` — 10 attempts (helped 1, hurt 5), median -0.0161, best +0.1177, on nodes 1, 6, 7, 18, 19, 27, 40, 53, 57, 59. Mostly negative with one large exception: node 6's header/accommodation normalizer (+0.1177) is the second-best edit in the tree, while the other nine attempts sit at median -0.016. Rewriting the plan in code pays when the target is a rigid format rule the grader checks literally, and backfires once it touches itinerary content.
-- `add-validator-tool` — 3 attempts (helped 0, hurt 1), median -0.0021, best +0.0021, on nodes 4, 8, 20. Three attempts at moving plan validation into a mutable tool; all roughly neutral (median -0.002). Functionally the same as add-textual-plan-verifier with the code relocated out of workflow.py, and the relocation bought nothing.
-
-## §4 Edit log (all nodes, chronological)
-
-| node | ← parent | Δ shared | verdict | changed | motifs | goal |
-|---|---|---|---|---|---|---|
-| 1 | 0 | -0.0990 | hurt | workflow.py | add-selfcheck-repair-loop, add-deterministic-postprocessor, add-textual-plan-verifier | Reduce itinerary commonsense failures by adding a post-plan audit/repair pass plus determi |
-| 2 | 0 | +0.0208 | helped | select_intercity_transport.py, tools_schema.json, workflow.py | add-deterministic-selector-tool | Improve intercity transport selection so the agent more reliably satisfies train/flight ha |
-| 3 ⭐ | 0 | +0.0167 | neutral | query_route_by_place_names.py, tools_schema.json, workflow.py | add-lookup-helper-tool | Reduce transfer-time commonsense failures by giving the model a safer exact-route helper a |
-| 4 | 0 | -0.0021 | neutral | validate_itinerary_requirements.py, tools_schema.json, workflow.py | add-validator-tool, add-selfcheck-repair-loop | Reduce itinerary-structure failures by forcing a draft self-check for attraction coverage, |
-| 5 | 0 | -0.0229 | hurt | restaurant_constraint_helper.py, tools_schema.json, workflow.py | add-lookup-helper-tool, add-conditional-prompt-injection | Improve satisfaction of restaurant-specific hard constraints without broad planner changes |
-| 6 | 1 | +0.1177 | helped | workflow.py | add-deterministic-postprocessor, add-textual-plan-verifier | Fix systematic route/header and last-day accommodation errors with deterministic postproce |
-| 7 | 3 | -0.0104 | neutral | query_route_by_place_names.py, select_train_option.py, tools_schema.json, workflow.py | add-deterministic-postprocessor, add-deterministic-selector-tool | Reduce accommodation-format misses and train/route selection errors while nudging the plan |
-| 8 | 3 | +0.0021 | neutral | validate_travel_plan.py, tools_schema.json, workflow.py | add-validator-tool, add-selfcheck-repair-loop | Catch structure/diversity mistakes before return by auto-validating the drafted itinerary  |
-| 9 | 3 | +0.0125 | neutral | recommend_diverse_attractions.py, tools_schema.json, workflow.py | add-shortlist-generator-tool | Reduce duplicate-attraction and low-diversity itinerary failures with a structured attract |
-| 10 | 0 | +0.0510 | helped | build_intercity_manifest.py, tools_schema.json, workflow.py | add-manifest-builder-tool | Reduce route-consistency and train/flight hard-constraint failures by forcing exact interc |
-| 11 ⭐ | 3 | -0.0156 | neutral | query_route_by_place_names.py | harden-existing-tool, add-tool-result-cache | Harden named-place routing so hotel/attraction/restaurant transfers keep working when sear |
-| 12 | 2 | +0.0167 | neutral | workflow.py | add-selfcheck-repair-loop, add-textual-plan-verifier | Add a lightweight final-audit repair pass to improve budget accuracy, transfer consistency |
-| 13 | 10 | +0.0073 | neutral | workflow.py | add-tool-backed-evidence-verifier, add-selfcheck-repair-loop | Reduce itinerary-structure and transfer-feasibility failures with an automatic final-plan  |
-| 14 | 2 | -0.0010 | neutral | calculate_budget_summary.py, tools_schema.json, workflow.py | add-arithmetic-tool | Reduce budget and validation errors by forcing exact-price verification and tool-based bud |
-| 15 | 13 | -0.0083 | neutral | workflow.py | add-textual-plan-verifier | Raise pass rate by catching duplicate POIs, missing transfer legs, and budget-summary/budg |
-| 16 | 13 | +0.0490 | helped | workflow.py | add-tool-backed-evidence-verifier | Raise pass rate by catching anchor-to-anchor transfer-time mismatches and reinforcing exac |
-| 17 | 10 | +0.0354 | helped | build_city_transfer.py, tools_schema.json, workflow.py | add-lookup-helper-tool | Reduce transfer-time mismatches and itinerary-structure misses by forcing exact city-trans |
-| 18 | 6 | +0.0104 | neutral | workflow.py | add-textual-plan-verifier, add-deterministic-postprocessor | Raise itinerary commonsense pass rate by auditing and repairing missing transfers, duplica |
-| 19 | 1 | +0.0073 | neutral | workflow.py | add-textual-plan-verifier, add-deterministic-postprocessor | Reduce remaining commonsense failures by auditing/repairing meal coverage, duplicate POIs, |
-| 20 | 14 | -0.0375 | hurt | verify_itinerary_consistency.py, tools_schema.json, workflow.py | add-validator-tool, add-tool-backed-evidence-verifier | Reduce itinerary consistency failures by automatically verifying and repairing draft plans |
-| 21 | 11 | +0.0354 | helped | workflow.py | add-textual-plan-verifier, add-selfcheck-repair-loop | Raise score by repairing common final-plan structural mistakes: duplicate attractions, wro |
-| 22 | 13 | -0.0271 | hurt | workflow.py | add-tool-backed-evidence-verifier | Improve sandbox compliance and hard-constraint grounding by rejecting non-database attract |
-| 23 ⭐ | 11 | +0.0896 | helped | workflow.py | add-selfcheck-repair-loop | Raise pass rate by adding a targeted final audit pass for restaurant-constraint, transfer- |
-| 24 | 7 | -0.0760 | hurt | select_train_option.py, tools_schema.json, workflow.py | harden-existing-tool | Reduce route/time consistency failures and eliminate harmful train-selector misses while n |
-| 25 | 11 | +0.0219 | helped | recommend_diverse_attractions.py, tools_schema.json, workflow.py | add-shortlist-generator-tool | Reduce attraction-duplication/diversity failures by giving the model a city-validated, de- |
-| 26 ⭐ | 23 | +0.0250 | helped | workflow.py | add-textual-plan-verifier, add-selfcheck-repair-loop | Raise success on itinerary-structure/route-consistency/time-feasibility failures with a ta |
-| 27 | 23 | -0.0719 | hurt | workflow.py | add-deterministic-postprocessor, add-textual-plan-verifier | Raise itinerary-structure and route-consistency scores with deterministic header/final-day |
-| 28 | 17 | -0.0615 | hurt | build_intercity_manifest.py, select_best_transport.py, tools_schema.json, workflow.py | add-deterministic-selector-tool, harden-existing-tool | Improve transport hard-constraint selection while reducing exact-name sandbox failures and |
-| 29 | 21 | +0.0375 | helped | workflow.py | add-evidence-recorder, add-tool-backed-evidence-verifier | Raise scores by catching tool-data mismatches before finalizing: route-duration drift, unv |
-| 30 | 23 | +0.0396 | helped | schedule_named_transfer.py, tools_schema.json, workflow.py | add-lookup-helper-tool | Reduce transfer-time and route-consistency failures by giving the model a deterministic ci |
-| 31 | 17 | -0.0094 | neutral | workflow.py | add-textual-plan-verifier, add-selfcheck-repair-loop | Reduce duplicate attraction/restaurant picks and thin non-transfer days by adding a determ |
-| 32 | 16 | +0.0083 | neutral | select_hotel_option.py, select_intercity_option.py, select_restaurant_option.py, tool_wrapper.py, tools_schema.json, workflow.py | add-deterministic-selector-tool, add-tool-result-cache | Reduce hard-constraint selection misses and timeout risk by adding grounded selector tools |
-| 33 | 17 | -0.0073 | neutral | select_exact_listing.py, tools_schema.json, workflow.py | add-deterministic-selector-tool | Reduce exact-name sandbox/hotel-service misses while nudging better day density and unique |
-| 34 | 16 | +0.0062 | neutral | workflow.py | add-constraint-extractor, add-tool-backed-evidence-verifier | Reduce hotel/restaurant hard-constraint misses while trimming redundant validator route ch |
-| 35 | 32 | -0.0052 | neutral | select_intercity_option.py, select_restaurant_option.py, tools_schema.json, workflow.py | harden-existing-tool, add-textual-plan-verifier | Raise pass rate by eliminating selector crashes and catching duplicate-POI / budget-summar |
-| 36 ⭐ | 26 | +0.0125 | neutral | workflow.py | tighten-system-prompt, add-constraint-extractor | Improve pass rate on hotel/train hard constraints and validation misses by making the fina |
-| 37 ⭐ | 36 | -0.0031 | neutral | workflow.py | tighten-system-prompt, add-textual-plan-verifier | Raise pass rate on remaining route-consistency and validation misses with a small audit/ve |
-| 38 | 26 | +0.0260 | helped | workflow.py | add-tool-backed-evidence-verifier | Raise pass rate on validated accommodation/transportation and route-consistency failures b |
-| 39 | 35 | +0.0021 | neutral | select_intercity_option.py, select_restaurant_option.py, workflow.py | harden-existing-tool | Eliminate selector crashes and tighten transport/restaurant constraint adherence plus repa |
-| 40 | 35 | -0.0010 | neutral | tool_wrapper.py, workflow.py | add-deterministic-postprocessor, harden-existing-tool | Raise pass rate by auto-correcting budget summaries, catching transfer days missing interc |
-| 41 | 30 | -0.0250 | hurt | select_hotel_candidate.py, tools_schema.json, workflow.py | add-deterministic-selector-tool, add-textual-plan-verifier | Reduce repeated structure/hotel-selection failures by adding a deterministic hotel selecto |
-| 42 | 34 | -0.0687 | hurt | workflow.py | add-constraint-extractor, add-tool-backed-evidence-verifier | Raise pass rate by catching wrong explicit train/flight choices plus invalid/duplicate mea |
-| 43 | 40 | -0.0552 | hurt | build_intercity_manifest.py, select_hotel_option.py, workflow.py | add-tool-backed-evidence-verifier, harden-existing-tool | Raise pass rate by fixing transfer-header route mismatches, closed-attraction scheduling,  |
-| 44 | 40 | -0.0677 | hurt | build_intercity_manifest.py, select_intercity_option.py, workflow.py | add-tool-backed-evidence-verifier, harden-existing-tool | Catch constrained outbound-flight selection mistakes before submission and harden manufact |
-| 45 | 33 | -0.0938 | hurt | build_intercity_manifest.py, select_transport_option.py, tools_schema.json, workflow.py | add-deterministic-selector-tool | Reduce wrong transport selection, route-header mismatches, and budget-summary arithmetic e |
-| 46 ⭐ | 37 | -0.0625 | hurt | workflow.py | add-tool-backed-evidence-verifier | Raise pass rate on transfer-feasibility and transport hard-constraint failures with eviden |
-| 47 ⭐ | 46 | +0.1031 | helped | workflow.py | add-tool-backed-evidence-verifier | Raise pass rate on remaining restaurant/train hard-constraint misses plus late-arrival mea |
-| 48 | 38 | +0.0042 | neutral | workflow.py | add-tool-backed-evidence-verifier, add-textual-plan-verifier | Raise pass rate on budget accuracy and remaining hard-constraint misses with tool-backed f |
-| 49 | 47 | -0.0719 | hurt | workflow.py | add-textual-plan-verifier, add-constraint-extractor, reduce-iteration-budget | Raise pass rate on remaining restaurant-name, budget-summary, and duplicate-attraction fai |
-| 50 | 47 | -0.0865 | hurt | workflow.py | add-tool-backed-evidence-verifier | Raise pass rate on remaining route-consistency and transfer-feasibility failures with evid |
-| 51 | 48 | -0.0375 | hurt | workflow.py | add-tool-backed-evidence-verifier | Raise pass rate on time-feasibility, closure-day, and meal-structure failures with tool-ba |
-| 52 | 51 | +0.0167 | neutral | workflow.py | add-tool-backed-evidence-verifier, add-textual-plan-verifier | Reduce remaining nearby-restaurant hard-constraint misses and weak sightseeing-day coverag |
-| 53 | 39 | -0.0469 | hurt | select_hotel_option.py, select_restaurant_option.py, workflow.py | add-deterministic-postprocessor, harden-existing-tool | Raise pass rate by eliminating budget-summary mismatches and improving hard restaurant/hot |
-| 54 | 38 | -0.0354 | hurt | workflow.py | add-textual-plan-verifier | Reduce seamless-intercity-transfer failures by catching missing/misaligned intercity seque |
-| 55 | 52 | -0.0813 | hurt | workflow.py | add-textual-plan-verifier, add-constraint-extractor | Catch remaining route-header, named-POI, and transfer-day meal misses before finalizing th |
-| 56 | 41 | +0.0271 | helped | workflow.py | add-evidence-recorder, add-tool-backed-evidence-verifier | Raise pass rate by catching transport-price, hotel-constraint, named-restaurant, and suspi |
-| 57 | 29 | -0.0333 | hurt | workflow.py | add-deterministic-postprocessor | Raise scores by deterministically fixing the biggest recurring plan-format failures before |
-| 58 | 36 | -0.0177 | neutral | workflow.py | add-textual-plan-verifier | Raise pass rate on remaining route/time-feasibility and accommodation-traceability failure |
-| 59 | 38 | -0.0219 | hurt | workflow.py | add-deterministic-postprocessor | Eliminate arithmetic-only itinerary failures by deterministically recomputing and normaliz |
-| 60 | 50 | +0.0823 | helped | workflow.py | add-tool-backed-evidence-verifier, reduce-iteration-budget | Raise pass rate on named-restaurant, closure-day, transfer-link, duplicate-attraction, and |
-| 61 | 60 | -0.0260 | hurt | workflow.py | add-constraint-extractor, add-tool-backed-evidence-verifier | Raise pass rate on remaining train hard-constraint, hotel-constraint, and budget failures  |
-| 62 | 60 | -0.0677 | hurt | workflow.py | add-tool-backed-evidence-verifier | Catch remaining meal-price/business-hours and decimal fare mismatches before finalizing pl |
-| 63 | 41 | -0.0250 | hurt | select_train_candidate.py, tools_schema.json, workflow.py | add-deterministic-selector-tool | Reduce train-selection and exact-train-price failures by adding a deterministic train choo |
-| 64 | 61 | -0.0573 | hurt | workflow.py | add-textual-plan-verifier, add-constraint-extractor | Raise pass rate on attraction-coverage/diversity and hotel-brand hard-constraint misses wi |
-| 65 | 58 | -0.0260 | hurt | workflow.py | add-evidence-recorder, add-tool-backed-evidence-verifier | Catch evidence-backed transport/route/hotel mismatches before finalizing plans. |
-| 66 | 37 | +0.0250 | helped | query_restaurants_near_attraction.py, tools_schema.json, workflow.py | add-lookup-helper-tool | Raise pass rate on restaurant hard-constraint cases by giving the planner a dedicated attr |
-| 67 | 66 | -0.1063 | hurt | workflow.py | add-tool-backed-evidence-verifier, add-constraint-extractor | Cut remaining transfer-consistency/time-feasibility and hotel-constraint failures with a t |
-| 68 | 56 | -0.0021 | neutral | workflow.py | add-evidence-recorder, add-tool-backed-evidence-verifier | Raise pass rate by catching restaurant-anchor, closure-day, and budget-summary mistakes du |
-| 69 | 68 | -0.0292 | hurt | workflow.py | add-evidence-recorder, add-tool-backed-evidence-verifier | Reduce route/time-feasibility and itinerary-structure failures with evidence-backed travel |
-| 70 | 59 | -0.0812 | hurt | workflow.py | add-tool-backed-evidence-verifier, add-constraint-extractor | Raise pass rate on hotel/restaurant hard constraints and attraction-hours/cost leaks with  |
-| 71 | 49 | -0.1406 | hurt | workflow.py | add-tool-backed-evidence-verifier, add-constraint-extractor | Reduce remaining hotel/meal/restaurant/train hard-constraint misses with targeted evidence |
-| 72 | 68 | -0.0063 | neutral | workflow.py | add-textual-plan-verifier, add-constraint-extractor | Reduce remaining failures on trip-length/route-consistency and restaurant hard-constraint  |
-| 73 | 56 | -0.0385 | hurt | workflow.py | add-evidence-recorder, add-tool-backed-evidence-verifier, add-constraint-extractor | Reduce train-constraint and named-restaurant misses with a valid, targeted verifier-backed |
-| 74 | 54 | -0.0062 | neutral | workflow.py | add-tool-backed-evidence-verifier, add-constraint-extractor | Raise pass rate on hotel hard-constraints, train-selection constraints, transfer-time real |
-| 75 | 48 | -0.0104 | neutral | workflow.py | add-tool-backed-evidence-verifier, add-constraint-extractor | Raise pass rate on restaurant hard-constraint misses by adding tool-backed restaurant-cons |
-
+```markdown
+---
+node: 30
+parent: 9
+depth: 3
+lineage: 0 > 3 > 9 > 30
 ---
 
-Full code for any node is at `/home/ubuntu/sudipta/agentic_reasoning/meta-agent-dev-v2-improved-feedback/runs/20260615_095317_travel_hgm_8000/round_NNN/task_agent/`; diffs are recomputable against the parent's snapshot.
+## Edit 1
+- **name**: `add-plan-tool-shim`
+- **category level 1 (strategy)**: `add-tool-compatibility-shim`
+- **category level 2 (area)**: `finalization-tool-compatibility`
+- **what**: Added a mutable `plan` tool shim that catches hallucinated `plan` calls and returns deterministic instructions to immediately emit exactly one final `<plan>...</plan>` block from already collected tool results without calling more tools.
+- **why**: This targets runs that fail at the end because the model invents a nonexistent `plan` tool instead of directly finalizing the itinerary.
+
+## Edit 2
+- **name**: `log-plan-shim-activation`
+- **category level 1 (strategy)**: `add-planner-telemetry`
+- **category level 2 (area)**: `planning-observability`
+- **what**: Logged a structured trace event whenever the hallucinated `plan` tool shim is triggered, including the intercepted argument names.
+- **why**: This targets the inability to tell from runtime traces whether finalization recovery happened or which bogus `plan` call shape activated it.
+
+## Outcome
+- **performance**: child 0.7073 over 60 evaluated cases (vs parent on 60 shared: child 0.7073, parent 0.6396, Δ +0.0677)
+- **generalization**: seen 0.7073/60 (Δ +0.0677)
+- **new tools** (3 batches, 60 cases): `plan` 13 calls / 13 cases
+- **new log point `decision_branch/hallucinated_plan_tool_intercepted`**: fired ≥13x (pass 13) (3 batches, 60 cases) -> scorer on those cases: 2 pass / 11 fail · SUSPECT VERIFIER
+
+## Analysis
+- **`add-plan-tool-shim (`plan` mutable tool)`** (other) — 13 calls / 13 cases (3 batches, 60 cases); No intrinsic checker verdict; each intercepted `plan` call returned the same finalize-now instruction string.
+  - agreement: Sampled activated cases 86, 75, and 71 all scored fail; batch summary on the co-fired interception log over the same 13 activations is 2 pass / 11 fail, so interception often let the run continue to a final answer but did not reliably produce scorer-accepted plans.
+  - likely cause: Diff +13..+20 and +25..+31: `run(**kwargs)` ignores arguments and always returns one fixed 'finalize now from existing tool results' message, so it only patches the nonexistent-tool error path.
+  - likely cause: Case 75 dropped from 6 parent failed checks to 1 child fail, and case 46 from 5 to 2, consistent with the shim converting an abortive bogus-tool step into a completed final plan.
+  - likely cause: Case 73 regressed from parent pass to child `attraction_visit_within_opening_hours`, and sampled activations 86/75/71 still failed; 11/13 activated cases failed overall, showing regeneration side-effects or unresolved content errors after recovery.
+- **`log-plan-shim-activation (`decision_branch/hallucinated_plan_tool_intercepted`)`** (other) — fired ≥13x (pass 13) alongside the 13 `plan` calls; Always logged `verdict="pass"` when the shim ran.
+  - agreement: Sampled firings on cases 86, 75, and 71 all correspond to scorer-fail outputs; batch summary for all firings is 2 pass / 11 fail, so this trace marks interception events rather than scorer-approved outputs.
+  - likely cause: Diff +25..+30 logs `label="decision_branch"`, `name="hallucinated_plan_tool_intercepted"`, and `arg_names=sorted(kwargs.keys())`.
+  - likely cause: Runtime samples for 86/75/71 show the event with `arg_names: []`, so the added telemetry does expose at least one bogus call shape.
+  - likely cause: Only 12/400 runtime events are shown; beyond the empty-arg shape in 86/75/71, intercepted argument-shape coverage is unmeasured in the observed batches.
+- **collateral**: commonsense:reasonable_transfer_time 28->33 fails (-5); commonsense:attraction_visit_within_opening_hours 7->11 fails (-4); commonsense:dining_within_service_hours 8->11 fails (-3); commonsense:cost_calculation_correctness 2->5 fails (-3); commonsense:essential_meal_coverage 7->9 fails (-2); commonsense:seamless_intercity_transfers 13->14 fails (-1); commonsense:validated_transportation 1->2 fails (-1); hard:restaurant_specific_cuisine_nearby 1->2 fails (-1); hard:train_cheapest_train_type 1->2 fails (-1); commonsense:no_time_overlaps 0->1 fails (-1); hard:train_cheapest_direct 0->1 fails (-1); commonsense:diverse_meal_options 18->12 fails (+6); commonsense:diverse_attraction_options 7->4 fails (+3); commonsense:validated_meals 5->2 fails (+3); commonsense:essential_attraction_coverage 24->22 fails (+2); hard:attraction_top_rated_must_visit 4->2 fails (+2); commonsense:reasonable_duration_at_attractions 4->3 fails (+1); hard:restaurant_must_eat_named 3->2 fails (+1); commonsense:validated_attractions 2->1 fails (+1); hard:flight_seat_status 2->1 fails (+1); hard:restaurant_specific_tag_nearby 2->1 fails (+1); commonsense:traceable_accommodation 1->0 fails (+1); hard:hotel_cheapest_brand 1->0 fails (+1); hard:restaurant_cheapest_nearby_attraction 1->0 fails (+1); hard:train_departure_time_range 1->0 fails (+1); hard:train_latest_arrival_direct 1->0 fails (+1)
+- **implementation**: sound — Diff +25..+31 added a real mutable tool and trace log; the tool was called 13 times and the log fired ≥13x, with sampled events on 86/75/71 showing the wiring and captured `arg_names`, so this is implemented and exercised rather than dead c
+- **implementation (edit 1)**: sound — Diff +25..+31 implements the shim and it was exercised 13 times; case 75 improving from 6 parent failed checks to 1 child fail is consistent with the claimed recovery path being live.
+- **implementation (edit 2)**: sound — Diff +25..+30 logs the interception event with `arg_names`, and sampled runtime events for 86/75/71 show exactly that payload, matching the telemetry claim.
+```
+
+## §2 Its pre-registered prediction — `round_030/belief_prediction.json`
+
+```json
+{
+  "version": 1,
+  "node": 30,
+  "parent": 9,
+  "belief_version": 83,
+  "instruction_version": 4,
+  "tags": [
+    {
+      "edit": 1,
+      "strategy": "add-tool-compatibility-shim",
+      "area": "finalization-tool-compatibility",
+      "fit": "exact"
+    },
+    {
+      "edit": 2,
+      "strategy": "add-planner-telemetry",
+      "area": "planning-observability",
+      "fit": "exact"
+    }
+  ],
+  "coverable": true,
+  "strategy": {
+    "slug": "tool-compatibility-shim-helps",
+    "p": 0.72,
+    "scope": {
+      "strategy": "add-tool-compatibility-shim",
+      "area": null
+    },
+    "matched_edit": 1,
+    "section": "### belief:tool-compatibility-shim-helps — hallucinated-tool compatibility shims have a clearly better-than-even chance to help when sound\n- kind: strategy\n- scope: strategy=add-tool-compatibility-shim\n- predict: p=0.72\n- evidence: the narrow finalize-now shim directly targets a severe missing-tool failure and now has a broader helped outcome plus a thinner same-direction slice [node 28: Δ+0.0586/16] [node 27: Δ+0.1250/3]; the remaining close sibling is still unmeasured [node 29: unmeasured]\n- next: count how often intercepted `plan` calls would otherwise end without an extractable `<plan>` block, and keep the shim only if those recovered cases stay tag-clean and tool-free afterward"
+  },
+  "implementation": {
+    "slug": "tool-compatibility-shim-soundness",
+    "p": 0.89,
+    "scope": {
+      "strategy": "add-tool-compatibility-shim",
+      "area": null
+    },
+    "matched_edit": 1,
+    "section": "### belief:tool-compatibility-shim-soundness — hallucinated-tool compatibility shims are very likely to be implemented soundly when the intercept contract stays narrow\n- kind: implementation\n- scope: strategy=add-tool-compatibility-shim\n- predict: p=0.89\n- evidence: the current family uses a narrow deterministic contract that only needs to catch a specific hallucinated `plan` call and return finalize-now guidance, and live same-direction evidence now exists in both observed siblings [node 27: Δ+0.1250/3] [node 28: Δ+0.0586/16]; one close sibling remains unmeasured [node 29: unmeasured]\n- next: force a hallucinated `plan` call in tests, confirm the intercept trace appears, and inspect kept outputs for a single extractable `<plan>` block with no fresh tool use after the shim"
+  }
+}
+```
+
+## §3 The planning pass's prediction — `round_030/edit_prediction.json`
+
+```json
+{
+  "version": 1,
+  "round_dir": "round_030",
+  "belief_id": "tool-compatibility-shim-helps",
+  "expected_direction": "up",
+  "expected_delta": 0.06,
+  "why": "This parent already shows `plan` tool usage with a 1.00 tool error rate and at least one zero-score no-plan failure, while the measured evidence for the narrow hallucinated-`plan` shim is the strongest currently available (nodes 27 and 28, with node 28 sound and positive on broader overlap). The mechanism is small, deterministic, and directly targets an observed scorer-visible failure mode.",
+  "proposal_goals": [
+    "Recover cases where the model hallucinates a `plan` tool call so they end with an extractable `<plan>` block instead of a tool error or empty output.",
+    "Make the no-plan failure mode observable at the exact extraction boundary so the edit can be judged sound and any remaining empty-output cases are diagnosable."
+  ],
+  "query": {
+    "nodes": [
+      27,
+      28,
+      29
+    ],
+    "strategies": [
+      "add-tool-compatibility-shim",
+      "add-planner-telemetry"
+    ],
+    "areas": [
+      "finalization-tool-compatibility",
+      "empty-output-recovery",
+      "planning-observability"
+    ],
+    "keywords": [
+      "mutable plan tool shim",
+      "finalize-now guidance",
+      "intercepted plan call",
+      "extractable <plan> block",
+      "no-plan telemetry"
+    ],
+    "include_code": true
+  }
+}
+```
+
+## §4 The belief document at the end of the run (summary + first sections)
+
+```markdown
+## Summary
+The narrow hallucinated-`plan` compatibility shim remains the clearest live quality lever: three sound finalize-now variants improved shared score by turning dead-end tool calls into scorable outputs [node 27: Δ+0.1563/16] [node 29: Δ+0.0937/16] [node 30: Δ+0.0677/60], while a broader sibling was slightly negative on broad overlap [node 28: Δ-0.0177/60]. Planner telemetry still looks more diagnostic than causal because the new intercept trace was wired cleanly yet its `pass` label did not track scorer success on firing cases [node 29: Δ+0.0937/16], and the wider telemetry family remains mixed [node 20: Δ-0.0567/32] [node 31: Δ-0.0938/16]. Intercity `Current City:` normalization still needs broader evidence beyond the thin conservative positive [node 31: Δ-0.0938/16] [node 32: Δ+0.0416/3].
+
+### belief:call-memoization-helps — per-task tool-call memoization is unlikely to help when sound
+- kind: strategy
+- scope: strategy=add-call-memoization
+- predict: p=0.16
+- evidence: memoization stayed near neutral on broader overlap [node 1: Δ-0.0052/48] [node 3: Δ+0.0117/48], and the only clear upside slice is still too thin to move the prior much [node 12: Δ+0.1563/4]
+- next: keep reuse limited to deterministic calls with canonical arguments, and add sampled fresh-versus-cached equivalence checks before expanding coverage
+- track: n=1 · Brier 0.16 (0.25 = uninformative) · outcomes: 3 yes
+### belief:call-memoization-soundness — per-task tool-call memoization is likely to be implemented soundly
+- kind: implementation
+- scope: strategy=add-call-memoization
+- predict: p=0.78
+- evidence: live runs showed miss, store, and hit behavior for the cache wrapper on repeated calls [node 1: Δ-0.0052/48] [node 3: Δ+0.0117/48], while the main remaining risk is key canonicalization rather than the mechanism failing to run [node 12: Δ+0.1563/4]
+- next: fuzz cache-key edge cases such as reordered object keys, null omission, and string-versus-numeric fields before widening reuse
+- track: n=1 · Brier 0.12 (0.25 = uninformative) · outcomes: 3 yes
+### belief:decision-telemetry-helps — descriptive decision telemetry is still more diagnostic than quality-improving
+- kind: strategy
+- scope: strategy=add-decision-telemetry
+- predict: p=0.30
+- evidence: some telemetry-tagged bundles helped [node 5: Δ+0.1343/27] [node 7: Δ+0.0559/19], but other measured runs were neutral or harmful [node 1: Δ-0.0052/48] [node 3: Δ+0.0117/48] [node 6: Δ-0.1875/12], and the remaining upside slice is still thin [node 12: Δ+0.1563/4]
+- next: log only branch facts that can explain a later keep, reject, fallback, or skip decision, and remove any field that could be read as a success verdict
+- track: n=2 · Brier 0.26 (0.25 = uninformative) · outcomes: 2 yes, 4 no
+
+(+17 more belief section(s) not shown)
+```
+
+## §4b Every belief's `- track:` line
+
+| belief | track |
+|---|---|
+| `call-memoization-helps` | n=1 · Brier 0.16 (0.25 = uninformative) · outcomes: 3 yes |
+| `call-memoization-soundness` | n=1 · Brier 0.12 (0.25 = uninformative) · outcomes: 3 yes |
+| `decision-telemetry-helps` | n=2 · Brier 0.26 (0.25 = uninformative) · outcomes: 2 yes, 4 no |
+| `decision-telemetry-soundness` | n=2 · Brier 0.47 (0.25 = uninformative) · outcomes: 2 no, 4 yes |
+| `self-critique-loop-helps` | no scored predictions yet |
+| `self-critique-loop-soundness` | n=2 · Brier 0.60 (0.25 = uninformative) · outcomes: 17 no, 15 no |
+| `plan-validation-helps` | n=3 · Brier 0.22 (0.25 = uninformative) · outcomes: 6 no, 7 no, 11 no |
+| `plan-validation-soundness` | n=5 · Brier 0.22 (0.25 = uninformative) · outcomes: 6 yes, 13 no, 5 no, 7 yes, 11 yes |
+| `tighten-system-prompt-helps` | n=7 · Brier 0.18 (0.25 = uninformative) · outcomes: 16 no, 9 yes, 21 no, 24 no, 26 no |
+| `tighten-system-prompt-soundness` | n=9 · Brier 0.22 (0.25 = uninformative) · outcomes: 14 no, 21 yes, 24 yes, 25 no, 26 yes |
+| `planner-telemetry-helps` | n=3 · Brier 0.45 (0.25 = uninformative) · outcomes: 19 yes, 31 no, 27 yes |
+| `planner-telemetry-soundness` | n=3 · Brier 0.24 (0.25 = uninformative) · outcomes: 19 yes, 27 no, 31 yes |
+| `targeted-repair-guidance-helps` | no scored predictions yet |
+| `targeted-repair-guidance-soundness` | no scored predictions yet |
+| `bounded-fallback-pass-helps` | n=1 · Brier 0.31 (0.25 = uninformative) · outcomes: 20 no |
+| `bounded-fallback-pass-soundness` | n=1 · Brier 0.09 (0.25 = uninformative) · outcomes: 20 yes |
+| `tool-compatibility-shim-helps` | n=3 · Brier 0.33 (0.25 = uninformative) · outcomes: 28 yes, 30 yes, 29 yes |
+| `tool-compatibility-shim-soundness` | n=3 · Brier 0.08 (0.25 = uninformative) · outcomes: 28 yes, 30 yes, 29 yes |
+| `current-city-header-normalization-helps` | no scored predictions yet |
+| `current-city-header-normalization-soundness` | no scored predictions yet |
+
+## §5 The calibration report the maintainer last saw
+
+```markdown
+from `edit_memory_beliefs_prompts/update_0099.txt`:
+
+## Calibration report
+- 46 scored prediction(s) (strategy 20 / implementation 26); mean Brier 0.252 vs 0.25 uninformative; 0 of 46 were uncovered (scored at p=0.5)
+- 2 prediction(s) skipped, not scored: the first node of a new strategy, which no belief could have covered
+- guidance versions — v0: n=22, Brier 0.267 · v1: n=5, Brier 0.283 · v2: n=6, Brier 0.125 · v3: n=9, Brier 0.358 · v4: n=4, Brier 0.088 (current)
+
+### Per belief
+- belief:call-memoization-helps (strategy strategy=add-call-memoization, p=0.16): n=1 · Brier 0.16 · 3 yes · cited by 2 proposal(s)
+- belief:call-memoization-soundness (implementation strategy=add-call-memoization, p=0.78): n=1 · Brier 0.12 · 3 yes
+- belief:decision-telemetry-helps (strategy strategy=add-decision-telemetry, p=0.30): n=2 · Brier 0.26 · 2 yes, 4 no
+- belief:decision-telemetry-soundness (implementation strategy=add-decision-telemetry, p=0.54): n=2 · Brier 0.47 · 2 no, 4 yes
+- belief:self-critique-loop-helps (strategy strategy=add-self-critique-loop, p=0.10): no scored predictions · cited by 10 proposal(s)
+- belief:self-critique-loop-soundness (implementation strategy=add-self-critique-loop, p=0.05): n=2 · Brier 0.60 · 17 no, 15 no
+- belief:plan-validation-helps (strategy strategy=add-plan-validation, p=0.16): n=3 · Brier 0.22 · 6 no, 7 no, 11 no
+- belief:plan-validation-soundness (implementation strategy=add-plan-validation, p=0.43): n=5 · Brier 0.22 · 6 yes, 13 no, 5 no, 7 yes, 11 yes
+- belief:tighten-system-prompt-helps (strategy strategy=tighten-system-prompt, p=0.20): n=7 · Brier 0.18 · 8 no, 16 no, 9 yes, 21 no, 24 no, 26 no · cited by 13 proposal(s)
+- belief:tighten-system-prompt-soundness (implementation strategy=tighten-system-prompt, p=0.54): n=9 · Brier 0.22 · 9 yes, 14 no, 21 yes, 24 yes, 25 no, 26 yes
+- belief:planner-telemetry-helps (strategy strategy=add-planner-telemetry, p=0.36): n=3 · Brier 0.45 · 19 yes, 31 no, 27 yes
+- belief:planner-telemetry-soundness (implementation strategy=add-planner-telemetry, p=0.56): n=3 · Brier 0.24 · 19 yes, 27 no, 31 yes
+- belief:targeted-repair-guidance-helps (strategy strategy=inject-targeted-repair-guidance, p=0.10): no scored predictions
+- belief:targeted-repair-guidance-soundness (implementation strategy=inject-targeted-repair-guidance, p=0.18): no scored predictions
+- belief:bounded-fallback-pass-helps (strategy strategy=add-bounded-fallback-pass, p=0.15): n=1 · Brier 0.31 · 20 no · cited by 2 proposal(s)
+- belief:bounded-fallback-pass-soundness (implementation strategy=add-bounded-fallback-pass, p=0.45): n=1 · Brier 0.09 · 20 yes
+- belief:tool-compatibility-shim-helps (strategy strategy=add-tool-compatibility-shim, p=0.69): n=3 · Brier 0.33 · 28 yes, 30 yes, 29 yes · cited by 3 proposal(s)
+- belief:tool-compatibility-shim-soundness (implementation strategy=add-tool-compatibility-shim, p=0.78): n=3 · Brier 0.08 · 28 yes, 30 yes, 29 yes
+- belief:current-city-header-normalization-helps (strategy strategy=repair-generated-itinerary area=intercity-current-city-headers, p=0.24): no scored predictions
+- belief:current-city-header-normalization-soundness (implementation strategy=repair-generated-itinerary area=intercity-current-city-headers, p=0.72): no scored predictions · cited by 1 proposal(s)
+
+### Worst misses (by Brier)
+- node 27 · belief:planner-telemetry-helps (strategy) p=0.19 → yes (Brier 0.66) · Δ+0.1563/16 · implementation sound — "The new `decision_branch/hallucinated_plan_tool_intercepted` log point fired ≥18x, and sampled cases 31/71/72 include th" · edit: "Added a mutable `plan` tool that catches hallucinated `plan` calls and returns a finalize-now instruction telling the model to emit the itinerary directly insid"
+- node 2 · belief:decision-telemetry-soundness (implementation) p=0.80 → no (Brier 0.64) · Δ+0.0938/16 · implementation unsound — "The new telemetry does fire, but its `completed`/success-style signal is misleading as an outcome marker: `plan_repair_c" · edit: "Added a bounded post-draft review pass that takes an emitted plan, checks it against explicit itinerary logic rules, and can use the existing tool context plus "
+- node 25 · belief:tighten-system-prompt-soundness (implementation) p=0.79 → no (Brier 0.62) · Δ+0.0241/13 · implementation unsound — "Edit 1's attraction-focused prompt change is real and helps (essential_attraction_coverage 4/8->1/8; case 48 repaired), " · edit: "Tightened the planner system prompt to make it internally classify each day, satisfy that day’s required meal and attraction skeleton before adding rest or buff"
+- node 17 · belief:self-critique-loop-soundness (implementation) p=0.78 → no (Brier 0.61) · Δ-0.2125/10 · implementation unsound — "Observed raw review outputs violated the claimed structure preservation: 94 changed 7->6 days and 105 changed 21->7 befo" · edit: "Added a narrow no-tool post-repair review pass that asks the model to rewrite only later cross-day repeated attractions or restaurants using already-supported s"
+- node 28 · belief:tool-compatibility-shim-helps (strategy) p=0.23 → yes (Brier 0.59) · Δ+0.0491/14 · implementation sound — "The shim existed and ran on 5 observed `plan` calls, returning the finalize-now message instead of a missing-tool failur" · edit: "Added a mutable `plan` tool shim that catches hallucinated `plan` calls and returns a deterministic instruction to finalize immediately in a single `<plan>...</"
+- node 15 · belief:self-critique-loop-soundness (implementation) p=0.77 → no (Brier 0.59) · Δ-0.0885/12 · implementation unsound — "Diff 246-255 relies on instruction-following to preserve venues/transport/structure, but only day count is programmatica" · edit: "Added a single post-draft LLM review pass that runs only when a draft plan exists and may revise only travel_city timing continuity while preserving the itinera"
+- node 14 · belief:tighten-system-prompt-soundness (implementation) p=0.76 → no (Brier 0.58) · Δ-0.3182/11 · implementation unsound — "Unsound for this sub-edit: although the prompt text was added at diff +176-183, the observed targets do not confirm enfo" · edit: "Strengthened the planner system prompt with a silent pre-output audit that enforces non-final return-to-hotel closure, bans final-day hotel endings, and require"
+- node 27 · belief:planner-telemetry-soundness (implementation) p=0.76 → no (Brier 0.58) · Δ+0.1875/12 · implementation sound — "Diff lines 25-30 log `verdict="pass"` on every interception, but scorer agreement on fired cases was only 1 pass / 11 fa" · edit: "Added a mutable `plan` tool that catches hallucinated `plan` calls and returns a finalize-now instruction telling the model to emit the itinerary directly insid"
+
+### Uncovered measured nodes (scored at p=0.5)
+- (none)
+
+### Not scored
+- node 5 · implementation unsound — strategy belief not scored — "Validator logic clearly runs (logs on 10/17/110/119), but detected structure problems persist in final outputs on 10/119"
+- node 13 · implementation unsound — strategy belief not scored — "Unsound: although the verifier ran, its clean pass branch had only 2 scorer pass / 24 fail and missed scorer transfer fa"
+- node 14 · implementation unsound — strategy belief not scored — "Unsound for this sub-edit: although the prompt text was added at diff +176-183, the observed targets do not confirm enfo"
+- node 15 · implementation unsound — strategy belief not scored — "Diff 246-255 relies on instruction-following to preserve venues/transport/structure, but only day count is programmatica"
+- node 17 · implementation unsound — strategy belief not scored — "Observed raw review outputs violated the claimed structure preservation: 94 changed 7->6 days and 105 changed 21->7 befo"
+- node 25 · implementation unsound — strategy belief not scored — "Edit 1's attraction-focused prompt change is real and helps (essential_attraction_coverage 4/8->1/8; case 48 repaired), "
+
+### Open predictions (registered, not yet measurable)
+- node 12 · belief:call-memoization-helps p=0.42 (strategy) · belief:call-memoization-soundness p=0.72 (implementation)
+- node 18 · belief:tighten-system-prompt-helps p=0.47 (strategy) · belief:tighten-system-prompt-soundness p=0.85 (implementation)
+- node 22 · belief:tighten-system-prompt-helps p=0.38 (strategy) · belief:tighten-system-prompt-soundness p=0.74 (implementation)
+- node 23 · belief:tighten-system-prompt-helps p=0.40 (strategy) · belief:tighten-system-prompt-soundness p=0.70 (implementation)
+- node 32 · belief:current-city-header-normalization-helps p=0.32 (strategy) · belief:current-city-header-normalization-soundness p=0.68 (implementation)
+
+### Citation checks
+- [SOFT] belief:planner-telemetry-soundness — quotes `[node 29: Δ+0.0625/3]` but the record shows Δ+0.0937 over 16 shared
+- [SOFT] belief:tool-compatibility-shim-helps — quotes `[node 29: Δ+0.0625/3]` but the record shows Δ+0.0937 over 16 shared
+- [SOFT] belief:tool-compatibility-shim-soundness — quotes `[node 29: Δ+0.0625/3]` but the record shows Δ+0.0937 over 16 shared
+```
+
+## §6 What the editor saw for this expand — `round_030/verbose/editor_attempt_1_user.txt`
+
+```markdown
+
+## Objective
+Raise this agent's ABSOLUTE benchmark score. Seed 0.5979/60 · best so far 0.7109/16 (node 27) · this parent (node 9) 0.6396/60.
+
+## Scope of this edit
+Make ONE targeted, coherent change to this parent — one strategy in one area — small enough to apply correctly in a single pass, and instrument every new decision point with trace.log — the analysis that judges your edit reads those logs. Do not bundle independent mechanisms into one edit: each mechanism is judged on its own, and a broken one next to a working one costs the whole node its credit.
+
+## Edits already applied along this lineage (root → parent)
+  [depth 1] Reduce redundant deterministic tool executions to cut timeout risk and speed plan generation.
+  [depth 2] Strengthen first-pass itinerary compliance with a final silent audit in the planner prompt, targeting transfer-time, diversity, coverage, and opening-hours errors without adding extra tool or LLM pass
+
+## Edits already tried directly off this parent (node 9)
+- node 25: neutral Δ-0.0157/16 · child 0.5781/16 · "Improve first-pass daily coverage so full sightseeing days reliably include enough attractions and meals without extra tool or LLM passes." · flags: implementation unsound
+(Full records and implementation of any node are retrievable by node id.)
+
+## Belief document
+(the document itself — see §4 above)
+
+## Planning-pass proposal (advisory — override it if the code says otherwise)
+1. Recover cases where the model hallucinates a `plan` tool call so they end with an extractable `<plan>` block instead of a tool error or empty output. [add-tool-compatibility-shim / finalization-tool-compatibility]
+   mechanism: Add the narrow `plan` compatibility shim used in successful siblings: expose/route a mutable `plan` tool that does not execute real planning, but deterministically returns finalize-now guidance telling the model to emit exactly one final `<plan>...</plan>` from already gathered data. Instrument every branch with factual `trace.log` events such as intercept, returned_guidance, and any unexpected argument shape.
+2. Make the no-plan failure mode observable at the exact extraction boundary so the edit can be judged sound and any remaining empty-output cases are diagnosable. [add-planner-telemetry / planning-observability]
+   mechanism: Add minimal planner-side telemetry around final extraction / budget exhaustion / no-tool terminal exits to log whether a `<plan>` block was present, without changing control flow beyond the shim itself.
+prediction: belief:belief:tool-compatibility-shim-helps -> expected up (Δ ~0.06)
+
+## Retrieved records and implementations (headers only)
+- node 27 (explicit)
+- node 28 (explicit)
+- node 29 (explicit)
+- node 10 (strategy:add-planner-telemetry)
+```
+
+## §7 What retrieval showed it — `round_030/retrieval_manifest.json`
+
+```json
+{
+  "version": 2,
+  "query": {
+    "nodes": [
+      27,
+      28,
+      29
+    ],
+    "strategies": [
+      "add-tool-compatibility-shim",
+      "add-planner-telemetry"
+    ],
+    "areas": [
+      "finalization-tool-compatibility",
+      "empty-output-recovery",
+      "planning-observability"
+    ],
+    "keywords": [
+      "mutable plan tool shim",
+      "finalize-now guidance",
+      "intercepted plan call",
+      "extractable <plan> block",
+      "no-plan telemetry"
+    ],
+    "include_code": true
+  },
+  "max_nodes": 4,
+  "char_budget": 60000,
+  "per_node": 15000,
+  "total_chars": 20030,
+  "selected": [
+    {
+      "node": 27,
+      "why": "explicit",
+      "chars": 3073,
+      "record_chars": 1519,
+      "code_chars": 1552,
+      "code_source": "sources",
+      "hunks_shown": 3,
+      "hunks_omitted": 0,
+      "defs_shown": 1,
+      "defs_omitted": 0
+    },
+    {
+      "node": 28,
+      "why": "explicit",
+      "chars": 6176,
+      "record_chars": 4583,
+      "code_chars": 1591,
+      "code_source": "sources",
+      "hunks_shown": 3,
+      "hunks_omitted": 0,
+      "defs_shown": 1,
+      "defs_omitted": 0
+    },
+    {
+      "node": 29,
+      "why": "explicit",
+      "chars": 2755,
+      "record_chars": 1162,
+      "code_chars": 1591,
+      "code_source": "sources",
+      "hunks_shown": 3,
+      "hunks_omitted": 0,
+      "defs_shown": 1,
+      "defs_omitted": 0
+    },
+    {
+      "node": 10,
+      "why": "strategy:add-planner-telemetry",
+      "chars": 8026,
+      "record_chars": 6162,
+      "code_chars": 1862,
+      "code_source": "sources",
+      "hunks_shown": 5,
+      "hunks_omitted": 0,
+      "defs_shown": 0,
+      "defs_omitted": 0
+    }
+  ],
+  "dropped": [
+    {
+      "node": 11,
+      "why": "strategy:add-planner-telemetry",
+      "reason": "over max_nodes"
+    },
+    {
+      "node": 13,
+      "why": "strategy:add-planner-telemetry",
+      "reason": "over max_nodes"
+    },
+    {
+      "node": 15,
+      "why": "strategy:add-planner-telemetry",
+      "reason": "over max_nodes"
+    },
+    {
+      "node": 17,
+      "why": "strategy:add-planner-telemetry",
+      "reason": "over max_nodes"
+    },
+    {
+      "node": 19,
+      "why": "strategy:add-planner-telemetry",
+      "reason": "over max_nodes"
+    },
+    {
+      "node": 20,
+      "why": "strategy:add-planner-telemetry",
+      "reason": "over max_nodes"
+    },
+    {
+      "node": 23,
+      "why": "strategy:add-planner-telemetry",
+      "reason": "over max_nodes"
+    },
+    {
+      "node": 24,
+      "why": "strategy:add-planner-telemetry",
+      "reason": "over max_nodes"
+    },
+    {
+      "node": 26,
+      "why": "strategy:add-planner-telemetry",
+      "reason": "over max_nodes"
+    }
+  ]
+}
+```
+
+## §8 Per-strategy outcomes (rendered live from the records)
+
+- `add-planner-telemetry` — 16 node(s) (10, 11, 13, 15, 17, 19, 20, 23, 24, 26, 27, 28, 29, 30, 31, 32) · judge: not judged yet · implementation: sound 14 / unsound 0 · score (context): paired Δ median -0.0123 — Add structured trace logging around planner-side guards, branches, or control decisions so their activation is visible during debugging.
+- `tighten-system-prompt` — 13 node(s) (7, 8, 9, 10, 14, 16, 18, 21, 22, 23, 24, 25, 26) · judge: not judged yet · implementation: sound 8 / unsound 2 · score (context): paired Δ median -0.0157 — Revise instructions to make the model more explicit about required checks, output constraints, and planning heuristics before finalizing a plan.
+- `add-decision-telemetry` — 8 node(s) (1, 2, 3, 4, 5, 6, 7, 12) · judge: not judged yet · implementation: sound 7 / unsound 0 · score (context): paired Δ median +0.0264 — Added structured trace logging for cache hits, misses, stores, and uncacheable argument cases during tool execution.
+- `add-plan-validation` — 7 node(s) (4, 5, 6, 7, 11, 13, 17) · judge: not judged yet · implementation: sound 4 / unsound 3 · score (context): paired Δ median -0.0468 — Run deterministic checks over draft plans to detect rule violations and trigger targeted fixes before returning the final answer.
+- `add-self-critique-loop` — 7 node(s) (2, 15, 16, 17, 21, 23, 24) · judge: not judged yet · implementation: sound 0 / unsound 6 · score (context): paired Δ median -0.0625 — Insert an extra reflection pass where the model reviews its own draft against known failure patterns and repairs them.
+- `add-tool-compatibility-shim` — 4 node(s) (27, 28, 29, 30) · judge: not judged yet · implementation: sound 4 / unsound 0 · score (context): paired Δ median +0.0807 — Introduce a compatibility handler that intercepts hallucinated or legacy tool calls and redirects the model to the intended workflow step without another LLM pass.
+- `inject-targeted-repair-guidance` — 4 node(s) (11, 13, 18, 22) · judge: not judged yet · implementation: sound 0 / unsound 2 · score (context): paired Δ median -0.0459 — Feed deterministic failure findings and explicit fix rules into an existing repair prompt so the model corrects specific known issues.
+- `add-call-memoization` — 3 node(s) (1, 3, 12) · judge: not judged yet · implementation: sound 2 / unsound 0 · score (context): paired Δ median +0.0117 — Added a per-task cache in the tool wrapper that canonicalizes tool arguments and reuses stored results for repeated equivalent executions before falling back to
+- `add-bounded-fallback-pass` — 2 node(s) (19, 20) · judge: not judged yet · implementation: sound 1 / unsound 1 · score (context): paired Δ median +0.0003 — Added a single tool-free fallback LLM pass that runs when the workflow ends without any extractable <plan> block and asks the model to turn already collected co
+- `repair-generated-itinerary` — 2 node(s) (31, 32) · judge: not judged yet · implementation: sound 1 / unsound 0 · score (context): paired Δ median -0.0261 — Post-process model output to adjust times, activities, headers, or fields so the itinerary better satisfies evaluator-facing constraints.
+
+## §9 Artefact map
+
+run root: README_ISSUES.md, belief_instruction.md, belief_instruction_archive/, config.snapshot.yaml, edit_memory_beliefs.md, edit_memory_beliefs_archive/, edit_memory_beliefs_prompts/, edit_memory_beliefs_state.json, edit_memory_candidates.json, edit_memory_registry.json, run_summary.md
+
+round_030/: belief_prediction.json, edit_analysis_prompt.txt, edit_code.md, edit_memory.md, edit_memory_prompt.txt, edit_memory_state.json, edit_prediction.json, edit_usage.json, eval_result.json, feedback.json, hgm_node.json, logs/, retrieval_manifest.json, strategy.json, task_agent/, verbose/

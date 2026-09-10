@@ -65,6 +65,11 @@ class _StubLLM:
                                       "was": "1/1",
                                       "evidence": "case a fixed"}],
             "collateral": "none observed",
+            "implementation_sound": True,
+            "implementation_reason": "route_check/main fired on case a and "
+                                     "agreed with the scorer",
+            "sub_edit_verdicts": [{"edit": 1, "sound": True,
+                                   "reason": "fired on case a"}],
         }
 
     def __call__(self, **kw):
@@ -336,7 +341,7 @@ class TestEditMemory(unittest.TestCase):
         _agent(self.p, "def run_task(t):\n    return 1\n")
         _agent(self.c, "def run_task(t):\n    return 2\n\ndef check():\n    pass\n")
         self.llm = _StubLLM()
-        self.em = EditMemory(self.llm, min_shared=1)
+        self.em = EditMemory(self.llm, min_shared=1, analysis_min_own_evals=1)
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -476,6 +481,18 @@ class TestEditMemory(unittest.TestCase):
         self.assertIn("likely cause", text)
         self.assertIn("**target `x`** — remaining 0/1 (was 1/1, +1)", text)
         self.assertIn("**collateral**", text)
+        # v5 verdict lands in the record and parses back for the belief layer.
+        self.assertIn("- **implementation**: sound — route_check/main fired on "
+                      "case a", text)
+        from meta_agent.edit_memory_render import _load_records
+        rec = _load_records(self.tmp)[1]
+        self.assertIs(rec["impl_sound"], True)
+        self.assertIn("fired on case a", rec["impl_reason"])
+        self.assertEqual(rec["tags"][0]["strategy"], "add-verifier")
+        self.assertEqual(rec["tags"][0]["area"], "routing")
+        self.assertEqual(rec["tags"][0]["fit"], "exact")
+        self.assertIn("- **implementation (edit 1)**: sound — fired on case a", text)
+        self.assertEqual(rec["impl_by_edit"], {1: True})
         block = render_edit_memory(self.tmp, token_budget=48000, min_shared=1)
         self.assertIn("new log point", block)
         self.assertIn("**0 calls**", block)
@@ -526,7 +543,7 @@ class TestCategoryDefinitions(unittest.TestCase):
 
     def _run(self, node_payload):
         llm = _StubLLM(node=node_payload)
-        em = EditMemory(llm, min_shared=1)
+        em = EditMemory(llm, min_shared=1, analysis_min_own_evals=1)
         em.setup(self.tmp, self.p, [_case("a", 0.0, ["x"])])
         em.record_node(round_dir=self.c, parent_round_dir=self.p,
                        node_id=1, parent_id=0, ancestors=[0])
@@ -595,6 +612,71 @@ class TestCategoryDefinitions(unittest.TestCase):
         })
         self.assertEqual(reg["strategies"]["prune-context"]["definition"],
                          "trims prompt context")
+
+
+class TestBeliefWiring(unittest.TestCase):
+    """What the belief layer reads off records and how it is constructed."""
+
+    def test_record_tags_parses_edit_blocks(self):
+        from meta_agent.edit_memory_render import record_tags
+        body = ("## Edit 1\n- **name**: `route-check`\n"
+                "- **category level 1 (strategy)**: `add-verifier`\n"
+                "- **category level 2 (area)**: `routing`\n"
+                "- **what**: Adds a check\n- **why**: w\n\n"
+                "## Edit 2\n- **name**: `cache`\n"
+                "- **category level 1 (strategy)**: `add-cache`\n"
+                "- **category level 2 (area)**: `speed`\n"
+                "- **what**: Caches\n- **why**: slow\n")
+        tags = record_tags(body)
+        self.assertEqual([(t["edit"], t["strategy"], t["area"]) for t in tags],
+                         [(1, "add-verifier", "routing"), (2, "add-cache", "speed")])
+        self.assertEqual(tags[0]["what"], "Adds a check")
+        self.assertEqual(tags[1]["name"], "cache")
+        self.assertEqual(record_tags("no edits here"), [])
+
+    def test_cap_forced_fit_is_marked_in_record_and_tags(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        p, c1, c2 = tmp / "round_000", tmp / "round_001", tmp / "round_002"
+        _agent(p, "def run_task(t):\n    return 0\n")
+        _agent(c1, "def run_task(t):\n    return 1\n")
+        _agent(c2, "def run_task(t):\n    return 2\n")
+        llm = _StubLLM()
+        em = EditMemory(llm, setup_pass=False, usage_tracking=False,
+                        analysis_mode="off", max_strategies=1)
+        em.setup(tmp, p, [])
+        em.record_node(round_dir=c1, parent_round_dir=p, node_id=1,
+                       parent_id=0, ancestors=[0])          # admits add-verifier
+        llm.node = {"edits": [{"name": "cache verifier",
+                               "what": "Adds a cache verifier", "why": "w",
+                               "strategy": "add-cache-verifier", "area": "routing"}],
+                    "new_category_defs": {"add-cache-verifier": "caches"}}
+        em.record_node(round_dir=c2, parent_round_dir=c1, node_id=2,
+                       parent_id=1, ancestors=[0, 1])       # cap reached: forced
+        text = (c2 / "edit_memory.md").read_text(encoding="utf-8")
+        self.assertIn("**category level 1 (strategy)**: `add-verifier`", text)
+        self.assertIn("- **fit**: forced by the registry cap", text)
+        from meta_agent.edit_memory_render import _load_records
+        recs = _load_records(tmp)
+        self.assertEqual(recs[2]["tags"][0]["fit"], "forced")
+        self.assertEqual(recs[1]["tags"][0]["fit"], "exact")
+        self.assertNotIn("**fit**", (c1 / "edit_memory.md").read_text(encoding="utf-8"))
+
+    def test_belief_init_failure_raises_only_in_belief_mode(self):
+        with self.assertRaises(ValueError):
+            EditMemory(_StubLLM(), setup_pass=False, steering_mode="belief",
+                       beliefs={"reflect_every": 1})   # removed key
+        em = EditMemory(_StubLLM(), setup_pass=False, steering_mode="full",
+                        beliefs={"reflect_every": 1})
+        self.assertIsNone(em._beliefs)
+
+    def test_beliefs_inherit_threshold_and_min_shared(self):
+        em = EditMemory(_StubLLM(), setup_pass=False, verdict_threshold=0.05,
+                        min_shared=5, beliefs={"enabled": True})
+        self.assertEqual((em._beliefs.threshold, em._beliefs.min_shared), (0.05, 5))
+        em2 = EditMemory(_StubLLM(), setup_pass=False,
+                         beliefs={"enabled": True, "min_shared": 3})
+        self.assertEqual(em2._beliefs.min_shared, 3)   # explicit key wins
 
 
 class TestDiffHelpers(unittest.TestCase):
@@ -691,7 +773,7 @@ class TestPerformanceFirst(unittest.TestCase):
             p, c = tmp / "round_000", tmp / "round_001"
             _agent(p, "def run_task(t):\n    return 1\n")
             _agent(c, "def run_task(t):\n    return 2\n")
-            em = EditMemory(_StubLLM(), min_shared=1)
+            em = EditMemory(_StubLLM(), min_shared=1, analysis_min_own_evals=1)
             em.setup(tmp, p, [_case("a", 0.0, ["x"])])
             em.record_node(round_dir=c, parent_round_dir=p,
                            node_id=1, parent_id=0, ancestors=[0])
@@ -728,7 +810,7 @@ class TestPerformanceFirst(unittest.TestCase):
             p, c = tmp / "round_000", tmp / "round_001"
             _agent(p, "def run_task(t):\n    return 1\n")
             _agent(c, "def run_task(t):\n    return 2\n")
-            em = EditMemory(_StubLLM(), min_shared=1)
+            em = EditMemory(_StubLLM(), min_shared=1, analysis_min_own_evals=1)
             em.setup(tmp, p, [_case("a", 0.0, ["x"])])
             em.record_node(round_dir=c, parent_round_dir=p,
                            node_id=1, parent_id=0, ancestors=[0])
@@ -793,7 +875,7 @@ class TestSeenSplit(unittest.TestCase):
             (p / "eval_result.json").write_text(json.dumps(
                 {"per_case": [{"case_id": "a"}, {"case_id": "b"},
                               {"case_id": "c"}]}))
-            em = EditMemory(_StubLLM(), min_shared=1)
+            em = EditMemory(_StubLLM(), min_shared=1, analysis_min_own_evals=1)
             em.setup(tmp, p, [_case("a", 0.0, ["x"])])
             em.record_node(round_dir=c, parent_round_dir=p,
                            node_id=1, parent_id=0, ancestors=[0])

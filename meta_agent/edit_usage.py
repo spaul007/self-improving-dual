@@ -33,7 +33,8 @@ from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
 from .edit_diff import changed_mutable_files
-from .edit_outcome import compact_check, extract_checks
+from .edit_outcome import TOP_K_CHECKS, compact_check, extract_checks, se_of
+from .perf_text import EFFECTS, EVIDENCE_LEVELS
 
 USAGE_NAME = "edit_usage.json"
 ANALYSIS_PROMPT_NAME = "edit_analysis_prompt.txt"
@@ -45,6 +46,10 @@ MAX_EVENTS = 400
 # Evidence caps for the analysis prompt.
 MAX_ANALYSIS_EVENT_LINES = 120
 MAX_ANALYSIS_CASES = 10
+# One row per evaluated case (score, failed checks, which of this edit's
+# components fired with what verdict) — the overlap-free evidence the judge
+# reasons from. Two batches fit; older cases beyond the cap are counted.
+MAX_ANALYSIS_CASE_ROWS = 32
 
 LABEL_RE = re.compile(r"^(?:label\s*=\s*)?f?['\"]([^'\"]+)['\"]")
 LABEL_KW_RE = re.compile(r"label\s*=\s*f?['\"]([^'\"]+)['\"]")
@@ -105,7 +110,10 @@ def _log_call_re(file_text: str) -> re.Pattern:
     for m in ALIAS_IMPORT_RE.finditer(file_text):
         names.add(m.group(1) or "log")
     alt = "|".join(re.escape(n) for n in sorted(names))
-    return re.compile(r"(?<![\w.])(?:%s)\(\s*(.{0,300})" % alt, re.S)
+    # The 300-char window is a lookahead, not part of the match: a consumed
+    # window swallowed any call site that followed within it, so a second
+    # log point 2–3 lines after the first was never detected.
+    return re.compile(r"(?<![\w.])(?:%s)\(\s*(?=(.{0,300}))" % alt, re.S)
 
 
 def _log_pairs(text: str, alias_text: Optional[str] = None) -> set[tuple[str, Optional[str]]]:
@@ -150,8 +158,12 @@ def added_surface(parent_round_dir: Path, round_dir: Path) -> dict:
         added_text = "\n".join(l for l in c_text.splitlines() if l not in p_lines)
         parent_pairs |= _log_pairs(p_text)
         added_pairs |= _log_pairs(added_text, alias_text=c_text)
-    new_pairs = sorted(p for p in added_pairs if p not in parent_pairs)
-    inherited = sorted(added_pairs & parent_pairs)
+    # `name` is Optional: the same label logged with and without a name
+    # would make the tuple sort compare str with None (node 6 of the
+    # 2026-09-07 run lost its usage store — and every later verdict — that way).
+    _key = lambda p: (p[0], p[1] or "")  # noqa: E731
+    new_pairs = sorted((p for p in added_pairs if p not in parent_pairs), key=_key)
+    inherited = sorted(added_pairs & parent_pairs, key=_key)
     return {
         "tools": tools_added,
         "removed_tools": tools_removed,
@@ -394,15 +406,33 @@ def usage_lines(store: Mapping[str, Any],
 # --------------------------------------------------------------------------- #
 # Analysis — prompt assembly and answer rendering. The call is EditMemory's.
 # --------------------------------------------------------------------------- #
-ANALYSIS_SYSTEM = """You analyze one edit made by a self-improving agent.
-You receive: the edit's description, its code diff vs the parent agent, performance
-numbers (cumulative and vs-parent-on-shared-cases), a per-check failure table,
-deterministic usage counts WITH scorer agreement
-("-> scorer on those cases: X pass / Y fail"), raw runtime verifier logs, and per-case
-scorer ground truth.
+ANALYSIS_SYSTEM = """You analyze one edit made by a self-improving agent. You are the JUDGE: your verdicts
+are the outcome labels the run learns from, so every verdict must rest on evidence you can
+point at, never on the edit's description or on a noisy score difference.
+You receive: the edit's description (one `## Edit N` block per sub-edit), its
+implementation (added lines per definition vs the parent agent, full source of new
+definitions), performance numbers WITH standard errors (each side's mean over its own
+cases, the unpaired Δ, the paired Δ when enough cases are shared), a PAIRED per-check
+failure table (shared cases only, when any) and an UNPAIRED one (the child's own cases vs
+the parent's own cases), deterministic usage counts WITH scorer agreement ("-> scorer on
+those cases: X pass / Y fail"), raw runtime verifier logs, one row per evaluated case
+(score, failed checks, which of this edit's components fired on it with what verdict —
+parent rows for the shared cases), and per-case ground-truth excerpts.
 
-Report evidence, not judgment labels. For EVERY finding, explain WHY — including why
-something HELPED (name the confirmed mechanism), not only why it failed.
+In the component / target / collateral findings report evidence, not judgment labels. For
+EVERY finding, explain WHY — including why something HELPED (name the confirmed
+mechanism), not only why it failed.
+
+Evidence hierarchy (strongest first):
+1. within-case: a component changed the output on a case and the corresponding check then
+   passed — or a detector fired and the final output still failed (remediation broken);
+2. component-level counts joined to the scorer over ≥ 8 cases (agreement lines, per-case
+   rows: did the cases where it fired pass the checks it targets?);
+3. per-check movement on the TARGETED checks — paired on shared cases when ≥ 8 are shared,
+   else unpaired (different case samples: say so, and weigh it less);
+4. the score Δ: ~16-case batches give a standard error near ±0.1, so a Δ smaller than 2×SE
+   is NOISE and is evidence of nothing, in either direction;
+5. the implementation alone — never enough for `improved`.
 
 Component analysis rules:
 - Classify each component's role: GATE (its pass releases the plan), DETECTOR (its
@@ -424,6 +454,35 @@ Component analysis rules:
   timing · prompt-instruction ignored vs followed · improvement-not-attributable-
   to-component · seen-case-specific tuning (case-specific constants/names in the
   diff).
+
+Implementation verdict (required): decide whether this edit's IMPLEMENTATION is SOUND —
+it does what its description claims, its components actually ran on the observed cases,
+and their verdicts agree with the scorer — or UNSOUND (dead code / never fired, suspect
+verifier, crash, not-implemented-as-claimed, remediation broken, silent skips). Give one
+line of reason anchored to a count, case id, or diff line. When no runtime evidence
+exists, judge from the diff and the per-check movement and say so in the reason. This
+verdict decides whether the edit counts as evidence about its STRATEGY (sound) or only
+about its implementation (unsound), so commit to one answer.
+Give the verdict PER SUB-EDIT too (`sub_edit_verdicts`, one entry per `## Edit N` block
+in the description, judged on that sub-edit's own components and target checks) as well
+as for the node as a whole: a bundled edit with one broken component must not hide a
+sound one, and a sound sub-edit next to a broken one still counts as strategy evidence.
+
+Effect verdict (required, per sub-edit, in `sub_edit_verdicts`): did this mechanism IMPROVE
+the behaviour it targets (name the checks in `targeted_checks`) on the observed cases?
+  improved  — the targeted checks fail less and the mechanism is the reason (evidence
+              level 1–3, anchored to the cases where it fired);
+  no_effect — the mechanism never fired, fired without changing outputs, or the targeted
+              checks did not move; "never fired" is ALWAYS no_effect, never unclear;
+  regressed — targeted or collateral checks fail more and the mechanism is the reason;
+  unclear   — only when the evidence genuinely cuts both ways or rests on < 4 cases.
+Grade the evidence behind the verdict: strong = level 1 or 2; moderate = level 3 (paired or
+unpaired per-check movement); weak = level 4–5 only. `effect_reason`: one line anchored to
+counts, case ids, or a component's agreement line. The description states the author's
+intent, not what happened, and the score Δ is noise at this batch size: neither decides
+the effect. Also list `regressions`: checks (targeted or not) whose failures increased with
+the edit, "name j->k fails (d)" from the paired table when available, else the unpaired
+one; or "none observed".
 
 Targets: absolute failure count after the edit vs parent; remaining_failures is the
 bare "k/n" only; the parent count goes in `was`.
@@ -468,8 +527,55 @@ ANALYSIS_TOOL = {"type": "function", "function": {
         "collateral": {"type": "string",
                        "description": "non-targeted checks whose failure counts changed, "
                                       "e.g. 'essential_attraction_coverage 10->13 fails "
-                                      "(-3)'; or 'none observed'"}},
-        "required": ["components", "targeted_constraints", "collateral"]}}}
+                                      "(-3)'; or 'none observed'"},
+        "implementation_sound": {
+            "type": "boolean",
+            "description": "true when the edit does what it claims, its components "
+                           "ran and their verdicts agree with the scorer; false for "
+                           "dead code, suspect verifiers, crashes, broken remediation, "
+                           "not-implemented-as-claimed"},
+        "implementation_reason": {
+            "type": "string",
+            "description": "one line anchored to a count, case id, or diff line"},
+        "sub_edit_verdicts": {
+            "type": "array",
+            "description": "one entry per `## Edit N` block of the description",
+            "items": {"type": "object", "properties": {
+                "edit": {"type": "integer", "description": "the N of `## Edit N`"},
+                "sound": {"type": "boolean"},
+                "reason": {"type": "string",
+                           "description": "one line anchored to a count, case id, "
+                                          "or diff line"},
+                "targeted_checks": {
+                    "type": "array", "items": {"type": "string"},
+                    "description": "the benchmark checks this sub-edit aims at "
+                                   "(names as in the per-check tables)"},
+                "effect": {
+                    "type": "string",
+                    "enum": ["improved", "no_effect", "regressed", "unclear"],
+                    "description": "did the mechanism improve its targeted "
+                                   "behaviour on the observed cases; 'never "
+                                   "fired' is no_effect"},
+                "evidence": {
+                    "type": "string", "enum": ["strong", "moderate", "weak"],
+                    "description": "strong = within-case or component counts "
+                                   "over >= 8 cases; moderate = per-check "
+                                   "movement (paired or unpaired); weak = score "
+                                   "delta or implementation only"},
+                "effect_reason": {
+                    "type": "string",
+                    "description": "one line anchored to counts, case ids, or a "
+                                   "component's agreement line"}},
+                "required": ["edit", "sound", "reason", "targeted_checks",
+                             "effect", "evidence", "effect_reason"]}},
+        "regressions": {
+            "type": "string",
+            "description": "checks whose failures increased with the edit, "
+                           "'name j->k fails (d)' each, worst first; or "
+                           "'none observed'"}},
+        "required": ["components", "targeted_constraints", "collateral",
+                     "implementation_sound", "implementation_reason",
+                     "sub_edit_verdicts", "regressions"]}}}
 
 
 # Bumping this re-buys every node's analysis exactly once (on its next
@@ -483,8 +589,16 @@ ANALYSIS_TOOL = {"type": "function", "function": {
 # entirely — the split's parent-side delta goes stale under this child-only
 # sig (the parent keeps accruing evals after the child's evidence freezes),
 # so the seen-vs-unseen line lives ONLY in the Outcome section, which is
-# recomputed deterministically on every refresh.
-ANALYSIS_VERSION = 4
+# recomputed deterministically on every refresh. v5: the implementation
+# verdict (sound/unsound + reason) that gates belief scoring. v6: the same
+# verdict per sub-edit, so one broken component in a bundled edit no longer
+# vetoes strategy evidence for the others. v7: the analysis is the JUDGE —
+# an effect verdict per sub-edit (improved / no_effect / regressed / unclear
+# + evidence grade + targeted checks) is the strategy label the belief layer
+# scores against; the prompt gains standard errors, an unpaired per-check
+# table and per-case rows so no parent overlap is needed, and shows the
+# implementation view instead of a truncated diff.
+ANALYSIS_VERSION = 7
 
 
 def analysis_sig(child_case_sig: str, batches: Sequence[str], *,
@@ -544,6 +658,82 @@ def _case_excerpt(case: Any, recipe: Optional[Mapping[str, str]]) -> dict:
     return out
 
 
+def _clamped_scores(cases: Sequence[Any]) -> list[float]:
+    out = []
+    for c in cases or ():
+        raw = c.get("score") if isinstance(c, dict) else getattr(c, "score", 0.0)
+        out.append(min(1.0, max(0.0, float(raw or 0.0))))
+    return out
+
+
+def _own_check_counts(cases: Mapping[str, Any],
+                      recipe: Optional[Mapping[str, str]]) -> tuple[int, dict[str, int]]:
+    """``(cases with check data, {check: failures})`` over one side's OWN
+    cases — the unpaired table's raw material."""
+    mode = (recipe or {}).get("mode")
+    path = (recipe or {}).get("path")
+    n = 0
+    fails: dict[str, int] = defaultdict(int)
+    for case in cases.values():
+        checks = extract_checks(case, mode, path)
+        if checks is None:
+            continue
+        n += 1
+        for t in checks:
+            fails[t] += 1
+    return n, dict(fails)
+
+
+def _case_key(cid: str) -> tuple[int, Any]:
+    return (0, int(cid)) if cid.isdigit() else (1, cid)
+
+
+def _fired_by_case(events: Sequence[Mapping]) -> dict[str, dict[str, dict[str, int]]]:
+    """``{case_id: {label/name: {verdict: count}}}`` from the retained events."""
+    out: dict[str, dict[str, dict[str, int]]] = defaultdict(
+        lambda: defaultdict(lambda: defaultdict(int)))
+    for e in events or ():
+        cid = e.get("case_id")
+        if cid is None:
+            continue
+        key = (f"{e.get('label')}/{e.get('name')}" if e.get("name")
+               else str(e.get("label")))
+        out[str(cid)][key][str(e.get("verdict", "-"))] += 1
+    return out
+
+
+def _case_row(cid: str, case: Any, recipe: Optional[Mapping[str, str]], *,
+              fired: Optional[Mapping[str, Mapping[str, int]]] = None,
+              side: str = "") -> str:
+    ex = _case_excerpt(case, recipe)
+    score = ex.get("score")
+    status = ("PASS" if ex.get("passed") else "FAIL") if ex.get("passed") is not None else "?"
+    bits = [f"{float(score):.4f} {status}" if isinstance(score, (int, float))
+            else f"score ? {status}"]
+    checks = ex.get("failed_checks")
+    if checks is None:
+        bits.append("failed: (no check data)")
+    elif not checks:
+        bits.append("failed: none")
+    else:
+        shown = ", ".join(checks[:8])
+        more = f", +{len(checks) - 8} more" if len(checks) > 8 else ""
+        bits.append(f"failed: {shown}{more}")
+    if fired:
+        comps = []
+        for key in sorted(fired)[:6]:
+            vs = fired[key]
+            comps.append(f"{key}=" + ",".join(
+                f"{v}×{n}" if n > 1 else v for v, n in sorted(vs.items())))
+        if len(fired) > 6:
+            comps.append(f"+{len(fired) - 6} more")
+        bits.append("fired: " + " ".join(comps))
+    if ex.get("error"):
+        bits.append("error: " + " ".join(str(ex["error"]).split())[:80])
+    tag = f" ({side})" if side else ""
+    return f"- case {cid}{tag}: " + " · ".join(bits)
+
+
 def build_analysis_prompt(
     *,
     node_id: int,
@@ -555,10 +745,16 @@ def build_analysis_prompt(
     child_cases: Sequence[Any],
     recipe: Optional[Mapping[str, str]],
     code_diff: str = "",
+    code_kind: str = "diff",
     max_event_lines: int = MAX_ANALYSIS_EVENT_LINES,
     max_cases: int = MAX_ANALYSIS_CASES,
+    max_case_rows: int = MAX_ANALYSIS_CASE_ROWS,
 ) -> str:
-    """Assemble the evidence for one node's analysis call. Deterministic."""
+    """Assemble the evidence for one node's analysis call. Deterministic.
+
+    ``code_kind`` names what ``code_diff`` holds: ``"view"`` for the
+    implementation view (added lines per definition, whole units) or
+    ``"diff"`` for a unified diff (the fallback when sources are missing)."""
     events = store.get("events") or []
     # Stratified sample: up to 3 per (label, name, verdict) group, so every
     # verdict of every component is represented before any group repeats.
@@ -624,36 +820,119 @@ def build_analysis_prompt(
     n_check = getattr(outcome, "n_check_cases", 0)
     tbl_lines = [f"`{compact_check(k)}` {a}->{b} fails / {n_check} cases ({a - b:+d})"
                  for k, (a, b) in pc.items()] or ["(none measured)"]
-    perf_line = (
-        "%.4f over %d evaluated cases; vs parent on %d shared: child %.4f, "
-        "parent %.4f, Δ %+.4f"
-        % (getattr(outcome, "child_mean_all", outcome.child_mean_shared),
-           getattr(outcome, "child_n_all", outcome.n_shared),
-           outcome.n_shared, outcome.child_mean_shared,
-           outcome.parent_mean_shared, outcome.delta_shared)
-        if getattr(outcome, "n_shared", 0) else "not yet measured")
 
+    # Performance with standard errors: the judge must see how little a
+    # 16-case Δ can say before it reads the tables.
+    # Tolerate partial outcome objects (older sidecars, test stubs): fall
+    # back from the own-case fields to the shared-set ones.
+    n_sh = int(getattr(outcome, "n_shared", 0) or 0)
+    n_c = int(getattr(outcome, "child_n_all", None) or n_sh)
+    n_p = int(getattr(outcome, "parent_n_all", None) or n_sh)
+    child_mean = float(getattr(outcome, "child_mean_all", None)
+                       or getattr(outcome, "child_mean_shared", 0.0) or 0.0)
+    parent_mean = float(getattr(outcome, "parent_mean_all", None)
+                        or getattr(outcome, "parent_mean_shared", 0.0) or 0.0)
+    delta_all = getattr(outcome, "delta_all", None)
+    if delta_all is None:
+        delta_all = float(getattr(outcome, "delta_shared", 0.0) or 0.0)
+    delta_shared = float(getattr(outcome, "delta_shared", 0.0) or 0.0)
+    min_sh = int(getattr(outcome, "min_shared", 8) or 8)
+    se_c = se_of(_clamped_scores(child_cases))
+    se_p = se_of(_clamped_scores(parent_cases))
+    se_all = getattr(outcome, "se_all", None)
+    se_sh = getattr(outcome, "se_shared", None)
+
+    def _pm(x: Optional[float]) -> str:
+        return f"±{x:.4f}" if x is not None else "n/a"
+
+    perf_lines: list[str] = []
+    if n_c:
+        perf_lines.append(
+            f"- child {child_mean:.4f} over {n_c} own cases (SE {_pm(se_c)})"
+            f" · parent {parent_mean:.4f} over {n_p} own cases (SE {_pm(se_p)})")
+        perf_lines.append(
+            f"- unpaired Δ (own cases, different samples): {float(delta_all):+.4f} "
+            f"{_pm(se_all)}")
+        if n_sh >= min_sh:
+            perf_lines.append(f"- paired Δ over {n_sh} shared cases: "
+                              f"{delta_shared:+.4f} {_pm(se_sh)}")
+        elif n_sh:
+            perf_lines.append(f"- paired Δ over {n_sh} shared cases: "
+                              f"{delta_shared:+.4f} — fewer than the "
+                              f"{min_sh}-shared minimum, not a usable estimate")
+        else:
+            perf_lines.append("- no shared cases yet: no paired estimate")
+    else:
+        perf_lines.append("- not yet measured")
+
+    # Unpaired per-check table: each side over its OWN cases with check data.
+    n_pc, p_fails = _own_check_counts(parent_by_id, recipe)
+    n_cc, c_fails = _own_check_counts(child_by_id, recipe)
+    unpaired: list[str] = []
+    if n_pc and n_cc:
+        keys = sorted(set(p_fails) | set(c_fails),
+                      key=lambda k: (-c_fails.get(k, 0), -p_fails.get(k, 0), k))
+        for k in keys[:TOP_K_CHECKS]:
+            pf, cf = p_fails.get(k, 0), c_fails.get(k, 0)
+            unpaired.append(
+                f"`{compact_check(k)}` parent {pf}/{n_pc} -> child {cf}/{n_cc} fails "
+                f"(rate {100 * pf / n_pc:.0f}% -> {100 * cf / n_cc:.0f}%)")
+        if len(keys) > TOP_K_CHECKS:
+            unpaired.append(f"(+{len(keys) - TOP_K_CHECKS} more checks)")
+    if not unpaired:
+        unpaired = ["(no check data on one side)"]
+
+    # Per-case rows: shared cases first (paired evidence, parent row beside
+    # the child's), then the rest by id, up to the cap.
+    fired = _fired_by_case(events)
+    shared_ids = sorted((c for c in child_by_id if c in parent_by_id), key=_case_key)
+    other_ids = sorted((c for c in child_by_id if c not in parent_by_id), key=_case_key)
+    row_ids = (shared_ids + other_ids)[:max_case_rows]
+    rows: list[str] = []
+    for cid in row_ids:
+        rows.append(_case_row(cid, child_by_id[cid], recipe, fired=fired.get(cid)))
+        if cid in parent_by_id:
+            rows.append(_case_row(cid, parent_by_id[cid], recipe, side="parent"))
+    if not rows:
+        rows = ["(no evaluated cases yet)"]
+    shown_note = (f"{len(row_ids)} of {len(child_by_id)} child cases shown"
+                  if len(child_by_id) > len(row_ids) else
+                  f"all {len(child_by_id)} child cases")
+    sampled_note = (" — fired lists come from sampled logs and are lower bounds"
+                    if store.get("events_truncated") else "")
+
+    code_header = ("# Implementation vs parent (added lines per definition; full "
+                   "source of new definitions)" if code_kind == "view"
+                   else "# Code diff vs parent (the edit itself)")
     parts = [
         f"# Node {node_id} — edit description",
         record_body.strip(),
-        "\n# Code diff vs parent (the edit itself)",
+        "\n" + code_header,
         code_diff or "(no diff supplied)",
-        "\n# Performance",
-        f"- child score: {perf_line}",
-        f"\n# Per-check failure counts (parent -> child, over {n_check} shared "
+        "\n# Performance (standard errors: ~16-case batches put every SE near ±0.1; "
+        "a Δ smaller than 2×SE is noise, not evidence)",
+        "\n".join(perf_lines),
+        f"\n# Per-check failure counts, PAIRED (parent -> child, over {n_check} shared "
         "cases with check data; signed value = improvement, + means fewer "
         "failures)",
         "\n".join(tbl_lines),
+        f"\n# Per-check failure counts, UNPAIRED (parent over its {n_pc} own cases with "
+        f"check data vs child over its {n_cc}; different case samples — weaker "
+        "evidence than the paired table, but it needs no overlap)",
+        "\n".join(unpaired),
         "\n# Deterministic usage",
         "\n".join(u_lines) if u_lines else "(no runtime data captured)",
         "\n# Surface detected (what this edit added vs parent)",
         json.dumps(store.get("surface") or {}, indent=1),
+        f"\n# Per-case results ({shown_note}; shared cases first with the parent's "
+        f"row beside; fired = this edit's components on that case{sampled_note})",
+        "\n".join(rows),
         f"\n# Runtime mutable_log events (sampled {len(sampled)} of "
         f"{len(events)} retained)",
         "\n".join(ev_lines) if ev_lines else
         "(none)\nNo runtime events exist for this edit's components: report "
         'every component\'s "agreement" as unmeasured; do not infer firing '
-        "behavior. Likely causes may still be read from the code diff.",
+        "behavior. Likely causes may still be read from the implementation.",
         f"\n# Ground truth for {gt_basis} ({len(cases)} "
         "cases; parent_same_case = same case on the PARENT agent)",
         json.dumps(cases, indent=1, default=str) if cases
@@ -706,6 +985,44 @@ def render_analysis(payload: Mapping[str, Any]) -> str:
         lines.append(f"- **target `{t['constraint']}`** — remaining {now}{wastxt}{ev}")
     collateral = payload.get("collateral") or payload.get("constraint_effect")
     lines.append(f"- **collateral**: {collateral or '?'}")
+    # v5 verdict. Older cached payloads carry no field and render no line, so
+    # a node analysed under v4 stays "no verdict" until its re-analysis.
+    impl = payload.get("implementation_sound")
+    if isinstance(impl, bool):
+        reason = " ".join(str(payload.get("implementation_reason") or "").split())[:240]
+        lines.append(f"- **implementation**: {'sound' if impl else 'unsound'}"
+                     + (f" — {reason}" if reason else ""))
+        # v6: per-sub-edit verdicts, in edit order. Malformed entries skipped.
+        subs = [v for v in (payload.get("sub_edit_verdicts") or [])
+                if isinstance(v, Mapping) and isinstance(v.get("sound"), bool)
+                and str(v.get("edit", "")).strip().isdigit()]
+        for v in sorted(subs, key=lambda v: int(v["edit"])):
+            rs = " ".join(str(v.get("reason") or "").split())[:200]
+            lines.append(f"- **implementation (edit {int(v['edit'])})**: "
+                         f"{'sound' if v['sound'] else 'unsound'}"
+                         + (f" — {rs}" if rs else ""))
+        # v7: the effect verdict per sub-edit — the judge's label the belief
+        # layer scores strategy predictions against. Older payloads have no
+        # `effect` and render no line (the node stays "no verdict" until its
+        # re-analysis, exactly like the v5 implementation line).
+        for v in sorted(subs, key=lambda v: int(v["edit"])):
+            eff = str(v.get("effect") or "").strip().lower()
+            if eff not in EFFECTS:
+                continue
+            ev = str(v.get("evidence") or "").strip().lower()
+            ev = ev if ev in EVIDENCE_LEVELS else "weak"
+            targets = []
+            for t in (v.get("targeted_checks") or [])[:4]:
+                t = compact_check(str(t)).replace("(", "").replace(")", "").strip()
+                if t:
+                    targets.append(t)
+            tgt = f"; targets: {', '.join(targets)}" if targets else ""
+            rs = " ".join(str(v.get("effect_reason") or "").split())[:240]
+            lines.append(f"- **effect (edit {int(v['edit'])})**: {eff} ({ev}{tgt})"
+                         + (f" — {rs}" if rs else ""))
+        reg = payload.get("regressions")
+        if isinstance(reg, str) and reg.strip():
+            lines.append("- **regressions**: " + " ".join(reg.split())[:300])
     # `generalization` from older cached payloads is deliberately dropped:
     # its parent-side delta goes stale (see ANALYSIS_VERSION v4 note); the
     # seen-vs-unseen line is rendered only in Outcome, from live data.

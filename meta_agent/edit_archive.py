@@ -1,10 +1,14 @@
 """Deterministic retrieval over the run's edit archive.
 
 Resolves a stage-1 memory query — explicit node ids, category ids, keywords —
-into rendered slices of the selected nodes' ``edit_memory.md`` (prose record,
-outcome, analysis) and ``edit_code.md`` (implementation), under a character
-budget. Pure reads plus one audit-manifest write; no LLM anywhere, so the same
-query against the same archive always yields byte-identical output.
+into one block per selected node: its whole ``edit_memory.md`` (prose record,
+outcome, analysis) plus an implementation view computed from the parent and
+child sources (added lines per top-level definition, full source of new
+definitions), under a character budget. Nothing is ever cut mid-text: the
+record is always whole, and the implementation view drops whole units with an
+explicit ``omitted`` note when the budget is short. Pure reads plus one
+audit-manifest write; no LLM anywhere, so the same query against the same
+archive always yields byte-identical output.
 
 Selection order is part of the contract (explicit > category > keyword):
 the proposer's own citations outrank fuzzy matches, and within a source the
@@ -18,16 +22,15 @@ import re
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
-from .edit_code import CODE_NAME
-from .edit_diff import truncate_middle
+from .edit_code import CODE_NAME, render_implementation_view
 from .edit_memory import REGISTRY_NAME
 from .edit_memory_render import _load_records
 
 RETRIEVAL_MANIFEST = "retrieval_manifest.json"
 DEFAULT_CHAR_BUDGET = 60000
-DEFAULT_MAX_NODES = 8
+DEFAULT_MAX_NODES = 4
 
 _DIFF_HEADER = "## Diff vs parent"
 
@@ -73,9 +76,17 @@ def _category_nodes(registry: Mapping[str, Any], axis: str, cid: str) -> list[in
     return seen
 
 
+def _parent_of(rec: Mapping[str, Any]) -> Optional[int]:
+    try:
+        return int((rec.get("fm") or {}).get("parent"))
+    except (TypeError, ValueError):
+        return None
+
+
 def _code_slice(round_dir: Path) -> str:
     """``edit_code.md`` with the diff section moved last (the sub-edit map and
-    final-state defs are the denser signal, so they survive truncation)."""
+    final-state defs are the denser signal). Fallback only — used when the
+    parent/child sources are no longer on disk."""
     path = Path(round_dir) / CODE_NAME
     try:
         text = path.read_text(encoding="utf-8") if path.exists() else ""
@@ -159,25 +170,51 @@ def resolve_query(
     total = 0
     for n, why in selected:
         rec = records[n]
-        piece = rec.get("text") or rec.get("body") or ""
+        # The record is always whole; the implementation view gets whatever
+        # per-node budget remains and drops whole units, never mid-text.
+        record = (rec.get("text") or rec.get("body") or "").rstrip()
+        code_text, code_source = "", "none"
+        cstats: dict[str, int] = {}
         if include_code:
-            code = _code_slice(experiment_dir / f"round_{n:03d}")
-            if code:
-                piece += "\n\n" + code
-        truncated = len(piece) > per_node
-        piece = truncate_middle(piece, per_node)
+            code_budget = max(0, per_node - len(record))
+            child_dir = experiment_dir / f"round_{n:03d}"
+            parent_id = _parent_of(rec)
+            parent_dir = (experiment_dir / f"round_{parent_id:03d}"
+                          if parent_id is not None else None)
+            if (parent_dir is not None and (parent_dir / "task_agent").is_dir()
+                    and (child_dir / "task_agent").is_dir()):
+                try:
+                    code_text, cstats = render_implementation_view(
+                        parent_dir, child_dir, char_budget=code_budget)
+                    code_source = "sources" if code_text else "none"
+                except Exception as exc:  # noqa: BLE001
+                    code_text = f"(implementation view failed: {exc!r})"
+            else:
+                fallback = _code_slice(child_dir)
+                if fallback and len(fallback) <= code_budget:
+                    code_text, code_source = fallback, "edit_code.md"
+                elif fallback:
+                    code_text = (f"(implementation omitted: edit_code.md is "
+                                 f"{len(fallback)} chars, budget {code_budget})")
+        piece = record + (("\n\n" + code_text) if code_text else "")
         blocks.append(f"### Retrieved node {n} ({why})\n{piece.rstrip()}")
         rows.append({"node": n, "why": why, "chars": len(piece),
-                     "truncated": truncated})
+                     "record_chars": len(record), "code_chars": len(code_text),
+                     "code_source": code_source,
+                     **{k: int(cstats.get(k, 0)) for k in
+                        ("hunks_shown", "hunks_omitted", "defs_shown",
+                         "defs_omitted")}})
         total += len(piece)
 
     manifest = {
-        "version": 1,
+        "version": 2,
         "query": {k: query.get(k) for k in
                   ("nodes", "strategies", "areas", "keywords", "include_code")},
-        "selected": rows,
+        "max_nodes": max_nodes,
         "char_budget": char_budget,
+        "per_node": per_node,
         "total_chars": total,
+        "selected": rows,
         "dropped": dropped,
     }
     return RetrievalResult(blocks=blocks, manifest=manifest)

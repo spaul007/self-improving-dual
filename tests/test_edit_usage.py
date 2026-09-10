@@ -191,13 +191,28 @@ class TestAnalysisHelpers(unittest.TestCase):
                 # renderer must not append a second "(was ...)"
                 {"constraint": "y", "remaining_failures": "5/9 (was 9/9, +4)",
                  "was": "9/9"}],
-            "collateral": "z 0->2 fails (-2)"})
+            "collateral": "z 0->2 fails (-2)",
+            "implementation_sound": False,
+            "implementation_reason": "check/main fired on case a but\nthe plan "
+                                     "still failed x",
+            "sub_edit_verdicts": [
+                {"edit": 2, "sound": True, "reason": "prompt rule present"},
+                {"edit": 1, "sound": False, "reason": "dead\ncomponent"},
+                {"edit": "x", "sound": True, "reason": "malformed, skipped"}]})
         self.assertTrue(md.startswith("## Analysis"))
         self.assertIn("`check/main`", md)
         self.assertIn("likely cause: lookup misses", md)
         self.assertIn("remaining 12/58 (was 19/58, +7) — cases a, b", md)
         self.assertNotIn("(was 9/9, +4) (was", md)
         self.assertIn("**collateral**: z 0->2 fails (-2)", md)
+        # v5 verdict: one line, reason flattened to a single line
+        self.assertIn("- **implementation**: unsound — check/main fired on case a "
+                      "but the plan still failed x", md)
+        # v6: per-sub-edit verdicts, in edit order, malformed entries skipped
+        i1 = md.index("- **implementation (edit 1)**: unsound — dead component")
+        i2 = md.index("- **implementation (edit 2)**: sound — prompt rule present")
+        self.assertLess(i1, i2)
+        self.assertNotIn("(edit x)", md)
         # no judgment labels anywhere
         self.assertNotIn("assessment", md)
         self.assertNotIn("confidence", md)
@@ -211,6 +226,7 @@ class TestAnalysisHelpers(unittest.TestCase):
                                "constraint_effect": "helped x"})
         self.assertIn("likely cause: ineffective", md2)
         self.assertIn("**collateral**: helped x", md2)
+        self.assertNotIn("**implementation**", md2)   # no verdict, no line
         # malformed component entries are skipped, never raise
         md3 = render_analysis({"components": [{}, "junk"]})
         self.assertIn("**collateral**: ?", md3)
@@ -229,7 +245,15 @@ class TestAnalysisHelpers(unittest.TestCase):
         self.assertIn("`a:x` 19->12 fails / 58 cases (+7)", prompt)
         self.assertIn("# Code diff vs parent", prompt)
         self.assertIn("+x = 1", prompt)
-        self.assertIn("child score: 0.7200 over 60 evaluated cases; vs parent on 60 shared", prompt)
+        # v7: own-case means with SE, the unpaired Δ and the paired Δ; a
+        # partial outcome (no *_all fields) falls back to the shared set.
+        self.assertIn("child 0.7200 over 60 own cases", prompt)
+        self.assertIn("parent 0.6300 over 60 own cases", prompt)
+        self.assertIn("paired Δ over 60 shared cases: +0.0900", prompt)
+        self.assertIn("# Per-check failure counts, PAIRED", prompt)
+        self.assertIn("# Per-check failure counts, UNPAIRED", prompt)
+        self.assertIn("# Per-case results", prompt)
+        self.assertIn("a Δ smaller than 2×SE is noise", prompt)
 
     def test_uninstrumented_edit_guards(self):
         from types import SimpleNamespace
@@ -357,3 +381,58 @@ class TestRoundThree(unittest.TestCase):
             self.assertEqual(st2["seen_case_ids"], [])
         finally:
             shutil.rmtree(tmp, ignore_errors=True)
+
+
+class MixedNameSortTests(unittest.TestCase):
+    """A label logged both with and without a ``name`` must not break the
+    surface sort (node 6 of the 2026-09-07 run lost its usage store — and
+    with it every implementation verdict — to a str/None comparison)."""
+
+    def test_added_surface_with_named_and_unnamed_log_points(self):
+        import shutil
+        import tempfile
+        from pathlib import Path
+        from meta_agent.edit_usage import added_surface
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+
+        def agent(d, wf):
+            a = d / "task_agent"
+            (a / "mutable_tools").mkdir(parents=True)
+            (a / "workflow.py").write_text(wf, encoding="utf-8")
+            (a / "tool_wrapper.py").write_text("def x(): return None\n", encoding="utf-8")
+            (a / "tools_schema.json").write_text("[]", encoding="utf-8")
+            (a / "mutable_tools" / "__init__.py").write_text("", encoding="utf-8")
+
+        agent(tmp / "p", "from platform_core.trace import log as trace_log\n"
+                         "def run_task(t):\n    return 0\n")
+        # The unnamed call comes LAST: the call-site regex looks 300 chars
+        # ahead for ``name=``, so an unnamed call followed by a named one
+        # would pick up the neighbour's name and never yield None.
+        agent(tmp / "c", "from platform_core.trace import log as trace_log\n"
+                         "def run_task(t):\n"
+                         "    trace_log('gate', verdict='pass', name='a')\n"
+                         "    trace_log('gate', verdict='pass')\n"
+                         "    return 1\n")
+        s = added_surface(tmp / "p", tmp / "c")
+        self.assertEqual(sorted((l["label"], l["name"] or "") for l in s["labels"]),
+                         [("gate", ""), ("gate", "a")])
+
+    def test_adjacent_call_sites_are_all_detected(self):
+        """The lookahead window must not swallow the next call site: two
+        log points on consecutive lines are two surface entries."""
+        import shutil
+        import tempfile
+        from pathlib import Path
+        from meta_agent.edit_usage import added_surface
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, True)
+        _agent(tmp / "p", "x = 1\n")
+        _agent(tmp / "c", "from platform_core.trace import log\n"
+                          "def run_task(t):\n"
+                          "    log('first', verdict='pass', name='x')\n"
+                          "    log('second', verdict='pass', name='y')\n"
+                          "    log('third', verdict='fail', name='z')\n")
+        s = added_surface(tmp / "p", tmp / "c")
+        self.assertEqual([l["label"] for l in s["labels"]],
+                         ["first", "second", "third"])

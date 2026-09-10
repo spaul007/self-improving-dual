@@ -1,0 +1,5039 @@
+{
+  "run": "/groups/AIC-MV/sudipta.paul/code/rsi/edit-memory-sep6/study_snapshots/20260908_225039_gpt54_beliefs2stage",
+  "caps": {
+    "diff_char_cap": 6000,
+    "code_diff_char_cap": 20000,
+    "analysis_code_char_budget": null,
+    "steering_token_budget": 48000,
+    "retrieval_char_budget": 60000,
+    "max_retrieved_nodes": 4,
+    "doc_char_cap": 40000,
+    "evidence_char_budget": null,
+    "instruction_char_cap": 2500
+  },
+  "nodes": [
+    {
+      "node": 0,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "editor_prompt_chars": 0,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0
+    },
+    {
+      "node": 1,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 0,
+      "retr_dropped": 1,
+      "retr_dropped_over_cap": 0,
+      "retr_selected_nodes": [],
+      "retr_dropped_nodes": [
+        0
+      ],
+      "retr_why": [],
+      "retr_explicit": 0,
+      "retr_associative": 0,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 0,
+      "hunks_shown": 0,
+      "retr_total_chars": 0,
+      "retr_per_node": 0,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        0
+      ],
+      "query_strategies": [
+        "postplan_self_check",
+        "tool_result_cache",
+        "tool_error_recovery"
+      ],
+      "query_areas": [
+        "workflow",
+        "tool_wrapper"
+      ],
+      "query_keywords": [
+        "trace.log",
+        "final plan repair",
+        "post-plan validation",
+        "cache tool results",
+        "plan tool error"
+      ],
+      "editor_prompt_chars": 82586,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-call-memoization",
+        "add-decision-telemetry"
+      ]
+    },
+    {
+      "node": 2,
+      "tagger_elisions": 1,
+      "tagger_chars_elided": 3894,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 1,
+      "judge_chars_elided": 3894,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 1,
+      "retr_dropped": 0,
+      "retr_dropped_over_cap": 0,
+      "retr_selected_nodes": [
+        1
+      ],
+      "retr_dropped_nodes": [],
+      "retr_why": [
+        "explicit"
+      ],
+      "retr_explicit": 1,
+      "retr_associative": 0,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 0,
+      "hunks_shown": 4,
+      "retr_total_chars": 3226,
+      "retr_per_node": 60000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        1
+      ],
+      "query_strategies": [
+        "add-call-memoization",
+        "add-decision-telemetry"
+      ],
+      "query_areas": [
+        "tool-execution-overhead",
+        "cache-observability"
+      ],
+      "query_keywords": [
+        "memoization",
+        "cache key",
+        "canonicalize",
+        "trace.log",
+        "search_location",
+        "query_road_route_info",
+        "query_attraction_details",
+        "query_restaurant_details"
+      ],
+      "editor_prompt_chars": 89509,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-self-critique-loop",
+        "add-decision-telemetry"
+      ]
+    },
+    {
+      "node": 3,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 2,
+      "retr_dropped": 0,
+      "retr_dropped_over_cap": 0,
+      "retr_selected_nodes": [
+        2,
+        1
+      ],
+      "retr_dropped_nodes": [],
+      "retr_why": [
+        "explicit",
+        "explicit"
+      ],
+      "retr_explicit": 2,
+      "retr_associative": 0,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 3,
+      "hunks_shown": 21,
+      "retr_total_chars": 10914,
+      "retr_per_node": 30000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        2,
+        1
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "add-decision-telemetry"
+      ],
+      "query_areas": [
+        "itinerary-logic-compliance",
+        "repair-observability"
+      ],
+      "query_keywords": [
+        "repair loop",
+        "departure day",
+        "essential attraction coverage",
+        "essential meal coverage",
+        "trace.log",
+        "empty plan",
+        "budget exhausted"
+      ],
+      "editor_prompt_chars": 98901,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-call-memoization",
+        "add-decision-telemetry"
+      ]
+    },
+    {
+      "node": 4,
+      "tagger_elisions": 1,
+      "tagger_chars_elided": 12193,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 1,
+      "judge_chars_elided": 12193,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 1,
+      "retr_dropped": 0,
+      "retr_dropped_over_cap": 0,
+      "retr_selected_nodes": [
+        2
+      ],
+      "retr_dropped_nodes": [],
+      "retr_why": [
+        "explicit"
+      ],
+      "retr_explicit": 1,
+      "retr_associative": 0,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 3,
+      "hunks_shown": 17,
+      "retr_total_chars": 14682,
+      "retr_per_node": 60000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        2
+      ],
+      "query_strategies": [
+        "add-self-critique-loop"
+      ],
+      "query_areas": [
+        "itinerary-logic-compliance",
+        "repair-observability"
+      ],
+      "query_keywords": [
+        "PLAN_REPAIR_PROMPT",
+        "_repair_plan",
+        "essential_meal_coverage",
+        "essential_attraction_coverage",
+        "duplicate restaurant",
+        "duplicate attraction",
+        "Accommodation: -"
+      ],
+      "editor_prompt_chars": 111867,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "add-plan-validation",
+        "add-decision-telemetry"
+      ]
+    },
+    {
+      "node": 5,
+      "tagger_elisions": 1,
+      "tagger_chars_elided": 9031,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 1,
+      "judge_chars_elided": 9031,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 2,
+      "retr_dropped": 0,
+      "retr_dropped_over_cap": 0,
+      "retr_selected_nodes": [
+        4,
+        2
+      ],
+      "retr_dropped_nodes": [],
+      "retr_why": [
+        "explicit",
+        "strategy:add-self-critique-loop"
+      ],
+      "retr_explicit": 1,
+      "retr_associative": 1,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 10,
+      "hunks_shown": 32,
+      "retr_total_chars": 32169,
+      "retr_per_node": 30000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        4
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "add-plan-validation"
+      ],
+      "query_areas": [
+        "itinerary-logic-compliance",
+        "repair-observability"
+      ],
+      "query_keywords": [
+        "PLAN_REPAIR_PROMPT",
+        "essential_meal_coverage",
+        "essential_attraction_coverage",
+        "traceable_accommodation",
+        "final day accommodation",
+        "meal interval",
+        "non-intercity day",
+        "transfer day"
+      ],
+      "editor_prompt_chars": 130289,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "add-plan-validation",
+        "add-decision-telemetry"
+      ]
+    },
+    {
+      "node": 6,
+      "tagger_elisions": 1,
+      "tagger_chars_elided": 16332,
+      "code_elisions": 1,
+      "code_chars_elided": 2332,
+      "code_defs_elided": false,
+      "judge_elisions": 1,
+      "judge_chars_elided": 16332,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 3,
+      "retr_dropped": 0,
+      "retr_dropped_over_cap": 0,
+      "retr_selected_nodes": [
+        2,
+        4,
+        5
+      ],
+      "retr_dropped_nodes": [],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 0,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 16,
+      "hunks_shown": 42,
+      "retr_total_chars": 47222,
+      "retr_per_node": 20000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        2,
+        4,
+        5
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "add-plan-validation"
+      ],
+      "query_areas": [
+        "itinerary-logic-compliance",
+        "repair-observability"
+      ],
+      "query_keywords": [
+        "bounded post-draft review",
+        "repair prompt",
+        "validator-guided repair",
+        "trace.log",
+        "duplicate attraction",
+        "meal coverage",
+        "final day closure",
+        "opening hours",
+        "route duration"
+      ],
+      "editor_prompt_chars": 142982,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-plan-validation",
+        "add-decision-telemetry"
+      ]
+    },
+    {
+      "node": 7,
+      "tagger_elisions": 1,
+      "tagger_chars_elided": 10273,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 1,
+      "judge_chars_elided": 10273,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 1,
+      "retr_dropped_over_cap": 1,
+      "retr_selected_nodes": [
+        4,
+        5,
+        6,
+        2
+      ],
+      "retr_dropped_nodes": [
+        3
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:add-self-critique-loop"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 7,
+      "hunks_omitted": 0,
+      "defs_shown": 17,
+      "hunks_shown": 65,
+      "retr_total_chars": 58430,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        4,
+        5,
+        6
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "add-plan-validation"
+      ],
+      "query_areas": [
+        "itinerary-logic-compliance",
+        "repair-observability"
+      ],
+      "query_keywords": [
+        "PLAN_REPAIR_PROMPT",
+        "meal coverage",
+        "attraction coverage",
+        "final day accommodation",
+        "reasonable_transfer_time",
+        "trace.log"
+      ],
+      "editor_prompt_chars": 157802,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _log_plan_validation",
+          "chars": 439,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _log_plan_validation (full source 439 chars)"
+        },
+        {
+          "unit": "workflow.py :: _select_preferred_plan",
+          "chars": 1971,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _select_preferred_plan (full source 1971 chars)"
+        },
+        {
+          "unit": "workflow.py :: _log_structure_validation",
+          "chars": 1043,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _log_structure_validation (full source 1043 chars)"
+        },
+        {
+          "unit": "workflow.py :: _format_structure_report",
+          "chars": 571,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _format_structure_report (full source 571 chars)"
+        },
+        {
+          "unit": "workflow.py :: _log_structure_validation",
+          "chars": 1080,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _log_structure_validation (full source 1080 chars)"
+        },
+        {
+          "unit": "workflow.py :: _select_repaired_plan",
+          "chars": 2088,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _select_repaired_plan (full source 2088 chars)"
+        },
+        {
+          "unit": "workflow.py :: _repair_plan",
+          "chars": 2267,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _repair_plan (full source 2267 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 3,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": false,
+      "strategies": [
+        "add-plan-validation",
+        "tighten-system-prompt",
+        "add-decision-telemetry"
+      ]
+    },
+    {
+      "node": 8,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 3,
+      "retr_dropped_over_cap": 3,
+      "retr_selected_nodes": [
+        7,
+        6,
+        4,
+        2
+      ],
+      "retr_dropped_nodes": [
+        1,
+        3,
+        5
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:add-self-critique-loop"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 8,
+      "hunks_omitted": 0,
+      "defs_shown": 16,
+      "hunks_shown": 65,
+      "retr_total_chars": 53018,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        7,
+        6,
+        4
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "tighten-system-prompt",
+        "add-decision-telemetry"
+      ],
+      "query_areas": [
+        "itinerary-logic-compliance",
+        "repair-observability"
+      ],
+      "query_keywords": [
+        "repair prompt",
+        "one-pass critique",
+        "post-draft revision",
+        "trace.log repair branch",
+        "empty plan fallback",
+        "targeted checklist"
+      ],
+      "editor_prompt_chars": 151254,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        },
+        {
+          "unit": "workflow.py :: _format_structure_report",
+          "chars": 571,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _format_structure_report (full source 571 chars)"
+        },
+        {
+          "unit": "workflow.py :: _log_structure_validation",
+          "chars": 1080,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _log_structure_validation (full source 1080 chars)"
+        },
+        {
+          "unit": "workflow.py :: _select_repaired_plan",
+          "chars": 2088,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _select_repaired_plan (full source 2088 chars)"
+        },
+        {
+          "unit": "workflow.py :: _repair_plan",
+          "chars": 2267,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _repair_plan (full source 2267 chars)"
+        },
+        {
+          "unit": "workflow.py :: _format_validation_report",
+          "chars": 592,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _format_validation_report (full source 592 chars)"
+        },
+        {
+          "unit": "workflow.py :: _log_plan_validation",
+          "chars": 439,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _log_plan_validation (full source 439 chars)"
+        },
+        {
+          "unit": "workflow.py :: _select_preferred_plan",
+          "chars": 1971,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _select_preferred_plan (full source 1971 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 1,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt"
+      ]
+    },
+    {
+      "node": 9,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 2,
+      "retr_dropped_over_cap": 2,
+      "retr_selected_nodes": [
+        2,
+        8,
+        7,
+        4
+      ],
+      "retr_dropped_nodes": [
+        5,
+        6
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "strategy:tighten-system-prompt",
+        "area:itinerary-logic-compliance"
+      ],
+      "retr_explicit": 2,
+      "retr_associative": 2,
+      "defs_omitted": 4,
+      "hunks_omitted": 0,
+      "defs_shown": 12,
+      "hunks_shown": 43,
+      "retr_total_chars": 40782,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        2,
+        8
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "itinerary-logic-compliance",
+        "repair-observability"
+      ],
+      "query_keywords": [
+        "post-draft review",
+        "repair pass",
+        "audit checklist",
+        "final plan revision",
+        "trace.log"
+      ],
+      "editor_prompt_chars": 138734,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        },
+        {
+          "unit": "workflow.py :: _format_validation_report",
+          "chars": 592,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _format_validation_report (full source 592 chars)"
+        },
+        {
+          "unit": "workflow.py :: _log_plan_validation",
+          "chars": 439,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _log_plan_validation (full source 439 chars)"
+        },
+        {
+          "unit": "workflow.py :: _select_preferred_plan",
+          "chars": 1971,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _select_preferred_plan (full source 1971 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 1,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt"
+      ]
+    },
+    {
+      "node": 10,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 3,
+      "retr_dropped_over_cap": 3,
+      "retr_selected_nodes": [
+        7,
+        8,
+        9,
+        2
+      ],
+      "retr_dropped_nodes": [
+        4,
+        5,
+        6
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "area:itinerary-logic-compliance"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 8,
+      "hunks_shown": 29,
+      "retr_total_chars": 28785,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        7,
+        8,
+        9
+      ],
+      "query_strategies": [
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "first-pass-itinerary-compliance",
+        "itinerary-logic-compliance"
+      ],
+      "query_keywords": [
+        "silent audit checklist",
+        "travel_city duration exact",
+        "opening hours",
+        "duplicate attraction",
+        "essential attraction coverage",
+        "meal coverage",
+        "buffer instead of padding"
+      ],
+      "editor_prompt_chars": 127016,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": true,
+      "strategies": [
+        "tighten-system-prompt",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 11,
+      "tagger_elisions": 1,
+      "tagger_chars_elided": 2112,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 1,
+      "judge_chars_elided": 2112,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 5,
+      "retr_dropped_over_cap": 5,
+      "retr_selected_nodes": [
+        7,
+        9,
+        2,
+        8
+      ],
+      "retr_dropped_nodes": [
+        10,
+        4,
+        5,
+        6,
+        3
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "strategy:add-self-critique-loop",
+        "strategy:tighten-system-prompt"
+      ],
+      "retr_explicit": 2,
+      "retr_associative": 2,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 8,
+      "hunks_shown": 29,
+      "retr_total_chars": 28785,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        7,
+        9
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "itinerary-logic-compliance",
+        "repair-observability",
+        "first-pass-itinerary-compliance"
+      ],
+      "query_keywords": [
+        "duplicate attraction",
+        "duplicate restaurant",
+        "diverse_meal_options",
+        "diverse_attraction_options",
+        "dining_within_service_hours",
+        "reasonable_transfer_time",
+        "current_city",
+        "repair prompt",
+        "audit checklist"
+      ],
+      "editor_prompt_chars": 136968,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 3,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "add-plan-validation",
+        "add-planner-telemetry",
+        "inject-targeted-repair-guidance"
+      ]
+    },
+    {
+      "node": 12,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "retr_selected": 4,
+      "retr_dropped": 1,
+      "retr_dropped_over_cap": 1,
+      "retr_selected_nodes": [
+        3,
+        1,
+        6,
+        4
+      ],
+      "retr_dropped_nodes": [
+        2
+      ],
+      "retr_why": [
+        "explicit",
+        "strategy:add-call-memoization",
+        "keyword(1 hits)",
+        "keyword(1 hits)"
+      ],
+      "retr_explicit": 1,
+      "retr_associative": 3,
+      "defs_omitted": 7,
+      "hunks_omitted": 0,
+      "defs_shown": 8,
+      "hunks_shown": 46,
+      "retr_total_chars": 41048,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        3
+      ],
+      "query_strategies": [
+        "add-call-memoization"
+      ],
+      "query_areas": [
+        "tool-execution-overhead",
+        "cache-observability"
+      ],
+      "query_keywords": [
+        "memoization",
+        "canonical json",
+        "cache hit",
+        "cache miss",
+        "trace log",
+        "ToolWrapper.execute"
+      ],
+      "editor_prompt_chars": 148565,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _format_structure_report",
+          "chars": 571,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _format_structure_report (full source 571 chars)"
+        },
+        {
+          "unit": "workflow.py :: _log_structure_validation",
+          "chars": 1080,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _log_structure_validation (full source 1080 chars)"
+        },
+        {
+          "unit": "workflow.py :: _select_repaired_plan",
+          "chars": 2088,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _select_repaired_plan (full source 2088 chars)"
+        },
+        {
+          "unit": "workflow.py :: _repair_plan",
+          "chars": 2267,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _repair_plan (full source 2267 chars)"
+        },
+        {
+          "unit": "workflow.py :: _format_validation_report",
+          "chars": 592,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _format_validation_report (full source 592 chars)"
+        },
+        {
+          "unit": "workflow.py :: _log_plan_validation",
+          "chars": 439,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _log_plan_validation (full source 439 chars)"
+        },
+        {
+          "unit": "workflow.py :: _select_preferred_plan",
+          "chars": 1971,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _select_preferred_plan (full source 1971 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": null,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-call-memoization",
+        "add-decision-telemetry"
+      ]
+    },
+    {
+      "node": 13,
+      "tagger_elisions": 1,
+      "tagger_chars_elided": 12318,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 1,
+      "judge_chars_elided": 12318,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 5,
+      "retr_dropped_over_cap": 5,
+      "retr_selected_nodes": [
+        10,
+        8,
+        9,
+        7
+      ],
+      "retr_dropped_nodes": [
+        2,
+        4,
+        5,
+        6,
+        3
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "explicit"
+      ],
+      "retr_explicit": 4,
+      "retr_associative": 0,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 5,
+      "hunks_shown": 17,
+      "retr_total_chars": 17116,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        10,
+        8,
+        9,
+        7
+      ],
+      "query_strategies": [
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "intracity-transfer-timing",
+        "first-pass-itinerary-compliance",
+        "itinerary-logic-compliance"
+      ],
+      "query_keywords": [
+        "reasonable_transfer_time",
+        "travel_city",
+        "query_road_route_info",
+        "departure-day coverage",
+        "opening hours"
+      ],
+      "editor_prompt_chars": 115926,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 3,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-plan-validation",
+        "inject-targeted-repair-guidance",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 14,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 5,
+      "retr_dropped_over_cap": 5,
+      "retr_selected_nodes": [
+        10,
+        11,
+        7,
+        8
+      ],
+      "retr_dropped_nodes": [
+        9,
+        13,
+        3,
+        2,
+        1
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "strategy:tighten-system-prompt",
+        "strategy:tighten-system-prompt"
+      ],
+      "retr_explicit": 2,
+      "retr_associative": 2,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 10,
+      "hunks_shown": 25,
+      "retr_total_chars": 28586,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        10,
+        11
+      ],
+      "query_strategies": [
+        "tighten-system-prompt",
+        "add-planner-telemetry"
+      ],
+      "query_areas": [
+        "first-pass-itinerary-compliance",
+        "planning-observability"
+      ],
+      "query_keywords": [
+        "silent audit",
+        "daily structure",
+        "ends_with_accommodation",
+        "essential_attraction_coverage",
+        "final day closure",
+        "guard_active"
+      ],
+      "editor_prompt_chars": 127973,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 1,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt"
+      ]
+    },
+    {
+      "node": 15,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 7,
+      "retr_dropped_over_cap": 7,
+      "retr_selected_nodes": [
+        10,
+        13,
+        2,
+        11
+      ],
+      "retr_dropped_nodes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        3,
+        1
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "strategy:add-self-critique-loop",
+        "strategy:inject-targeted-repair-guidance"
+      ],
+      "retr_explicit": 2,
+      "retr_associative": 2,
+      "defs_omitted": 2,
+      "hunks_omitted": 0,
+      "defs_shown": 18,
+      "hunks_shown": 58,
+      "retr_total_chars": 46728,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        10,
+        13
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "inject-targeted-repair-guidance",
+        "add-planner-telemetry"
+      ],
+      "query_areas": [
+        "intracity-transfer-timing",
+        "repair-observability",
+        "planning-observability"
+      ],
+      "query_keywords": [
+        "reasonable_transfer_time",
+        "transfer slack",
+        "travel_city adjacency",
+        "Current City header",
+        "single repair pass",
+        "trace.log"
+      ],
+      "editor_prompt_chars": 147037,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _run_repair_loop",
+          "chars": 1133,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _run_repair_loop (full source 1133 chars)"
+        },
+        {
+          "unit": "workflow.py :: _maybe_repair_transfer_timing",
+          "chars": 2401,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _maybe_repair_transfer_timing (full source 2401 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-self-critique-loop",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 16,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 7,
+      "retr_dropped_over_cap": 7,
+      "retr_selected_nodes": [
+        10,
+        8,
+        14,
+        15
+      ],
+      "retr_dropped_nodes": [
+        7,
+        9,
+        2,
+        13,
+        6,
+        3,
+        1
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "explicit"
+      ],
+      "retr_explicit": 4,
+      "retr_associative": 0,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 2,
+      "hunks_shown": 15,
+      "retr_total_chars": 26291,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        10,
+        8,
+        14,
+        15
+      ],
+      "query_strategies": [
+        "tighten-system-prompt",
+        "add-self-critique-loop"
+      ],
+      "query_areas": [
+        "intracity-transfer-timing",
+        "first-pass-itinerary-compliance"
+      ],
+      "query_keywords": [
+        "reasonable_transfer_time",
+        "exact road-route duration copying",
+        "silent audit",
+        "transfer slack",
+        "travel_city duration",
+        "self-critique"
+      ],
+      "editor_prompt_chars": 125999,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt",
+        "add-self-critique-loop"
+      ]
+    },
+    {
+      "node": 17,
+      "tagger_elisions": 1,
+      "tagger_chars_elided": 3041,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 1,
+      "judge_chars_elided": 3041,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 8,
+      "retr_dropped_over_cap": 8,
+      "retr_selected_nodes": [
+        10,
+        15,
+        2,
+        16
+      ],
+      "retr_dropped_nodes": [
+        7,
+        8,
+        9,
+        14,
+        13,
+        6,
+        3,
+        1
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "strategy:add-self-critique-loop",
+        "strategy:add-self-critique-loop"
+      ],
+      "retr_explicit": 2,
+      "retr_associative": 2,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 5,
+      "hunks_shown": 31,
+      "retr_total_chars": 33106,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        10,
+        15
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "intracity-transfer-timing"
+      ],
+      "query_keywords": [
+        "same-location wait block",
+        "hidden slack",
+        "travel_city duration",
+        "route duration",
+        "transfer continuity",
+        "reasonable_transfer_time"
+      ],
+      "editor_prompt_chars": 146454,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 3,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "add-self-critique-loop",
+        "add-plan-validation",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 18,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "retr_selected": 4,
+      "retr_dropped": 9,
+      "retr_dropped_over_cap": 9,
+      "retr_selected_nodes": [
+        10,
+        15,
+        16,
+        7
+      ],
+      "retr_dropped_nodes": [
+        8,
+        9,
+        14,
+        2,
+        17,
+        13,
+        4,
+        5,
+        6
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:tighten-system-prompt"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 7,
+      "hunks_shown": 24,
+      "retr_total_chars": 31944,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        10,
+        15,
+        16
+      ],
+      "query_strategies": [
+        "tighten-system-prompt",
+        "add-self-critique-loop"
+      ],
+      "query_areas": [
+        "intracity-transfer-timing",
+        "itinerary-logic-compliance",
+        "planning-observability"
+      ],
+      "query_keywords": [
+        "travel_city duration must match queried value",
+        "post-train buffer",
+        "deplaning baggage claim applies to flights only",
+        "opening hours",
+        "service hours",
+        "first-pass compliance",
+        "transfer timing"
+      ],
+      "editor_prompt_chars": 150843,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": null,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt",
+        "inject-targeted-repair-guidance"
+      ]
+    },
+    {
+      "node": 19,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 10,
+      "retr_dropped_over_cap": 10,
+      "retr_selected_nodes": [
+        10,
+        15,
+        16,
+        9
+      ],
+      "retr_dropped_nodes": [
+        7,
+        8,
+        14,
+        18,
+        2,
+        17,
+        13,
+        6,
+        3,
+        1
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "explicit"
+      ],
+      "retr_explicit": 4,
+      "retr_associative": 0,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 2,
+      "hunks_shown": 15,
+      "retr_total_chars": 32338,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        10,
+        15,
+        16,
+        9
+      ],
+      "query_strategies": [
+        "tighten-system-prompt",
+        "add-self-critique-loop"
+      ],
+      "query_areas": [
+        "intracity-transfer-timing",
+        "first-pass-itinerary-compliance"
+      ],
+      "query_keywords": [
+        "reasonable_transfer_time",
+        "travel_city exact duration",
+        "buffer instead of padding",
+        "hotel to meal transfer",
+        "meal to station transfer",
+        "current city header",
+        "no <plan>"
+      ],
+      "editor_prompt_chars": 134405,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "add-bounded-fallback-pass",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 20,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 2,
+      "retr_dropped_over_cap": 2,
+      "retr_selected_nodes": [
+        19,
+        15,
+        10,
+        11
+      ],
+      "retr_dropped_nodes": [
+        13,
+        17
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "strategy:add-planner-telemetry",
+        "strategy:add-planner-telemetry"
+      ],
+      "retr_explicit": 2,
+      "retr_associative": 2,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 8,
+      "hunks_shown": 28,
+      "retr_total_chars": 29183,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        19,
+        15
+      ],
+      "query_strategies": [
+        "add-bounded-fallback-pass",
+        "add-planner-telemetry"
+      ],
+      "query_areas": [
+        "empty-output-recovery",
+        "planning-observability"
+      ],
+      "query_keywords": [
+        "no_plan_rate",
+        "plan_conversion_failed",
+        "fallback rescue",
+        "exactly one <plan> block",
+        "no-tool rescue",
+        "trace fallback trigger"
+      ],
+      "editor_prompt_chars": 131303,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": false,
+      "strategies": [
+        "add-bounded-fallback-pass",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 21,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 11,
+      "retr_dropped_over_cap": 11,
+      "retr_selected_nodes": [
+        9,
+        10,
+        14,
+        7
+      ],
+      "retr_dropped_nodes": [
+        8,
+        16,
+        18,
+        2,
+        4,
+        5,
+        6,
+        17,
+        13,
+        3,
+        1
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:tighten-system-prompt"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 5,
+      "hunks_shown": 18,
+      "retr_total_chars": 39034,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        9,
+        10,
+        14
+      ],
+      "query_strategies": [
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "first-pass-itinerary-compliance",
+        "itinerary-logic-compliance"
+      ],
+      "query_keywords": [
+        "essential_attraction_coverage",
+        "daily activity density",
+        "arrival before 12:00 at least 1 attraction",
+        "departure after 14:00 at least 1 attraction",
+        "2 attractions or 4 hours",
+        "silent pre-output audit"
+      ],
+      "editor_prompt_chars": 141753,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt",
+        "add-self-critique-loop"
+      ]
+    },
+    {
+      "node": 22,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "retr_selected": 4,
+      "retr_dropped": 6,
+      "retr_dropped_over_cap": 6,
+      "retr_selected_nodes": [
+        9,
+        10,
+        16,
+        7
+      ],
+      "retr_dropped_nodes": [
+        8,
+        14,
+        18,
+        21,
+        13,
+        15
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:tighten-system-prompt"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 5,
+      "hunks_shown": 18,
+      "retr_total_chars": 39963,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        9,
+        10,
+        16
+      ],
+      "query_strategies": [
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "intracity-transfer-timing",
+        "first-pass-itinerary-compliance"
+      ],
+      "query_keywords": [
+        "transfer grounding",
+        "travel_city duration arithmetic",
+        "missing travel leg after hotel check-in",
+        "narrow prompt checklist",
+        "node 10 prompt"
+      ],
+      "editor_prompt_chars": 154527,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": null,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt",
+        "inject-targeted-repair-guidance"
+      ]
+    },
+    {
+      "node": 23,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "retr_selected": 4,
+      "retr_dropped": 9,
+      "retr_dropped_over_cap": 9,
+      "retr_selected_nodes": [
+        9,
+        17,
+        21,
+        22
+      ],
+      "retr_dropped_nodes": [
+        7,
+        8,
+        10,
+        14,
+        16,
+        18,
+        11,
+        6,
+        4
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "explicit"
+      ],
+      "retr_explicit": 4,
+      "retr_associative": 0,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 5,
+      "hunks_shown": 15,
+      "retr_total_chars": 27383,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        9,
+        17,
+        21,
+        22
+      ],
+      "query_strategies": [
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "cross-day-venue-diversity",
+        "first-pass-itinerary-compliance"
+      ],
+      "query_keywords": [
+        "duplicate attraction",
+        "duplicate restaurant",
+        "diversity",
+        "silent audit",
+        "arrival before 10:00",
+        "two attractions",
+        "4 hours"
+      ],
+      "editor_prompt_chars": 127788,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _review_duplicate_diversity",
+          "chars": 3693,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _review_duplicate_diversity (full source 3693 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 3,
+      "forced_fit": false,
+      "impl_sound": null,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt",
+        "add-self-critique-loop",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 24,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 14,
+      "retr_dropped_over_cap": 14,
+      "retr_selected_nodes": [
+        11,
+        17,
+        23,
+        7
+      ],
+      "retr_dropped_nodes": [
+        8,
+        9,
+        10,
+        14,
+        16,
+        18,
+        21,
+        22,
+        13,
+        15,
+        19,
+        20,
+        6,
+        4
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:tighten-system-prompt"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 2,
+      "hunks_omitted": 0,
+      "defs_shown": 15,
+      "hunks_shown": 31,
+      "retr_total_chars": 46205,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        11,
+        17,
+        23
+      ],
+      "query_strategies": [
+        "tighten-system-prompt",
+        "add-planner-telemetry"
+      ],
+      "query_areas": [
+        "cross-day-venue-diversity",
+        "planning-observability"
+      ],
+      "query_keywords": [
+        "duplicate restaurant",
+        "duplicate attraction",
+        "diversity guard",
+        "used venue ledger",
+        "final audit"
+      ],
+      "editor_prompt_chars": 148629,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _review_duplicate_diversity",
+          "chars": 3693,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _review_duplicate_diversity (full source 3693 chars)"
+        },
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 3,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt",
+        "add-self-critique-loop",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 25,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 9,
+      "retr_dropped_over_cap": 9,
+      "retr_selected_nodes": [
+        10,
+        21,
+        24,
+        7
+      ],
+      "retr_dropped_nodes": [
+        8,
+        9,
+        14,
+        16,
+        18,
+        22,
+        23,
+        5,
+        4
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:tighten-system-prompt"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 5,
+      "hunks_shown": 21,
+      "retr_total_chars": 38861,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        10,
+        21,
+        24
+      ],
+      "query_strategies": [
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "first-pass-itinerary-compliance",
+        "daily-attraction-coverage"
+      ],
+      "query_keywords": [
+        "silent audit",
+        "non-intercity day",
+        "two attractions",
+        "lunch and dinner",
+        "hotel rest",
+        "day classification"
+      ],
+      "editor_prompt_chars": 140532,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 1,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt"
+      ]
+    },
+    {
+      "node": 26,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 12,
+      "retr_dropped_over_cap": 12,
+      "retr_selected_nodes": [
+        23,
+        25,
+        9,
+        7
+      ],
+      "retr_dropped_nodes": [
+        8,
+        10,
+        14,
+        16,
+        18,
+        21,
+        22,
+        24,
+        11,
+        17,
+        6,
+        4
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:tighten-system-prompt"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 5,
+      "hunks_shown": 16,
+      "retr_total_chars": 37218,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        23,
+        25,
+        9
+      ],
+      "query_strategies": [
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "cross-day-venue-diversity",
+        "first-pass-itinerary-compliance"
+      ],
+      "query_keywords": [
+        "duplicate restaurant",
+        "duplicate attraction",
+        "exact-name diversity",
+        "silent audit",
+        "repeat venue names"
+      ],
+      "editor_prompt_chars": 143587,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 27,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "retr_selected": 4,
+      "retr_dropped": 11,
+      "retr_dropped_over_cap": 11,
+      "retr_selected_nodes": [
+        19,
+        20,
+        23,
+        2
+      ],
+      "retr_dropped_nodes": [
+        15,
+        16,
+        17,
+        21,
+        24,
+        11,
+        6,
+        9,
+        7,
+        5,
+        4
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:add-self-critique-loop"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 4,
+      "hunks_shown": 34,
+      "retr_total_chars": 33286,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        19,
+        20,
+        23
+      ],
+      "query_strategies": [
+        "add-bounded-fallback-pass",
+        "add-self-critique-loop"
+      ],
+      "query_areas": [
+        "empty-output-recovery",
+        "cross-day-venue-diversity"
+      ],
+      "query_keywords": [
+        "plan_conversion_failed",
+        "no_plan_rate",
+        "plan tool hallucination",
+        "empty <plan> rescue",
+        "duplicate restaurant",
+        "duplicate attraction"
+      ],
+      "editor_prompt_chars": 135369,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _repair_plan",
+          "chars": 2146,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _repair_plan (full source 2146 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": null,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-tool-compatibility-shim",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 28,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 9,
+      "retr_dropped_over_cap": 9,
+      "retr_selected_nodes": [
+        27,
+        20,
+        19,
+        10
+      ],
+      "retr_dropped_nodes": [
+        11,
+        13,
+        15,
+        17,
+        23,
+        24,
+        26,
+        1,
+        12
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:add-planner-telemetry"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 3,
+      "hunks_shown": 22,
+      "retr_total_chars": 29344,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        27,
+        20,
+        19
+      ],
+      "query_strategies": [
+        "add-tool-compatibility-shim",
+        "add-bounded-fallback-pass",
+        "add-planner-telemetry"
+      ],
+      "query_areas": [
+        "empty-output-recovery",
+        "planning-observability"
+      ],
+      "query_keywords": [
+        "hallucinated plan tool",
+        "tool compatibility shim",
+        "plan tool intercept",
+        "unexpected_tool_call",
+        "timeout",
+        "finalize now"
+      ],
+      "editor_prompt_chars": 135167,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-tool-compatibility-shim",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 29,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "retr_selected": 4,
+      "retr_dropped": 7,
+      "retr_dropped_over_cap": 7,
+      "retr_selected_nodes": [
+        27,
+        28,
+        20,
+        19
+      ],
+      "retr_dropped_nodes": [
+        10,
+        23,
+        24,
+        26,
+        1,
+        17,
+        12
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "area:empty-output-recovery"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 4,
+      "hunks_shown": 20,
+      "retr_total_chars": 27497,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        27,
+        28,
+        20
+      ],
+      "query_strategies": [
+        "add-tool-compatibility-shim"
+      ],
+      "query_areas": [
+        "finalization-tool-compatibility",
+        "empty-output-recovery",
+        "planning-observability"
+      ],
+      "query_keywords": [
+        "hallucinated plan tool",
+        "mutable plan shim",
+        "intercept finalize-now guidance",
+        "trace.log intercept",
+        "unexpected tool call",
+        "timeout"
+      ],
+      "editor_prompt_chars": 134715,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": null,
+      "suspect_verifier": false,
+      "strategies": [
+        "add-tool-compatibility-shim",
+        "add-planner-telemetry"
+      ]
+    }
+  ],
+  "edited": [
+    {
+      "node": 1,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 0,
+      "retr_dropped": 1,
+      "retr_dropped_over_cap": 0,
+      "retr_selected_nodes": [],
+      "retr_dropped_nodes": [
+        0
+      ],
+      "retr_why": [],
+      "retr_explicit": 0,
+      "retr_associative": 0,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 0,
+      "hunks_shown": 0,
+      "retr_total_chars": 0,
+      "retr_per_node": 0,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        0
+      ],
+      "query_strategies": [
+        "postplan_self_check",
+        "tool_result_cache",
+        "tool_error_recovery"
+      ],
+      "query_areas": [
+        "workflow",
+        "tool_wrapper"
+      ],
+      "query_keywords": [
+        "trace.log",
+        "final plan repair",
+        "post-plan validation",
+        "cache tool results",
+        "plan tool error"
+      ],
+      "editor_prompt_chars": 82586,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-call-memoization",
+        "add-decision-telemetry"
+      ]
+    },
+    {
+      "node": 2,
+      "tagger_elisions": 1,
+      "tagger_chars_elided": 3894,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 1,
+      "judge_chars_elided": 3894,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 1,
+      "retr_dropped": 0,
+      "retr_dropped_over_cap": 0,
+      "retr_selected_nodes": [
+        1
+      ],
+      "retr_dropped_nodes": [],
+      "retr_why": [
+        "explicit"
+      ],
+      "retr_explicit": 1,
+      "retr_associative": 0,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 0,
+      "hunks_shown": 4,
+      "retr_total_chars": 3226,
+      "retr_per_node": 60000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        1
+      ],
+      "query_strategies": [
+        "add-call-memoization",
+        "add-decision-telemetry"
+      ],
+      "query_areas": [
+        "tool-execution-overhead",
+        "cache-observability"
+      ],
+      "query_keywords": [
+        "memoization",
+        "cache key",
+        "canonicalize",
+        "trace.log",
+        "search_location",
+        "query_road_route_info",
+        "query_attraction_details",
+        "query_restaurant_details"
+      ],
+      "editor_prompt_chars": 89509,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-self-critique-loop",
+        "add-decision-telemetry"
+      ]
+    },
+    {
+      "node": 3,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 2,
+      "retr_dropped": 0,
+      "retr_dropped_over_cap": 0,
+      "retr_selected_nodes": [
+        2,
+        1
+      ],
+      "retr_dropped_nodes": [],
+      "retr_why": [
+        "explicit",
+        "explicit"
+      ],
+      "retr_explicit": 2,
+      "retr_associative": 0,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 3,
+      "hunks_shown": 21,
+      "retr_total_chars": 10914,
+      "retr_per_node": 30000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        2,
+        1
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "add-decision-telemetry"
+      ],
+      "query_areas": [
+        "itinerary-logic-compliance",
+        "repair-observability"
+      ],
+      "query_keywords": [
+        "repair loop",
+        "departure day",
+        "essential attraction coverage",
+        "essential meal coverage",
+        "trace.log",
+        "empty plan",
+        "budget exhausted"
+      ],
+      "editor_prompt_chars": 98901,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-call-memoization",
+        "add-decision-telemetry"
+      ]
+    },
+    {
+      "node": 4,
+      "tagger_elisions": 1,
+      "tagger_chars_elided": 12193,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 1,
+      "judge_chars_elided": 12193,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 1,
+      "retr_dropped": 0,
+      "retr_dropped_over_cap": 0,
+      "retr_selected_nodes": [
+        2
+      ],
+      "retr_dropped_nodes": [],
+      "retr_why": [
+        "explicit"
+      ],
+      "retr_explicit": 1,
+      "retr_associative": 0,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 3,
+      "hunks_shown": 17,
+      "retr_total_chars": 14682,
+      "retr_per_node": 60000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        2
+      ],
+      "query_strategies": [
+        "add-self-critique-loop"
+      ],
+      "query_areas": [
+        "itinerary-logic-compliance",
+        "repair-observability"
+      ],
+      "query_keywords": [
+        "PLAN_REPAIR_PROMPT",
+        "_repair_plan",
+        "essential_meal_coverage",
+        "essential_attraction_coverage",
+        "duplicate restaurant",
+        "duplicate attraction",
+        "Accommodation: -"
+      ],
+      "editor_prompt_chars": 111867,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "add-plan-validation",
+        "add-decision-telemetry"
+      ]
+    },
+    {
+      "node": 5,
+      "tagger_elisions": 1,
+      "tagger_chars_elided": 9031,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 1,
+      "judge_chars_elided": 9031,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 2,
+      "retr_dropped": 0,
+      "retr_dropped_over_cap": 0,
+      "retr_selected_nodes": [
+        4,
+        2
+      ],
+      "retr_dropped_nodes": [],
+      "retr_why": [
+        "explicit",
+        "strategy:add-self-critique-loop"
+      ],
+      "retr_explicit": 1,
+      "retr_associative": 1,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 10,
+      "hunks_shown": 32,
+      "retr_total_chars": 32169,
+      "retr_per_node": 30000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        4
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "add-plan-validation"
+      ],
+      "query_areas": [
+        "itinerary-logic-compliance",
+        "repair-observability"
+      ],
+      "query_keywords": [
+        "PLAN_REPAIR_PROMPT",
+        "essential_meal_coverage",
+        "essential_attraction_coverage",
+        "traceable_accommodation",
+        "final day accommodation",
+        "meal interval",
+        "non-intercity day",
+        "transfer day"
+      ],
+      "editor_prompt_chars": 130289,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "add-plan-validation",
+        "add-decision-telemetry"
+      ]
+    },
+    {
+      "node": 6,
+      "tagger_elisions": 1,
+      "tagger_chars_elided": 16332,
+      "code_elisions": 1,
+      "code_chars_elided": 2332,
+      "code_defs_elided": false,
+      "judge_elisions": 1,
+      "judge_chars_elided": 16332,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 3,
+      "retr_dropped": 0,
+      "retr_dropped_over_cap": 0,
+      "retr_selected_nodes": [
+        2,
+        4,
+        5
+      ],
+      "retr_dropped_nodes": [],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 0,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 16,
+      "hunks_shown": 42,
+      "retr_total_chars": 47222,
+      "retr_per_node": 20000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        2,
+        4,
+        5
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "add-plan-validation"
+      ],
+      "query_areas": [
+        "itinerary-logic-compliance",
+        "repair-observability"
+      ],
+      "query_keywords": [
+        "bounded post-draft review",
+        "repair prompt",
+        "validator-guided repair",
+        "trace.log",
+        "duplicate attraction",
+        "meal coverage",
+        "final day closure",
+        "opening hours",
+        "route duration"
+      ],
+      "editor_prompt_chars": 142982,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-plan-validation",
+        "add-decision-telemetry"
+      ]
+    },
+    {
+      "node": 7,
+      "tagger_elisions": 1,
+      "tagger_chars_elided": 10273,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 1,
+      "judge_chars_elided": 10273,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 1,
+      "retr_dropped_over_cap": 1,
+      "retr_selected_nodes": [
+        4,
+        5,
+        6,
+        2
+      ],
+      "retr_dropped_nodes": [
+        3
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:add-self-critique-loop"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 7,
+      "hunks_omitted": 0,
+      "defs_shown": 17,
+      "hunks_shown": 65,
+      "retr_total_chars": 58430,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        4,
+        5,
+        6
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "add-plan-validation"
+      ],
+      "query_areas": [
+        "itinerary-logic-compliance",
+        "repair-observability"
+      ],
+      "query_keywords": [
+        "PLAN_REPAIR_PROMPT",
+        "meal coverage",
+        "attraction coverage",
+        "final day accommodation",
+        "reasonable_transfer_time",
+        "trace.log"
+      ],
+      "editor_prompt_chars": 157802,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _log_plan_validation",
+          "chars": 439,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _log_plan_validation (full source 439 chars)"
+        },
+        {
+          "unit": "workflow.py :: _select_preferred_plan",
+          "chars": 1971,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _select_preferred_plan (full source 1971 chars)"
+        },
+        {
+          "unit": "workflow.py :: _log_structure_validation",
+          "chars": 1043,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _log_structure_validation (full source 1043 chars)"
+        },
+        {
+          "unit": "workflow.py :: _format_structure_report",
+          "chars": 571,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _format_structure_report (full source 571 chars)"
+        },
+        {
+          "unit": "workflow.py :: _log_structure_validation",
+          "chars": 1080,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _log_structure_validation (full source 1080 chars)"
+        },
+        {
+          "unit": "workflow.py :: _select_repaired_plan",
+          "chars": 2088,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _select_repaired_plan (full source 2088 chars)"
+        },
+        {
+          "unit": "workflow.py :: _repair_plan",
+          "chars": 2267,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _repair_plan (full source 2267 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 3,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": false,
+      "strategies": [
+        "add-plan-validation",
+        "tighten-system-prompt",
+        "add-decision-telemetry"
+      ]
+    },
+    {
+      "node": 8,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 3,
+      "retr_dropped_over_cap": 3,
+      "retr_selected_nodes": [
+        7,
+        6,
+        4,
+        2
+      ],
+      "retr_dropped_nodes": [
+        1,
+        3,
+        5
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:add-self-critique-loop"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 8,
+      "hunks_omitted": 0,
+      "defs_shown": 16,
+      "hunks_shown": 65,
+      "retr_total_chars": 53018,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        7,
+        6,
+        4
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "tighten-system-prompt",
+        "add-decision-telemetry"
+      ],
+      "query_areas": [
+        "itinerary-logic-compliance",
+        "repair-observability"
+      ],
+      "query_keywords": [
+        "repair prompt",
+        "one-pass critique",
+        "post-draft revision",
+        "trace.log repair branch",
+        "empty plan fallback",
+        "targeted checklist"
+      ],
+      "editor_prompt_chars": 151254,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        },
+        {
+          "unit": "workflow.py :: _format_structure_report",
+          "chars": 571,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _format_structure_report (full source 571 chars)"
+        },
+        {
+          "unit": "workflow.py :: _log_structure_validation",
+          "chars": 1080,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _log_structure_validation (full source 1080 chars)"
+        },
+        {
+          "unit": "workflow.py :: _select_repaired_plan",
+          "chars": 2088,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _select_repaired_plan (full source 2088 chars)"
+        },
+        {
+          "unit": "workflow.py :: _repair_plan",
+          "chars": 2267,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _repair_plan (full source 2267 chars)"
+        },
+        {
+          "unit": "workflow.py :: _format_validation_report",
+          "chars": 592,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _format_validation_report (full source 592 chars)"
+        },
+        {
+          "unit": "workflow.py :: _log_plan_validation",
+          "chars": 439,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _log_plan_validation (full source 439 chars)"
+        },
+        {
+          "unit": "workflow.py :: _select_preferred_plan",
+          "chars": 1971,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _select_preferred_plan (full source 1971 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 1,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt"
+      ]
+    },
+    {
+      "node": 9,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 2,
+      "retr_dropped_over_cap": 2,
+      "retr_selected_nodes": [
+        2,
+        8,
+        7,
+        4
+      ],
+      "retr_dropped_nodes": [
+        5,
+        6
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "strategy:tighten-system-prompt",
+        "area:itinerary-logic-compliance"
+      ],
+      "retr_explicit": 2,
+      "retr_associative": 2,
+      "defs_omitted": 4,
+      "hunks_omitted": 0,
+      "defs_shown": 12,
+      "hunks_shown": 43,
+      "retr_total_chars": 40782,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        2,
+        8
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "itinerary-logic-compliance",
+        "repair-observability"
+      ],
+      "query_keywords": [
+        "post-draft review",
+        "repair pass",
+        "audit checklist",
+        "final plan revision",
+        "trace.log"
+      ],
+      "editor_prompt_chars": 138734,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        },
+        {
+          "unit": "workflow.py :: _format_validation_report",
+          "chars": 592,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _format_validation_report (full source 592 chars)"
+        },
+        {
+          "unit": "workflow.py :: _log_plan_validation",
+          "chars": 439,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _log_plan_validation (full source 439 chars)"
+        },
+        {
+          "unit": "workflow.py :: _select_preferred_plan",
+          "chars": 1971,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _select_preferred_plan (full source 1971 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 1,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt"
+      ]
+    },
+    {
+      "node": 10,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 3,
+      "retr_dropped_over_cap": 3,
+      "retr_selected_nodes": [
+        7,
+        8,
+        9,
+        2
+      ],
+      "retr_dropped_nodes": [
+        4,
+        5,
+        6
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "area:itinerary-logic-compliance"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 8,
+      "hunks_shown": 29,
+      "retr_total_chars": 28785,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        7,
+        8,
+        9
+      ],
+      "query_strategies": [
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "first-pass-itinerary-compliance",
+        "itinerary-logic-compliance"
+      ],
+      "query_keywords": [
+        "silent audit checklist",
+        "travel_city duration exact",
+        "opening hours",
+        "duplicate attraction",
+        "essential attraction coverage",
+        "meal coverage",
+        "buffer instead of padding"
+      ],
+      "editor_prompt_chars": 127016,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": true,
+      "strategies": [
+        "tighten-system-prompt",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 11,
+      "tagger_elisions": 1,
+      "tagger_chars_elided": 2112,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 1,
+      "judge_chars_elided": 2112,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 5,
+      "retr_dropped_over_cap": 5,
+      "retr_selected_nodes": [
+        7,
+        9,
+        2,
+        8
+      ],
+      "retr_dropped_nodes": [
+        10,
+        4,
+        5,
+        6,
+        3
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "strategy:add-self-critique-loop",
+        "strategy:tighten-system-prompt"
+      ],
+      "retr_explicit": 2,
+      "retr_associative": 2,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 8,
+      "hunks_shown": 29,
+      "retr_total_chars": 28785,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        7,
+        9
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "itinerary-logic-compliance",
+        "repair-observability",
+        "first-pass-itinerary-compliance"
+      ],
+      "query_keywords": [
+        "duplicate attraction",
+        "duplicate restaurant",
+        "diverse_meal_options",
+        "diverse_attraction_options",
+        "dining_within_service_hours",
+        "reasonable_transfer_time",
+        "current_city",
+        "repair prompt",
+        "audit checklist"
+      ],
+      "editor_prompt_chars": 136968,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 3,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "add-plan-validation",
+        "add-planner-telemetry",
+        "inject-targeted-repair-guidance"
+      ]
+    },
+    {
+      "node": 12,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "retr_selected": 4,
+      "retr_dropped": 1,
+      "retr_dropped_over_cap": 1,
+      "retr_selected_nodes": [
+        3,
+        1,
+        6,
+        4
+      ],
+      "retr_dropped_nodes": [
+        2
+      ],
+      "retr_why": [
+        "explicit",
+        "strategy:add-call-memoization",
+        "keyword(1 hits)",
+        "keyword(1 hits)"
+      ],
+      "retr_explicit": 1,
+      "retr_associative": 3,
+      "defs_omitted": 7,
+      "hunks_omitted": 0,
+      "defs_shown": 8,
+      "hunks_shown": 46,
+      "retr_total_chars": 41048,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        3
+      ],
+      "query_strategies": [
+        "add-call-memoization"
+      ],
+      "query_areas": [
+        "tool-execution-overhead",
+        "cache-observability"
+      ],
+      "query_keywords": [
+        "memoization",
+        "canonical json",
+        "cache hit",
+        "cache miss",
+        "trace log",
+        "ToolWrapper.execute"
+      ],
+      "editor_prompt_chars": 148565,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _format_structure_report",
+          "chars": 571,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _format_structure_report (full source 571 chars)"
+        },
+        {
+          "unit": "workflow.py :: _log_structure_validation",
+          "chars": 1080,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _log_structure_validation (full source 1080 chars)"
+        },
+        {
+          "unit": "workflow.py :: _select_repaired_plan",
+          "chars": 2088,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _select_repaired_plan (full source 2088 chars)"
+        },
+        {
+          "unit": "workflow.py :: _repair_plan",
+          "chars": 2267,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _repair_plan (full source 2267 chars)"
+        },
+        {
+          "unit": "workflow.py :: _format_validation_report",
+          "chars": 592,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _format_validation_report (full source 592 chars)"
+        },
+        {
+          "unit": "workflow.py :: _log_plan_validation",
+          "chars": 439,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _log_plan_validation (full source 439 chars)"
+        },
+        {
+          "unit": "workflow.py :: _select_preferred_plan",
+          "chars": 1971,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _select_preferred_plan (full source 1971 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": null,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-call-memoization",
+        "add-decision-telemetry"
+      ]
+    },
+    {
+      "node": 13,
+      "tagger_elisions": 1,
+      "tagger_chars_elided": 12318,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 1,
+      "judge_chars_elided": 12318,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 5,
+      "retr_dropped_over_cap": 5,
+      "retr_selected_nodes": [
+        10,
+        8,
+        9,
+        7
+      ],
+      "retr_dropped_nodes": [
+        2,
+        4,
+        5,
+        6,
+        3
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "explicit"
+      ],
+      "retr_explicit": 4,
+      "retr_associative": 0,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 5,
+      "hunks_shown": 17,
+      "retr_total_chars": 17116,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        10,
+        8,
+        9,
+        7
+      ],
+      "query_strategies": [
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "intracity-transfer-timing",
+        "first-pass-itinerary-compliance",
+        "itinerary-logic-compliance"
+      ],
+      "query_keywords": [
+        "reasonable_transfer_time",
+        "travel_city",
+        "query_road_route_info",
+        "departure-day coverage",
+        "opening hours"
+      ],
+      "editor_prompt_chars": 115926,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 3,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-plan-validation",
+        "inject-targeted-repair-guidance",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 14,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 5,
+      "retr_dropped_over_cap": 5,
+      "retr_selected_nodes": [
+        10,
+        11,
+        7,
+        8
+      ],
+      "retr_dropped_nodes": [
+        9,
+        13,
+        3,
+        2,
+        1
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "strategy:tighten-system-prompt",
+        "strategy:tighten-system-prompt"
+      ],
+      "retr_explicit": 2,
+      "retr_associative": 2,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 10,
+      "hunks_shown": 25,
+      "retr_total_chars": 28586,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        10,
+        11
+      ],
+      "query_strategies": [
+        "tighten-system-prompt",
+        "add-planner-telemetry"
+      ],
+      "query_areas": [
+        "first-pass-itinerary-compliance",
+        "planning-observability"
+      ],
+      "query_keywords": [
+        "silent audit",
+        "daily structure",
+        "ends_with_accommodation",
+        "essential_attraction_coverage",
+        "final day closure",
+        "guard_active"
+      ],
+      "editor_prompt_chars": 127973,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 1,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt"
+      ]
+    },
+    {
+      "node": 15,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 7,
+      "retr_dropped_over_cap": 7,
+      "retr_selected_nodes": [
+        10,
+        13,
+        2,
+        11
+      ],
+      "retr_dropped_nodes": [
+        4,
+        5,
+        6,
+        7,
+        8,
+        3,
+        1
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "strategy:add-self-critique-loop",
+        "strategy:inject-targeted-repair-guidance"
+      ],
+      "retr_explicit": 2,
+      "retr_associative": 2,
+      "defs_omitted": 2,
+      "hunks_omitted": 0,
+      "defs_shown": 18,
+      "hunks_shown": 58,
+      "retr_total_chars": 46728,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        10,
+        13
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "inject-targeted-repair-guidance",
+        "add-planner-telemetry"
+      ],
+      "query_areas": [
+        "intracity-transfer-timing",
+        "repair-observability",
+        "planning-observability"
+      ],
+      "query_keywords": [
+        "reasonable_transfer_time",
+        "transfer slack",
+        "travel_city adjacency",
+        "Current City header",
+        "single repair pass",
+        "trace.log"
+      ],
+      "editor_prompt_chars": 147037,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _run_repair_loop",
+          "chars": 1133,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _run_repair_loop (full source 1133 chars)"
+        },
+        {
+          "unit": "workflow.py :: _maybe_repair_transfer_timing",
+          "chars": 2401,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _maybe_repair_transfer_timing (full source 2401 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-self-critique-loop",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 16,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 7,
+      "retr_dropped_over_cap": 7,
+      "retr_selected_nodes": [
+        10,
+        8,
+        14,
+        15
+      ],
+      "retr_dropped_nodes": [
+        7,
+        9,
+        2,
+        13,
+        6,
+        3,
+        1
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "explicit"
+      ],
+      "retr_explicit": 4,
+      "retr_associative": 0,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 2,
+      "hunks_shown": 15,
+      "retr_total_chars": 26291,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        10,
+        8,
+        14,
+        15
+      ],
+      "query_strategies": [
+        "tighten-system-prompt",
+        "add-self-critique-loop"
+      ],
+      "query_areas": [
+        "intracity-transfer-timing",
+        "first-pass-itinerary-compliance"
+      ],
+      "query_keywords": [
+        "reasonable_transfer_time",
+        "exact road-route duration copying",
+        "silent audit",
+        "transfer slack",
+        "travel_city duration",
+        "self-critique"
+      ],
+      "editor_prompt_chars": 125999,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt",
+        "add-self-critique-loop"
+      ]
+    },
+    {
+      "node": 17,
+      "tagger_elisions": 1,
+      "tagger_chars_elided": 3041,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 1,
+      "judge_chars_elided": 3041,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 8,
+      "retr_dropped_over_cap": 8,
+      "retr_selected_nodes": [
+        10,
+        15,
+        2,
+        16
+      ],
+      "retr_dropped_nodes": [
+        7,
+        8,
+        9,
+        14,
+        13,
+        6,
+        3,
+        1
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "strategy:add-self-critique-loop",
+        "strategy:add-self-critique-loop"
+      ],
+      "retr_explicit": 2,
+      "retr_associative": 2,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 5,
+      "hunks_shown": 31,
+      "retr_total_chars": 33106,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        10,
+        15
+      ],
+      "query_strategies": [
+        "add-self-critique-loop",
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "intracity-transfer-timing"
+      ],
+      "query_keywords": [
+        "same-location wait block",
+        "hidden slack",
+        "travel_city duration",
+        "route duration",
+        "transfer continuity",
+        "reasonable_transfer_time"
+      ],
+      "editor_prompt_chars": 146454,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 3,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "add-self-critique-loop",
+        "add-plan-validation",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 18,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "retr_selected": 4,
+      "retr_dropped": 9,
+      "retr_dropped_over_cap": 9,
+      "retr_selected_nodes": [
+        10,
+        15,
+        16,
+        7
+      ],
+      "retr_dropped_nodes": [
+        8,
+        9,
+        14,
+        2,
+        17,
+        13,
+        4,
+        5,
+        6
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:tighten-system-prompt"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 7,
+      "hunks_shown": 24,
+      "retr_total_chars": 31944,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        10,
+        15,
+        16
+      ],
+      "query_strategies": [
+        "tighten-system-prompt",
+        "add-self-critique-loop"
+      ],
+      "query_areas": [
+        "intracity-transfer-timing",
+        "itinerary-logic-compliance",
+        "planning-observability"
+      ],
+      "query_keywords": [
+        "travel_city duration must match queried value",
+        "post-train buffer",
+        "deplaning baggage claim applies to flights only",
+        "opening hours",
+        "service hours",
+        "first-pass compliance",
+        "transfer timing"
+      ],
+      "editor_prompt_chars": 150843,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": null,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt",
+        "inject-targeted-repair-guidance"
+      ]
+    },
+    {
+      "node": 19,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 10,
+      "retr_dropped_over_cap": 10,
+      "retr_selected_nodes": [
+        10,
+        15,
+        16,
+        9
+      ],
+      "retr_dropped_nodes": [
+        7,
+        8,
+        14,
+        18,
+        2,
+        17,
+        13,
+        6,
+        3,
+        1
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "explicit"
+      ],
+      "retr_explicit": 4,
+      "retr_associative": 0,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 2,
+      "hunks_shown": 15,
+      "retr_total_chars": 32338,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        10,
+        15,
+        16,
+        9
+      ],
+      "query_strategies": [
+        "tighten-system-prompt",
+        "add-self-critique-loop"
+      ],
+      "query_areas": [
+        "intracity-transfer-timing",
+        "first-pass-itinerary-compliance"
+      ],
+      "query_keywords": [
+        "reasonable_transfer_time",
+        "travel_city exact duration",
+        "buffer instead of padding",
+        "hotel to meal transfer",
+        "meal to station transfer",
+        "current city header",
+        "no <plan>"
+      ],
+      "editor_prompt_chars": 134405,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "add-bounded-fallback-pass",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 20,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 2,
+      "retr_dropped_over_cap": 2,
+      "retr_selected_nodes": [
+        19,
+        15,
+        10,
+        11
+      ],
+      "retr_dropped_nodes": [
+        13,
+        17
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "strategy:add-planner-telemetry",
+        "strategy:add-planner-telemetry"
+      ],
+      "retr_explicit": 2,
+      "retr_associative": 2,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 8,
+      "hunks_shown": 28,
+      "retr_total_chars": 29183,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        19,
+        15
+      ],
+      "query_strategies": [
+        "add-bounded-fallback-pass",
+        "add-planner-telemetry"
+      ],
+      "query_areas": [
+        "empty-output-recovery",
+        "planning-observability"
+      ],
+      "query_keywords": [
+        "no_plan_rate",
+        "plan_conversion_failed",
+        "fallback rescue",
+        "exactly one <plan> block",
+        "no-tool rescue",
+        "trace fallback trigger"
+      ],
+      "editor_prompt_chars": 131303,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": false,
+      "strategies": [
+        "add-bounded-fallback-pass",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 21,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 11,
+      "retr_dropped_over_cap": 11,
+      "retr_selected_nodes": [
+        9,
+        10,
+        14,
+        7
+      ],
+      "retr_dropped_nodes": [
+        8,
+        16,
+        18,
+        2,
+        4,
+        5,
+        6,
+        17,
+        13,
+        3,
+        1
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:tighten-system-prompt"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 5,
+      "hunks_shown": 18,
+      "retr_total_chars": 39034,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        9,
+        10,
+        14
+      ],
+      "query_strategies": [
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "first-pass-itinerary-compliance",
+        "itinerary-logic-compliance"
+      ],
+      "query_keywords": [
+        "essential_attraction_coverage",
+        "daily activity density",
+        "arrival before 12:00 at least 1 attraction",
+        "departure after 14:00 at least 1 attraction",
+        "2 attractions or 4 hours",
+        "silent pre-output audit"
+      ],
+      "editor_prompt_chars": 141753,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt",
+        "add-self-critique-loop"
+      ]
+    },
+    {
+      "node": 22,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "retr_selected": 4,
+      "retr_dropped": 6,
+      "retr_dropped_over_cap": 6,
+      "retr_selected_nodes": [
+        9,
+        10,
+        16,
+        7
+      ],
+      "retr_dropped_nodes": [
+        8,
+        14,
+        18,
+        21,
+        13,
+        15
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:tighten-system-prompt"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 5,
+      "hunks_shown": 18,
+      "retr_total_chars": 39963,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        9,
+        10,
+        16
+      ],
+      "query_strategies": [
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "intracity-transfer-timing",
+        "first-pass-itinerary-compliance"
+      ],
+      "query_keywords": [
+        "transfer grounding",
+        "travel_city duration arithmetic",
+        "missing travel leg after hotel check-in",
+        "narrow prompt checklist",
+        "node 10 prompt"
+      ],
+      "editor_prompt_chars": 154527,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": null,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt",
+        "inject-targeted-repair-guidance"
+      ]
+    },
+    {
+      "node": 23,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "retr_selected": 4,
+      "retr_dropped": 9,
+      "retr_dropped_over_cap": 9,
+      "retr_selected_nodes": [
+        9,
+        17,
+        21,
+        22
+      ],
+      "retr_dropped_nodes": [
+        7,
+        8,
+        10,
+        14,
+        16,
+        18,
+        11,
+        6,
+        4
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "explicit"
+      ],
+      "retr_explicit": 4,
+      "retr_associative": 0,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 5,
+      "hunks_shown": 15,
+      "retr_total_chars": 27383,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        9,
+        17,
+        21,
+        22
+      ],
+      "query_strategies": [
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "cross-day-venue-diversity",
+        "first-pass-itinerary-compliance"
+      ],
+      "query_keywords": [
+        "duplicate attraction",
+        "duplicate restaurant",
+        "diversity",
+        "silent audit",
+        "arrival before 10:00",
+        "two attractions",
+        "4 hours"
+      ],
+      "editor_prompt_chars": 127788,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _review_duplicate_diversity",
+          "chars": 3693,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _review_duplicate_diversity (full source 3693 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 3,
+      "forced_fit": false,
+      "impl_sound": null,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt",
+        "add-self-critique-loop",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 24,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 14,
+      "retr_dropped_over_cap": 14,
+      "retr_selected_nodes": [
+        11,
+        17,
+        23,
+        7
+      ],
+      "retr_dropped_nodes": [
+        8,
+        9,
+        10,
+        14,
+        16,
+        18,
+        21,
+        22,
+        13,
+        15,
+        19,
+        20,
+        6,
+        4
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:tighten-system-prompt"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 2,
+      "hunks_omitted": 0,
+      "defs_shown": 15,
+      "hunks_shown": 31,
+      "retr_total_chars": 46205,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        11,
+        17,
+        23
+      ],
+      "query_strategies": [
+        "tighten-system-prompt",
+        "add-planner-telemetry"
+      ],
+      "query_areas": [
+        "cross-day-venue-diversity",
+        "planning-observability"
+      ],
+      "query_keywords": [
+        "duplicate restaurant",
+        "duplicate attraction",
+        "diversity guard",
+        "used venue ledger",
+        "final audit"
+      ],
+      "editor_prompt_chars": 148629,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _review_duplicate_diversity",
+          "chars": 3693,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _review_duplicate_diversity (full source 3693 chars)"
+        },
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 3,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt",
+        "add-self-critique-loop",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 25,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 9,
+      "retr_dropped_over_cap": 9,
+      "retr_selected_nodes": [
+        10,
+        21,
+        24,
+        7
+      ],
+      "retr_dropped_nodes": [
+        8,
+        9,
+        14,
+        16,
+        18,
+        22,
+        23,
+        5,
+        4
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:tighten-system-prompt"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 5,
+      "hunks_shown": 21,
+      "retr_total_chars": 38861,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        10,
+        21,
+        24
+      ],
+      "query_strategies": [
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "first-pass-itinerary-compliance",
+        "daily-attraction-coverage"
+      ],
+      "query_keywords": [
+        "silent audit",
+        "non-intercity day",
+        "two attractions",
+        "lunch and dinner",
+        "hotel rest",
+        "day classification"
+      ],
+      "editor_prompt_chars": 140532,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 1,
+      "forced_fit": false,
+      "impl_sound": false,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt"
+      ]
+    },
+    {
+      "node": 26,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 12,
+      "retr_dropped_over_cap": 12,
+      "retr_selected_nodes": [
+        23,
+        25,
+        9,
+        7
+      ],
+      "retr_dropped_nodes": [
+        8,
+        10,
+        14,
+        16,
+        18,
+        21,
+        22,
+        24,
+        11,
+        17,
+        6,
+        4
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:tighten-system-prompt"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 5,
+      "hunks_shown": 16,
+      "retr_total_chars": 37218,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        23,
+        25,
+        9
+      ],
+      "query_strategies": [
+        "tighten-system-prompt"
+      ],
+      "query_areas": [
+        "cross-day-venue-diversity",
+        "first-pass-itinerary-compliance"
+      ],
+      "query_keywords": [
+        "duplicate restaurant",
+        "duplicate attraction",
+        "exact-name diversity",
+        "silent audit",
+        "repeat venue names"
+      ],
+      "editor_prompt_chars": 143587,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _build_day_audit_report",
+          "chars": 8027,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _build_day_audit_report (full source 8027 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": false,
+      "strategies": [
+        "tighten-system-prompt",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 27,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "retr_selected": 4,
+      "retr_dropped": 11,
+      "retr_dropped_over_cap": 11,
+      "retr_selected_nodes": [
+        19,
+        20,
+        23,
+        2
+      ],
+      "retr_dropped_nodes": [
+        15,
+        16,
+        17,
+        21,
+        24,
+        11,
+        6,
+        9,
+        7,
+        5,
+        4
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:add-self-critique-loop"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 1,
+      "hunks_omitted": 0,
+      "defs_shown": 4,
+      "hunks_shown": 34,
+      "retr_total_chars": 33286,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        19,
+        20,
+        23
+      ],
+      "query_strategies": [
+        "add-bounded-fallback-pass",
+        "add-self-critique-loop"
+      ],
+      "query_areas": [
+        "empty-output-recovery",
+        "cross-day-venue-diversity"
+      ],
+      "query_keywords": [
+        "plan_conversion_failed",
+        "no_plan_rate",
+        "plan tool hallucination",
+        "empty <plan> rescue",
+        "duplicate restaurant",
+        "duplicate attraction"
+      ],
+      "editor_prompt_chars": 135369,
+      "editor_omitted_units": [
+        {
+          "unit": "workflow.py :: _repair_plan",
+          "chars": 2146,
+          "added": null,
+          "removed": null,
+          "raw": "workflow.py :: _repair_plan (full source 2146 chars)"
+        }
+      ],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": null,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-tool-compatibility-shim",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 28,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "judge_code_path": "diff",
+      "retr_selected": 4,
+      "retr_dropped": 9,
+      "retr_dropped_over_cap": 9,
+      "retr_selected_nodes": [
+        27,
+        20,
+        19,
+        10
+      ],
+      "retr_dropped_nodes": [
+        11,
+        13,
+        15,
+        17,
+        23,
+        24,
+        26,
+        1,
+        12
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "strategy:add-planner-telemetry"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 3,
+      "hunks_shown": 22,
+      "retr_total_chars": 29344,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        27,
+        20,
+        19
+      ],
+      "query_strategies": [
+        "add-tool-compatibility-shim",
+        "add-bounded-fallback-pass",
+        "add-planner-telemetry"
+      ],
+      "query_areas": [
+        "empty-output-recovery",
+        "planning-observability"
+      ],
+      "query_keywords": [
+        "hallucinated plan tool",
+        "tool compatibility shim",
+        "plan tool intercept",
+        "unexpected_tool_call",
+        "timeout",
+        "finalize now"
+      ],
+      "editor_prompt_chars": 135167,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": true,
+      "suspect_verifier": true,
+      "strategies": [
+        "add-tool-compatibility-shim",
+        "add-planner-telemetry"
+      ]
+    },
+    {
+      "node": 29,
+      "tagger_elisions": 0,
+      "tagger_chars_elided": 0,
+      "code_elisions": 0,
+      "code_chars_elided": 0,
+      "code_defs_elided": false,
+      "judge_elisions": 0,
+      "judge_chars_elided": 0,
+      "judge_omitted_units": [],
+      "retr_selected": 4,
+      "retr_dropped": 7,
+      "retr_dropped_over_cap": 7,
+      "retr_selected_nodes": [
+        27,
+        28,
+        20,
+        19
+      ],
+      "retr_dropped_nodes": [
+        10,
+        23,
+        24,
+        26,
+        1,
+        17,
+        12
+      ],
+      "retr_why": [
+        "explicit",
+        "explicit",
+        "explicit",
+        "area:empty-output-recovery"
+      ],
+      "retr_explicit": 3,
+      "retr_associative": 1,
+      "defs_omitted": 0,
+      "hunks_omitted": 0,
+      "defs_shown": 4,
+      "hunks_shown": 20,
+      "retr_total_chars": 27497,
+      "retr_per_node": 15000,
+      "retr_char_budget": 60000,
+      "retr_max_nodes": 4,
+      "query_nodes": [
+        27,
+        28,
+        20
+      ],
+      "query_strategies": [
+        "add-tool-compatibility-shim"
+      ],
+      "query_areas": [
+        "finalization-tool-compatibility",
+        "empty-output-recovery",
+        "planning-observability"
+      ],
+      "query_keywords": [
+        "hallucinated plan tool",
+        "mutable plan shim",
+        "intercept finalize-now guidance",
+        "trace.log intercept",
+        "unexpected tool call",
+        "timeout"
+      ],
+      "editor_prompt_chars": 134715,
+      "editor_omitted_units": [],
+      "editor_elisions": 0,
+      "editor_chars_elided": 0,
+      "n_subedits": 2,
+      "forced_fit": false,
+      "impl_sound": null,
+      "suspect_verifier": false,
+      "strategies": [
+        "add-tool-compatibility-shim",
+        "add-planner-telemetry"
+      ]
+    }
+  ]
+}

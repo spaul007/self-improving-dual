@@ -42,6 +42,55 @@ _DELTA_RE = re.compile(
 # data got silently dropped from the steering block once already.)
 _USAGE_RE = re.compile(r"^- \*\*(?:usage|new tools|new log point)[^\n]*$", re.M)
 _ANALYSIS_RE = re.compile(r"\n## Analysis\n(.+)$", re.S)
+# The analysis call's implementation verdict (edit_usage.render_analysis):
+# one node-level line (v5) and, from v6, one per sub-edit.
+_IMPL_RE = re.compile(r"^- \*\*implementation\*\*: (sound|unsound)(?: — (.*))?$", re.M)
+_IMPL_EDIT_RE = re.compile(
+    r"^- \*\*implementation \(edit (\d+)\)\*\*: (sound|unsound)(?: — (.*))?$", re.M)
+# fmt-6: the unpaired comparison (each side over its OWN cases) with its
+# standard error, plus the paired SE when any cases are shared.
+_UNPAIRED_RE = re.compile(
+    r"\*\*unpaired\*\*: child ([\d.]+)/(\d+) vs parent ([\d.]+)/(\d+) · "
+    r"Δ ([-+][\d.]+) ± ([\d.]+|n/a)(?: · paired SE ±([\d.]+))?")
+# Analysis v7: the judge's effect verdict per sub-edit, and the node-level
+# regressions line.
+_EFFECT_EDIT_RE = re.compile(
+    r"^- \*\*effect \(edit (\d+)\)\*\*: (improved|no_effect|regressed|unclear) "
+    r"\((strong|moderate|weak)(?:; targets: ([^)]*))?\)(?: — (.*))?$", re.M)
+_REGRESSIONS_RE = re.compile(r"^- \*\*regressions\*\*: (.*)$", re.M)
+_EDIT_HDR_RE = re.compile(r"^## Edit (\d+)\s*$")
+_FIELD_RE = re.compile(r"^- \*\*([^*]+)\*\*: (.*)$")
+_FIELD_KEYS = {"name": "name", "category level 1 (strategy)": "strategy",
+               "category level 2 (area)": "area", "what": "what", "why": "why",
+               "fit": "fit"}
+
+
+def record_tags(body: str) -> list[dict[str, Any]]:
+    """The ``## Edit N`` blocks of a record body as
+    ``[{edit, name, strategy, area, what, why, fit}]`` (registry ids
+    unquoted; ``fit`` is ``exact`` / ``folded`` / ``forced`` — see
+    ``edit_memory.render_edits``). Tolerant of missing fields."""
+    out: list[dict[str, Any]] = []
+    cur: Optional[dict[str, Any]] = None
+    for line in (body or "").split("\n"):
+        m = _EDIT_HDR_RE.match(line)
+        if m:
+            cur = {"edit": int(m.group(1)), "name": "", "strategy": "",
+                   "area": "", "what": "", "why": "", "fit": "exact"}
+            out.append(cur)
+            continue
+        if cur is None:
+            continue
+        f = _FIELD_RE.match(line)
+        if f and f.group(1).strip() in _FIELD_KEYS:
+            key = _FIELD_KEYS[f.group(1).strip()]
+            val = f.group(2).strip().strip("`")
+            if key == "fit":
+                low = val.lower()
+                val = ("forced" if low.startswith("forced")
+                       else "folded" if low.startswith("folded") else "exact")
+            cur[key] = val
+    return out
 
 
 def _load_records(experiment_dir: Path) -> dict[int, dict[str, Any]]:
@@ -81,6 +130,20 @@ def _load_records(experiment_dir: Path) -> dict[int, dict[str, Any]]:
                     parent_abs, child_abs = float(m.group(3)), float(m.group(4))
                     n_abs = n_shared
             am = _ANALYSIS_RE.search(text)
+            im = _IMPL_RE.search(text)
+            per_edit = list(_IMPL_EDIT_RE.finditer(text))
+            um = _UNPAIRED_RE.search(text)
+            delta_all = se_all = se_shared = parent_abs_all = None
+            parent_n_all = 0
+            if um:
+                parent_abs_all, parent_n_all = float(um.group(3)), int(um.group(4))
+                delta_all = float(um.group(5))
+                se_all = float(um.group(6)) if um.group(6) != "n/a" else None
+                se_shared = float(um.group(7)) if um.group(7) else None
+            effects = list(_EFFECT_EDIT_RE.finditer(text))
+            effect_by_edit = {int(x.group(1)): x.group(2) for x in effects}
+            first_edit = min(effect_by_edit) if effect_by_edit else None
+            rm = _REGRESSIONS_RE.search(text)
             out[nid] = {
                 "fm": fm, "body": body, "text": text,
                 "usage": "\n".join(_USAGE_RE.findall(text)),
@@ -91,6 +154,45 @@ def _load_records(experiment_dir: Path) -> dict[int, dict[str, Any]]:
                 "n_abs": n_abs,
                 "parent_abs": parent_abs,
                 "child_abs": child_abs,
+                # fmt-6: the unpaired comparison over each side's own cases
+                # (always available after one batch) with its SE.
+                "delta_all": delta_all,
+                "se_all": se_all,
+                "se_shared": se_shared,
+                "parent_abs_all": parent_abs_all,
+                "parent_n_all": parent_n_all,
+                # Belief-layer inputs: the registry tags of each sub-edit and
+                # the analysis LLM's implementation verdict (None = no verdict
+                # yet, which keeps the node unscorable rather than "sound").
+                "tags": record_tags(body),
+                "impl_sound": (im.group(1) == "sound") if im else None,
+                "impl_reason": (im.group(2) or "").strip() if im else "",
+                # Per-sub-edit verdicts (analysis v6): a bundled edit with
+                # one broken component no longer hides a sound one.
+                "impl_by_edit": {int(x.group(1)): x.group(2) == "sound"
+                                 for x in per_edit},
+                "impl_reason_by_edit": {int(x.group(1)): (x.group(3) or "").strip()
+                                        for x in per_edit},
+                # The judge's effect verdict per sub-edit (analysis v7). The
+                # node-level `effect` is the first sub-edit's — the primary
+                # mechanism — used when a prediction matched no sub-edit.
+                "effect_by_edit": effect_by_edit,
+                "evidence_by_edit": {int(x.group(1)): x.group(3) for x in effects},
+                "targets_by_edit": {int(x.group(1)): [t.strip() for t in
+                                                      (x.group(4) or "").split(",")
+                                                      if t.strip()]
+                                    for x in effects},
+                "effect_reason_by_edit": {int(x.group(1)): (x.group(5) or "").strip()
+                                          for x in effects},
+                "effect": (effect_by_edit.get(first_edit)
+                           if first_edit is not None else None),
+                "evidence": (next(x.group(3) for x in effects
+                                  if int(x.group(1)) == first_edit)
+                             if first_edit is not None else None),
+                "effect_reason": (next((x.group(5) or "").strip() for x in effects
+                                       if int(x.group(1)) == first_edit)
+                                  if first_edit is not None else ""),
+                "regressions": rm.group(1).strip() if rm else "",
             }
     return out
 
@@ -130,12 +232,44 @@ def build_ledger(registry: Mapping[str, Any], records: Mapping[int, Any],
                 if n in records and records[n]["child_abs"] is not None]
         suspect = sum(1 for n in nodes
                       if n in records and records[n].get("suspect"))
+        # The judge's verdicts for THIS strategy's sub-edits (a bundled node
+        # contributes the verdict of the sub-edit tagged with this id), and
+        # the unpaired Δ that needs no shared cases.
+        effects: dict[str, int] = {}
+        targets: dict[str, int] = {}
+        sound = unsound = n_regressed = 0
+        for n in nodes:
+            rec = records.get(n)
+            if not rec:
+                continue
+            mine = [t for t in (rec.get("tags") or []) if t.get("strategy") == sid]
+            for t in mine:
+                e = (rec.get("effect_by_edit") or {}).get(t.get("edit"))
+                if e:
+                    effects[e] = effects.get(e, 0) + 1
+                for chk in (rec.get("targets_by_edit") or {}).get(t.get("edit")) or []:
+                    targets[chk] = targets.get(chk, 0) + 1
+                s = (rec.get("impl_by_edit") or {}).get(t.get("edit"))
+                if s is None:
+                    s = rec.get("impl_sound")
+                if s is True:
+                    sound += 1
+                elif s is False:
+                    unsound += 1
+            reg = " ".join(str(rec.get("regressions") or "").split()).lower()
+            if mine and reg and reg.rstrip(".") != "none observed":
+                n_regressed += 1
+        unpaired = [records[n]["delta_all"] for n in nodes
+                    if n in records and records[n].get("delta_all") is not None]
         rows.append({
             "id": sid, "definition": entry.get("definition", ""),
             "nodes": nodes, "n_nodes": len(nodes), "bundled": bundled,
             "median": median(deltas) if deltas else None,
             "best": max(deltas) if deltas else None,
             "worst": min(deltas) if deltas else None,
+            "effects": effects, "sound": sound, "unsound": unsound,
+            "targets": targets, "n_regressed": n_regressed,
+            "unpaired_median": median(unpaired) if unpaired else None,
             # Absolute child scores (primary signal); n_range keeps every
             # absolute honest about its case sample.
             "abs_median": median(a for a, _ in absv) if absv else None,
@@ -154,6 +288,44 @@ def build_ledger(registry: Mapping[str, Any], records: Mapping[int, Any],
     # strategy above a well-tested one); the absolute best shows on each row.
     rows.sort(key=lambda r: (-r["n_nodes"], r["id"]))
     return rows
+
+
+_EFFECT_ORDER = ("improved", "no_effect", "regressed", "unclear")
+
+
+def judge_ledger_lines(ledger: list[dict[str, Any]]) -> list[str]:
+    """One judge-first row per strategy for the belief maintainer (and the
+    example renderer): the judge's verdict tally for this strategy's
+    sub-edits, the checks they targeted, how many nodes regressed, the
+    implementation verdicts, and the score Δ medians as trailing context."""
+    out: list[str] = []
+    for r in ledger:
+        effects = r.get("effects") or {}
+        eff = ", ".join(f"{k} {effects[k]}" for k in sorted(
+            effects, key=lambda k: (_EFFECT_ORDER.index(k)
+                                    if k in _EFFECT_ORDER else 9, k)))
+        bits = [f"judge: {eff or 'not judged yet'}"]
+        targets = r.get("targets") or {}
+        if targets:
+            top = sorted(targets.items(), key=lambda kv: (-kv[1], kv[0]))[:4]
+            bits.append("targets: " + ", ".join(f"{k} ×{v}" for k, v in top))
+        if r.get("n_regressed"):
+            bits.append(f"regressions on {r['n_regressed']} node(s)")
+        if r.get("sound") or r.get("unsound"):
+            bits.append(f"implementation: sound {r.get('sound', 0)} / "
+                        f"unsound {r.get('unsound', 0)}")
+        else:
+            bits.append("implementation: no verdict")
+        ctx = []
+        if r.get("median") is not None:
+            ctx.append("paired Δ median %+.4f" % r["median"])
+        if r.get("unpaired_median") is not None:
+            ctx.append("unpaired Δ median %+.4f" % r["unpaired_median"])
+        bits.append("score (context): " + (" · ".join(ctx) or "no score Δ yet"))
+        out.append(f"- `{r['id']}` — {r['n_nodes']} node(s) "
+                   f"({', '.join(str(n) for n in r['nodes'])}) · "
+                   + " · ".join(bits) + f" — {r['definition']}")
+    return out
 
 
 def _areas_for(registry: Mapping[str, Any], nodes: list[int]) -> list[tuple[str, int]]:
@@ -237,24 +409,6 @@ def _focus_lines(records: Mapping[int, Any], focus_node_id: Optional[int],
     return out
 
 
-BELIEF_PREAMBLE = """How to read the belief document below:
-- It is maintained by a belief-maintainer LLM from this run's MEASURED edit
-  history and rewritten after every evaluation batch; its structure is that
-  maintainer's own choosing.
-- `### belief:<slug>` sections are its beliefs; the slug is the id to name in
-  a prediction when an edit relies on that belief.
-- `[node N: Δx/y]` citations are machine-verified against the actual records.
-  When the machine appendix at the bottom reports a mismatch, trust the
-  appendix's numbers over the body text.
-- The machine appendix is code-generated fact tables (citation checks,
-  evidence bases, proposal outcomes) — not the belief maintainer's opinion.
-- Beliefs are judgments over noisy evidence and can be wrong: weigh each
-  against its cited evidence base. `unproven` means untested — an invitation
-  to try, never a rejection.
-- Next-move lines are suggestions to build on, repair, or avoid; you may
-  override them with better judgment grounded in the code you see."""
-
-
 def render_edit_memory(
     experiment_dir: Path,
     *,
@@ -267,13 +421,17 @@ def render_edit_memory(
     mode: str = "full",
     belief_block: str = "",
 ) -> str:
-    """The editor-facing block. ``""`` when there is nothing to show.
+    """The editor-facing block for ``steering_mode: "full"`` — the legacy
+    layout, byte-identical to before the belief layer existed. ``""`` when
+    there is nothing to show.
 
-    ``mode="full"`` (default) renders the legacy layout, byte-identical to
-    before the belief layer existed. ``mode="belief"`` replaces the per-node
-    record dump with the belief document: head guidance + interpretation
-    preamble + ``belief_block`` + the per-strategy ledger + the focus block.
+    Belief-mode steering is not rendered here (and ``mode="belief"`` raises):
+    it is authored in ``meta_agent/steering.py`` so its text has one owner.
+    ``belief_block`` is accepted for signature compatibility and ignored.
     """
+    if mode != "full":
+        raise ValueError(f"render_edit_memory: unsupported mode {mode!r}; "
+                         "belief-mode steering lives in meta_agent/steering.py")
     experiment_dir = Path(experiment_dir)
     reg_path = experiment_dir / REGISTRY_NAME
     if token_budget <= 0 or not reg_path.exists():
@@ -288,47 +446,6 @@ def render_edit_memory(
 
     budget = token_budget * _CHARS_PER_TOKEN
     ledger = build_ledger(registry, records, threshold=threshold, min_shared=min_shared)
-
-    if mode == "belief":
-        # Belief-led steering: the maintained belief document replaces the
-        # per-node record dump entirely; full records reach the editor only
-        # through the retrieval stage.
-        out = ["\n## Edit memory — the run's digested edit history: beliefs "
-               "over what was tried, plus the deterministic ledger"]
-        if run_context:
-            out.append(
-                "Run context: seed %.4f/%d · best so far %.4f/%d (node %d). "
-                "The goal is the highest ABSOLUTE score."
-                % (run_context.get("seed_mean", 0.0), run_context.get("seed_n", 0),
-                   run_context.get("best_mean", 0.0), run_context.get("best_n", 0),
-                   run_context.get("best_node", -1)))
-        out += [
-            "",
-            "You can use this to guide the next edit — for example:",
-            "1. BUILD ON an influential edit: extend what the numbers show "
-            "already works.",
-            "2. REPAIR a promising category: when a strategy's intent is sound "
-            "but its implementations are broken — gates passing outputs the "
-            "scorer rejects, detectors whose flagged problems never get "
-            "fixed, dead components — fix the implementation instead of "
-            "abandoning the idea or repeating it unchanged.",
-            "3. DIVERSIFY: try something different from everything recorded "
-            "here.",
-            "When you draw on the history, weight the measured evidence "
-            "rather than how often something was tried.",
-        ]
-        if belief_block:
-            out += ["", BELIEF_PREAMBLE, "", "### Belief document",
-                    belief_block]
-        out += ["", "### What has been tried, by strategy (deterministic "
-                    "ledger)"]
-        out += _ledger_lines(ledger, registry, level2_min_nodes)
-        out += _focus_lines(records, focus_node_id, threshold, min_shared)
-        text = "\n".join(out)
-        if len(text) > budget:
-            from .edit_diff import truncate_middle
-            text = truncate_middle(text, budget)
-        return text
 
     head = [
         "\n## Edit memory — the run's global edit history: what was tried, "

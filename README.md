@@ -311,10 +311,11 @@ edit_memory:
     model: "gpt-5.4"
     reasoning_effort: "medium"
     steering: true              # inject the accumulated memory into the editor
-    steering_token_budget: 32000
+    steering_token_budget: 48000
     verdict_threshold: 0.02     # helped/hurt boundary — see the caveat below
     min_shared: 8
-    max_strategies: 18          # ceiling on the category vocabulary
+    max_strategies: 30          # ceiling on the category vocabulary (code default 18; the
+                                # belief configs raise it — cap-forced fits are never scored)
     max_subedits: 3             # a node may bundle several distinct changes
     setup_pass: true            # one call per run: proxy categories + recipe
 ```
@@ -348,6 +349,138 @@ Two things to know before enabling it:
   does not produce that layout silently produces no edit memory. It is
   supported by `hgm` only — `hgm_dual` raises, because it makes more than one
   editor call per node and cannot honour one-call-per-node.
+
+### Belief mode (learnable beliefs + two-stage editor)
+
+`steering_mode: "belief"` replaces the record dump with a **belief document**
+under a predictive contract, and the two-stage editor retrieves whole records
+and implementation slices on demand:
+
+```yaml
+editor:
+  type: "two_stage"
+  config:
+    base_url: "https://api.openai.com/v1"   # pin it — see the base_url warning under Configuration
+    propose_reasoning_effort: "medium"
+    retrieval_char_budget: 60000
+    max_retrieved_nodes: 4
+    # objective: judge          # injected automatically under steering_mode "belief";
+                                # "score" restores the legacy objective sentence
+edit_memory:
+  type: "default"
+  config:
+    code_record: true
+    steering_mode: "belief"
+    strategy_label: judge            # what strategy beliefs are scored against (below)
+    analysis_min_own_evals: 16       # the judge runs after one batch of the node's OWN cases
+    judge_min_evidence: moderate     # weak-evidence verdicts stay pending
+    analysis_code_char_budget: 20000 # implementation view shown to the judge
+    beliefs:
+      enabled: true
+      doc_char_cap: 40000            # HARD cap ~10k tokens; reject + one retry, never truncated
+      optimize_enabled: true         # online guidance optimization
+      optimize_every: 8              # step after this many newly scored predictions
+      optimize_min_scored: 8
+      optimize_rollback_margin: 0.02
+      instruction_char_cap: 2500
+```
+
+Contract (`meta_agent/belief_contract.py`): the document is only an optional
+`## Summary` (≤ 1200 chars) plus `### belief:<slug>` sections, each with
+`kind` (`strategy` | `implementation`), `scope` (`strategy=<registry id>
+[area=<registry id>]`), `predict` (`p=0.05..0.95`), `evidence` (with verified
+citations: `[node N: improved]` — the judge's verdict —, `[node N: improved;
+Δ+0.0310/12]`, `[node N: Δ-0.0117±0.1461]` — unpaired Δ ± SE — or `[node N:
+unmeasured]`) and `next`. Anything else is a violation: one retry names the
+violations, then the previous document is kept.
+
+The judge (`meta_agent/edit_usage.py`, analysis v7): the per-node analysis
+call is the outcome oracle. It reads the edit's implementation view (added
+lines per definition, whole units), the usage counts with scorer agreement,
+the runtime logs, a **paired** per-check table (shared cases, when any) and an
+**unpaired** one (each side over its own cases), one row per evaluated case
+(score, failed checks, which components fired with what verdict), and the
+performance numbers with their standard errors. Per sub-edit it returns the
+implementation verdict (`sound|unsound`) and an **effect verdict** —
+`improved | no_effect | regressed | unclear` with an evidence grade
+(`strong` = within-case or component counts over ≥ 8 cases, `moderate` =
+per-check movement, `weak` = score Δ or code only) and the targeted checks —
+rendered as `- **effect (edit N)**: improved (strong; targets: …) — reason`,
+plus a node-level `- **regressions**:` line. It runs once the node has
+`analysis_min_own_evals` evaluations of its own: no shared cases with the
+parent are needed (a random 16-case batch shares ~4 cases with a 16-eval
+parent, which is why the old `min_shared` gate left most nodes unjudged).
+Records also carry `- **unpaired**: child m/n vs parent m/n · Δ ± SE` (fmt 6);
+at ~16-case batches every SE is near ±0.1, so a Δ under 2×SE is noise —
+readers see the judge's verdict first and the score as context.
+
+Scoring (`meta_agent/belief_scoring.py`): when a node is expanded, the belief
+covering its registry tags is pre-registered per kind in
+`round_NNN/belief_prediction.json`. Once the analysis has run (requires
+`analysis_mode: refresh` + `usage_tracking`), each kind pays Brier loss:
+implementation beliefs predict P(sound); strategy beliefs predict
+P(the judge finds the mechanism improved its target | sound) — `improved` is
+y=1, `no_effect`/`regressed` y=0, `unclear` or evidence below
+`judge_min_evidence` stays pending — and are scored only on sound sub-edits.
+`strategy_label: delta` restores the pre-v7 rule (y = Δ ≥ threshold over
+≥ `min_shared` shared cases) for ablation. A belief matched to a sub-edit is
+scored on that sub-edit's verdicts, so one broken mechanism in a bundled edit
+no longer vetoes the others. A node no belief covers scores at p=0.5 (loss
+0.25) — unless no belief *could* have covered it (first node of a new
+strategy), or its strategy id was force-fitted at the registry cap
+(`- **fit**: forced …` in the record): those are retired unscored. Per-belief
+calibration is written back into the document as a code-generated `- track:`
+line and into the maintainer's calibration report, which in judge mode also
+shows a **judge-vs-score diagnostic** on rows whose score is well measured
+(≥ 16 shared cases, or |unpaired Δ| > 2×SE — a flag for nodes worth
+re-reading, not a yardstick for the judge) and any **verdict changes** since
+a row was scored (rows are scored once). `strategy_label: delta` (the
+`…_delta.yaml` config) restores the pre-judge Δ labels for ablation; the
+maintainer's, optimizer's and planner's prompts are judge-first — the judge's
+verdicts, targeted checks and regressions come first, the benchmark Δ is
+quoted only as context and only when well measured.
+
+Guidance optimization (`meta_agent/belief_optimizer.py`): the maintainer's
+system prompt is a fixed contract plus a learned guidance text
+(`belief_instruction.md`, seeded short). Every `optimize_every` scored
+predictions one LLM call critiques the misses and rewrites the guidance
+(`belief_instruction_archive/vNNN.md`, `step_NNN_prompt.txt`); a version that
+scores worse than an earlier one by more than `optimize_rollback_margin` is
+rolled back.
+
+Steering (`meta_agent/steering.py`): the editor's context in belief mode is one
+block — the objective ("fix what the judge found"; the seed / best / parent
+scores are demoted to one `Score context` line), the judge's verdict, targeted
+checks and regressions for the parent, the scope rule, lineage, one judge-first
+line per sibling already tried off the parent (verdict and targets, regressions,
+then the score as context), and the belief document verbatim. The editor's
+system prompt sentence on what to target follows (`editor.config.objective`,
+auto-set to `judge` in belief mode, `score` elsewhere so the `full` mode and
+the no-edit-memory control stay byte-identical). The planning pass predicts
+the judge's verdict and the checks it expects to move
+(`edit_prediction.json` v2: `expected_effect`, `expected_targets`;
+`expected_direction` / `expected_delta` kept as legacy). No ledger, nothing
+truncated; full records and implementations reach the editor only through
+retrieval (`retrieval_manifest.json` v2 records what was shown and what was
+omitted whole).
+
+Artifacts: `edit_memory_beliefs.md`, `edit_memory_beliefs_state.json`,
+`edit_memory_beliefs_archive/`, `edit_memory_beliefs_prompts/update_NNNN.txt`,
+`belief_instruction.md`, `belief_instruction_archive/`,
+`round_NNN/belief_prediction.json` (also records `coverable` — the first node
+of a brand-new strategy is never charged the silence loss, since no belief
+could have covered it), `round_NNN/edit_prediction.json`,
+`round_NNN/retrieval_manifest.json`, `round_NNN/edit_analysis_prompt.txt` (the
+judge's exact prompt), `round_NNN/edit_usage.json`, `round_NNN/edit_code.md`.
+`EDIT_MEMORY_SPEC.md` specifies every format; `EDIT_MEMORY.md` is a worked
+example assembled from one run by
+`PYTHONPATH=. python3 study/render_edit_memory_example.py runs/<run> --out EDIT_MEMORY.md`.
+
+Restarting without re-paying the seed evaluation: `run_seeded.py --config
+<same config> --donor runs/<donor_run>/round_000` copies the donor's
+`round_000` logs, replays its per-case results into node 0 and continues from
+round 1 (the donor's `config.snapshot.yaml` must match on `task_agent`,
+`split` and `project`; `--force` overrides).
 
 ## Train/eval split (optional)
 
@@ -438,6 +571,26 @@ evaluator:
 `LLM_REASONING_EFFORT` env vars; the seed workflow picks them up automatically.
 `META_AGENT_PROJECT=<project>` is exported so child subprocesses load only
 that project's tools (via `projects.<project>.tools`).
+
+Three `task_agent` keys are task-agent-only by construction — the evaluator
+sets them on each case subprocess's environment, never globally, so the meta
+agents keep their own budgets (`meta_agent/evaluator.py::_child_env`):
+`temperature` (`LLM_TEMPERATURE`), `timeout_s` (`LLM_TIMEOUT_S`) and
+`max_output_tokens` (`LLM_MAX_OUTPUT_TOKENS`). `timeout_s` must sit well
+below `evaluator.wall_time_s_per_case` — the wrapper's own default is 3600 s,
+longer than a typical 1800 s case, so a stalled request could never be
+retried and killed its case (the 2026-09-07 travel run lost 9% of its case
+evaluations that way); at 600 s a stall costs one retry. `max_output_tokens`
+bounds a runaway generation and counts reasoning and visible output together;
+the travel configs use 65536, about 1.6× the historical p99.9. The evaluator
+warns at startup when `timeout_s` is not below the case limit.
+
+`build_components` also prints `[config] warning: <component> names model …
+but no base_url` for any editor / summarizer / edit_memory that names a
+`model` without a `base_url` while the task agent has one
+(`meta_agent/config.py::meta_base_url_warnings`): `call_llm` falls back to
+the task agent's `LLM_BASE_URL`, which once sent gpt-5.4 requests to a local
+vLLM server. Pin `base_url` on every meta component.
 
 The `env:` block is the only place project-specific environment goes.
 Each `key: value` is exported with `os.environ[key] = value` before the

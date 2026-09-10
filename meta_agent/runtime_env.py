@@ -22,11 +22,14 @@ The framework only knows three categories of env vars:
   through here. Project tools that want a default should compute it
   themselves, not fall back to a framework helper.
 
-Deliberately NOT exported here: ``LLM_TEMPERATURE``. It is task-agent-only
-by design — ``SubprocessEvaluator._child_env`` sets it on each case
-subprocess's env from ``task_agent.temperature`` — because a global export
-would leak into the meta-agent's own ``call_llm`` invocations in this
-process. Putting it in the YAML ``env:`` block defeats that isolation.
+Deliberately NOT exported here: ``LLM_TEMPERATURE``, ``LLM_TIMEOUT_S`` and
+``LLM_MAX_OUTPUT_TOKENS``. All three are task-agent-only by design —
+``SubprocessEvaluator._child_env`` sets them on each case subprocess's env
+from ``task_agent.temperature`` / ``.timeout_s`` / ``.max_output_tokens`` —
+because a global export would leak into the meta-agent's own ``call_llm``
+invocations in this process, where a task-agent-sized timeout or output cap
+would truncate reasoning-heavy editor calls. Putting any of them in the YAML
+``env:`` block defeats that isolation.
 """
 from __future__ import annotations
 

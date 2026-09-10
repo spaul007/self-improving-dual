@@ -13,9 +13,15 @@ from pathlib import Path
 
 from meta_agent.edit_code import (
     CODE_NAME,
+    IMPLEMENTATION_HEADER,
+    NEW_DEFS_HEADER,
     extract_changed_defs,
+    group_hunks_by_def,
+    hunks,
     map_subedits,
     render_edit_code,
+    render_implementation_view,
+    top_level_spans,
     write_edit_code,
 )
 
@@ -160,6 +166,107 @@ class TestRenderAndWrite(unittest.TestCase):
         _agent(self.child, PARENT_WF)
         text = render_edit_code(self.parent, self.child, node_id=1, parent_id=0)
         self.assertIn("changed files: (none)", text)
+
+
+class TestImplementationView(unittest.TestCase):
+    """The retrieval-facing implementation view: added lines per def, full
+    source of new defs, whole-unit budget drops, no elision anywhere."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.parent = self.tmp / "round_000"
+        self.child = self.tmp / "round_001"
+        _agent(self.parent, PARENT_WF)
+        _agent(self.child, CHILD_WF)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_spans_and_hunks(self):
+        spans = {n: (s, e) for n, _k, s, e in top_level_spans(CHILD_WF)}
+        self.assertEqual(spans["run_task"], (1, 2))
+        self.assertEqual(spans["RouteGuard"], (10, 11))
+        self.assertEqual(top_level_spans("def broken(:\n"), [])
+        hs = hunks(PARENT_WF, CHILD_WF)
+        self.assertEqual(hs[0]["added"], ["    return validate(None)"])
+        self.assertEqual(hs[0]["removed"], 1)
+
+    def test_units_grouped_by_def(self):
+        units = {u["def"]: u for u in
+                 group_hunks_by_def("workflow.py", CHILD_WF, PARENT_WF)}
+        self.assertEqual(units["run_task"]["status"], "changed")
+        self.assertEqual(units["run_task"]["added"], ["    return validate(None)"])
+        self.assertEqual(units["run_task"]["removed"], 1)
+        self.assertEqual(units["validate"]["status"], "added")
+        self.assertEqual(units["RouteGuard"]["kind"], "class")
+        self.assertNotIn("helper", units)
+
+    def test_assignments_module_level_non_py_and_syntax_error(self):
+        # Named constants are units of their own (prompt-only edits live in
+        # module-level strings); a new one is "added", a changed one "changed".
+        u = group_hunks_by_def("workflow.py", "X = 2\nY = 3\n", "X = 1\n")
+        self.assertEqual([(x["def"], x["kind"], x["status"]) for x in u],
+                         [("X", "assignment", "changed"),
+                          ("Y", "assignment", "added")])
+        self.assertEqual(u[1]["added"], ["Y = 3"])
+        self.assertEqual(top_level_spans("A = 1\nB: int = 2\n"),
+                         [("A", "assignment", 1, 1), ("B", "assignment", 2, 2)])
+        m = group_hunks_by_def("workflow.py", "import os\nimport sys\n", "import os\n")
+        self.assertEqual([x["def"] for x in m], ["(module level)"])
+        self.assertEqual(m[0]["status"], "module")
+        j = group_hunks_by_def("tools_schema.json", '[{"name": "a"}]', "[]")
+        self.assertEqual((j[0]["def"], j[0]["status"]), ("(file)", "file"))
+        broken = group_hunks_by_def("workflow.py", "def broken(:\n", PARENT_WF)
+        self.assertEqual([x["def"] for x in broken], ["(module level)"])
+        self.assertEqual(group_hunks_by_def("workflow.py", PARENT_WF, PARENT_WF), [])
+
+    def test_render_view(self):
+        text, stats = render_implementation_view(self.parent, self.child,
+                                                 char_budget=100_000)
+        self.assertTrue(text.startswith(IMPLEMENTATION_HEADER))
+        self.assertIn("### workflow.py :: run_task (function, changed)  +1/-1", text)
+        self.assertIn("```python\n+    return validate(None)\n```", text)
+        self.assertIn("### workflow.py :: validate (function, added)  +2/-0 — full "
+                      "source below", text)
+        self.assertIn(NEW_DEFS_HEADER, text)
+        self.assertIn("### workflow.py :: validate (function, added)\n```python\n"
+                      "def validate(out):\n    return out\n```", text)
+        self.assertIn("class RouteGuard:", text)
+        self.assertNotIn("omitted", text)
+        self.assertNotIn("chars elided", text)
+        self.assertEqual((stats["hunks_omitted"], stats["defs_shown"],
+                          stats["defs_omitted"]), (0, 2, 0))
+        self.assertEqual(stats["chars"], len(text))
+
+    def test_budget_drops_whole_units_and_names_them(self):
+        full, _ = render_implementation_view(self.parent, self.child,
+                                             char_budget=100_000)
+        text, stats = render_implementation_view(self.parent, self.child,
+                                                 char_budget=len(full) - 60)
+        self.assertIn("omitted (budget):", text)
+        self.assertIn("RouteGuard (full source", text)
+        self.assertNotIn("chars elided", text)
+        self.assertEqual(stats["defs_omitted"], 1)
+        # Every def that was shown is shown whole.
+        if "def validate(out):" in text:
+            self.assertIn("    return out\n```", text)
+        tiny, stats2 = render_implementation_view(self.parent, self.child,
+                                                  char_budget=120)
+        self.assertTrue(tiny.startswith(IMPLEMENTATION_HEADER))
+        self.assertIn("omitted (budget):", tiny)
+        self.assertEqual(stats2["hunks_shown"], 0)
+
+    def test_no_changes_is_empty(self):
+        _agent(self.child, PARENT_WF)
+        text, stats = render_implementation_view(self.parent, self.child,
+                                                 char_budget=1000)
+        self.assertEqual(text, "")
+        self.assertEqual(stats["chars"], 0)
+
+    def test_deterministic(self):
+        a = render_implementation_view(self.parent, self.child, char_budget=5000)
+        b = render_implementation_view(self.parent, self.child, char_budget=5000)
+        self.assertEqual(a, b)
 
 
 class TestEditMemoryIntegration(unittest.TestCase):

@@ -1,18 +1,28 @@
 """Meta-cognitive belief layer over the deterministic edit history.
 
-The belief document (``edit_memory_beliefs.md``, run root) is free-form
-markdown OWNED BY THE META-AGENT — content and structure alike, rewritten
-wholesale at every update. Code fixes only three thin conventions (belief
-anchors, an inline citation format, a self-describing structure section) and
-keeps all machine bookkeeping in a sidecar the LLM never writes
-(``edit_memory_beliefs_state.json``).
+The belief document (``edit_memory_beliefs.md``, run root) is a list of
+SCOPED, SCORED probabilities written by an LLM — rewritten wholesale at every
+update — under a fixed contract (``belief_contract``) and a LEARNED guidance
+text (``belief_optimizer``). Everything machine-owned lives in a sidecar the
+LLM never writes (``edit_memory_beliefs_state.json``); the only code-written
+text inside the document is the ``- track:`` calibration line under each
+belief, regenerated on every write and stripped before any parse.
+
+The loop, per node:
+  1. EXPAND — the editor reads the document; right after the node's record is
+     tagged, ``register()`` looks up the belief that covers its (strategy,
+     area) per kind and freezes that p in ``round_NNN/belief_prediction.json``
+     (a prediction made BEFORE the outcome, by construction).
+  2. EVAL — once the node is measured and the analysis LLM has judged its
+     implementation, ``belief_scoring.resolve`` pays Brier loss per kind.
+  3. UPDATE — the maintainer sees its calibration record (per-belief track
+     lines + the report) and the changed evidence, and rewrites the document;
+     the contract validator rejects structural violations (one retry).
+  4. OPTIMIZE — every ``optimize_every`` scored predictions, one LLM call
+     revises the guidance text from the misses (hill-climb with rollback).
 
 Facts vs beliefs: the registry and per-node records stay deterministic truth;
-this layer is interpretation. It is kept honest by a deterministic verifier
-that fact-checks every inline citation against the records and narrates the
-findings in a code-generated appendix section — correction pressure the next
-update must confront (the textgrad-style loop), and evidential context for
-the agent editor reading the document downstream.
+this layer is interpretation, kept honest by the scores.
 
 Update cadence: the manager triggers ``update()`` after every eval batch and
 every expand; an evidence signature makes a no-change trigger cost zero LLM
@@ -24,6 +34,7 @@ function bodies to avoid a cycle.
 """
 from __future__ import annotations
 
+import functools
 import json
 import os
 import re
@@ -33,70 +44,102 @@ from hashlib import blake2b
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional, Sequence
 
-from .edit_diff import truncate_middle
-from .edit_outcome import run_context
+from . import belief_scoring
+from .belief_contract import (
+    BELIEF_KINDS,
+    EXAMPLE,
+    GRAMMAR,
+    P_MAX,
+    P_MIN,
+    SUMMARY_CHAR_CAP,
+    ParsedDoc,
+    inject_track_lines,
+    match_belief,
+    parse_anchors,
+    parse_citations,
+    parse_document,
+    render_violations,
+    strip_track_lines,
+    validate_document,
+    verify_citations,
+)
+from .belief_optimizer import (  # noqa: F401  (re-exported for callers/tests)
+    INSTRUCTION_ARCHIVE_DIR,
+    INSTRUCTION_NAME,
+    SEED_INSTRUCTION,
+    InstructionOptimizer,
+)
+from .belief_scoring import Scored
+from .edit_outcome import MIN_SHARED_FOR_VERDICT, NEUTRAL_BAND, run_context
+
+__all__ = [
+    "BELIEFS_NAME", "BELIEFS_STATE_NAME", "BELIEFS_ARCHIVE_DIR",
+    "BELIEF_PROMPT_DIR", "BELIEF_PREDICTION_NAME", "PREDICTION_NAME",
+    "BELIEF_FORMAT", "BeliefStore", "parse_anchors", "parse_citations",
+    "INSTRUCTION_NAME", "INSTRUCTION_ARCHIVE_DIR", "SEED_INSTRUCTION",
+]
 
 BELIEFS_NAME = "edit_memory_beliefs.md"
 BELIEFS_STATE_NAME = "edit_memory_beliefs_state.json"
 BELIEFS_ARCHIVE_DIR = "edit_memory_beliefs_archive"
-BELIEF_FORMAT = 1
+BELIEF_PROMPT_DIR = "edit_memory_beliefs_prompts"
+BELIEF_PREDICTION_NAME = "belief_prediction.json"
+# The two-stage editor's own prediction sidecar (which belief its proposal
+# relied on). Joined for the report only; scoring is registration-based.
 PREDICTION_NAME = "edit_prediction.json"
-MACHINE_SECTION = "## Machine appendix (code-generated — do not write this section)"
+# Salted into the evidence signature: bumping forces one update on resume.
+BELIEF_FORMAT = 2
 
-# Anchor convention: every belief section heads with "### belief:<slug>".
-# Liberal on separators: the prompt suggests kebab-case but models often write
-# snake_case — truncating at the first "_" broke the citation-credit join.
-_ANCHOR_RE = re.compile(r"^###\s+belief:([a-z0-9][a-z0-9_-]*)", re.M)
-# Citation convention: "[node 17: Δ-0.04/22]" or "[node 17: unmeasured]".
-_CITE_RE = re.compile(
-    r"\[node\s+(\d+):\s*(?:Δ\s*([+-]?\d+(?:\.\d+)?)\s*/\s*(\d+)|unmeasured)\]")
-# How far a quoted delta may sit from the record's before it is a misquote.
-_DELTA_TOL = 0.005
+SCORING_JUDGE = """  strategy beliefs predict P(the JUDGE finds the mechanism improved its target | implementation
+    sound). The judge is the per-node analysis: it reads the edit's implementation, its runtime
+    traces, the per-check results and the per-case rows, and gives each sub-edit an effect
+    verdict — `improved` (y=1), `no_effect` or `regressed` (y=0), `unclear` (not scored) — with
+    an evidence grade (strong / moderate / weak; weak verdicts are not scored). Scored only when
+    the judge also found the implementation sound (an unsound implementation says nothing about
+    the strategy). No shared cases with the parent are needed.
+  implementation beliefs predict P(implementation sound) — y comes from that same analysis.
+The benchmark score Δ is shown in every record as CONTEXT with its standard error: ~16-case
+batches put the SE near ±0.1, so a Δ smaller than 2×SE says nothing; the judge's reasons
+(which components fired, on which cases, what the checks did) are the evidence to read.
+Cite nodes by the judge's verdict — `[node N: improved]` — and add the Δ only when it is
+well measured (≥ 16 shared cases, or |unpaired Δ| > 2×SE)."""
 
-BELIEF_SYSTEM = """You maintain the BELIEF DOCUMENT of a self-improving agent run: your run-global
-understanding of every edit strategy tried so far — what works, what fails, why, and what to do
-next. The agent editor reads this document before every new edit; its quality directly shapes the
-next edit. You are called after each evaluation batch with the evidence that changed.
+SCORING_DELTA = """  strategy beliefs predict P(helped | implementation sound) — y=1 iff Δ vs parent ≥ +{threshold}
+    over ≥ {min_shared} shared cases; scored only when the per-node analysis judged the
+    implementation sound (an unsound implementation says nothing about the strategy).
+  implementation beliefs predict P(implementation sound) — y comes from that analysis verdict.
+NOISE: evaluation batches are ~16 random cases; a single-node Δ over few shared cases is often
+luck — let the number of measured nodes, not one number, move p."""
 
-YOUR FIRST JOB IS TO GET THE BELIEFS RIGHT: fold the new evidence in, revise whatever the measured
-outcomes contradict, and keep next moves concrete enough to act on. You also own this document's
-structure — reorganize it whenever the structure itself is failing you (predictions from one
-section keep going wrong, sections nobody ever cites) — but a correct belief in a plain layout
-beats an elegant layout around a stale one.
+CONTRACT_SYSTEM = """You maintain the BELIEF DOCUMENT of a self-improving agent run. The agent editor reads it
+before every edit. Every belief is a SCOPED PROBABILITY that is SCORED: when a new edit lands,
+the code matches it to your beliefs by its registry tags (strategy, area) and registers the
+matched p; when that edit's outcome is judged, each matched belief pays Brier loss (p - y)^2.
+{scoring}
+A judged edit that no belief of a kind covers is scored at p=0.5 (loss 0.25): silence is not
+free — and a belief written at p=0.5 scores exactly like silence. Commit to the probability you
+actually expect; the calibration record — the `- track:` line under each belief and the
+calibration report in this prompt — is your loss signal, and it corrects you either way.
 
-WHAT TO REASON ABOUT for each strategy or notable edit:
-- Is it useful, harmful, mixed — or simply UNPROVEN? Unproven is the default and is an invitation
-  to test, never a rejection.
-- Is the evidence sufficient to conclude anything? Say explicitly what is missing.
-- When something failed: is the STRATEGY bad, or only its IMPLEMENTATION? Dead components
-  ("0 calls", "never fired"), SUSPECT VERIFIER flags, and gates disagreeing with the scorer all
-  point at broken implementation — the idea may still be sound.
-- What is the actionable next move: build on it, repair a specific mechanism, combine, or stop?
-- Are generated tools/skills useful, and does any need gating before it can help?
+FORMAT (machine-checked; a violation costs a retry, a second violation discards the update):
+{grammar}
 
-NOISE — the facts of this setup: evaluation batches are ~16 randomly sampled cases and per-case
-scores vary a lot, so a delta over a small shared set is frequently sampling noise. Treat any
-single-node delta as weak evidence; look for consistency across multiple nodes before a confident
-verdict; for every pattern, ask whether it could be luck. The judgment is yours — no threshold is
-imposed on you.
+Example section:
+{example}
 
-CONVENTIONS (machine-checked; violations are reported back to you, not fixed for you):
-1. Every distinct belief starts a section headed exactly `### belief:<slug> — <title>` with a
-   stable kebab-case slug. If you rename a slug, add `renamed from:<old-slug>` on the heading line.
-2. Every quantitative claim carries an inline citation in the exact form `[node 17: Δ-0.040/22]`
-   (node id, delta over shared cases, number of shared cases) or `[node 17: unmeasured]`. Cited
-   numbers are verified against the actual records; misquotes are called out in the machine
-   appendix until corrected.
-3. Keep a `## Document structure` section explaining how you currently organize this document,
-   what you track, and what you deliberately dropped.
+Rules: scope ids must come from the registry list in this prompt; p in [{p_min}, {p_max}]; no
+sections other than an optional leading `## Summary` (≤ {summary_cap} chars) and `### belief:`
+sections; no bullets other than kind/scope/predict/evidence/next; never write `- track:` lines
+(code regenerates them); at most one belief per (kind, scope); the whole document must stay
+under {doc_char_cap} characters. Every node you rely on carries a citation in one of the exact
+forms `[node N: improved]` (the judge's effect verdict: improved / no_effect / regressed /
+unclear), `[node N: improved; Δ+0.0310/12]` (verdict plus the paired Δ over 12 shared cases),
+`[node N: Δ-0.0117±0.1461]` (the unpaired Δ ± SE) or `[node N: unmeasured]`; citations are
+verified against the records.
+Submit the complete new document via `submit_belief_update` (document, change_note).
 
-The `## Machine appendix` section at the bottom of the current document is code-generated fact
-tables — do NOT write or copy it; it is regenerated after your update. Where it corrects one of
-your numbers, adopt the correction. Where it shows a prediction went wrong, judge whether that is
-a real miss or noise, and revise or explicitly defend the belief.
-
-Submit the complete new document via `submit_belief_update` (field `document`, everything except
-the machine appendix) plus a one-line `change_note`."""
+## Guidance (learned — revised by an optimizer from your calibration record)
+{instruction}"""
 
 BELIEF_TOOL = {"type": "function", "function": {
     "name": "submit_belief_update",
@@ -105,42 +148,6 @@ BELIEF_TOOL = {"type": "function", "function": {
         "document": {"type": "string"},
         "change_note": {"type": "string"}},
         "required": ["document"]}}}
-
-REFLECT_SYSTEM = """You are reviewing the BELIEF DOCUMENT of a self-improving agent run — not to update its
-content, but to judge whether it is REPRESENTED well. You see only the document and the machine
-statistics about how it has been used; no new evidence.
-
-Answer, concretely and briefly:
-- Which sections never get cited by any edit proposal (dead weight — compress or drop)?
-- Where did predictions cluster wrong — what distinction is the representation missing there
-  (e.g. one belief conflating two mechanisms that behave differently)?
-- What should this document track that it currently doesn't, given the failures on record?
-- How should it be reorganized, if at all?
-
-Remember content beats form: recommend restructuring only where the structure is demonstrably
-failing. Submit 3-8 short directives via `submit_belief_reflection`; they will be handed to the
-next regular update, which does the actual rewrite with evidence in hand."""
-
-REFLECT_TOOL = {"type": "function", "function": {
-    "name": "submit_belief_reflection",
-    "description": "Submit representation-level directives for the next update.",
-    "parameters": {"type": "object", "properties": {
-        "directives": {"type": "array", "items": {"type": "string"}}},
-        "required": ["directives"]}}}
-
-SEED_SKELETON = """No belief document exists yet — this is the first update. A suggested starting
-shape (NOT mandatory; from the next update on the structure is entirely yours):
-
-## Document structure
-(explain your organization here)
-
-### belief:<strategy-slug> — <title>
-- stance: unproven | useful | harmful | mixed — with the evidence, cited
-- evidence: is it sufficient? what is missing?
-- attribution: strategy vs implementation, when something failed
-- next move: one concrete, actionable suggestion
-- open questions
-"""
 
 
 def _atomic_write(path: Path, text: str) -> None:
@@ -160,76 +167,11 @@ def _atomic_write(path: Path, text: str) -> None:
         raise
 
 
-def write_prediction(
-    out_dir: Path,
-    prediction: Any,
-    *,
-    proposal_goals: Sequence[str] = (),
-    query: Optional[Mapping[str, Any]] = None,
-) -> None:
-    """Persist an editor's belief prediction as ``<out_dir>/edit_prediction.json``
-    — the file :meth:`BeliefStore._join_predictions` globs for calibration.
-
-    Shared by the two-stage editor (prediction inside its proposal) and the
-    agentic editor (prediction on its submit call). ``prediction`` is the raw
-    model-emitted dict; anything non-dict is stored as an empty prediction so
-    the join still sees the round.
-    """
-    pred = prediction if isinstance(prediction, dict) else {}
-    # Models sometimes echo the "belief:" anchor prefix into the id;
-    # store the bare slug so joins/credit key consistently.
-    belief_id = str(pred.get("belief_id") or "")
-    if belief_id.lower().startswith("belief:"):
-        belief_id = belief_id[len("belief:"):]
-    payload = {
-        "version": 1,
-        "round_dir": Path(out_dir).name,
-        "belief_id": belief_id,
-        "expected_direction": str(pred.get("expected_direction") or ""),
-        "expected_delta": pred.get("expected_delta"),
-        "why": str(pred.get("why") or "")[:500],
-        "proposal_goals": [str(g)[:300] for g in proposal_goals],
-        "query": dict(query or {}),
-    }
-    _atomic_write(Path(out_dir) / PREDICTION_NAME,
-                  json.dumps(payload, indent=2) + "\n")
-
-
-def strip_machine_section(document: str) -> str:
-    """The body the LLM owns — everything above the machine appendix."""
-    idx = document.find(MACHINE_SECTION)
-    return (document[:idx] if idx != -1 else document).rstrip("\n")
-
-
-def parse_anchors(document: str) -> list[str]:
-    return _ANCHOR_RE.findall(document)
-
-
-def parse_citations(document: str) -> list[dict[str, Any]]:
-    """Every inline citation with the slug of the belief section it sits in
-    (``None`` when it appears above the first anchor)."""
-    anchors = [(m.start(), m.group(1)) for m in _ANCHOR_RE.finditer(document)]
-    out: list[dict[str, Any]] = []
-    for m in _CITE_RE.finditer(document):
-        slug = None
-        for pos, s in anchors:
-            if pos <= m.start():
-                slug = s
-            else:
-                break
-        out.append({
-            "slug": slug,
-            "node": int(m.group(1)),
-            "delta": float(m.group(2)) if m.group(2) is not None else None,
-            "n_shared": int(m.group(3)) if m.group(3) is not None else None,
-            "raw": m.group(0),
-        })
-    return out
-
-
 class BeliefStore:
-    """Maintains the belief document + sidecar. Constructed by ``EditMemory``
-    from the ``beliefs:`` config subdict; all entry points best-effort."""
+    """Maintains the belief document + sidecar + guidance. Constructed by
+    ``EditMemory`` from the ``beliefs:`` config subdict (every key below is a
+    real kwarg — an unknown key is a config error); all entry points are
+    best-effort."""
 
     def __init__(
         self,
@@ -239,29 +181,56 @@ class BeliefStore:
         reasoning_effort: Optional[str] = None,
         base_url: Optional[str] = None,
         enabled: bool = True,
-        reflect_every: int = 0,
-        doc_char_cap: int = 48000,
+        doc_char_cap: int = 40000,
         max_delta_records: int = 12,
-        record_char_cap: int = 4000,
+        evidence_char_budget: int = 60000,
+        threshold: float = NEUTRAL_BAND,
+        min_shared: int = MIN_SHARED_FOR_VERDICT,
+        optimize_enabled: bool = True,
+        optimize_every: int = 8,
+        optimize_min_scored: int = 8,
+        optimize_rollback_margin: float = 0.02,
+        instruction_char_cap: int = 2500,
+        optimize_model: Optional[str] = None,
+        optimize_reasoning_effort: Optional[str] = None,
+        label_source: str = "judge",
+        min_evidence: str = "moderate",
     ) -> None:
         self.llm = llm_caller
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.base_url = base_url
         self.enabled = bool(enabled)
-        self.reflect_every = max(0, int(reflect_every))
         self.doc_char_cap = max(1000, int(doc_char_cap))
         self.max_delta_records = max(1, int(max_delta_records))
-        self.record_char_cap = max(500, int(record_char_cap))
+        self.evidence_char_budget = max(1000, int(evidence_char_budget))
+        self.threshold = float(threshold)
+        self.min_shared = int(min_shared)
+        if label_source not in belief_scoring.LABEL_SOURCES:
+            raise ValueError(f"beliefs.label_source must be one of "
+                             f"{belief_scoring.LABEL_SOURCES}, got {label_source!r}")
+        if min_evidence not in ("strong", "moderate", "weak"):
+            raise ValueError("beliefs.min_evidence must be 'strong', 'moderate' "
+                             f"or 'weak', got {min_evidence!r}")
+        self.label_source = label_source
+        self.min_evidence = min_evidence
+        self.optimize_enabled = bool(optimize_enabled)
+        self._opt = InstructionOptimizer(
+            functools.partial(self._call, model=optimize_model,
+                              reasoning_effort=optimize_reasoning_effort),
+            enabled=optimize_enabled, every=optimize_every,
+            min_scored=optimize_min_scored,
+            rollback_margin=optimize_rollback_margin,
+            char_cap=instruction_char_cap)
 
     # ------------------------------------------------------------------ #
     # Public API
     # ------------------------------------------------------------------ #
     def update(self, experiment_dir: Path, tree: Any) -> bool:
-        """One sig-gated belief update. Returns True when the document was
-        rewritten. Never raises; on any failure the previous document and
-        signature stay on disk so the update retries at the next evidence
-        change (same retry semantics as the analysis sig)."""
+        """Score, maybe optimize, then one sig-gated belief rewrite. Returns
+        True when the document was rewritten. Never raises; on a rejected
+        or failed rewrite the previous document and signature stay on disk,
+        so the update retries at the next evidence change."""
         if not self.enabled:
             return False
         experiment_dir = Path(experiment_dir)
@@ -271,74 +240,345 @@ class BeliefStore:
             if not records:
                 return False
             state = self._load_state(experiment_dir)
-            per_node_sigs = self._per_node_sigs(experiment_dir, records)
+            registry = self._load_registry(experiment_dir)
+            predictions = self._load_belief_predictions(experiment_dir)
+            n_updates = int(state.get("n_updates", 0))
+            self._opt.ensure_seed(experiment_dir, state)
+
+            # 1. Score every registered prediction whose node is now
+            #    measurable with an implementation verdict.
+            scored = [Scored.from_dict(d) for d in (state.get("scored") or [])]
+            skipped = list(state.get("skipped") or [])
+            already = ({(s.node, s.kind) for s in scored}
+                       | {(int(k["node"]), str(k["kind"])) for k in skipped})
+            new_scored, pending, new_skipped = belief_scoring.resolve(
+                predictions, records, threshold=self.threshold,
+                min_shared=self.min_shared, already=already,
+                n_updates=n_updates, label_source=self.label_source,
+                min_evidence=self.min_evidence)
+            state_changed = False
+            if new_skipped:
+                skipped.extend(new_skipped)
+                state["skipped"] = skipped
+                state_changed = True
+            if new_scored:
+                scored.extend(new_scored)
+                state["scored"] = [s.as_dict() for s in scored]
+                state["scored_since_step"] = (
+                    int(state.get("scored_since_step", 0) or 0) + len(new_scored))
+                state_changed = True
+                self._refresh_track_lines(experiment_dir, records, scored)
+                print(f"[edit_beliefs] scored {len(new_scored)} prediction(s); "
+                      f"running mean Brier "
+                      f"{belief_scoring.mean_brier(scored):.3f}", flush=True)
+
+            # 2. The calibration report (shared by the optimizer step and
+            #    the update prompt) and the optimizer step itself.
+            doc = self._load_doc(experiment_dir)
             joins = self._join_predictions(experiment_dir, records)
+            parsed_now = parse_document(doc) if doc else ParsedDoc()
+            soft_now = verify_citations(strip_track_lines(doc), records) if doc else []
+            info = state.get("instruction") or {}
+            report = belief_scoring.render_calibration_report(
+                parsed=parsed_now, scored=scored, pending=pending,
+                records=records, predictions=predictions,
+                soft_violations=soft_now, joins=joins,
+                version_history=info.get("versions") or [],
+                current_version=int(info.get("version", 0) or 0),
+                min_shared=self.min_shared, n_skipped=len(skipped),
+                label_source=self.label_source, threshold=self.threshold)
+            if self._opt.maybe_step(experiment_dir, state, scored=scored,
+                                    predictions=predictions, records=records,
+                                    calibration_report=report,
+                                    n_updates=n_updates):
+                state_changed = True
+            if state_changed:
+                self._save_state(experiment_dir, state)
+
+            # 3. Evidence gate — no movement, no LLM call.
+            per_node_sigs = self._per_node_sigs(experiment_dir, records)
             sig = self._evidence_signature(experiment_dir, per_node_sigs, joins)
             if sig == state.get("updated_at_signature"):
                 return False
 
-            doc = self._load_doc(experiment_dir)
-            n_updates = int(state.get("n_updates", 0))
-            directives = self._maybe_reflect(state, doc, n_updates)
-
+            # 4. The rewrite, with one contract-driven retry.
             delta_nodes = self._delta_nodes(state, per_node_sigs)
+            system = self._system_prompt(self._opt.current_text(experiment_dir))
             user = self._build_update_prompt(
-                experiment_dir, tree, records, doc, delta_nodes, joins,
-                directives)
-            got = self._call(BELIEF_SYSTEM, user, BELIEF_TOOL, "belief update")
-            new_doc = strip_machine_section(str((got or {}).get("document") or ""))
-            if not new_doc.strip():
-                print("[edit_beliefs] update produced no document; kept the "
-                      "previous version", flush=True)
-                return False
-            anchors = parse_anchors(new_doc)
-            if not anchors:
-                print("[edit_beliefs] update rejected: no `### belief:` "
-                      "anchors; kept the previous version", flush=True)
-                return False
-            if len(new_doc) > 2 * self.doc_char_cap:
-                print(f"[edit_beliefs] update rejected: {len(new_doc)} chars "
-                      f"exceeds 2x cap {self.doc_char_cap}; kept the previous "
-                      "version", flush=True)
+                experiment_dir, tree, records, registry, doc, report,
+                delta_nodes)
+            got = self._call(system, user, BELIEF_TOOL, "belief update")
+            body = strip_track_lines(str((got or {}).get("document") or ""))
+            parsed = validate_document(body, registry=registry,
+                                       doc_char_cap=self.doc_char_cap,
+                                       records=records)
+            retry_text = ""
+            if parsed.violations or not body.strip():
+                retry_text = (
+                    "\n\n## Your previous submission was rejected\n"
+                    + (render_violations(parsed.violations)
+                       if parsed.violations else
+                       "1. [HARD] no document was submitted")
+                    + "\n\n## Rejected submission\n"
+                    + body[: 2 * self.doc_char_cap]
+                    + "\n\nResubmit the complete corrected document.")
+                got2 = self._call(system, user + retry_text, BELIEF_TOOL,
+                                  "belief update (retry)")
+                body2 = strip_track_lines(str((got2 or {}).get("document") or ""))
+                parsed2 = validate_document(body2, registry=registry,
+                                            doc_char_cap=self.doc_char_cap,
+                                            records=records)
+                # Take the retry unless it made things worse than a
+                # soft-only original.
+                if not parsed2.hard and body2.strip():
+                    body, parsed, got = body2, parsed2, got2
+                elif parsed.hard or not body.strip():
+                    body, parsed, got = body2, parsed2, got2
+            self._dump_prompt(experiment_dir, n_updates + 1, system, user,
+                              retry_text)
+            if parsed.hard or not body.strip():
+                first = parsed.hard[0].render()[:160] if parsed.hard else "empty"
+                print(f"[edit_beliefs] update rejected after retry "
+                      f"({len(parsed.hard)} hard violation(s): {first}); kept "
+                      "the previous version", flush=True)
                 return False
 
-            verification = self._verify(new_doc, records)
-            citation_outcomes = self._citation_outcomes(joins)
-            appendix = self._render_appendix(
-                new_doc, records, verification, joins, citation_outcomes,
-                anchors)
-
+            soft_counts: dict[str, int] = {}
+            for v in parsed.soft:
+                if v.slug:
+                    soft_counts[v.slug] = soft_counts.get(v.slug, 0) + 1
+            track = belief_scoring.track_lines(parsed.beliefs, scored, soft_counts)
+            final = inject_track_lines(body, track)
             if doc:
-                self._archive(experiment_dir, state, doc, n_updates)
-            _atomic_write(experiment_dir / BELIEFS_NAME,
-                          new_doc + "\n\n" + appendix + "\n")
+                self._archive(experiment_dir, state, n_updates)
+            _atomic_write(experiment_dir / BELIEFS_NAME, final)
             state.update({
                 "belief_format": BELIEF_FORMAT,
                 "n_updates": n_updates + 1,
                 "updated_at_signature": sig,
                 "per_node_sigs": per_node_sigs,
                 "prediction_joins": joins,
-                "citation_outcomes": citation_outcomes,
-                "verification": verification,
                 "change_note": str((got or {}).get("change_note") or "")[:300],
+                "doc_violations_last": [v.render() for v in parsed.violations],
+                "beliefs_index": {b.slug: {"kind": b.kind, "strategy": b.strategy,
+                                           "area": b.area, "p": b.p}
+                                  for b in parsed.beliefs},
             })
+            state.setdefault("scored", [])
+            state.setdefault("scored_since_step", 0)
             self._save_state(experiment_dir, state)
-            print(f"[edit_beliefs] update {n_updates + 1}: {len(anchors)} "
-                  f"belief(s), {len(verification['bad_citations'])} citation "
-                  f"issue(s), {len(delta_nodes)} node(s) of new evidence",
-                  flush=True)
+            print(f"[edit_beliefs] update {n_updates + 1}: "
+                  f"{len(parsed.beliefs)} belief(s), {len(parsed.soft)} soft "
+                  f"issue(s), {len(delta_nodes)} node(s) of new evidence"
+                  + (" (after retry)" if retry_text else ""), flush=True)
             return True
         except Exception as exc:  # noqa: BLE001
             print(f"[edit_beliefs] update failed: {exc!r}", flush=True)
             return False
 
+    def register(self, experiment_dir: Path, node_id: int,
+                 round_dir: Path) -> Optional[dict]:
+        """Freeze the beliefs that cover a freshly recorded node — the p the
+        editor was shown — into ``round_dir/belief_prediction.json``.
+        Idempotent; ``None`` when the node has no record (tagger failed)."""
+        if not self.enabled:
+            return None
+        experiment_dir, round_dir = Path(experiment_dir), Path(round_dir)
+        path = round_dir / BELIEF_PREDICTION_NAME
+        try:
+            if path.exists():
+                return json.loads(path.read_text(encoding="utf-8"))
+            from .edit_memory_render import _load_records
+            records = _load_records(experiment_dir)
+            rec = records.get(int(node_id))
+            if rec is None:
+                return None
+            state = self._load_state(experiment_dir)
+            doc = self._load_doc(experiment_dir)
+            parsed = parse_document(doc) if doc else ParsedDoc()
+            tags = [{"edit": t.get("edit"), "strategy": t.get("strategy"),
+                     "area": t.get("area") or None,
+                     "fit": t.get("fit") or "exact"}
+                    for t in (rec.get("tags") or [])]
+            # A cap-forced tag is the nearest registry id by shared token,
+            # not what the tagger meant: no belief may be matched to it or
+            # charged for it. A node whose tags are all forced is treated as
+            # uncoverable (retired unscored), never as silence.
+            usable = [t for t in tags if t["fit"] != "forced"]
+            try:
+                parent = int(rec["fm"].get("parent"))
+            except (TypeError, ValueError):
+                parent = None
+            # Could a belief have covered this node? Only if some EARLIER
+            # node already used one of its strategies — beliefs can only be
+            # scoped to registry ids, and the registry grows with the edits.
+            prior = {t.get("strategy") for n, r in records.items()
+                     if n != int(node_id) for t in (r.get("tags") or [])
+                     if t.get("strategy")}
+            coverable = any(t.get("strategy") in prior for t in usable)
+            payload: dict[str, Any] = {
+                "version": 1, "node": int(node_id), "parent": parent,
+                "belief_version": int(state.get("n_updates", 0)),
+                "instruction_version": self._opt.current_version(state),
+                "tags": tags, "coverable": coverable,
+                "strategy": None, "implementation": None,
+            }
+            for kind in BELIEF_KINDS:
+                m = match_belief(parsed.beliefs, kind, usable)
+                if m is None:
+                    continue
+                b, idx = m
+                payload[kind] = {
+                    "slug": b.slug, "p": b.p,
+                    "scope": {"strategy": b.strategy, "area": b.area},
+                    "matched_edit": idx, "section": b.section_text[:1500]}
+            _atomic_write(path, json.dumps(payload, indent=2) + "\n")
+            return payload
+        except Exception as exc:  # noqa: BLE001
+            print(f"[edit_beliefs] registration failed for node {node_id}: "
+                  f"{exc!r}", flush=True)
+            return None
+
     def render_block(self, experiment_dir: Path) -> str:
-        """The full document (machine appendix included — it is signal),
-        capped for steering. ``""`` when absent."""
-        doc = self._load_doc(Path(experiment_dir), with_appendix=True)
-        if not doc:
+        """The document exactly as written (track lines included) — never
+        cut. ``""`` when absent."""
+        return self._load_doc(Path(experiment_dir))
+
+    def calibration_line(self, experiment_dir: Path) -> str:
+        state = self._load_state(Path(experiment_dir))
+        scored = state.get("scored") or []
+        if not scored:
             return ""
-        return truncate_middle(doc, self.doc_char_cap)
+        mean = sum(float(s.get("brier", 0.0)) for s in scored) / len(scored)
+        return (f"{len(scored)} scored prediction(s) so far, mean Brier "
+                f"{mean:.2f} (0.25 = uninformative); guidance "
+                f"v{self._opt.current_version(state)}.")
+
+    # ------------------------------------------------------------------ #
+    # Prompt assembly
+    # ------------------------------------------------------------------ #
+    def _system_prompt(self, instruction: str) -> str:
+        text = CONTRACT_SYSTEM.replace(
+            "{scoring}", SCORING_JUDGE if self.label_source == "judge"
+            else SCORING_DELTA)
+        for key, val in (("{threshold}", f"{self.threshold:.2f}"),
+                         ("{min_shared}", str(self.min_shared)),
+                         ("{grammar}", GRAMMAR), ("{example}", EXAMPLE),
+                         ("{p_min}", f"{P_MIN:.2f}"), ("{p_max}", f"{P_MAX:.2f}"),
+                         ("{summary_cap}", str(SUMMARY_CHAR_CAP)),
+                         ("{doc_char_cap}", str(self.doc_char_cap)),
+                         ("{instruction}", instruction.strip() or SEED_INSTRUCTION)):
+            text = text.replace(key, val)
+        return text
+
+    def _build_update_prompt(self, experiment_dir: Path, tree: Any,
+                             records: Mapping[int, Any],
+                             registry: Mapping[str, Any], doc: str,
+                             report: str, delta_nodes: list[int]) -> str:
+        from .edit_memory_render import build_ledger, judge_ledger_lines
+        parts: list[str] = []
+
+        rc = run_context(tree) or {}
+        if rc and self.label_source == "judge":
+            parts.append(
+                "## Run context\nThe run optimizes what the judge finds: each "
+                "node's per-node analysis grades its mechanisms on their own "
+                "traces and per-check results, and strategy beliefs are scored "
+                "against those verdicts. Score context (noisy, for orientation "
+                "only): seed %.4f/%d · best so far %.4f/%d (node %d)."
+                % (rc.get("seed_mean", 0.0), rc.get("seed_n", 0),
+                   rc.get("best_mean", 0.0), rc.get("best_n", 0),
+                   rc.get("best_node", -1)))
+        elif rc:
+            parts.append(
+                "## Run context\nseed %.4f/%d · best so far %.4f/%d (node %d). "
+                "The goal is the highest ABSOLUTE score."
+                % (rc.get("seed_mean", 0.0), rc.get("seed_n", 0),
+                   rc.get("best_mean", 0.0), rc.get("best_n", 0),
+                   rc.get("best_node", -1)))
+
+        parts.append("## Registry ids you may use in scope lines\n"
+                     + self._render_registry(registry))
+
+        parts.append("## Current belief document (with code-generated track lines)\n"
+                     + (doc.rstrip() if doc.strip() else
+                        "(none yet — this is the first update; write the first "
+                        "version)"))
+
+        parts.append(report)
+
+        ledger = build_ledger(registry, records, threshold=self.threshold,
+                              min_shared=self.min_shared)
+        if ledger and self.label_source == "judge":
+            L = ["## Per-strategy outcomes (the judge's verdicts per sub-edit, the "
+                 "checks they targeted, regressions and implementation verdicts; "
+                 "the score Δ is trailing context)"]
+            L += judge_ledger_lines(ledger)
+            parts.append("\n".join(L))
+        elif ledger:
+            L = ["## Deterministic per-strategy ledger (ground truth)"]
+            for r in ledger:
+                tally = ", ".join(f"{k} {v}" for k, v in r["tally"].items())
+                med = ("Δ median %+.4f" % r["median"]
+                       if r["median"] is not None else "no measured Δ")
+                L.append(f"- `{r['id']}` — {r['n_nodes']} node(s) "
+                         f"({', '.join(str(n) for n in r['nodes'])}) · "
+                         f"{med} · {tally} — {r['definition']}")
+            parts.append("\n".join(L))
+
+        if delta_nodes:
+            # Whole records only, newest first; the budget drops the OLDEST
+            # whole records rather than cutting any record mid-text.
+            L = ["## New/changed evidence since your last update (full records)"]
+            used = 0
+            shown = 0
+            for n in delta_nodes[:self.max_delta_records]:
+                text = records[n].get("text") or records[n].get("body") or ""
+                if shown and used + len(text) > self.evidence_char_budget:
+                    break
+                L.append(f"### node {n}\n{text.rstrip()}")
+                used += len(text)
+                shown += 1
+            if shown < len(delta_nodes):
+                L.append(f"(+{len(delta_nodes) - shown} older changed node(s) "
+                         "not shown — see the ledger)")
+            parts.append("\n\n".join(L))
+        return "\n\n".join(parts)
+
+    @staticmethod
+    def _render_registry(registry: Mapping[str, Any]) -> str:
+        strategies = registry.get("strategies") or {}
+        areas = registry.get("areas") or {}
+        rows = []
+        for sid, e in strategies.items():
+            nodes = {r.get("node") for r in (e.get("edits") or [])}
+            rows.append((-len(nodes), sid, len(nodes), e.get("definition", "")))
+        rows.sort()
+        L = ["strategies:"]
+        L += [f"- `{sid}` — {n} node(s) — {d}" for _, sid, n, d in rows] or ["- (none yet)"]
+        L.append("areas:")
+        L += [f"- `{aid}` — {e.get('definition', '')}"
+              for aid, e in sorted(areas.items())] or ["- (none yet)"]
+        return "\n".join(L)
+
+    # ------------------------------------------------------------------ #
+    # Track-line refresh (deterministic; keeps the editor's copy current)
+    # ------------------------------------------------------------------ #
+    def _refresh_track_lines(self, experiment_dir: Path,
+                             records: Mapping[int, Any],
+                             scored: list[Scored]) -> None:
+        doc = self._load_doc(experiment_dir)
+        if not doc.strip():
+            return
+        parsed = parse_document(doc)
+        soft_counts: dict[str, int] = {}
+        for v in verify_citations(strip_track_lines(doc), records):
+            if v.slug:
+                soft_counts[v.slug] = soft_counts.get(v.slug, 0) + 1
+        track = belief_scoring.track_lines(parsed.beliefs, scored, soft_counts)
+        new = inject_track_lines(doc, track)
+        if new != doc:
+            _atomic_write(experiment_dir / BELIEFS_NAME, new)
 
     # ------------------------------------------------------------------ #
     # Evidence signature + delta detection
@@ -382,7 +622,7 @@ class BeliefStore:
         return sorted(changed, reverse=True)  # newest first
 
     # ------------------------------------------------------------------ #
-    # Prediction joins (calibration raw data — no correctness judgment)
+    # Proposal-prediction joins (report only — "cited by N proposals")
     # ------------------------------------------------------------------ #
     def _join_predictions(self, experiment_dir: Path,
                           records: Mapping[int, Any]) -> list[dict[str, Any]]:
@@ -405,261 +645,69 @@ class BeliefStore:
                 "belief_id": bid,
                 "expected_direction": str(pred.get("expected_direction") or ""),
                 "expected_delta": pred.get("expected_delta"),
+                # v2 sidecar: the judge verdict and checks the planner expected.
+                "expected_effect": str(pred.get("expected_effect") or ""),
+                "expected_targets": [str(t)[:80] for t in
+                                     (pred.get("expected_targets") or [])][:8],
                 "why": str(pred.get("why") or "")[:300],
                 "measured_delta": rec.get("delta"),
                 "n_shared": rec.get("n_shared") or 0,
             })
         return joins
 
-    @staticmethod
-    def _citation_outcomes(joins: list[dict[str, Any]]) -> dict[str, Any]:
-        out: dict[str, Any] = {}
-        for j in joins:
-            slug = j.get("belief_id") or "(no belief named)"
-            entry = out.setdefault(slug, {"cited_by_nodes": [], "measured": []})
-            if j["node"] not in entry["cited_by_nodes"]:
-                entry["cited_by_nodes"].append(j["node"])
-            if j.get("measured_delta") is not None:
-                entry["measured"].append({
-                    "node": j["node"], "delta": j["measured_delta"],
-                    "n_shared": j["n_shared"]})
-        return out
-
-    # ------------------------------------------------------------------ #
-    # Verifier — fact-checking only, never an epistemic judgment
-    # ------------------------------------------------------------------ #
-    def _verify(self, document: str,
-                records: Mapping[int, Any]) -> dict[str, Any]:
-        bad: list[dict[str, Any]] = []
-        outside: list[str] = []
-        for c in parse_citations(document):
-            if c["slug"] is None:
-                outside.append(c["raw"])
-            rec = records.get(c["node"])
-            if rec is None:
-                bad.append({**c, "reason": "no record for this node"})
-                continue
-            if c["delta"] is None:  # "[node N: unmeasured]"
-                if rec.get("delta") is not None:
-                    bad.append({**c, "reason":
-                                f"claimed unmeasured, but the record shows "
-                                f"Δ{rec['delta']:+.4f} over {rec['n_shared']} "
-                                f"shared"})
-                continue
-            r_delta, r_n = rec.get("delta"), rec.get("n_shared") or 0
-            if r_delta is None:
-                bad.append({**c, "reason": "the record has no measured Δ yet"})
-            elif (c["n_shared"] != r_n
-                  or (c["delta"] > 0) != (r_delta > 0) and abs(r_delta) > 1e-9
-                  or abs(c["delta"] - r_delta) > _DELTA_TOL):
-                bad.append({**c, "reason":
-                            f"the record shows Δ{r_delta:+.4f} over {r_n} "
-                            f"shared"})
-        return {"bad_citations": bad, "citations_outside_beliefs": outside}
-
-    # ------------------------------------------------------------------ #
-    # Machine appendix — verbose, template-rendered, facts only
-    # ------------------------------------------------------------------ #
-    def _render_appendix(self, document: str, records: Mapping[int, Any],
-                         verification: Mapping[str, Any],
-                         joins: list[dict[str, Any]],
-                         citation_outcomes: Mapping[str, Any],
-                         anchors: list[str]) -> str:
-        cites = parse_citations(document)
-        by_slug: dict[str, list[dict[str, Any]]] = {}
-        for c in cites:
-            by_slug.setdefault(c["slug"] or "", []).append(c)
-        bad = list(verification.get("bad_citations") or [])
-        bad_raw = {b["raw"] for b in bad}
-
-        L = [MACHINE_SECTION,
-             "_Regenerated by code after every belief update. Facts checked "
-             "against the actual records — when a number here disagrees with "
-             "the body text above, this section is what the records say. No "
-             "judgments: whether evidence is thin or a prediction truly "
-             "missed is the belief maintainer's call._", "",
-             "### Citation checks"]
-        if not bad:
-            L.append(f"- All {len(cites)} inline citations match the records.")
-        for b in bad:
-            where = f"belief:{b['slug']}" if b.get("slug") else \
-                "outside any belief section"
-            L.append(f"- {where} quotes `{b['raw']}`, but {b['reason']} — "
-                     "the body text misquotes the record.")
-        if verification.get("citations_outside_beliefs"):
-            L.append("- Citations found above the first belief anchor: "
-                     + ", ".join(f"`{r}`" for r in
-                                 verification["citations_outside_beliefs"][:5]))
-
-        L += ["", "### Evidence base per belief"]
-        for slug in anchors:
-            mine = by_slug.get(slug, [])
-            nodes = sorted({c["node"] for c in mine})
-            if not nodes:
-                L.append(f"- belief:{slug} contains no verifiable citations — "
-                         "its claims cannot be checked against any record.")
-                continue
-            shared = sum(records.get(n, {}).get("n_shared") or 0 for n in nodes)
-            ok = sum(1 for c in mine if c["raw"] not in bad_raw)
-            L.append(
-                f"- belief:{slug} cites {len(nodes)} node(s) — "
-                f"{', '.join(str(n) for n in nodes)} — covering {shared} "
-                f"shared case(s) in total; {ok} of its {len(mine)} citations "
-                "check out.")
-
-        L += ["", "### Proposal outcomes (edits justified by each belief)"]
-        cited_slugs = set()
-        for slug, entry in sorted(citation_outcomes.items()):
-            cited_slugs.add(slug)
-            parts = []
-            measured = {m["node"]: m for m in entry.get("measured", [])}
-            for n in entry.get("cited_by_nodes", []):
-                m = measured.get(n)
-                if m is not None:
-                    parts.append(f"node {n} (measured Δ{m['delta']:+.4f} over "
-                                 f"{m['n_shared']} shared)")
-                else:
-                    parts.append(f"node {n} (not yet measured)")
-            L.append(f"- belief:{slug} justified the edit(s) at "
-                     + "; ".join(parts) + ".")
-            if slug not in anchors and slug != "(no belief named)":
-                L.append(f"  - note: belief:{slug} is no longer present in the "
-                         "document, but predictions still reference it.")
-        never = [s for s in anchors if s not in cited_slugs]
-        if never:
-            L.append("- Never cited by any proposal so far: "
-                     + ", ".join(f"belief:{s}" for s in never) + ".")
-
-        n_measured = sum(1 for j in joins if j.get("measured_delta") is not None)
-        L += ["", "### Run totals",
-              f"- {len(anchors)} belief(s); {len(joins)} prediction(s) "
-              f"recorded, {n_measured} with a measured outcome so far."]
-        return "\n".join(L)
-
-    # ------------------------------------------------------------------ #
-    # Prompt assembly
-    # ------------------------------------------------------------------ #
-    def _build_update_prompt(self, experiment_dir: Path, tree: Any,
-                             records: Mapping[int, Any], doc: str,
-                             delta_nodes: list[int],
-                             joins: list[dict[str, Any]],
-                             directives: list[str]) -> str:
-        from .edit_memory import REGISTRY_NAME
-        from .edit_memory_render import build_ledger
-        parts: list[str] = []
-
-        rc = run_context(tree) or {}
-        if rc:
-            parts.append(
-                "## Run context\nseed %.4f/%d · best so far %.4f/%d (node %d). "
-                "The goal is the highest ABSOLUTE score."
-                % (rc.get("seed_mean", 0.0), rc.get("seed_n", 0),
-                   rc.get("best_mean", 0.0), rc.get("best_n", 0),
-                   rc.get("best_node", -1)))
-
-        parts.append("## Current belief document")
-        parts.append(doc if doc else SEED_SKELETON)
-
-        try:
-            registry = json.loads(
-                (experiment_dir / REGISTRY_NAME).read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            registry = {}
-        ledger = build_ledger(registry, records, threshold=0.02, min_shared=8)
-        if ledger:
-            parts.append("## Deterministic per-strategy ledger (ground truth)")
-            for r in ledger:
-                tally = ", ".join(f"{k} {v}" for k, v in r["tally"].items())
-                med = ("Δ median %+.4f" % r["median"]
-                       if r["median"] is not None else "no measured Δ")
-                parts.append(f"- `{r['id']}` — {r['n_nodes']} node(s) "
-                             f"({', '.join(str(n) for n in r['nodes'])}) · "
-                             f"{med} · {tally} — {r['definition']}")
-
-        if delta_nodes:
-            parts.append("## New/changed evidence since your last update "
-                         "(full records)")
-            for n in delta_nodes[:self.max_delta_records]:
-                text = records[n].get("text") or records[n].get("body") or ""
-                parts.append(f"### node {n}\n"
-                             + truncate_middle(text, self.record_char_cap))
-            if len(delta_nodes) > self.max_delta_records:
-                parts.append(f"(+{len(delta_nodes) - self.max_delta_records} "
-                             "more changed node(s) — see the ledger)")
-
-        pred_lines = []
-        for j in joins:
-            who = f"belief:{j['belief_id']}" if j["belief_id"] else \
-                "a proposal that named no belief"
-            if j.get("measured_delta") is not None:
-                pred_lines.append(
-                    f"- {who} predicted {j['expected_direction'] or '?'} for "
-                    f"the edit at node {j['node']}; measured Δ"
-                    f"{j['measured_delta']:+.4f} over {j['n_shared']} shared — "
-                    "judge whether this is a real miss or hit vs noise, and "
-                    "revise or defend the belief.")
-            else:
-                pred_lines.append(
-                    f"- {who} predicted {j['expected_direction'] or '?'} for "
-                    f"the edit at node {j['node']}; not yet measured.")
-        if pred_lines:
-            parts.append("## Predictions made by past edit proposals\n"
-                         + "\n".join(pred_lines))
-
-        if directives:
-            parts.append("## Representation directives from your last "
-                         "reflection pass (apply where they serve content)\n"
-                         + "\n".join(f"- {d}" for d in directives))
-        return "\n\n".join(parts)
-
-    def _maybe_reflect(self, state: dict[str, Any], doc: str,
-                       n_updates: int) -> list[str]:
-        """Run the reflection call when due; its directives feed THIS update.
-        Pending directives persist in the sidecar until consumed."""
-        pending = list(state.pop("pending_directives", []) or [])
-        if (self.reflect_every <= 0 or n_updates == 0
-                or n_updates % self.reflect_every != 0
-                or state.get("reflected_at") == n_updates or not doc):
-            return pending
-        stats = json.dumps({
-            "prediction_joins": state.get("prediction_joins", []),
-            "citation_outcomes": state.get("citation_outcomes", {}),
-            "verification": state.get("verification", {}),
-        }, indent=1, default=str)[:8000]
-        user = (f"## Belief document (update {n_updates})\n{doc}\n\n"
-                f"## Machine statistics\n{stats}")
-        got = self._call(REFLECT_SYSTEM, user, REFLECT_TOOL, "belief reflection")
-        directives = [str(d)[:300] for d in ((got or {}).get("directives")
-                                             or [])][:8]
-        state["reflected_at"] = n_updates
-        if directives:
-            print(f"[edit_beliefs] reflection at update {n_updates}: "
-                  f"{len(directives)} directive(s)", flush=True)
-        return pending + directives
-
     # ------------------------------------------------------------------ #
     # Files
     # ------------------------------------------------------------------ #
-    def _load_doc(self, experiment_dir: Path, *,
-                  with_appendix: bool = False) -> str:
+    @staticmethod
+    def _load_belief_predictions(experiment_dir: Path) -> dict[int, dict[str, Any]]:
+        out: dict[int, dict[str, Any]] = {}
+        for p in sorted(Path(experiment_dir).glob(f"round_*/{BELIEF_PREDICTION_NAME}")):
+            try:
+                d = json.loads(p.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            m = re.search(r"round_(\d+)", p.parent.name)
+            if isinstance(d, dict) and m:
+                out[int(d.get("node", m.group(1)))] = d
+        return out
+
+    @staticmethod
+    def _load_registry(experiment_dir: Path) -> dict[str, Any]:
+        from .edit_memory import REGISTRY_NAME
+        try:
+            got = json.loads((experiment_dir / REGISTRY_NAME)
+                             .read_text(encoding="utf-8"))
+            return got if isinstance(got, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            return {}
+
+    def _load_doc(self, experiment_dir: Path) -> str:
         path = experiment_dir / BELIEFS_NAME
         try:
-            text = path.read_text(encoding="utf-8") if path.exists() else ""
+            return path.read_text(encoding="utf-8") if path.exists() else ""
         except (OSError, UnicodeDecodeError):
             return ""
-        return text.rstrip("\n") if with_appendix else strip_machine_section(text)
+
+    def _dump_prompt(self, experiment_dir: Path, n: int, system: str,
+                     user: str, retry_text: str) -> None:
+        try:
+            _atomic_write(experiment_dir / BELIEF_PROMPT_DIR / f"update_{n:04d}.txt",
+                          "### SYSTEM\n" + system + "\n\n### USER\n" + user
+                          + (retry_text + "\n" if retry_text else "\n"))
+        except Exception as exc:  # noqa: BLE001
+            print(f"[edit_beliefs] prompt dump failed: {exc!r}", flush=True)
 
     def _archive(self, experiment_dir: Path, state: dict[str, Any],
-                 doc_body: str, n_updates: int) -> None:
+                 n_updates: int) -> None:
+        """Copy the current document (track lines included) aside before
+        the new version replaces it."""
         try:
             dest_dir = experiment_dir / BELIEFS_ARCHIVE_DIR
             dest_dir.mkdir(parents=True, exist_ok=True)
             dest = dest_dir / f"beliefs_{n_updates:04d}.md"
             src = experiment_dir / BELIEFS_NAME
             if src.exists():
-                shutil.copyfile(src, dest)  # archive WITH its appendix
-            else:
-                _atomic_write(dest, doc_body + "\n")
+                shutil.copyfile(src, dest)
             versions = list(state.get("versions") or [])
             if dest.name not in versions:
                 versions.append(dest.name)
@@ -683,17 +731,20 @@ class BeliefStore:
                       json.dumps(dict(state), indent=1, default=str) + "\n")
 
     # ------------------------------------------------------------------ #
-    def _call(self, system: str, user: str, tool: dict,
-              tag: str) -> Optional[dict]:
+    def _call(self, system: str, user: str, tool: dict, tag: str, *,
+              model: Optional[str] = None,
+              reasoning_effort: Optional[str] = None) -> Optional[dict]:
         kwargs: dict[str, Any] = {
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}],
             "tools": [tool],
         }
-        if self.model:
-            kwargs["model"] = self.model
-        if self.reasoning_effort:
-            kwargs["reasoning_effort"] = self.reasoning_effort
+        model = model or self.model
+        effort = reasoning_effort or self.reasoning_effort
+        if model:
+            kwargs["model"] = model
+        if effort:
+            kwargs["reasoning_effort"] = effort
         else:
             kwargs["temperature"] = 0.2
         if self.base_url:

@@ -358,3 +358,126 @@ class TaskAgentTemperatureTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MetaBaseUrlWarningTests(unittest.TestCase):
+    """A meta component naming a model but no base_url inherits the task
+    agent's LLM_BASE_URL (runtime_env exports it) — warn at build time."""
+
+    def _cfg(self, **over):
+        base = dict(
+            experiment_name="t", project="math",
+            task_agent={"model": "local", "reasoning_effort": "low",
+                        "base_url": "http://vllm:8000/v1"},
+            editor={"type": "default", "config": {"model": "gpt-5.4",
+                                                  "reasoning_effort": "medium"}},
+            manager={"type": "hill_climbing", "config": {}},
+            evaluator={"type": "subprocess", "config": {}},
+            gatherer={"type": "default", "config": {}},
+            validators=[], loop={"max_rounds": 1})
+        base.update(over)
+        return cfg_mod.FrameworkConfig(**base)
+
+    def test_warns_for_meta_component_without_base_url(self) -> None:
+        got = cfg_mod.meta_base_url_warnings(self._cfg())
+        self.assertEqual(len(got), 1)
+        self.assertIn("editor names model 'gpt-5.4' but no base_url", got[0])
+        self.assertIn("http://vllm:8000/v1", got[0])
+
+    def test_silent_when_base_url_set_or_no_task_base_url(self) -> None:
+        pinned = self._cfg(editor={"type": "default", "config": {
+            "model": "gpt-5.4", "base_url": "https://api.openai.com/v1"}})
+        self.assertEqual(cfg_mod.meta_base_url_warnings(pinned), [])
+        no_task = self._cfg(task_agent={"model": "gpt-5.4-mini",
+                                        "reasoning_effort": "low"})
+        self.assertEqual(cfg_mod.meta_base_url_warnings(no_task), [])
+        # no model on the component: it inherits LLM_MODEL too -> consistent
+        inherit = self._cfg(editor={"type": "default", "config": {}})
+        self.assertEqual(cfg_mod.meta_base_url_warnings(inherit), [])
+
+    def test_edit_memory_and_summarizer_are_covered(self) -> None:
+        got = cfg_mod.meta_base_url_warnings(self._cfg(
+            edit_memory={"type": "default", "config": {"model": "gpt-5.4"}},
+            summarizer={"type": "default", "config": {"model": "gpt-5.4"}}))
+        self.assertEqual(sorted(w.split()[2] for w in got),
+                         ["edit_memory", "editor", "summarizer"])
+
+
+class TaskAgentStallGuardTests(unittest.TestCase):
+    """`task_agent.timeout_s` / `.max_output_tokens` exist to stop one stalled
+    or runaway generation from costing a case its whole score. Both must stay
+    task-agent-only: a global export would cap the meta agents' own calls."""
+
+    def setUp(self) -> None:
+        self._saved = {k: os.environ.get(k) for k in
+                       ("LLM_TIMEOUT_S", "LLM_MAX_OUTPUT_TOKENS")}
+        for k in self._saved:
+            os.environ.pop(k, None)
+
+    def tearDown(self) -> None:
+        for k, v in self._saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+    def test_defaults_are_unset(self) -> None:
+        spec = cfg_mod.TaskAgentSpec()
+        self.assertIsNone(spec.timeout_s)
+        self.assertIsNone(spec.max_output_tokens)
+
+    def test_apply_task_agent_env_never_exports_them(self) -> None:
+        runtime_env.apply_task_agent_env(cfg_mod.TaskAgentSpec(
+            model="m", timeout_s=600, max_output_tokens=32768))
+        self.assertNotIn("LLM_TIMEOUT_S", os.environ)
+        self.assertNotIn("LLM_MAX_OUTPUT_TOKENS", os.environ)
+
+    def test_child_env_carries_them_and_os_environ_does_not(self) -> None:
+        from meta_agent.evaluator import SubprocessEvaluator
+        ev = SubprocessEvaluator(wall_time_s_per_case=1800,
+                                 task_agent_timeout_s=600,
+                                 task_agent_max_output_tokens=32768)
+        env = ev._child_env(Path("/tmp/trace.jsonl"))
+        self.assertEqual(env["LLM_TIMEOUT_S"], "600.0")
+        self.assertEqual(env["LLM_MAX_OUTPUT_TOKENS"], "32768")
+        self.assertNotIn("LLM_TIMEOUT_S", os.environ)
+        self.assertNotIn("LLM_MAX_OUTPUT_TOKENS", os.environ)
+
+    def test_unset_child_env_is_unchanged(self) -> None:
+        from meta_agent.evaluator import SubprocessEvaluator
+        env = SubprocessEvaluator()._child_env(Path("/tmp/trace.jsonl"))
+        self.assertNotIn("LLM_TIMEOUT_S", env)
+        self.assertNotIn("LLM_MAX_OUTPUT_TOKENS", env)
+
+    def test_timeout_at_or_above_the_case_limit_warns(self) -> None:
+        import contextlib
+        import io
+        from meta_agent.evaluator import SubprocessEvaluator
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            SubprocessEvaluator(wall_time_s_per_case=600, task_agent_timeout_s=600)
+        self.assertIn("not below wall_time_s_per_case", buf.getvalue())
+        buf2 = io.StringIO()
+        with contextlib.redirect_stdout(buf2):
+            SubprocessEvaluator(wall_time_s_per_case=1800, task_agent_timeout_s=600)
+        self.assertEqual(buf2.getvalue(), "")
+
+    def test_wrapper_resolves_the_output_cap_from_env(self) -> None:
+        from platform_core.llm_wrapper import _env_default_max_output_tokens as f
+        self.assertIsNone(f())                       # unset = uncapped, as before
+        for raw, want in (("32768", 32768), ("0", None), ("-5", None),
+                          ("junk", None), ("", None), ("1024.0", 1024)):
+            os.environ["LLM_MAX_OUTPUT_TOKENS"] = raw
+            self.assertEqual(f(), want, raw)
+
+    def test_belief_configs_guard_against_stalls(self) -> None:
+        for name in ("hgm_travel_1000_qwen122b_gpt54_beliefs2stage",
+                     "hgm_travel_1000_qwen122b_dsv4pro_beliefs2stage",
+                     "hgm_travel_1000_qwen122b_node5_editmem_beliefs2stage",
+                     "hgm_travel_1000_local_qwen122b_medium_beliefs2stage",
+                     "hgm_travel_smoke_beliefs2stage"):
+            cfg = cfg_mod.load(Path("configs") / f"{name}.yaml")
+            wall = float(cfg.evaluator.config["wall_time_s_per_case"])
+            self.assertIsNotNone(cfg.task_agent.timeout_s, name)
+            self.assertLess(cfg.task_agent.timeout_s, wall, name)
+            self.assertGreaterEqual(cfg.task_agent.max_output_tokens, 8192, name)

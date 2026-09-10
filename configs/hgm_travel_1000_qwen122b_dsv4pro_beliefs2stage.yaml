@@ -1,0 +1,164 @@
+experiment_name: "travel_hgm_1000_qwen122b_dsv4pro_beliefs2stage"
+
+# Full 1000-eval run of the learnable-belief stack (arm C) with a split of
+# labour across two backends:
+#   task agent            -> Qwen/Qwen3.5-122B-A10B, LOCAL vLLM node-5, medium
+#   plan->JSON conversion -> same local Qwen (part of scoring, not an agent)
+#   meta agent (two-stage editor: planning pass + edit)
+#   edit memory (tagger + per-node analysis)
+#   belief maintainer + guidance optimizer (inherit edit_memory's routing)
+#                         -> deepseek/deepseek-v4-pro-0813 via OpenRouter, medium
+#                            (the dated V4 Pro release; OpenRouter lists no
+#                            "0831" — 0813 is the only dated pro slug)
+#
+# Stack (see README "Belief mode"): steering_mode "belief" (objective, scope,
+# lineage, compact sibling lines, the contract-bound belief document verbatim
+# — no ledger, nothing truncated); every belief pre-registered per node and
+# scored by Brier once the node is measured with an implementation verdict;
+# the maintainer's guidance optimized online every optimize_every scored
+# predictions; retrieval = whole records + added lines per definition.
+#
+# AUTH: platform_core/llm_wrapper.py reads ONE global OPENAI_API_KEY for every
+# LLM site (local vLLM ignores it). Export the OpenRouter key as
+# OPENAI_API_KEY before launching:
+#   source /groups/AIC-MV/sudipta.paul/code/random/api.sh
+#   export OPENAI_API_KEY="$OpenRouter_API_KEY"
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_1000_qwen122b_dsv4pro_beliefs2stage.yaml
+#
+# Comparable arms:
+#   control : hgm_travel_1000_qwen122b_node5_no_errcond_no_behsum.yaml
+#   arm 1   : hgm_travel_1000_qwen122b_node5_editmem.yaml
+#   arm C   : hgm_travel_1000_qwen122b_node5_editmem_beliefs2stage.yaml (all-local Qwen)
+project: "travel"
+
+eval_visibility: "blackbox"
+
+# Per-round prompt/response dumps under round_*/verbose/ — the belief-stack
+# analysis needs the exact editor prompts, which an earlier run lacked.
+verbose: true
+
+loop:
+  max_rounds: 1000
+  score_target: 0.99
+
+task_agent:
+  model: "Qwen/Qwen3.5-122B-A10B"
+  reasoning_effort: "medium"
+  base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+  # Stall/runaway guards, task-agent only (exported per case subprocess,
+  # never to the meta agents). Calibrated on 323k historical requests
+  # (rsi/self-improving-dual/runs).
+  #   timeout_s bounds ONE request, not the case: per-request p50 is 8s,
+  #   p99 203s, p99.9 544s, and 1.8% of cases have contained a request
+  #   over 600s (those now cost a retry, not the case). The wrapper's own
+  #   default, 3600s, sits ABOVE wall_time_s_per_case and so can never
+  #   fire — which is why a stalled request used to kill its case.
+  #   max_output_tokens bounds reasoning + visible output together, and
+  #   some providers report reasoning OUTSIDE output_tokens, so the budget
+  #   to cover is output+reasoning: p99 20.8k, p99.9 41.4k. 65536 leaves
+  #   ~1.6x headroom over p99.9 (truncates 0.02% of requests) while still
+  #   catching a fast runaway — generations of 221k-238k tokens are in the
+  #   archive. Below ~109 tok/s the timeout binds first anyway.
+  timeout_s: 600
+  max_output_tokens: 65536
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 1000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 3
+    snapshot_tree: true
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+editor:
+  type: "two_stage"
+  config:
+    model: "deepseek/deepseek-v4-pro-0813"
+    reasoning_effort: "medium"
+    max_attempts: 2
+    base_url: "https://openrouter.ai/api/v1"
+    # Planning pass at the same effort as the edit (user choice: medium for
+    # every meta call); it directs retrieval and records the prediction.
+    propose_reasoning_effort: "medium"
+    retrieval_char_budget: 60000     # ~15k tokens of retrieved records+code
+    max_retrieved_nodes: 4           # whole records + added lines per def
+
+# summarizer: INTENTIONALLY ABSENT — behavioral summary stays off.
+
+edit_memory:
+  type: "default"
+  config:
+    model: "deepseek/deepseek-v4-pro-0813"
+    reasoning_effort: "medium"
+    base_url: "https://openrouter.ai/api/v1"
+    steering: true
+    steering_token_budget: 48000
+    verdict_threshold: 0.02
+    min_shared: 8
+    # Judge-as-signal (analysis v7): strategy beliefs are scored against the
+    # per-node analysis's effect verdict for the matched sub-edit, not the
+    # score Δ; the analysis runs once a node has one batch of its OWN cases
+    # (no shared cases with the parent needed). "delta" restores the
+    # pre-v7 labels (Δ over ≥ min_shared shared cases) for ablation.
+    strategy_label: judge
+    analysis_min_own_evals: 16
+    judge_min_evidence: moderate     # weak-evidence verdicts stay pending
+    analysis_code_char_budget: 20000 # implementation view shown to the judge
+    max_strategies: 30               # raised from 18: cap-forced fits are never scored, but fewer of them is better
+    max_subedits: 3
+    diff_char_cap: 6000
+    setup_pass: true
+    per_check_recipe: null
+    # usage_tracking (default true) + analysis_mode "refresh" (default) are
+    # REQUIRED: the per-node analysis supplies the implementation verdict
+    # that belief scoring gates on.
+    code_record: true                # per-node edit_code.md (retrieval fallback)
+    code_diff_char_cap: 20000
+    steering_mode: "belief"          # belief-mode steering (meta_agent/steering.py)
+    beliefs:
+      enabled: true                  # model/effort/base_url inherit edit_memory's
+      doc_char_cap: 40000            # HARD cap ~10k tokens (reject + one retry); never truncated
+      optimize_enabled: true         # online guidance optimization (Brier loss)
+      optimize_every: 8              # step after this many newly scored predictions
+      optimize_min_scored: 8         # samples a guidance version needs before rollback
+      optimize_rollback_margin: 0.02
+      instruction_char_cap: 2500
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  # Conversion is part of evaluation; keep it on the local Qwen so scoring
+  # matches the other local-Qwen runs and costs no OpenRouter credit.
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-122B-A10B"
+  TRAVEL_CONVERT_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+split:
+  train_ids_path: "configs/travel_train_ids.json"   # 60 predetermined cases
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

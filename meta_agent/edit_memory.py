@@ -62,8 +62,10 @@ STATE_NAME = "edit_memory_state.json"
 # frontmatter into the state sidecar. v4: cumulative (all-evaluated) score
 # leads the performance line; the shared-set comparison moves to the
 # parenthetical. v5: generalization (seen-vs-unseen) line + scorer cross-tab
-# on usage lines.
-RECORD_FORMAT = 5
+# on usage lines. v6: the `unpaired` line — each side's mean over its OWN
+# cases, Δ ± SE, plus the paired SE — so a node is comparable to its parent
+# after one batch, without shared cases.
+RECORD_FORMAT = 6
 
 # Legacy machine keys: pre-v3 records carried these in frontmatter. Read once
 # as a fallback when no sidecar exists, stripped from the frontmatter on the
@@ -219,6 +221,19 @@ def render_record(fm: Mapping[str, Any], body: str, outcome: Any,
             % (outcome.child_mean_all, outcome.child_n_all))
     else:
         lines.append("- **performance**: not yet measured")
+    # fmt-6: the comparison that needs no shared cases. Δ ± SE over each
+    # side's own cases; the paired SE beside it when cases are shared.
+    if outcome.child_n_all and getattr(outcome, "parent_n_all", 0):
+        se_all = getattr(outcome, "se_all", None)
+        line = ("- **unpaired**: child %.4f/%d vs parent %.4f/%d · Δ %+.4f ± %s"
+                % (outcome.child_mean_all, outcome.child_n_all,
+                   outcome.parent_mean_all, outcome.parent_n_all,
+                   outcome.delta_all,
+                   f"{se_all:.4f}" if se_all is not None else "n/a"))
+        se_sh = getattr(outcome, "se_shared", None)
+        if outcome.n_shared and se_sh is not None:
+            line += f" · paired SE ±{se_sh:.4f}"
+        lines.append(line)
     if generalization:
         lines.append(generalization)
     lines.extend(usage or [])
@@ -235,7 +250,17 @@ def render_edits(sub: list[dict[str, str]]) -> str:
                 f"- **category level 1 (strategy)**: `{e['strategy']}`",
                 f"- **category level 2 (area)**: `{e['area']}`",
                 f"- **what**: {e['what']}",
-                f"- **why**: {e['why']}", ""]
+                f"- **why**: {e['why']}"]
+        # How the strategy id was assigned. A cap-forced fit is the nearest
+        # id by shared token, NOT the tagger's choice — the belief layer must
+        # never match or charge a belief for it (see edit_beliefs.register).
+        fit = e.get("fit") or "exact"
+        if fit == "forced":
+            out.append("- **fit**: forced by the registry cap — nearest id by "
+                       "shared token, not the tagger's choice")
+        elif fit == "folded":
+            out.append("- **fit**: folded into an existing id (similar name)")
+        out.append("")
     return "\n".join(out).rstrip("\n")
 
 
@@ -285,6 +310,10 @@ SPLITTING RULES
   kind of job are ONE sub-edit.
 - Two sub-edits MUST NOT share a strategy. Repeating a strategy means you split by area -
   merge them instead.
+- Instrumentation is NEVER its own sub-edit: trace.log calls, telemetry, decision logging
+  and counters that only record what a mechanism did belong to the sub-edit of the
+  mechanism they instrument. Every edit is required to add such logging; a "strategy"
+  made of logging alone would say nothing about how the score moved.
 - Most nodes do ONE thing. Returning the maximum is almost always wrong.
 
 PER SUB-EDIT
@@ -349,18 +378,33 @@ class EditMemory:
         analysis_mode: "refresh" re-runs the per-node analysis LLM call
             whenever the node's own evidence changed (~one call per eval
             batch per node); "final" only during finalize; "off" disables.
-        analysis_max_cases / analysis_max_event_lines: evidence caps for
-            that call's prompt.
+        analysis_max_cases / analysis_max_event_lines / analysis_max_case_rows:
+            evidence caps for that call's prompt.
+        analysis_min_own_evals: the analysis (the JUDGE, v7) runs once the
+            node has this many evaluations of its own — no shared cases
+            with the parent needed (``strategy_label: "judge"``). Under
+            ``"delta"`` the pre-v7 gate (``min_shared`` shared cases) applies.
+        analysis_code_char_budget: char budget for the implementation view
+            (added lines per definition, whole units) shown to the judge.
+        strategy_label: what a strategy belief is scored against — "judge"
+            (the analysis's effect verdict for the matched sub-edit) or
+            "delta" (Δ ≥ verdict_threshold over ≥ min_shared shared cases).
+        judge_min_evidence: the weakest evidence grade ("strong" /
+            "moderate" / "weak") a judge verdict may carry and still score.
         code_record: write a per-node ``edit_code.md`` (verbatim diff at a
             higher cap + final-state source of added/changed defs). Read only
             by the retrieval stage, never injected into steering.
         code_diff_char_cap: diff cap for that record.
         steering_mode: "full" renders the legacy every-record dump;
-            "belief" renders the belief document + ledger + focus block
-            instead (requires ``beliefs``).
+            "belief" makes the manager hand the editor the belief-mode
+            steering (``meta_agent/steering.py``: objective, scope, lineage,
+            compact sibling lines, the belief document uncut) instead —
+            requires ``beliefs``, and an invalid ``beliefs`` block raises.
         beliefs: config dict for the belief layer (``BeliefStore`` kwargs;
-            model/effort/base_url default to this component's). ``None``
-            disables beliefs entirely.
+            model/effort/base_url/threshold/min_shared default to this
+            component's). ``None`` disables beliefs entirely. Scoring needs
+            per-node implementation verdicts, i.e. ``analysis_mode:
+            "refresh"`` + ``usage_tracking``; otherwise a warning is printed.
     """
 
     def __init__(
@@ -385,6 +429,11 @@ class EditMemory:
         analysis_mode: str = "refresh",
         analysis_max_cases: int = edit_usage.MAX_ANALYSIS_CASES,
         analysis_max_event_lines: int = edit_usage.MAX_ANALYSIS_EVENT_LINES,
+        analysis_max_case_rows: int = edit_usage.MAX_ANALYSIS_CASE_ROWS,
+        analysis_min_own_evals: int = 16,
+        analysis_code_char_budget: int = 20000,
+        strategy_label: str = "judge",
+        judge_min_evidence: str = "moderate",
         code_record: bool = True,
         code_diff_char_cap: int = edit_code.CODE_DIFF_CHAR_CAP,
         steering_mode: str = "full",
@@ -410,6 +459,17 @@ class EditMemory:
                               in ("refresh", "final", "off") else "off")
         self.analysis_max_cases = int(analysis_max_cases)
         self.analysis_max_event_lines = int(analysis_max_event_lines)
+        self.analysis_max_case_rows = max(1, int(analysis_max_case_rows))
+        self.analysis_min_own_evals = max(1, int(analysis_min_own_evals))
+        self.analysis_code_char_budget = max(1000, int(analysis_code_char_budget))
+        if strategy_label not in ("judge", "delta"):
+            raise ValueError(f"edit_memory.strategy_label must be 'judge' or "
+                             f"'delta', got {strategy_label!r}")
+        if judge_min_evidence not in ("strong", "moderate", "weak"):
+            raise ValueError("edit_memory.judge_min_evidence must be 'strong', "
+                             f"'moderate' or 'weak', got {judge_min_evidence!r}")
+        self.strategy_label = strategy_label
+        self.judge_min_evidence = judge_min_evidence
         self.code_record = bool(code_record)
         self.code_diff_char_cap = int(code_diff_char_cap)
         self.steering_mode = (steering_mode if steering_mode
@@ -421,9 +481,27 @@ class EditMemory:
                 b.setdefault("model", model)
                 b.setdefault("reasoning_effort", reasoning_effort)
                 b.setdefault("base_url", base_url)
+                b.setdefault("threshold", self.verdict_threshold)
+                b.setdefault("min_shared", self.min_shared)
+                b.setdefault("label_source", self.strategy_label)
+                b.setdefault("min_evidence", self.judge_min_evidence)
                 self._beliefs = BeliefStore(llm_caller, **b)
             except Exception as exc:  # noqa: BLE001
+                # A typo in `beliefs:` used to disable the layer silently
+                # while belief-mode steering kept running on an empty doc.
+                if self.steering_mode == "belief":
+                    raise ValueError(
+                        f"edit_memory.beliefs config is invalid ({exc!r}); "
+                        "steering_mode 'belief' cannot run without it") from exc
                 print(f"[edit_memory] belief store init failed: {exc!r}",
+                      flush=True)
+            if (self._beliefs is not None and self._beliefs.enabled
+                    and (self.analysis_mode != "refresh"
+                         or not self.usage_tracking)):
+                print("[edit_memory] warning: belief scoring needs per-node "
+                      "implementation verdicts (analysis_mode 'refresh' + "
+                      "usage_tracking); with this config nothing will be "
+                      "scored and the guidance optimizer never fires",
                       flush=True)
 
         self._dir: Optional[Path] = None
@@ -586,23 +664,27 @@ class EditMemory:
                                derived)
             if fitted is None:
                 continue
-            s = fitted
+            s, fit = fitted
             fitted_area = self._fit("areas", area, defs, node_id, idx, name,
                                     set(), derived)
             if fitted_area is None:
                 continue     # never tag a record with an unregistered category
-            area = fitted_area
+            area = fitted_area[0]
             seen.add(s)
             sub.append({"name": name, "strategy": s, "area": area,
                         "what": _clean(e.get("what"), 240),
-                        "why": _clean(e.get("why"), 200)})
+                        "why": _clean(e.get("why"), 200),
+                        "fit": fit})
         return sub
 
     def _fit(self, axis: str, key: str, defs: Mapping[str, str], node_id: int,
              edit_index: int, name: str, exclude: set[str],
-             derived_def: str = "") -> Optional[str]:
+             derived_def: str = "") -> Optional[tuple[str, str]]:
         """Record the sub-edit under ``key``, or under the nearest related id
-        when ``key`` is refused. Returns the id actually used, or ``None``.
+        when ``key`` is refused. Returns ``(id actually used, fit)`` with
+        ``fit`` one of ``exact`` (admitted as given or defined afresh),
+        ``folded`` (similar existing id) or ``forced`` (cap: any shared
+        token) — or ``None`` when the sub-edit is dropped.
 
         Force-fitting rather than dropping matters: a dropped sub-edit can take
         a whole node's categorisation with it. But an *unrelated* target is
@@ -621,7 +703,7 @@ class EditMemory:
         """
         ok, why = self._admit(axis, key, defs, node_id, edit_index, name)
         if ok:
-            return key
+            return key, "exact"
         # Candidates are eligible targets as well as already-registered ids:
         # they carry definitions, and promoting one on first real use is
         # exactly what the registry is for. Sorted, so ties break the same way
@@ -645,7 +727,7 @@ class EditMemory:
             print(f"[edit_memory] node {node_id}: {axis} {why}, "
                   f"'{key}' -> '{best[2]}' (similarity {best[0]:.2f})", flush=True)
             self._admit(axis, best[2], defs, node_id, edit_index, name)
-            return best[2]
+            return best[2], ("forced" if why == "cap" else "folded")
         if why == "cap":
             return None          # no room and nothing related: drop the sub-edit
         # Novel and unrelated to anything known: keep it, but defined. With no
@@ -659,7 +741,7 @@ class EditMemory:
               f"undefined; defining it from the edit description", flush=True)
         self._admit(axis, key, defs, node_id, edit_index, name,
                     derived_def=derived_def)
-        return key
+        return key, "exact"
 
     def _admit(self, axis: str, key: str, defs: Mapping[str, str],
                node_id: int, edit_index: int, name: str,
@@ -794,9 +876,15 @@ class EditMemory:
             usage = list(usage) + [legacy.group(0)]
         analysis_md = extract_analysis(text)  # keep the last one by default
         a_sig = state.get("analysis_sig", "")
+        # Judge mode: the analysis needs the node's OWN evaluations, not an
+        # overlap with the parent (a random 16-case batch shares ~4 with a
+        # 16-eval parent, so the old gate left most nodes unjudged).
+        measurable = (oc.child_n_all >= self.analysis_min_own_evals
+                      if self.strategy_label == "judge"
+                      else oc.n_shared >= self.min_shared)
         if store and store.get("batches") and self.analysis_mode != "off" \
                 and (self.analysis_mode == "refresh" or force_analysis) \
-                and oc.n_shared >= self.min_shared:
+                and measurable:
             new_sig = edit_usage.analysis_sig(c_sig, store["batches"])
             if new_sig != a_sig:
                 payload = self._analyze(parent, child, oc, store, body, usage)
@@ -829,20 +917,33 @@ class EditMemory:
         failure."""
         try:
             node_id = getattr(child, "node_id", store.get("node", "?"))
+            # The judge reads the implementation view (added lines per
+            # definition, whole units, never elided); the truncated unified
+            # diff is only the fallback when the sources are missing.
+            code, code_kind = "", "view"
             try:
-                diff = diff_mutable_files(parent.round_dir, child.round_dir,
-                                          char_cap=self.diff_char_cap)
+                code, _stats = edit_code.render_implementation_view(
+                    parent.round_dir, child.round_dir,
+                    char_budget=self.analysis_code_char_budget)
             except Exception:  # noqa: BLE001
-                diff = ""
+                code = ""
+            if not code.strip():
+                code_kind = "diff"
+                try:
+                    code = diff_mutable_files(parent.round_dir, child.round_dir,
+                                              char_cap=self.diff_char_cap)
+                except Exception:  # noqa: BLE001
+                    code = ""
             prompt = edit_usage.build_analysis_prompt(
                 node_id=node_id, record_body=body, outcome=oc, store=store,
                 u_lines=usage,
                 parent_cases=list(parent.case_results),
                 child_cases=list(child.case_results),
                 recipe=self._recipe,
-                code_diff=diff,
+                code_diff=code, code_kind=code_kind,
                 max_event_lines=self.analysis_max_event_lines,
-                max_cases=self.analysis_max_cases)
+                max_cases=self.analysis_max_cases,
+                max_case_rows=self.analysis_max_case_rows)
             try:
                 _atomic_write(Path(child.round_dir) / edit_usage.ANALYSIS_PROMPT_NAME,
                               f"### SYSTEM\n{edit_usage.ANALYSIS_SYSTEM}"
@@ -871,13 +972,35 @@ class EditMemory:
             return False
 
     def render_belief_block(self) -> str:
-        """The belief document for steering; ``""`` on any failure/absence."""
+        """The belief document for steering, verbatim; ``""`` on any
+        failure/absence."""
         if self._beliefs is None or self._dir is None:
             return ""
         try:
             return self._beliefs.render_block(self._dir)
         except Exception as exc:  # noqa: BLE001
             print(f"[edit_memory] belief render failed: {exc!r}", flush=True)
+            return ""
+
+    def register_prediction(self, node_id: int, round_dir: Path) -> Optional[dict]:
+        """Freeze the beliefs covering a just-recorded node into its round
+        dir (the prediction the editor was shown). ``None`` when disabled."""
+        if self._beliefs is None or self._dir is None:
+            return None
+        try:
+            return self._beliefs.register(self._dir, int(node_id), Path(round_dir))
+        except Exception as exc:  # noqa: BLE001
+            print(f"[edit_memory] belief registration failed: {exc!r}", flush=True)
+            return None
+
+    def belief_calibration_line(self) -> str:
+        """One-line calibration summary for the steering header."""
+        if self._beliefs is None or self._dir is None:
+            return ""
+        try:
+            return self._beliefs.calibration_line(self._dir)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[edit_memory] calibration line failed: {exc!r}", flush=True)
             return ""
 
     def finalize(self, tree: Any) -> None:

@@ -1,0 +1,3925 @@
+[
+  {
+    "node": 1,
+    "parent": 0,
+    "nodes_present": 1,
+    "n_edited": 2,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [],
+        "n": 0,
+        "channels": {},
+        "defs_omitted": 0,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 0
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [],
+        "n": 0,
+        "channels": {},
+        "defs_omitted": 0,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 0
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [],
+        "n": 0,
+        "channels": {},
+        "defs_omitted": 0,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 0
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [],
+        "n": 0,
+        "channels": {},
+        "defs_omitted": 0,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 0
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [],
+        "n": 0,
+        "channels": {},
+        "defs_omitted": 0,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 0
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [],
+    "replay_selected": []
+  },
+  {
+    "node": 2,
+    "parent": 0,
+    "nodes_present": 2,
+    "n_edited": 10,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          1
+        ],
+        "n": 1,
+        "channels": {
+          "explicit": 1
+        },
+        "defs_omitted": 0,
+        "n_shown": 1,
+        "edited_covered": 0,
+        "total_chars": 8188
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          1
+        ],
+        "n": 1,
+        "channels": {
+          "explicit": 1
+        },
+        "defs_omitted": 0,
+        "n_shown": 1,
+        "edited_covered": 0,
+        "total_chars": 8188
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          1
+        ],
+        "n": 1,
+        "channels": {
+          "explicit": 1
+        },
+        "defs_omitted": 0,
+        "n_shown": 1,
+        "edited_covered": 0,
+        "total_chars": 8188
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          1
+        ],
+        "n": 1,
+        "channels": {
+          "explicit": 1
+        },
+        "defs_omitted": 0,
+        "n_shown": 1,
+        "edited_covered": 0,
+        "total_chars": 8188
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          1
+        ],
+        "n": 1,
+        "channels": {
+          "explicit": 1
+        },
+        "defs_omitted": 0,
+        "n_shown": 1,
+        "edited_covered": 0,
+        "total_chars": 8188
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      1
+    ],
+    "replay_selected": [
+      1
+    ]
+  },
+  {
+    "node": 3,
+    "parent": 0,
+    "nodes_present": 3,
+    "n_edited": 2,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          2,
+          1
+        ],
+        "n": 2,
+        "channels": {
+          "explicit": 2
+        },
+        "defs_omitted": 0,
+        "n_shown": 10,
+        "edited_covered": 1,
+        "total_chars": 23772
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          2,
+          1
+        ],
+        "n": 2,
+        "channels": {
+          "explicit": 2
+        },
+        "defs_omitted": 0,
+        "n_shown": 10,
+        "edited_covered": 1,
+        "total_chars": 23772
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          2,
+          1
+        ],
+        "n": 2,
+        "channels": {
+          "explicit": 2
+        },
+        "defs_omitted": 0,
+        "n_shown": 10,
+        "edited_covered": 1,
+        "total_chars": 23772
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          2,
+          1
+        ],
+        "n": 2,
+        "channels": {
+          "explicit": 2
+        },
+        "defs_omitted": 0,
+        "n_shown": 10,
+        "edited_covered": 1,
+        "total_chars": 23772
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          2,
+          1
+        ],
+        "n": 2,
+        "channels": {
+          "explicit": 2
+        },
+        "defs_omitted": 0,
+        "n_shown": 10,
+        "edited_covered": 1,
+        "total_chars": 23772
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      2,
+      1
+    ],
+    "replay_selected": [
+      2,
+      1
+    ]
+  },
+  {
+    "node": 4,
+    "parent": 2,
+    "nodes_present": 4,
+    "n_edited": 10,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          2,
+          3,
+          1
+        ],
+        "n": 3,
+        "channels": {
+          "explicit": 1,
+          "keyword": 2
+        },
+        "defs_omitted": 0,
+        "n_shown": 10,
+        "edited_covered": 2,
+        "total_chars": 32174
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          2,
+          3,
+          1
+        ],
+        "n": 3,
+        "channels": {
+          "explicit": 1,
+          "keyword": 2
+        },
+        "defs_omitted": 0,
+        "n_shown": 10,
+        "edited_covered": 2,
+        "total_chars": 32174
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          2,
+          3,
+          1
+        ],
+        "n": 3,
+        "channels": {
+          "explicit": 1,
+          "keyword": 2
+        },
+        "defs_omitted": 0,
+        "n_shown": 10,
+        "edited_covered": 2,
+        "total_chars": 32174
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          2,
+          3,
+          1
+        ],
+        "n": 3,
+        "channels": {
+          "explicit": 1,
+          "keyword": 2
+        },
+        "defs_omitted": 0,
+        "n_shown": 10,
+        "edited_covered": 2,
+        "total_chars": 32174
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          2,
+          3,
+          1
+        ],
+        "n": 3,
+        "channels": {
+          "explicit": 1,
+          "keyword": 2
+        },
+        "defs_omitted": 0,
+        "n_shown": 10,
+        "edited_covered": 2,
+        "total_chars": 32174
+      }
+    ],
+    "replay_matches_run": false,
+    "real_selected": [
+      2
+    ],
+    "replay_selected": [
+      2,
+      3,
+      1
+    ]
+  },
+  {
+    "node": 5,
+    "parent": 2,
+    "nodes_present": 5,
+    "n_edited": 9,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          4,
+          2,
+          3,
+          1
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 1,
+          "strategy": 1,
+          "keyword": 2
+        },
+        "defs_omitted": 4,
+        "n_shown": 15,
+        "edited_covered": 6,
+        "total_chars": 45196
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          4,
+          2,
+          3,
+          1
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 1,
+          "strategy": 1,
+          "keyword": 2
+        },
+        "defs_omitted": 4,
+        "n_shown": 15,
+        "edited_covered": 6,
+        "total_chars": 45196
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          4,
+          2,
+          3,
+          1
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 1,
+          "strategy": 1,
+          "keyword": 2
+        },
+        "defs_omitted": 4,
+        "n_shown": 15,
+        "edited_covered": 6,
+        "total_chars": 45196
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          4,
+          2,
+          3,
+          1
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 1,
+          "strategy": 1,
+          "keyword": 2
+        },
+        "defs_omitted": 4,
+        "n_shown": 15,
+        "edited_covered": 6,
+        "total_chars": 45196
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          4,
+          2,
+          3,
+          1
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 1,
+          "strategy": 1,
+          "keyword": 2
+        },
+        "defs_omitted": 0,
+        "n_shown": 18,
+        "edited_covered": 6,
+        "total_chars": 55552
+      }
+    ],
+    "replay_matches_run": false,
+    "real_selected": [
+      4,
+      2
+    ],
+    "replay_selected": [
+      4,
+      2,
+      3,
+      1
+    ]
+  },
+  {
+    "node": 6,
+    "parent": 3,
+    "nodes_present": 6,
+    "n_edited": 15,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          2,
+          4,
+          5
+        ],
+        "n": 3,
+        "channels": {
+          "explicit": 3
+        },
+        "defs_omitted": 2,
+        "n_shown": 18,
+        "edited_covered": 11,
+        "total_chars": 50986
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          2,
+          4,
+          5
+        ],
+        "n": 3,
+        "channels": {
+          "explicit": 3
+        },
+        "defs_omitted": 2,
+        "n_shown": 18,
+        "edited_covered": 11,
+        "total_chars": 50986
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          2,
+          4,
+          5
+        ],
+        "n": 3,
+        "channels": {
+          "explicit": 3
+        },
+        "defs_omitted": 2,
+        "n_shown": 18,
+        "edited_covered": 11,
+        "total_chars": 50986
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          2,
+          4,
+          5
+        ],
+        "n": 3,
+        "channels": {
+          "explicit": 3
+        },
+        "defs_omitted": 2,
+        "n_shown": 18,
+        "edited_covered": 11,
+        "total_chars": 50986
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          2,
+          4,
+          5
+        ],
+        "n": 3,
+        "channels": {
+          "explicit": 3
+        },
+        "defs_omitted": 0,
+        "n_shown": 20,
+        "edited_covered": 12,
+        "total_chars": 62038
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      2,
+      4,
+      5
+    ],
+    "replay_selected": [
+      2,
+      4,
+      5
+    ]
+  },
+  {
+    "node": 7,
+    "parent": 2,
+    "nodes_present": 7,
+    "n_edited": 9,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          4,
+          5,
+          6,
+          2
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 3,
+          "strategy": 1
+        },
+        "defs_omitted": 12,
+        "n_shown": 17,
+        "edited_covered": 6,
+        "total_chars": 58611
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          4,
+          5,
+          6,
+          2,
+          3,
+          1
+        ],
+        "n": 6,
+        "channels": {
+          "explicit": 3,
+          "strategy": 1,
+          "keyword": 2
+        },
+        "defs_omitted": 23,
+        "n_shown": 8,
+        "edited_covered": 3,
+        "total_chars": 59026
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          4,
+          5,
+          6,
+          2,
+          3,
+          1
+        ],
+        "n": 6,
+        "channels": {
+          "explicit": 3,
+          "strategy": 1,
+          "keyword": 2
+        },
+        "defs_omitted": 23,
+        "n_shown": 8,
+        "edited_covered": 3,
+        "total_chars": 59026
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          4,
+          5,
+          6,
+          2,
+          3,
+          1
+        ],
+        "n": 6,
+        "channels": {
+          "explicit": 3,
+          "strategy": 1,
+          "keyword": 2
+        },
+        "defs_omitted": 23,
+        "n_shown": 8,
+        "edited_covered": 3,
+        "total_chars": 59026
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          4,
+          5,
+          6,
+          2,
+          3,
+          1
+        ],
+        "n": 6,
+        "channels": {
+          "explicit": 3,
+          "strategy": 1,
+          "keyword": 2
+        },
+        "defs_omitted": 0,
+        "n_shown": 23,
+        "edited_covered": 6,
+        "total_chars": 108220
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      4,
+      5,
+      6,
+      2
+    ],
+    "replay_selected": [
+      4,
+      5,
+      6,
+      2
+    ]
+  },
+  {
+    "node": 8,
+    "parent": 3,
+    "nodes_present": 8,
+    "n_edited": 1,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          7,
+          6,
+          4,
+          2
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 3,
+          "strategy": 1
+        },
+        "defs_omitted": 11,
+        "n_shown": 17,
+        "edited_covered": 1,
+        "total_chars": 58373
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          7,
+          6,
+          4,
+          2,
+          1,
+          3,
+          5
+        ],
+        "n": 7,
+        "channels": {
+          "explicit": 3,
+          "strategy": 4
+        },
+        "defs_omitted": 28,
+        "n_shown": 4,
+        "edited_covered": 0,
+        "total_chars": 65574
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          7,
+          6,
+          4,
+          2,
+          1,
+          3,
+          5
+        ],
+        "n": 7,
+        "channels": {
+          "explicit": 3,
+          "strategy": 4
+        },
+        "defs_omitted": 28,
+        "n_shown": 4,
+        "edited_covered": 0,
+        "total_chars": 65574
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          7,
+          6,
+          4,
+          2,
+          1,
+          3,
+          5
+        ],
+        "n": 7,
+        "channels": {
+          "explicit": 3,
+          "strategy": 4
+        },
+        "defs_omitted": 28,
+        "n_shown": 4,
+        "edited_covered": 0,
+        "total_chars": 65574
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          7,
+          6,
+          4,
+          2,
+          1,
+          3,
+          5
+        ],
+        "n": 7,
+        "channels": {
+          "explicit": 3,
+          "strategy": 4
+        },
+        "defs_omitted": 0,
+        "n_shown": 26,
+        "edited_covered": 1,
+        "total_chars": 131020
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      7,
+      6,
+      4,
+      2
+    ],
+    "replay_selected": [
+      7,
+      6,
+      4,
+      2
+    ]
+  },
+  {
+    "node": 9,
+    "parent": 3,
+    "nodes_present": 9,
+    "n_edited": 1,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          2,
+          8,
+          7,
+          4
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 2,
+          "strategy": 1,
+          "area": 1
+        },
+        "defs_omitted": 5,
+        "n_shown": 16,
+        "edited_covered": 1,
+        "total_chars": 53371
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          2,
+          8,
+          7,
+          4,
+          5,
+          6
+        ],
+        "n": 6,
+        "channels": {
+          "explicit": 2,
+          "strategy": 1,
+          "area": 3
+        },
+        "defs_omitted": 28,
+        "n_shown": 8,
+        "edited_covered": 1,
+        "total_chars": 62739
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          2,
+          8,
+          7,
+          4,
+          5,
+          6
+        ],
+        "n": 6,
+        "channels": {
+          "explicit": 2,
+          "strategy": 1,
+          "area": 3
+        },
+        "defs_omitted": 28,
+        "n_shown": 8,
+        "edited_covered": 1,
+        "total_chars": 62739
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          2,
+          8,
+          7,
+          4,
+          5,
+          6
+        ],
+        "n": 6,
+        "channels": {
+          "explicit": 2,
+          "strategy": 1,
+          "area": 3
+        },
+        "defs_omitted": 28,
+        "n_shown": 8,
+        "edited_covered": 1,
+        "total_chars": 62739
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          2,
+          8,
+          7,
+          4,
+          5,
+          6
+        ],
+        "n": 6,
+        "channels": {
+          "explicit": 2,
+          "strategy": 1,
+          "area": 3
+        },
+        "defs_omitted": 0,
+        "n_shown": 25,
+        "edited_covered": 1,
+        "total_chars": 124416
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      2,
+      8,
+      7,
+      4
+    ],
+    "replay_selected": [
+      2,
+      8,
+      7,
+      4
+    ]
+  },
+  {
+    "node": 10,
+    "parent": 3,
+    "nodes_present": 10,
+    "n_edited": 3,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          7,
+          8,
+          9,
+          2
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 3,
+          "area": 1
+        },
+        "defs_omitted": 2,
+        "n_shown": 15,
+        "edited_covered": 2,
+        "total_chars": 45628
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          7,
+          8,
+          9,
+          2,
+          4,
+          5,
+          6
+        ],
+        "n": 7,
+        "channels": {
+          "explicit": 3,
+          "area": 4
+        },
+        "defs_omitted": 28,
+        "n_shown": 4,
+        "edited_covered": 1,
+        "total_chars": 64812
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          7,
+          8,
+          9,
+          2,
+          4,
+          5,
+          6
+        ],
+        "n": 7,
+        "channels": {
+          "explicit": 3,
+          "area": 4
+        },
+        "defs_omitted": 28,
+        "n_shown": 4,
+        "edited_covered": 1,
+        "total_chars": 64812
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          7,
+          8,
+          9,
+          2,
+          4,
+          5,
+          6
+        ],
+        "n": 7,
+        "channels": {
+          "explicit": 3,
+          "area": 4
+        },
+        "defs_omitted": 28,
+        "n_shown": 4,
+        "edited_covered": 1,
+        "total_chars": 64812
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          7,
+          8,
+          9,
+          2,
+          4,
+          5,
+          6
+        ],
+        "n": 7,
+        "channels": {
+          "explicit": 3,
+          "area": 4
+        },
+        "defs_omitted": 0,
+        "n_shown": 25,
+        "edited_covered": 2,
+        "total_chars": 131835
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      7,
+      8,
+      9,
+      2
+    ],
+    "replay_selected": [
+      7,
+      8,
+      9,
+      2
+    ]
+  },
+  {
+    "node": 11,
+    "parent": 5,
+    "nodes_present": 11,
+    "n_edited": 7,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          7,
+          9,
+          2,
+          8
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 2,
+          "strategy": 2
+        },
+        "defs_omitted": 2,
+        "n_shown": 15,
+        "edited_covered": 2,
+        "total_chars": 45628
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          7,
+          9,
+          2,
+          8,
+          10,
+          4,
+          5,
+          6
+        ],
+        "n": 8,
+        "channels": {
+          "explicit": 2,
+          "strategy": 3,
+          "area": 3
+        },
+        "defs_omitted": 30,
+        "n_shown": 3,
+        "edited_covered": 0,
+        "total_chars": 70263
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          7,
+          9,
+          2,
+          8,
+          10,
+          4,
+          5,
+          6,
+          3,
+          1
+        ],
+        "n": 10,
+        "channels": {
+          "explicit": 2,
+          "strategy": 3,
+          "area": 3,
+          "keyword": 2
+        },
+        "defs_omitted": 30,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 80867
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          7,
+          9,
+          2,
+          8,
+          10,
+          4,
+          5,
+          6,
+          3,
+          1
+        ],
+        "n": 10,
+        "channels": {
+          "explicit": 2,
+          "strategy": 3,
+          "area": 3,
+          "keyword": 2
+        },
+        "defs_omitted": 30,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 80867
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          7,
+          9,
+          2,
+          8,
+          10,
+          4,
+          5,
+          6,
+          3,
+          1
+        ],
+        "n": 10,
+        "channels": {
+          "explicit": 2,
+          "strategy": 3,
+          "area": 3,
+          "keyword": 2
+        },
+        "defs_omitted": 3,
+        "n_shown": 25,
+        "edited_covered": 2,
+        "total_chars": 151000
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      7,
+      9,
+      2,
+      8
+    ],
+    "replay_selected": [
+      7,
+      9,
+      2,
+      8
+    ]
+  },
+  {
+    "node": 12,
+    "parent": 4,
+    "nodes_present": 12,
+    "n_edited": 2,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          3,
+          1,
+          6,
+          4
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 1,
+          "strategy": 1,
+          "keyword": 2
+        },
+        "defs_omitted": 9,
+        "n_shown": 12,
+        "edited_covered": 1,
+        "total_chars": 46740
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          3,
+          1,
+          6,
+          4,
+          2
+        ],
+        "n": 5,
+        "channels": {
+          "explicit": 1,
+          "strategy": 1,
+          "keyword": 3
+        },
+        "defs_omitted": 14,
+        "n_shown": 13,
+        "edited_covered": 1,
+        "total_chars": 53812
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          3,
+          1,
+          6,
+          4,
+          2
+        ],
+        "n": 5,
+        "channels": {
+          "explicit": 1,
+          "strategy": 1,
+          "keyword": 3
+        },
+        "defs_omitted": 14,
+        "n_shown": 13,
+        "edited_covered": 1,
+        "total_chars": 53812
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          3,
+          1,
+          6,
+          4,
+          2
+        ],
+        "n": 5,
+        "channels": {
+          "explicit": 1,
+          "strategy": 1,
+          "keyword": 3
+        },
+        "defs_omitted": 14,
+        "n_shown": 13,
+        "edited_covered": 1,
+        "total_chars": 53812
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          3,
+          1,
+          6,
+          4,
+          2
+        ],
+        "n": 5,
+        "channels": {
+          "explicit": 1,
+          "strategy": 1,
+          "keyword": 3
+        },
+        "defs_omitted": 0,
+        "n_shown": 23,
+        "edited_covered": 1,
+        "total_chars": 85144
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      3,
+      1,
+      6,
+      4
+    ],
+    "replay_selected": [
+      3,
+      1,
+      6,
+      4
+    ]
+  },
+  {
+    "node": 13,
+    "parent": 3,
+    "nodes_present": 13,
+    "n_edited": 20,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          10,
+          8,
+          9,
+          7
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 4
+        },
+        "defs_omitted": 1,
+        "n_shown": 10,
+        "edited_covered": 2,
+        "total_chars": 40210
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          10,
+          8,
+          9,
+          7,
+          2,
+          4,
+          5,
+          6
+        ],
+        "n": 8,
+        "channels": {
+          "explicit": 4,
+          "area": 4
+        },
+        "defs_omitted": 30,
+        "n_shown": 3,
+        "edited_covered": 1,
+        "total_chars": 70263
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          10,
+          8,
+          9,
+          7,
+          2,
+          4,
+          5,
+          6,
+          11,
+          3,
+          1
+        ],
+        "n": 11,
+        "channels": {
+          "explicit": 4,
+          "area": 4,
+          "keyword": 3
+        },
+        "defs_omitted": 35,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 89027
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          10,
+          8,
+          9,
+          7,
+          2,
+          4,
+          5,
+          6,
+          11,
+          3,
+          1
+        ],
+        "n": 11,
+        "channels": {
+          "explicit": 4,
+          "area": 4,
+          "keyword": 3
+        },
+        "defs_omitted": 35,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 89027
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          10,
+          8,
+          9,
+          7,
+          2,
+          4,
+          5,
+          6,
+          11,
+          3,
+          1
+        ],
+        "n": 11,
+        "channels": {
+          "explicit": 4,
+          "area": 4,
+          "keyword": 3
+        },
+        "defs_omitted": 6,
+        "n_shown": 29,
+        "edited_covered": 2,
+        "total_chars": 151472
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      10,
+      8,
+      9,
+      7
+    ],
+    "replay_selected": [
+      10,
+      8,
+      9,
+      7
+    ]
+  },
+  {
+    "node": 14,
+    "parent": 10,
+    "nodes_present": 14,
+    "n_edited": 1,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          10,
+          11,
+          7,
+          8
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 2,
+          "strategy": 2
+        },
+        "defs_omitted": 1,
+        "n_shown": 15,
+        "edited_covered": 1,
+        "total_chars": 47529
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          10,
+          11,
+          7,
+          8,
+          9,
+          13,
+          5,
+          6
+        ],
+        "n": 8,
+        "channels": {
+          "explicit": 2,
+          "strategy": 4,
+          "keyword": 2
+        },
+        "defs_omitted": 37,
+        "n_shown": 2,
+        "edited_covered": 1,
+        "total_chars": 71691
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          10,
+          11,
+          7,
+          8,
+          9,
+          13,
+          5,
+          6,
+          4,
+          2,
+          3,
+          1
+        ],
+        "n": 12,
+        "channels": {
+          "explicit": 2,
+          "strategy": 4,
+          "keyword": 6
+        },
+        "defs_omitted": 47,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 100226
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          10,
+          11,
+          7,
+          8,
+          9,
+          13,
+          5,
+          6,
+          4,
+          2,
+          3,
+          1
+        ],
+        "n": 12,
+        "channels": {
+          "explicit": 2,
+          "strategy": 4,
+          "keyword": 6
+        },
+        "defs_omitted": 47,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 100226
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          10,
+          11,
+          7,
+          8,
+          9,
+          13,
+          5,
+          6,
+          4,
+          2,
+          3,
+          1
+        ],
+        "n": 12,
+        "channels": {
+          "explicit": 2,
+          "strategy": 4,
+          "keyword": 6
+        },
+        "defs_omitted": 8,
+        "n_shown": 42,
+        "edited_covered": 1,
+        "total_chars": 161872
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      10,
+      11,
+      7,
+      8
+    ],
+    "replay_selected": [
+      10,
+      11,
+      7,
+      8
+    ]
+  },
+  {
+    "node": 15,
+    "parent": 8,
+    "nodes_present": 15,
+    "n_edited": 6,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          10,
+          13,
+          2,
+          11
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 2,
+          "strategy": 2
+        },
+        "defs_omitted": 7,
+        "n_shown": 26,
+        "edited_covered": 2,
+        "total_chars": 51311
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          10,
+          13,
+          2,
+          11,
+          4,
+          5,
+          6,
+          7
+        ],
+        "n": 8,
+        "channels": {
+          "explicit": 2,
+          "strategy": 2,
+          "area": 4
+        },
+        "defs_omitted": 47,
+        "n_shown": 2,
+        "edited_covered": 1,
+        "total_chars": 73794
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          10,
+          13,
+          2,
+          11,
+          4,
+          5,
+          6,
+          7,
+          8,
+          14,
+          9,
+          3
+        ],
+        "n": 12,
+        "channels": {
+          "explicit": 2,
+          "strategy": 2,
+          "area": 4,
+          "keyword": 4
+        },
+        "defs_omitted": 47,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 99811
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          10,
+          13,
+          2,
+          11,
+          4,
+          5,
+          6,
+          7,
+          8,
+          14,
+          9,
+          3,
+          1
+        ],
+        "n": 13,
+        "channels": {
+          "explicit": 2,
+          "strategy": 2,
+          "area": 4,
+          "keyword": 5
+        },
+        "defs_omitted": 47,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 105990
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          10,
+          13,
+          2,
+          11,
+          4,
+          5,
+          6,
+          7,
+          8,
+          14,
+          9,
+          3,
+          1
+        ],
+        "n": 13,
+        "channels": {
+          "explicit": 2,
+          "strategy": 2,
+          "area": 4,
+          "keyword": 5
+        },
+        "defs_omitted": 11,
+        "n_shown": 40,
+        "edited_covered": 2,
+        "total_chars": 166070
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      10,
+      13,
+      2,
+      11
+    ],
+    "replay_selected": [
+      10,
+      13,
+      2,
+      11
+    ]
+  },
+  {
+    "node": 16,
+    "parent": 3,
+    "nodes_present": 16,
+    "n_edited": 1,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          10,
+          8,
+          14,
+          15
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 4
+        },
+        "defs_omitted": 0,
+        "n_shown": 6,
+        "edited_covered": 1,
+        "total_chars": 37311
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          10,
+          8,
+          14,
+          15,
+          7,
+          9,
+          2,
+          13
+        ],
+        "n": 8,
+        "channels": {
+          "explicit": 4,
+          "strategy": 3,
+          "area": 1
+        },
+        "defs_omitted": 23,
+        "n_shown": 2,
+        "edited_covered": 1,
+        "total_chars": 66579
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          10,
+          8,
+          14,
+          15,
+          7,
+          9,
+          2,
+          13,
+          6,
+          4,
+          11,
+          5
+        ],
+        "n": 12,
+        "channels": {
+          "explicit": 4,
+          "strategy": 3,
+          "area": 1,
+          "keyword": 4
+        },
+        "defs_omitted": 49,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 101125
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          10,
+          8,
+          14,
+          15,
+          7,
+          9,
+          2,
+          13,
+          6,
+          4,
+          11,
+          5,
+          3,
+          1
+        ],
+        "n": 14,
+        "channels": {
+          "explicit": 4,
+          "strategy": 3,
+          "area": 1,
+          "keyword": 6
+        },
+        "defs_omitted": 49,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 113697
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          10,
+          8,
+          14,
+          15,
+          7,
+          9,
+          2,
+          13,
+          6,
+          4,
+          11,
+          5,
+          3,
+          1
+        ],
+        "n": 14,
+        "channels": {
+          "explicit": 4,
+          "strategy": 3,
+          "area": 1,
+          "keyword": 6
+        },
+        "defs_omitted": 12,
+        "n_shown": 43,
+        "edited_covered": 1,
+        "total_chars": 172661
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      10,
+      8,
+      14,
+      15
+    ],
+    "replay_selected": [
+      10,
+      8,
+      14,
+      15
+    ]
+  },
+  {
+    "node": 17,
+    "parent": 7,
+    "nodes_present": 17,
+    "n_edited": 8,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          10,
+          15,
+          2,
+          16
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 2,
+          "strategy": 2
+        },
+        "defs_omitted": 1,
+        "n_shown": 12,
+        "edited_covered": 2,
+        "total_chars": 41333
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          10,
+          15,
+          2,
+          16,
+          7,
+          8,
+          9,
+          14
+        ],
+        "n": 8,
+        "channels": {
+          "explicit": 2,
+          "strategy": 6
+        },
+        "defs_omitted": 11,
+        "n_shown": 2,
+        "edited_covered": 1,
+        "total_chars": 61134
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          10,
+          15,
+          2,
+          16,
+          7,
+          8,
+          9,
+          14,
+          13,
+          6,
+          4,
+          11
+        ],
+        "n": 12,
+        "channels": {
+          "explicit": 2,
+          "strategy": 6,
+          "area": 1,
+          "keyword": 3
+        },
+        "defs_omitted": 43,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 96812
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          10,
+          15,
+          2,
+          16,
+          7,
+          8,
+          9,
+          14,
+          13,
+          6,
+          4,
+          11,
+          5,
+          3,
+          1
+        ],
+        "n": 15,
+        "channels": {
+          "explicit": 2,
+          "strategy": 6,
+          "area": 1,
+          "keyword": 6
+        },
+        "defs_omitted": 49,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 119451
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          10,
+          15,
+          2,
+          16,
+          7,
+          8,
+          9,
+          14,
+          13,
+          6,
+          4,
+          11,
+          5,
+          3,
+          1
+        ],
+        "n": 15,
+        "channels": {
+          "explicit": 2,
+          "strategy": 6,
+          "area": 1,
+          "keyword": 6
+        },
+        "defs_omitted": 15,
+        "n_shown": 41,
+        "edited_covered": 3,
+        "total_chars": 177263
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      10,
+      15,
+      2,
+      16
+    ],
+    "replay_selected": [
+      10,
+      15,
+      2,
+      16
+    ]
+  },
+  {
+    "node": 18,
+    "parent": 11,
+    "nodes_present": 18,
+    "n_edited": 2,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          10,
+          15,
+          16,
+          7
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 3,
+          "strategy": 1
+        },
+        "defs_omitted": 1,
+        "n_shown": 14,
+        "edited_covered": 2,
+        "total_chars": 42668
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          10,
+          15,
+          16,
+          7,
+          8,
+          9,
+          14,
+          2
+        ],
+        "n": 8,
+        "channels": {
+          "explicit": 3,
+          "strategy": 5
+        },
+        "defs_omitted": 11,
+        "n_shown": 2,
+        "edited_covered": 1,
+        "total_chars": 61134
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          10,
+          15,
+          16,
+          7,
+          8,
+          9,
+          14,
+          2,
+          17,
+          13,
+          4,
+          5
+        ],
+        "n": 12,
+        "channels": {
+          "explicit": 3,
+          "strategy": 6,
+          "area": 3
+        },
+        "defs_omitted": 42,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 96068
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          10,
+          15,
+          16,
+          7,
+          8,
+          9,
+          14,
+          2,
+          17,
+          13,
+          4,
+          5,
+          6
+        ],
+        "n": 13,
+        "channels": {
+          "explicit": 3,
+          "strategy": 6,
+          "area": 4
+        },
+        "defs_omitted": 50,
+        "n_shown": 0,
+        "edited_covered": 0,
+        "total_chars": 107453
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          10,
+          15,
+          16,
+          7,
+          8,
+          9,
+          14,
+          2,
+          17,
+          13,
+          4,
+          5,
+          6
+        ],
+        "n": 13,
+        "channels": {
+          "explicit": 3,
+          "strategy": 6,
+          "area": 4
+        },
+        "defs_omitted": 11,
+        "n_shown": 43,
+        "edited_covered": 2,
+        "total_chars": 171584
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      10,
+      15,
+      16,
+      7
+    ],
+    "replay_selected": [
+      10,
+      15,
+      16,
+      7
+    ]
+  },
+  {
+    "node": 19,
+    "parent": 8,
+    "nodes_present": 19,
+    "n_edited": 4,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          10,
+          15,
+          16,
+          9
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 4
+        },
+        "defs_omitted": 0,
+        "n_shown": 6,
+        "edited_covered": 1,
+        "total_chars": 35308
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          10,
+          15,
+          16,
+          9,
+          7,
+          8,
+          14,
+          18
+        ],
+        "n": 8,
+        "channels": {
+          "explicit": 4,
+          "strategy": 4
+        },
+        "defs_omitted": 8,
+        "n_shown": 3,
+        "edited_covered": 1,
+        "total_chars": 55418
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          10,
+          15,
+          16,
+          9,
+          7,
+          8,
+          14,
+          18,
+          2,
+          17,
+          13,
+          6
+        ],
+        "n": 12,
+        "channels": {
+          "explicit": 4,
+          "strategy": 6,
+          "area": 1,
+          "keyword": 1
+        },
+        "defs_omitted": 37,
+        "n_shown": 2,
+        "edited_covered": 0,
+        "total_chars": 93298
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          10,
+          15,
+          16,
+          9,
+          7,
+          8,
+          14,
+          18,
+          2,
+          17,
+          13,
+          6,
+          4,
+          11,
+          5,
+          3,
+          1
+        ],
+        "n": 17,
+        "channels": {
+          "explicit": 4,
+          "strategy": 6,
+          "area": 1,
+          "keyword": 6
+        },
+        "defs_omitted": 55,
+        "n_shown": 1,
+        "edited_covered": 0,
+        "total_chars": 131473
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          10,
+          15,
+          16,
+          9,
+          7,
+          8,
+          14,
+          18,
+          2,
+          17,
+          13,
+          6,
+          4,
+          11,
+          5,
+          3,
+          1
+        ],
+        "n": 17,
+        "channels": {
+          "explicit": 4,
+          "strategy": 6,
+          "area": 1,
+          "keyword": 6
+        },
+        "defs_omitted": 27,
+        "n_shown": 39,
+        "edited_covered": 1,
+        "total_chars": 183405
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      10,
+      15,
+      16,
+      9
+    ],
+    "replay_selected": [
+      10,
+      15,
+      16,
+      9
+    ]
+  },
+  {
+    "node": 20,
+    "parent": 10,
+    "nodes_present": 20,
+    "n_edited": 3,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          19,
+          15,
+          10,
+          11
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 2,
+          "strategy": 2
+        },
+        "defs_omitted": 0,
+        "n_shown": 15,
+        "edited_covered": 3,
+        "total_chars": 44178
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          19,
+          15,
+          10,
+          11,
+          13,
+          17
+        ],
+        "n": 6,
+        "channels": {
+          "explicit": 2,
+          "strategy": 4
+        },
+        "defs_omitted": 24,
+        "n_shown": 11,
+        "edited_covered": 3,
+        "total_chars": 58806
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          19,
+          15,
+          10,
+          11,
+          13,
+          17
+        ],
+        "n": 6,
+        "channels": {
+          "explicit": 2,
+          "strategy": 4
+        },
+        "defs_omitted": 24,
+        "n_shown": 11,
+        "edited_covered": 3,
+        "total_chars": 58806
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          19,
+          15,
+          10,
+          11,
+          13,
+          17
+        ],
+        "n": 6,
+        "channels": {
+          "explicit": 2,
+          "strategy": 4
+        },
+        "defs_omitted": 24,
+        "n_shown": 11,
+        "edited_covered": 3,
+        "total_chars": 58806
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          19,
+          15,
+          10,
+          11,
+          13,
+          17
+        ],
+        "n": 6,
+        "channels": {
+          "explicit": 2,
+          "strategy": 4
+        },
+        "defs_omitted": 0,
+        "n_shown": 37,
+        "edited_covered": 3,
+        "total_chars": 87581
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      19,
+      15,
+      10,
+      11
+    ],
+    "replay_selected": [
+      19,
+      15,
+      10,
+      11
+    ]
+  },
+  {
+    "node": 21,
+    "parent": 1,
+    "nodes_present": 21,
+    "n_edited": 1,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          9,
+          10,
+          14,
+          7
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 3,
+          "strategy": 1
+        },
+        "defs_omitted": 1,
+        "n_shown": 10,
+        "edited_covered": 1,
+        "total_chars": 37216
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          9,
+          10,
+          14,
+          7,
+          8,
+          16,
+          18,
+          2
+        ],
+        "n": 8,
+        "channels": {
+          "explicit": 3,
+          "strategy": 4,
+          "area": 1
+        },
+        "defs_omitted": 9,
+        "n_shown": 3,
+        "edited_covered": 1,
+        "total_chars": 57308
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          9,
+          10,
+          14,
+          7,
+          8,
+          16,
+          18,
+          2,
+          4,
+          5,
+          6,
+          13
+        ],
+        "n": 12,
+        "channels": {
+          "explicit": 3,
+          "strategy": 4,
+          "area": 4,
+          "keyword": 1
+        },
+        "defs_omitted": 42,
+        "n_shown": 2,
+        "edited_covered": 1,
+        "total_chars": 94995
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          9,
+          10,
+          14,
+          7,
+          8,
+          16,
+          18,
+          2,
+          4,
+          5,
+          6,
+          13,
+          20,
+          19,
+          17,
+          11,
+          3,
+          1
+        ],
+        "n": 18,
+        "channels": {
+          "explicit": 3,
+          "strategy": 4,
+          "area": 4,
+          "keyword": 7
+        },
+        "defs_omitted": 55,
+        "n_shown": 1,
+        "edited_covered": 1,
+        "total_chars": 135755
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          9,
+          10,
+          14,
+          7,
+          8,
+          16,
+          18,
+          2,
+          4,
+          5,
+          6,
+          13,
+          20,
+          19,
+          17,
+          11,
+          3,
+          1
+        ],
+        "n": 18,
+        "channels": {
+          "explicit": 3,
+          "strategy": 4,
+          "area": 4,
+          "keyword": 7
+        },
+        "defs_omitted": 31,
+        "n_shown": 35,
+        "edited_covered": 1,
+        "total_chars": 184191
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      9,
+      10,
+      14,
+      7
+    ],
+    "replay_selected": [
+      9,
+      10,
+      14,
+      7
+    ]
+  },
+  {
+    "node": 22,
+    "parent": 6,
+    "nodes_present": 22,
+    "n_edited": 2,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          9,
+          10,
+          16,
+          7
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 3,
+          "strategy": 1
+        },
+        "defs_omitted": 1,
+        "n_shown": 10,
+        "edited_covered": 2,
+        "total_chars": 37780
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          9,
+          10,
+          16,
+          7,
+          8,
+          14,
+          18,
+          21
+        ],
+        "n": 8,
+        "channels": {
+          "explicit": 3,
+          "strategy": 5
+        },
+        "defs_omitted": 6,
+        "n_shown": 3,
+        "edited_covered": 2,
+        "total_chars": 53880
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          9,
+          10,
+          16,
+          7,
+          8,
+          14,
+          18,
+          21,
+          13,
+          15
+        ],
+        "n": 10,
+        "channels": {
+          "explicit": 3,
+          "strategy": 5,
+          "area": 2
+        },
+        "defs_omitted": 20,
+        "n_shown": 2,
+        "edited_covered": 2,
+        "total_chars": 69751
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          9,
+          10,
+          16,
+          7,
+          8,
+          14,
+          18,
+          21,
+          13,
+          15
+        ],
+        "n": 10,
+        "channels": {
+          "explicit": 3,
+          "strategy": 5,
+          "area": 2
+        },
+        "defs_omitted": 20,
+        "n_shown": 2,
+        "edited_covered": 2,
+        "total_chars": 69751
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          9,
+          10,
+          16,
+          7,
+          8,
+          14,
+          18,
+          21,
+          13,
+          15
+        ],
+        "n": 10,
+        "channels": {
+          "explicit": 3,
+          "strategy": 5,
+          "area": 2
+        },
+        "defs_omitted": 1,
+        "n_shown": 30,
+        "edited_covered": 2,
+        "total_chars": 110925
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      9,
+      10,
+      16,
+      7
+    ],
+    "replay_selected": [
+      9,
+      10,
+      16,
+      7
+    ]
+  },
+  {
+    "node": 23,
+    "parent": 14,
+    "nodes_present": 23,
+    "n_edited": 2,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          9,
+          17,
+          21,
+          22
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 4
+        },
+        "defs_omitted": 1,
+        "n_shown": 9,
+        "edited_covered": 2,
+        "total_chars": 31750
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          9,
+          17,
+          21,
+          22,
+          7,
+          8,
+          10,
+          14
+        ],
+        "n": 8,
+        "channels": {
+          "explicit": 4,
+          "strategy": 4
+        },
+        "defs_omitted": 12,
+        "n_shown": 3,
+        "edited_covered": 2,
+        "total_chars": 56089
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          9,
+          17,
+          21,
+          22,
+          7,
+          8,
+          10,
+          14,
+          16,
+          18,
+          11,
+          6
+        ],
+        "n": 12,
+        "channels": {
+          "explicit": 4,
+          "strategy": 6,
+          "area": 1,
+          "keyword": 1
+        },
+        "defs_omitted": 25,
+        "n_shown": 2,
+        "edited_covered": 1,
+        "total_chars": 82336
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          9,
+          17,
+          21,
+          22,
+          7,
+          8,
+          10,
+          14,
+          16,
+          18,
+          11,
+          6,
+          5,
+          4
+        ],
+        "n": 14,
+        "channels": {
+          "explicit": 4,
+          "strategy": 6,
+          "area": 1,
+          "keyword": 3
+        },
+        "defs_omitted": 38,
+        "n_shown": 2,
+        "edited_covered": 1,
+        "total_chars": 100474
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          9,
+          17,
+          21,
+          22,
+          7,
+          8,
+          10,
+          14,
+          16,
+          18,
+          11,
+          6,
+          5,
+          4
+        ],
+        "n": 14,
+        "channels": {
+          "explicit": 4,
+          "strategy": 6,
+          "area": 1,
+          "keyword": 3
+        },
+        "defs_omitted": 9,
+        "n_shown": 28,
+        "edited_covered": 2,
+        "total_chars": 150525
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      9,
+      17,
+      21,
+      22
+    ],
+    "replay_selected": [
+      9,
+      17,
+      21,
+      22
+    ]
+  },
+  {
+    "node": 24,
+    "parent": 10,
+    "nodes_present": 24,
+    "n_edited": 2,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          11,
+          17,
+          23,
+          7
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 3,
+          "strategy": 1
+        },
+        "defs_omitted": 2,
+        "n_shown": 20,
+        "edited_covered": 2,
+        "total_chars": 46495
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          11,
+          17,
+          23,
+          7,
+          8,
+          9,
+          10,
+          14
+        ],
+        "n": 8,
+        "channels": {
+          "explicit": 3,
+          "strategy": 5
+        },
+        "defs_omitted": 17,
+        "n_shown": 2,
+        "edited_covered": 2,
+        "total_chars": 58452
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          11,
+          17,
+          23,
+          7,
+          8,
+          9,
+          10,
+          14,
+          16,
+          18,
+          21,
+          22
+        ],
+        "n": 12,
+        "channels": {
+          "explicit": 3,
+          "strategy": 9
+        },
+        "defs_omitted": 17,
+        "n_shown": 3,
+        "edited_covered": 2,
+        "total_chars": 74637
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          11,
+          17,
+          23,
+          7,
+          8,
+          9,
+          10,
+          14,
+          16,
+          18,
+          21,
+          22,
+          13,
+          15,
+          19,
+          20,
+          6,
+          5,
+          4
+        ],
+        "n": 19,
+        "channels": {
+          "explicit": 3,
+          "strategy": 13,
+          "keyword": 3
+        },
+        "defs_omitted": 54,
+        "n_shown": 3,
+        "edited_covered": 2,
+        "total_chars": 131559
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          11,
+          17,
+          23,
+          7,
+          8,
+          9,
+          10,
+          14,
+          16,
+          18,
+          21,
+          22,
+          13,
+          15,
+          19,
+          20,
+          6,
+          5,
+          4
+        ],
+        "n": 19,
+        "channels": {
+          "explicit": 3,
+          "strategy": 13,
+          "keyword": 3
+        },
+        "defs_omitted": 35,
+        "n_shown": 30,
+        "edited_covered": 2,
+        "total_chars": 178478
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      11,
+      17,
+      23,
+      7
+    ],
+    "replay_selected": [
+      11,
+      17,
+      23,
+      7
+    ]
+  },
+  {
+    "node": 25,
+    "parent": 9,
+    "nodes_present": 25,
+    "n_edited": 1,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          10,
+          21,
+          24,
+          7
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 3,
+          "strategy": 1
+        },
+        "defs_omitted": 1,
+        "n_shown": 10,
+        "edited_covered": 1,
+        "total_chars": 39492
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          10,
+          21,
+          24,
+          7,
+          8,
+          9,
+          14,
+          16
+        ],
+        "n": 8,
+        "channels": {
+          "explicit": 3,
+          "strategy": 5
+        },
+        "defs_omitted": 6,
+        "n_shown": 2,
+        "edited_covered": 1,
+        "total_chars": 57152
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          10,
+          21,
+          24,
+          7,
+          8,
+          9,
+          14,
+          16,
+          18,
+          22,
+          23,
+          4
+        ],
+        "n": 12,
+        "channels": {
+          "explicit": 3,
+          "strategy": 8,
+          "keyword": 1
+        },
+        "defs_omitted": 13,
+        "n_shown": 3,
+        "edited_covered": 1,
+        "total_chars": 72909
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          10,
+          21,
+          24,
+          7,
+          8,
+          9,
+          14,
+          16,
+          18,
+          22,
+          23,
+          4
+        ],
+        "n": 12,
+        "channels": {
+          "explicit": 3,
+          "strategy": 8,
+          "keyword": 1
+        },
+        "defs_omitted": 13,
+        "n_shown": 3,
+        "edited_covered": 1,
+        "total_chars": 72909
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          10,
+          21,
+          24,
+          7,
+          8,
+          9,
+          14,
+          16,
+          18,
+          22,
+          23,
+          4
+        ],
+        "n": 12,
+        "channels": {
+          "explicit": 3,
+          "strategy": 8,
+          "keyword": 1
+        },
+        "defs_omitted": 2,
+        "n_shown": 13,
+        "edited_covered": 1,
+        "total_chars": 99921
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      10,
+      21,
+      24,
+      7
+    ],
+    "replay_selected": [
+      10,
+      21,
+      24,
+      7
+    ]
+  },
+  {
+    "node": 26,
+    "parent": 15,
+    "nodes_present": 26,
+    "n_edited": 2,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          23,
+          25,
+          9,
+          7
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 3,
+          "strategy": 1
+        },
+        "defs_omitted": 1,
+        "n_shown": 10,
+        "edited_covered": 2,
+        "total_chars": 33517
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          23,
+          25,
+          9,
+          7,
+          8,
+          10,
+          14,
+          16
+        ],
+        "n": 8,
+        "channels": {
+          "explicit": 3,
+          "strategy": 5
+        },
+        "defs_omitted": 6,
+        "n_shown": 2,
+        "edited_covered": 2,
+        "total_chars": 52729
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          23,
+          25,
+          9,
+          7,
+          8,
+          10,
+          14,
+          16,
+          18,
+          21,
+          22,
+          24
+        ],
+        "n": 12,
+        "channels": {
+          "explicit": 3,
+          "strategy": 9
+        },
+        "defs_omitted": 6,
+        "n_shown": 3,
+        "edited_covered": 2,
+        "total_chars": 70255
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          23,
+          25,
+          9,
+          7,
+          8,
+          10,
+          14,
+          16,
+          18,
+          21,
+          22,
+          24,
+          11,
+          17,
+          6,
+          5,
+          4
+        ],
+        "n": 17,
+        "channels": {
+          "explicit": 3,
+          "strategy": 9,
+          "area": 2,
+          "keyword": 3
+        },
+        "defs_omitted": 38,
+        "n_shown": 2,
+        "edited_covered": 1,
+        "total_chars": 115832
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          23,
+          25,
+          9,
+          7,
+          8,
+          10,
+          14,
+          16,
+          18,
+          21,
+          22,
+          24,
+          11,
+          17,
+          6,
+          5,
+          4
+        ],
+        "n": 17,
+        "channels": {
+          "explicit": 3,
+          "strategy": 9,
+          "area": 2,
+          "keyword": 3
+        },
+        "defs_omitted": 18,
+        "n_shown": 24,
+        "edited_covered": 2,
+        "total_chars": 157771
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      23,
+      25,
+      9,
+      7
+    ],
+    "replay_selected": [
+      23,
+      25,
+      9,
+      7
+    ]
+  },
+  {
+    "node": 27,
+    "parent": 16,
+    "nodes_present": 27,
+    "n_edited": 3,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          19,
+          20,
+          23,
+          2
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 3,
+          "strategy": 1
+        },
+        "defs_omitted": 1,
+        "n_shown": 10,
+        "edited_covered": 0,
+        "total_chars": 35795
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          19,
+          20,
+          23,
+          2,
+          15,
+          16,
+          17,
+          21
+        ],
+        "n": 8,
+        "channels": {
+          "explicit": 3,
+          "strategy": 5
+        },
+        "defs_omitted": 13,
+        "n_shown": 3,
+        "edited_covered": 0,
+        "total_chars": 55708
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          19,
+          20,
+          23,
+          2,
+          15,
+          16,
+          17,
+          21,
+          24,
+          11,
+          6,
+          9
+        ],
+        "n": 12,
+        "channels": {
+          "explicit": 3,
+          "strategy": 6,
+          "area": 1,
+          "keyword": 2
+        },
+        "defs_omitted": 26,
+        "n_shown": 2,
+        "edited_covered": 0,
+        "total_chars": 86320
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          19,
+          20,
+          23,
+          2,
+          15,
+          16,
+          17,
+          21,
+          24,
+          11,
+          6,
+          9,
+          7,
+          5,
+          4
+        ],
+        "n": 15,
+        "channels": {
+          "explicit": 3,
+          "strategy": 6,
+          "area": 1,
+          "keyword": 5
+        },
+        "defs_omitted": 45,
+        "n_shown": 2,
+        "edited_covered": 0,
+        "total_chars": 112893
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          19,
+          20,
+          23,
+          2,
+          15,
+          16,
+          17,
+          21,
+          24,
+          11,
+          6,
+          9,
+          7,
+          5,
+          4
+        ],
+        "n": 15,
+        "channels": {
+          "explicit": 3,
+          "strategy": 6,
+          "area": 1,
+          "keyword": 5
+        },
+        "defs_omitted": 12,
+        "n_shown": 34,
+        "edited_covered": 0,
+        "total_chars": 171931
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      19,
+      20,
+      23,
+      2
+    ],
+    "replay_selected": [
+      19,
+      20,
+      23,
+      2
+    ]
+  },
+  {
+    "node": 28,
+    "parent": 19,
+    "nodes_present": 28,
+    "n_edited": 3,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          27,
+          20,
+          19,
+          10
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 3,
+          "strategy": 1
+        },
+        "defs_omitted": 0,
+        "n_shown": 6,
+        "edited_covered": 2,
+        "total_chars": 29764
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          27,
+          20,
+          19,
+          10,
+          11,
+          13,
+          15,
+          17
+        ],
+        "n": 8,
+        "channels": {
+          "explicit": 3,
+          "strategy": 5
+        },
+        "defs_omitted": 27,
+        "n_shown": 4,
+        "edited_covered": 2,
+        "total_chars": 59347
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          27,
+          20,
+          19,
+          10,
+          11,
+          13,
+          15,
+          17,
+          23,
+          24,
+          26,
+          1
+        ],
+        "n": 12,
+        "channels": {
+          "explicit": 3,
+          "strategy": 8,
+          "keyword": 1
+        },
+        "defs_omitted": 27,
+        "n_shown": 4,
+        "edited_covered": 2,
+        "total_chars": 79402
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          27,
+          20,
+          19,
+          10,
+          11,
+          13,
+          15,
+          17,
+          23,
+          24,
+          26,
+          1,
+          12
+        ],
+        "n": 13,
+        "channels": {
+          "explicit": 3,
+          "strategy": 8,
+          "keyword": 2
+        },
+        "defs_omitted": 27,
+        "n_shown": 5,
+        "edited_covered": 2,
+        "total_chars": 83766
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          27,
+          20,
+          19,
+          10,
+          11,
+          13,
+          15,
+          17,
+          23,
+          24,
+          26,
+          1,
+          12
+        ],
+        "n": 13,
+        "channels": {
+          "explicit": 3,
+          "strategy": 8,
+          "keyword": 2
+        },
+        "defs_omitted": 4,
+        "n_shown": 36,
+        "edited_covered": 2,
+        "total_chars": 124586
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      27,
+      20,
+      19,
+      10
+    ],
+    "replay_selected": [
+      27,
+      20,
+      19,
+      10
+    ]
+  },
+  {
+    "node": 29,
+    "parent": 23,
+    "nodes_present": 29,
+    "n_edited": 3,
+    "sweep": [
+      {
+        "max_nodes": 4,
+        "budget": 60000,
+        "nodes": [
+          27,
+          28,
+          20,
+          19
+        ],
+        "n": 4,
+        "channels": {
+          "explicit": 3,
+          "area": 1
+        },
+        "defs_omitted": 0,
+        "n_shown": 5,
+        "edited_covered": 2,
+        "total_chars": 27914
+      },
+      {
+        "max_nodes": 8,
+        "budget": 60000,
+        "nodes": [
+          27,
+          28,
+          20,
+          19,
+          10,
+          23,
+          24,
+          26
+        ],
+        "n": 8,
+        "channels": {
+          "explicit": 3,
+          "area": 5
+        },
+        "defs_omitted": 2,
+        "n_shown": 5,
+        "edited_covered": 2,
+        "total_chars": 47729
+      },
+      {
+        "max_nodes": 12,
+        "budget": 60000,
+        "nodes": [
+          27,
+          28,
+          20,
+          19,
+          10,
+          23,
+          24,
+          26,
+          1,
+          17,
+          12
+        ],
+        "n": 11,
+        "channels": {
+          "explicit": 3,
+          "area": 5,
+          "keyword": 3
+        },
+        "defs_omitted": 9,
+        "n_shown": 5,
+        "edited_covered": 2,
+        "total_chars": 62120
+      },
+      {
+        "max_nodes": 999,
+        "budget": 60000,
+        "nodes": [
+          27,
+          28,
+          20,
+          19,
+          10,
+          23,
+          24,
+          26,
+          1,
+          17,
+          12
+        ],
+        "n": 11,
+        "channels": {
+          "explicit": 3,
+          "area": 5,
+          "keyword": 3
+        },
+        "defs_omitted": 9,
+        "n_shown": 5,
+        "edited_covered": 2,
+        "total_chars": 62120
+      },
+      {
+        "max_nodes": 999,
+        "budget": 240000,
+        "nodes": [
+          27,
+          28,
+          20,
+          19,
+          10,
+          23,
+          24,
+          26,
+          1,
+          17,
+          12
+        ],
+        "n": 11,
+        "channels": {
+          "explicit": 3,
+          "area": 5,
+          "keyword": 3
+        },
+        "defs_omitted": 0,
+        "n_shown": 14,
+        "edited_covered": 2,
+        "total_chars": 85590
+      }
+    ],
+    "replay_matches_run": true,
+    "real_selected": [
+      27,
+      28,
+      20,
+      19
+    ],
+    "replay_selected": [
+      27,
+      28,
+      20,
+      19
+    ]
+  }
+]

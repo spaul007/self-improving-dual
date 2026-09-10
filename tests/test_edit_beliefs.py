@@ -1,4 +1,5 @@
-"""Unit tests for the belief layer (edit_beliefs) and belief-led steering.
+"""Unit tests for the belief layer (edit_beliefs): contract-bound updates,
+retry, pre-registration, scoring, optimizer wiring and the full stack.
 
 Stub LLM, no network.
 
@@ -13,11 +14,13 @@ import unittest
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from meta_agent.belief_optimizer import INSTRUCTION_ARCHIVE_DIR, INSTRUCTION_NAME, SEED_INSTRUCTION
 from meta_agent.edit_beliefs import (
+    BELIEF_PREDICTION_NAME,
+    BELIEF_PROMPT_DIR,
     BELIEFS_ARCHIVE_DIR,
     BELIEFS_NAME,
     BELIEFS_STATE_NAME,
-    MACHINE_SECTION,
     PREDICTION_NAME,
     BeliefStore,
     parse_anchors,
@@ -40,39 +43,58 @@ class _Call:
     arguments: dict
 
 
-GOOD_DOC = """## Document structure
-Organized one section per strategy; machine appendix is code-owned.
+GOOD_DOC = """## Summary
+One strategy tried so far.
 
-### belief:add-verifier — verification helps but gates need care
-- stance: mixed — helped once [node 1: Δ+0.0500/8]
-- evidence: one node only; not sufficient for a confident verdict
-- next move: repair the gate check before trying again
+### belief:add-verifier-helps — verifiers pay off when wired
+- kind: strategy
+- scope: strategy=add-verifier area=routing
+- predict: p=0.65
+- evidence: helped once [node 1: Δ+0.0500/8]
+- next: extend the gate to intercity transfers
+
+### belief:add-verifier-impl — verifiers often ship dead
+- kind: implementation
+- scope: strategy=add-verifier
+- predict: p=0.40
+- evidence: gate wiring is fragile [node 1: Δ+0.0500/8]
+- next: wire the gate before adding more checks
 """
-
-BAD_SIGN_DOC = GOOD_DOC.replace("[node 1: Δ+0.0500/8]",
-                                "[node 1: Δ-0.0500/8]")
-NO_ANCHOR_DOC = "## Document structure\njust prose, no belief sections\n"
+BAD_SIGN_DOC = GOOD_DOC.replace("[node 1: Δ+0.0500/8]", "[node 1: Δ-0.0500/8]")
+BAD_SCOPE_DOC = GOOD_DOC.replace("strategy=add-verifier area=routing",
+                                 "strategy=no-such-strategy")
+NO_ANCHOR_DOC = "## Summary\njust prose, no belief sections\n"
+ECHOED_TRACK_DOC = GOOD_DOC.replace(
+    "- next: extend the gate to intercity transfers",
+    "- next: extend the gate to intercity transfers\n- track: n=99 · made up")
 
 
 class _BeliefStub:
-    """Canned responses per tool name (OpenAI-style tools)."""
+    """Canned responses per tool name (OpenAI-style tools). ``docs`` are
+    returned in order for successive ``submit_belief_update`` calls (the
+    last one repeats)."""
 
-    def __init__(self, doc: str = GOOD_DOC, directives=None,
-                 junk: bool = False):
-        self.doc = doc
-        self.directives = directives or ["split add-verifier by gate role"]
+    def __init__(self, doc: str = GOOD_DOC, docs=None, junk: bool = False,
+                 instruction: str = "Revised guidance: weigh node counts."):
+        self.docs = list(docs) if docs else [doc]
         self.junk = junk
+        self.instruction = instruction
         self.calls: list[tuple[str, dict]] = []
+        self._i = 0
 
     def __call__(self, **kw):
         name = kw["tools"][0]["function"]["name"]
         self.calls.append((name, kw))
         if self.junk:
             return _Resp(content="no tool call here")
-        payload = {
-            "submit_belief_update": {"document": self.doc, "change_note": "n"},
-            "submit_belief_reflection": {"directives": self.directives},
-        }[name]
+        if name == "submit_belief_update":
+            doc = self.docs[min(self._i, len(self.docs) - 1)]
+            self._i += 1
+            payload = {"document": doc, "change_note": "n"}
+        elif name == "submit_instruction_update":
+            payload = {"critique": "c", "instruction": self.instruction}
+        else:
+            return _Resp(content="unexpected tool " + name)
         return _Resp(tool_calls=[_Call(name=name, arguments=payload)])
 
 
@@ -107,16 +129,39 @@ def _registry(experiment_dir: Path) -> None:
         "strategies": {"add-verifier": {
             "definition": "adds a check", "first_node": 1,
             "edits": [{"node": 1, "edit_index": 1, "name": "route-check"}]}},
-        "areas": {},
+        "areas": {"routing": {
+            "definition": "route problems", "first_node": 1,
+            "edits": [{"node": 1, "edit_index": 1, "name": "route-check"}]}},
     }), encoding="utf-8")
+
+
+def _body(what="Adds a route verifier", strategy="add-verifier", area="routing",
+          impl=None):
+    b = ("## Edit 1\n- **name**: `route-check`\n"
+         f"- **category level 1 (strategy)**: `{strategy}`\n"
+         f"- **category level 2 (area)**: `{area}`\n"
+         f"- **what**: {what}\n- **why**: routes were wrong")
+    if impl is not None:
+        # v6 implementation verdict + v7 judge effect for the sub-edit.
+        b += ("\n\n## Analysis\n- **implementation**: "
+              + ("sound — gate fired on case a" if impl else "unsound — never fired")
+              + "\n- **implementation (edit 1)**: "
+              + ("sound — gate fired on case a" if impl else "unsound — never fired")
+              + "\n- **effect (edit 1)**: "
+              + ("improved (strong; targets: opening_hours) — opening_hours "
+                 "fixed on 6 of 8 cases where the gate fired" if impl else
+                 "no_effect (strong) — never fired"))
+    return b
+
+
+def _state(tmp):
+    return json.loads((tmp / BELIEFS_STATE_NAME).read_text(encoding="utf-8"))
 
 
 class BeliefBase(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
-        self.rd1 = write_record(self.tmp, 1, 0,
-                                "## Edit 1\n- **what**: Adds a route verifier",
-                                delta=0.05, n_shared=8)
+        self.rd1 = write_record(self.tmp, 1, 0, _body(), delta=0.05, n_shared=8)
         _write_state(self.rd1, "sig-a")
         _registry(self.tmp)
         self.tree = _Tree([
@@ -129,45 +174,46 @@ class BeliefBase(unittest.TestCase):
 
 class TestConventions(unittest.TestCase):
     def test_parse_anchors_and_citations(self):
-        self.assertEqual(parse_anchors(GOOD_DOC), ["add-verifier"])
+        self.assertEqual(parse_anchors(GOOD_DOC),
+                         ["add-verifier-helps", "add-verifier-impl"])
         cites = parse_citations(GOOD_DOC)
-        self.assertEqual(len(cites), 1)
-        self.assertEqual(cites[0]["slug"], "add-verifier")
+        self.assertEqual(len(cites), 2)
+        self.assertEqual(cites[0]["slug"], "add-verifier-helps")
         self.assertEqual(cites[0]["node"], 1)
         self.assertAlmostEqual(cites[0]["delta"], 0.05)
         self.assertEqual(cites[0]["n_shared"], 8)
 
-    def test_snake_case_slug_parses_fully(self):
-        # Models often write snake_case despite the kebab-case suggestion;
-        # the anchor must not truncate at the first underscore (real bug,
-        # caught in the 2026-09-02 smoke run).
-        doc = "### belief:transfer_time_accuracy — t\n[node 1: Δ-0.0273/16]\n"
-        self.assertEqual(parse_anchors(doc), ["transfer_time_accuracy"])
-        self.assertEqual(parse_citations(doc)[0]["slug"],
-                         "transfer_time_accuracy")
-
-    def test_unmeasured_citation_parses(self):
-        cites = parse_citations("### belief:x — t\n[node 3: unmeasured]\n")
-        self.assertIsNone(cites[0]["delta"])
-
 
 class TestUpdate(BeliefBase):
-    def test_first_update_writes_doc_sidecar_and_appendix(self):
+    def test_first_update_writes_doc_state_and_track_lines(self):
         stub = _BeliefStub()
         store = BeliefStore(stub)
         self.assertTrue(store.update(self.tmp, self.tree))
         text = (self.tmp / BELIEFS_NAME).read_text(encoding="utf-8")
-        self.assertIn("### belief:add-verifier", text)
-        self.assertIn(MACHINE_SECTION, text)
-        self.assertIn("citations match the records", text)
-        self.assertIn("belief:add-verifier cites 1 node(s) — 1 — covering 8 "
-                      "shared case(s)", text)
-        state = json.loads((self.tmp / BELIEFS_STATE_NAME)
-                           .read_text(encoding="utf-8"))
+        self.assertIn("### belief:add-verifier-helps", text)
+        self.assertEqual(text.count("- track: no scored predictions yet"), 2)
+        self.assertNotIn("Machine appendix", text)
+        state = _state(self.tmp)
         self.assertEqual(state["n_updates"], 1)
-        # Noise policy travels in the system prompt.
+        self.assertEqual(state["beliefs_index"]["add-verifier-helps"]["p"], 0.65)
         sys_prompt = stub.calls[0][1]["messages"][0]["content"]
-        self.assertIn("sampling noise", sys_prompt)
+        self.assertIn("Guidance (learned", sys_prompt)
+        self.assertIn(SEED_INSTRUCTION, sys_prompt)
+        self.assertIn("JUDGE", sys_prompt)          # judge-labelled scoring
+        self.assertIn("[node N: improved]", sys_prompt)
+        self.assertIn("Brier", sys_prompt)
+        user = stub.calls[0][1]["messages"][1]["content"]
+        # Judge-first run context: the score is orientation, not the goal.
+        self.assertIn("## Run context\nThe run optimizes what the judge finds", user)
+        self.assertIn("Score context (noisy, for orientation only): seed 0.4500/10",
+                      user)
+        self.assertNotIn("ABSOLUTE", user)
+        self.assertIn("## Registry ids you may use in scope lines", user)
+        self.assertIn("`add-verifier` — 1 node(s) — adds a check", user)
+        self.assertIn("## Calibration report", user)
+        self.assertIn("(none yet — this is the first update", user)
+        self.assertTrue((self.tmp / INSTRUCTION_NAME).exists())
+        self.assertTrue((self.tmp / BELIEF_PROMPT_DIR / "update_0001.txt").exists())
 
     def test_sig_gating_skips_unchanged_evidence(self):
         stub = _BeliefStub()
@@ -176,33 +222,97 @@ class TestUpdate(BeliefBase):
         self.assertFalse(store.update(self.tmp, self.tree))
         self.assertEqual(len(stub.calls), 1)  # no second LLM call
 
-    def test_delta_evidence_only_changed_nodes(self):
+    def test_second_update_prompt_carries_track_lines(self):
         stub = _BeliefStub()
         store = BeliefStore(stub)
         store.update(self.tmp, self.tree)
-        rd2 = write_record(self.tmp, 2, 0,
-                           "## Edit 1\n- **what**: Reworks the hotel budget",
+        _write_state(self.rd1, "sig-changed")
+        self.assertTrue(store.update(self.tmp, self.tree))
+        user = stub.calls[-1][1]["messages"][1]["content"]
+        self.assertIn("## Current belief document (with code-generated track lines)", user)
+        self.assertIn("- track: no scored predictions yet", user)
+
+    def test_delta_evidence_only_changed_nodes_and_whole_records(self):
+        stub = _BeliefStub()
+        store = BeliefStore(stub, evidence_char_budget=1000)
+        store.update(self.tmp, self.tree)
+        rd2 = write_record(self.tmp, 2, 0, _body("Reworks the hotel budget"),
                            delta=-0.02, n_shared=9)
         _write_state(rd2, "sig-b")
+        # Node 3 alone exceeds the (floor-clamped) 1000-char evidence budget,
+        # so it is shown whole and the older node 2 is dropped whole.
+        rd3 = write_record(self.tmp, 3, 0, _body("Adds a cache " * 80),
+                           delta=0.01, n_shared=9)
+        _write_state(rd3, "sig-c")
         self.assertTrue(store.update(self.tmp, self.tree))
         user = stub.calls[-1][1]["messages"][1]["content"]
         self.assertIn("New/changed evidence", user)
-        self.assertIn("### node 2", user)
-        self.assertNotIn("### node 1", user)  # unchanged node not re-sent
+        self.assertIn("### node 3", user)            # newest, verbatim
+        self.assertIn("Adds a cache", user)
+        self.assertIn((rd3 / "edit_memory.md").read_text(encoding="utf-8").rstrip(), user)
+        self.assertNotIn("### node 2", user)         # oldest dropped WHOLE
+        self.assertIn("(+1 older changed node(s) not shown", user)
+        self.assertNotIn("### node 1", user)         # unchanged node not re-sent
+        self.assertNotIn("chars elided", user)
 
-    def test_no_anchor_doc_rejected(self):
+    def test_no_anchor_doc_retried_then_rejected(self):
         stub = _BeliefStub(doc=NO_ANCHOR_DOC)
         store = BeliefStore(stub)
         self.assertFalse(store.update(self.tmp, self.tree))
+        self.assertEqual([n for n, _ in stub.calls],
+                         ["submit_belief_update", "submit_belief_update"])
+        retry = stub.calls[1][1]["messages"][1]["content"]
+        self.assertIn("## Your previous submission was rejected", retry)
+        self.assertIn("[HARD]", retry)
+        self.assertIn("no `### belief:", retry)
         self.assertFalse((self.tmp / BELIEFS_NAME).exists())
+        self.assertFalse((self.tmp / BELIEFS_STATE_NAME).exists())
 
-    def test_bad_citation_flagged_not_dropped(self):
+    def test_retry_fixes_hard_violation(self):
+        stub = _BeliefStub(docs=[BAD_SCOPE_DOC, GOOD_DOC])
+        store = BeliefStore(stub)
+        self.assertTrue(store.update(self.tmp, self.tree))
+        self.assertEqual(len(stub.calls), 2)
+        retry = stub.calls[1][1]["messages"][1]["content"]
+        self.assertIn("no-such-strategy", retry)
+        self.assertIn("### belief:add-verifier-helps",
+                      (self.tmp / BELIEFS_NAME).read_text(encoding="utf-8"))
+
+    def test_bad_citation_is_soft_accepted_and_flagged(self):
         stub = _BeliefStub(doc=BAD_SIGN_DOC)
         store = BeliefStore(stub)
         self.assertTrue(store.update(self.tmp, self.tree))
+        self.assertEqual(len(stub.calls), 2)  # one retry names the misquote
+        retry = stub.calls[1][1]["messages"][1]["content"]
+        self.assertIn("[SOFT]", retry)
+        self.assertIn("Δ+0.0500 over 8 shared", retry)
         text = (self.tmp / BELIEFS_NAME).read_text(encoding="utf-8")
-        self.assertIn("misquotes the record", text)
-        self.assertIn("Δ+0.0500", text)  # the corrected number is narrated
+        self.assertIn("misquoted citation", text)
+        self.assertIn("Δ-0.0500", text)  # the model's text is kept, flagged
+
+    def test_over_cap_keeps_previous_document(self):
+        stub = _BeliefStub()
+        BeliefStore(stub).update(self.tmp, self.tree)
+        before = (self.tmp / BELIEFS_NAME).read_text(encoding="utf-8")
+        big = GOOD_DOC.replace("- next: wire the gate before adding more checks",
+                               "- next: " + "wire it " * 400)
+        stub2 = _BeliefStub(doc=big)
+        store2 = BeliefStore(stub2, doc_char_cap=1000)
+        _write_state(self.rd1, "sig-changed")
+        self.assertFalse(store2.update(self.tmp, self.tree))
+        self.assertEqual(len(stub2.calls), 2)
+        self.assertIn("over-cap", stub2.calls[1][1]["messages"][1]["content"]
+                      .replace("the cap is", "over-cap"))
+        self.assertEqual((self.tmp / BELIEFS_NAME).read_text(encoding="utf-8"), before)
+
+    def test_echoed_track_lines_are_stripped(self):
+        stub = _BeliefStub(doc=ECHOED_TRACK_DOC)
+        store = BeliefStore(stub)
+        self.assertTrue(store.update(self.tmp, self.tree))
+        self.assertEqual(len(stub.calls), 1)
+        text = (self.tmp / BELIEFS_NAME).read_text(encoding="utf-8")
+        self.assertNotIn("made up", text)
+        self.assertEqual(text.count("- track:"), 2)
 
     def test_junk_output_keeps_previous_state(self):
         stub = _BeliefStub(junk=True)
@@ -226,63 +336,12 @@ class TestUpdate(BeliefBase):
                          .update(self.tmp, self.tree))
         self.assertEqual(stub.calls, [])
 
-
-class TestPredictionsAndReflection(BeliefBase):
-    def test_prediction_join_in_prompt_and_appendix(self):
-        rd2 = write_record(self.tmp, 2, 1,
-                           "## Edit 1\n- **what**: Gate repair",
-                           delta=0.021, n_shared=14)
-        _write_state(rd2, "sig-b")
-        (rd2 / PREDICTION_NAME).write_text(json.dumps({
-            "belief_id": "add-verifier", "expected_direction": "up",
-            "why": "gate repair should help"}), encoding="utf-8")
-        rd3 = self.tmp / "round_003"
-        rd3.mkdir()
-        (rd3 / PREDICTION_NAME).write_text(json.dumps({
-            "belief_id": "add-verifier", "expected_direction": "up"}),
-            encoding="utf-8")  # no record yet -> unmeasured
+    def test_render_block_is_verbatim(self):
         stub = _BeliefStub()
         store = BeliefStore(stub)
-        self.assertTrue(store.update(self.tmp, self.tree))
-        user = stub.calls[0][1]["messages"][1]["content"]
-        self.assertIn("Predictions made by past edit proposals", user)
-        self.assertIn("measured Δ+0.0210 over 14 shared", user)
-        self.assertIn("not yet measured", user)
-        text = (self.tmp / BELIEFS_NAME).read_text(encoding="utf-8")
-        self.assertIn("Proposal outcomes", text)
-        self.assertIn("belief:add-verifier justified the edit(s)", text)
-        state = json.loads((self.tmp / BELIEFS_STATE_NAME)
-                           .read_text(encoding="utf-8"))
-        self.assertEqual(len(state["prediction_joins"]), 2)
-
-    def test_new_measurement_retriggers_update(self):
-        rd3 = self.tmp / "round_003"
-        rd3.mkdir()
-        (rd3 / PREDICTION_NAME).write_text(json.dumps({
-            "belief_id": "add-verifier", "expected_direction": "up"}),
-            encoding="utf-8")
-        stub = _BeliefStub()
-        store = BeliefStore(stub)
-        self.assertTrue(store.update(self.tmp, self.tree))
-        # The prediction's outcome lands (record appears) with no other change:
-        write_record(self.tmp, 3, 1, "## Edit 1\n- **what**: x",
-                     delta=-0.01, n_shared=9)
-        _write_state(self.tmp / "round_003", "sig-c")
-        self.assertTrue(store.update(self.tmp, self.tree))
-
-    def test_reflection_fires_and_directives_reach_next_update(self):
-        stub = _BeliefStub()
-        store = BeliefStore(stub, reflect_every=1)
-        self.assertTrue(store.update(self.tmp, self.tree))  # n_updates -> 1
-        _write_state(self.rd1, "sig-changed")
-        self.assertTrue(store.update(self.tmp, self.tree))
-        names = [n for n, _kw in stub.calls]
-        self.assertEqual(names, ["submit_belief_update",
-                                 "submit_belief_reflection",
-                                 "submit_belief_update"])
-        user = stub.calls[-1][1]["messages"][1]["content"]
-        self.assertIn("Representation directives", user)
-        self.assertIn("split add-verifier by gate role", user)
+        store.update(self.tmp, self.tree)
+        self.assertEqual(store.render_block(self.tmp),
+                         (self.tmp / BELIEFS_NAME).read_text(encoding="utf-8"))
 
     def test_archive_written_on_second_update(self):
         stub = _BeliefStub()
@@ -292,28 +351,193 @@ class TestPredictionsAndReflection(BeliefBase):
         store.update(self.tmp, self.tree)
         archived = list((self.tmp / BELIEFS_ARCHIVE_DIR).glob("beliefs_*.md"))
         self.assertEqual([p.name for p in archived], ["beliefs_0001.md"])
-        state = json.loads((self.tmp / BELIEFS_STATE_NAME)
-                           .read_text(encoding="utf-8"))
-        self.assertEqual(state["versions"], ["beliefs_0001.md"])
+        self.assertEqual(_state(self.tmp)["versions"], ["beliefs_0001.md"])
+
+
+class TestRegistrationAndScoring(BeliefBase):
+    def _store(self, **kw):
+        self.stub = _BeliefStub()
+        return BeliefStore(self.stub, **kw)
+
+    def test_register_matches_most_specific_belief(self):
+        store = self._store()
+        store.update(self.tmp, self.tree)
+        rd2 = write_record(self.tmp, 2, 1, _body("Adds an intercity gate"),
+                           delta=0.0, n_shared=0)
+        got = store.register(self.tmp, 2, rd2)
+        self.assertEqual(got["strategy"]["slug"], "add-verifier-helps")
+        self.assertEqual(got["strategy"]["p"], 0.65)
+        self.assertEqual(got["strategy"]["scope"], {"strategy": "add-verifier",
+                                                    "area": "routing"})
+        self.assertEqual(got["implementation"]["slug"], "add-verifier-impl")
+        self.assertEqual(got["belief_version"], 1)
+        self.assertEqual(got["tags"][0]["strategy"], "add-verifier")
+        self.assertIs(got["coverable"], True)   # node 1 already used add-verifier
+        self.assertIn("### belief:add-verifier-helps", got["strategy"]["section"])
+        on_disk = json.loads((rd2 / BELIEF_PREDICTION_NAME).read_text(encoding="utf-8"))
+        self.assertEqual(on_disk, got)
+        # Idempotent: a later call returns the frozen prediction.
+        (self.tmp / BELIEFS_NAME).write_text("", encoding="utf-8")
+        self.assertEqual(store.register(self.tmp, 2, rd2), got)
+
+    def test_register_without_doc_is_uncovered(self):
+        store = self._store()
+        rd2 = write_record(self.tmp, 2, 1, _body(), delta=0.0, n_shared=0)
+        got = store.register(self.tmp, 2, rd2)
+        self.assertIsNone(got["strategy"])
+        self.assertIsNone(got["implementation"])
+        self.assertEqual(got["belief_version"], 0)
+
+    def test_register_first_node_of_new_strategy_is_uncoverable(self):
+        store = self._store()
+        store.update(self.tmp, self.tree)
+        rd2 = write_record(self.tmp, 2, 1, _body(strategy="add-cache", area="speed"),
+                           delta=0.0, n_shared=0)
+        got = store.register(self.tmp, 2, rd2)
+        self.assertIs(got["coverable"], False)
+        self.assertIsNone(got["strategy"])
+        # Once measured, it is retired without the 0.25 silence charge.
+        self._measure_as(rd2, 2, 0.05, impl=True, strategy="add-cache", area="speed")
+        store.update(self.tmp, self.tree)
+        state = _state(self.tmp)
+        self.assertEqual(state.get("scored", []), [])
+        self.assertEqual({(k["node"], k["kind"]) for k in state["skipped"]},
+                         {(2, "strategy"), (2, "implementation")})
+        user = self.stub.calls[-1][1]["messages"][1]["content"]
+        self.assertIn("2 prediction(s) skipped, not scored", user)
+        # A later update does not re-report or re-score it.
+        _write_state(rd2, "sig-later")
+        store.update(self.tmp, self.tree)
+        self.assertEqual(len(_state(self.tmp)["skipped"]), 2)
+
+    def _measure_as(self, rd, node, delta, impl, strategy, area):
+        write_record(self.tmp, node, 1,
+                     _body("Adds a cache", strategy=strategy, area=area, impl=impl),
+                     delta=delta, n_shared=8)
+        _write_state(rd, f"sig-measured-{node}-{delta}")
+
+    def test_register_ignores_cap_forced_tags(self):
+        store = self._store()
+        store.update(self.tmp, self.tree)
+        forced = _body() + ("\n- **fit**: forced by the registry cap — nearest "
+                            "id by shared token, not the tagger's choice")
+        rd2 = write_record(self.tmp, 2, 1, forced, delta=0.0, n_shared=0)
+        got = store.register(self.tmp, 2, rd2)
+        self.assertEqual(got["tags"][0]["fit"], "forced")
+        self.assertIs(got["coverable"], False)      # only a forced tag: uncoverable
+        self.assertIsNone(got["strategy"])          # never matched to add-verifier-helps
+        self.assertIsNone(got["implementation"])
+
+    def test_register_unrecorded_node_is_none(self):
+        store = self._store()
+        rd9 = self.tmp / "round_009"
+        rd9.mkdir()
+        self.assertIsNone(store.register(self.tmp, 9, rd9))
+        self.assertFalse((rd9 / BELIEF_PREDICTION_NAME).exists())
+
+    def _measure(self, rd, node, delta, impl):
+        write_record(self.tmp, node, 1, _body("Adds an intercity gate", impl=impl),
+                     delta=delta, n_shared=8)
+        _write_state(rd, f"sig-measured-{node}-{delta}")
+
+    def test_scoring_persists_and_track_line_updates(self):
+        store = self._store()
+        store.update(self.tmp, self.tree)
+        rd2 = write_record(self.tmp, 2, 1, _body("Adds an intercity gate"),
+                           delta=0.0, n_shared=0)
+        store.register(self.tmp, 2, rd2)
+        self._measure(rd2, 2, 0.05, impl=True)
+        self.assertTrue(store.update(self.tmp, self.tree))
+        state = _state(self.tmp)
+        by_kind = {s["kind"]: s for s in state["scored"]}
+        self.assertEqual(set(by_kind), {"strategy", "implementation"})
+        self.assertEqual(by_kind["strategy"]["y"], 1)
+        self.assertAlmostEqual(by_kind["strategy"]["brier"], (0.65 - 1) ** 2)
+        self.assertEqual(by_kind["implementation"]["y"], 1)
+        self.assertEqual(state["scored_since_step"], 2)
+        text = (self.tmp / BELIEFS_NAME).read_text(encoding="utf-8")
+        self.assertIn("- track: n=1 · Brier 0.12 (0.25 = uninformative) · outcomes: 2 yes",
+                      text)
+        user = self.stub.calls[-1][1]["messages"][1]["content"]
+        self.assertIn("2 scored prediction(s)", user)
+        self.assertIn("belief:add-verifier-helps (strategy", user)
+        self.assertIn("scored prediction(s) so far", store.calibration_line(self.tmp))
+        # The judge ledger leads with verdicts and targets; Δ trails as context.
+        self.assertIn("## Per-strategy outcomes (the judge's verdicts per sub-edit",
+                      user)
+        # The registry fixture lists only node 1 (unjudged) under the
+        # strategy, so its row reads "not judged yet"; the judge-first row
+        # shape is what matters here (targets rendering: test_judge_signal).
+        self.assertIn("- `add-verifier` — 1 node(s) (1) · judge: not judged yet · "
+                      "implementation: no verdict · score (context): paired Δ "
+                      "median +0.0500 — adds a check", user)
+        self.assertNotIn("Deterministic per-strategy ledger", user)
+
+    def test_unsound_node_scores_implementation_only(self):
+        store = self._store()
+        store.update(self.tmp, self.tree)
+        rd2 = write_record(self.tmp, 2, 1, _body(), delta=0.0, n_shared=0)
+        store.register(self.tmp, 2, rd2)
+        self._measure(rd2, 2, 0.05, impl=False)
+        store.update(self.tmp, self.tree)
+        state = _state(self.tmp)
+        self.assertEqual([s["kind"] for s in state["scored"]], ["implementation"])
+        self.assertEqual(state["scored"][0]["y"], 0)
+        user = self.stub.calls[-1][1]["messages"][1]["content"]
+        self.assertIn("implementation unsound — strategy belief not scored", user)
+
+    def test_no_verdict_means_not_scored(self):
+        store = self._store()
+        store.update(self.tmp, self.tree)
+        rd2 = write_record(self.tmp, 2, 1, _body(), delta=0.0, n_shared=0)
+        store.register(self.tmp, 2, rd2)
+        self._measure(rd2, 2, 0.05, impl=None)
+        store.update(self.tmp, self.tree)
+        self.assertEqual(_state(self.tmp).get("scored", []), [])
+        user = self.stub.calls[-1][1]["messages"][1]["content"]
+        self.assertIn("awaiting the analysis verdict", user)
+
+    def test_optimizer_fires_after_optimize_every(self):
+        store = self._store(optimize_every=1, optimize_min_scored=1)
+        store.update(self.tmp, self.tree)
+        rd2 = write_record(self.tmp, 2, 1, _body(), delta=0.0, n_shared=0)
+        store.register(self.tmp, 2, rd2)
+        self._measure(rd2, 2, 0.05, impl=True)
+        store.update(self.tmp, self.tree)
+        names = [n for n, _ in self.stub.calls]
+        self.assertIn("submit_instruction_update", names)
+        self.assertLess(names.index("submit_instruction_update"),
+                        len(names) - 1)  # the step precedes the rewrite
+        self.assertTrue((self.tmp / INSTRUCTION_ARCHIVE_DIR / "v001.md").exists())
+        self.assertEqual(_state(self.tmp)["instruction"]["version"], 1)
+        self.assertEqual((self.tmp / INSTRUCTION_NAME).read_text().strip(),
+                         "Revised guidance: weigh node counts.")
+        # The rewrite that followed used the new guidance.
+        sys_prompt = self.stub.calls[-1][1]["messages"][0]["content"]
+        self.assertIn("Revised guidance: weigh node counts.", sys_prompt)
+
+    def test_proposal_predictions_reach_the_report(self):
+        store = self._store()
+        rd2 = write_record(self.tmp, 2, 1, _body(), delta=0.021, n_shared=14)
+        _write_state(rd2, "sig-b")
+        (rd2 / PREDICTION_NAME).write_text(json.dumps({
+            "belief_id": "add-verifier-helps", "expected_direction": "up",
+            "expected_effect": "improved", "expected_targets": ["opening_hours"]}),
+            encoding="utf-8")
+        self.assertTrue(store.update(self.tmp, self.tree))
+        # first update: the doc did not exist, so the report has no per-belief
+        # rows yet; the join is persisted for the next one.
+        joins = _state(self.tmp)["prediction_joins"]
+        self.assertEqual(len(joins), 1)
+        self.assertEqual((joins[0]["expected_effect"], joins[0]["expected_targets"]),
+                         ("improved", ["opening_hours"]))
+        _write_state(rd2, "sig-c")
+        store.update(self.tmp, self.tree)
+        user = self.stub.calls[-1][1]["messages"][1]["content"]
+        self.assertIn("cited by 1 proposal(s)", user)
 
 
 class TestRenderModes(BeliefBase):
-    def test_belief_mode_replaces_dump(self):
-        out = render_edit_memory(
-            self.tmp, focus_node_id=0, mode="belief",
-            belief_block=GOOD_DOC)
-        self.assertIn("Belief document", out)
-        self.assertIn("How to read the belief document", out)
-        self.assertIn("### belief:add-verifier", out)
-        self.assertIn("What has been tried, by strategy", out)
-        self.assertIn("Edits already tried directly off node 0", out)
-        self.assertNotIn("### Every edit, oldest first", out)
-
-    def test_belief_mode_without_block_still_renders_ledger(self):
-        out = render_edit_memory(self.tmp, mode="belief", belief_block="")
-        self.assertIn("What has been tried, by strategy", out)
-        self.assertNotIn("Belief document", out)
-
     def test_full_mode_unchanged_by_default(self):
         default = render_edit_memory(self.tmp, focus_node_id=0)
         explicit = render_edit_memory(self.tmp, focus_node_id=0, mode="full",
@@ -321,10 +545,14 @@ class TestRenderModes(BeliefBase):
         self.assertEqual(default, explicit)
         self.assertIn("### Every edit, oldest first", default)
 
+    def test_belief_mode_is_not_rendered_here(self):
+        with self.assertRaises(ValueError):
+            render_edit_memory(self.tmp, mode="belief", belief_block=GOOD_DOC)
+
 
 class _AllToolsStub:
     """One stub for every meta-agent tool the full stack calls (tagger,
-    belief update, reflection). Dispatches on the OpenAI-style tool name."""
+    belief update, guidance step). Dispatches on the OpenAI-style tool name."""
 
     def __init__(self):
         self.calls: list[str] = []
@@ -343,7 +571,7 @@ class _AllToolsStub:
                     "routing": "route problems"},
             },
             "submit_belief_update": {"document": GOOD_DOC, "change_note": "n"},
-            "submit_belief_reflection": {"directives": ["keep it simple"]},
+            "submit_instruction_update": {"critique": "c", "instruction": "g"},
         }.get(name)
         if payload is None:
             return _Resp(content="unexpected tool " + name)
@@ -393,7 +621,8 @@ class _ScoredEvaluator:
 
 class TestManagerIntegration(unittest.TestCase):
     """evolve() with the real EditMemory: belief updates fire after expands
-    and eval batches, code records are written, steering is belief-led."""
+    and eval batches, predictions are pre-registered per node, code records
+    are written, steering is the belief-mode block."""
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp(prefix="beliefs_evolve_"))
@@ -408,7 +637,7 @@ class TestManagerIntegration(unittest.TestCase):
 
     def test_full_stack(self):
         from meta_agent.edit_code import CODE_NAME
-        from meta_agent.edit_memory import EditMemory
+        from meta_agent.edit_memory import EditMemory, RECORD_NAME
         from meta_agent.feedback_gatherer import DefaultFeedbackGatherer
         from meta_agent.managers.hgm import HGMManager
 
@@ -433,17 +662,47 @@ class TestManagerIntegration(unittest.TestCase):
                            .read_text(encoding="utf-8"))
         self.assertGreaterEqual(state["n_updates"], 1)
         self.assertGreaterEqual(stub.calls.count("submit_belief_update"), 1)
+        self.assertTrue((self.experiment / INSTRUCTION_NAME).exists())
+
+        # Every recorded round carries a pre-registered prediction.
+        recorded = list(self.experiment.glob(f"round_*/{RECORD_NAME}"))
+        self.assertGreater(len(recorded), 0)
+        for rec in recorded:
+            self.assertTrue((rec.parent / BELIEF_PREDICTION_NAME).exists(),
+                            rec.parent.name)
+        covered = [json.loads((r.parent / BELIEF_PREDICTION_NAME).read_text())
+                   for r in recorded]
+        self.assertTrue(any(c["strategy"] is not None for c in covered))
 
         # Code records exist for recorded (non-seed) rounds.
-        code_files = list(self.experiment.glob(f"round_*/{CODE_NAME}"))
-        self.assertGreater(len(code_files), 0)
+        self.assertGreater(len(list(self.experiment.glob(f"round_*/{CODE_NAME}"))), 0)
 
-        # Steering is belief-led: after the first belief update, expand
-        # contexts carry the belief document and never the record dump.
-        self.assertTrue(any("Belief document" in c for c in editor.contexts))
-        self.assertFalse(any("### Every edit, oldest first" in c
-                             for c in editor.contexts))
+        # Steering is the belief-mode block, never the legacy text.
+        self.assertTrue(all(c.startswith("## Objective") for c in editor.contexts))
+        self.assertTrue(any("### belief:add-verifier-helps" in c
+                            for c in editor.contexts))
+        for c in editor.contexts:
+            self.assertNotIn("aim to beat it", c)
+            self.assertNotIn("### Every edit, oldest first", c)
+            self.assertNotIn("chars elided", c)
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDeltaAblation(BeliefBase):
+    """`label_source: delta` keeps the pre-judge wording verbatim, so the
+    ablation isolates the label source and nothing else."""
+
+    def test_delta_mode_keeps_the_legacy_framing(self):
+        stub = _BeliefStub()
+        store = BeliefStore(stub, label_source="delta")
+        self.assertTrue(store.update(self.tmp, self.tree))
+        sys_prompt = stub.calls[0][1]["messages"][0]["content"]
+        self.assertIn("Δ vs parent ≥", sys_prompt)
+        self.assertNotIn("The judge is the per-node analysis", sys_prompt)
+        user = stub.calls[0][1]["messages"][1]["content"]
+        self.assertIn("The goal is the highest ABSOLUTE score.", user)
+        self.assertIn("## Deterministic per-strategy ledger (ground truth)", user)
+        self.assertNotIn("Per-strategy outcomes (the judge's verdicts", user)

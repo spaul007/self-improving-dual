@@ -19,6 +19,7 @@ from meta_agent.edit_archive import (
 from meta_agent.edit_code import CODE_NAME
 from meta_agent.edit_memory import REGISTRY_NAME, RECORD_NAME, render_record
 from meta_agent.edit_outcome import EditOutcome
+from tests.test_edit_code import CHILD_WF, PARENT_WF, _agent
 
 
 def write_record(experiment_dir: Path, node: int, parent: int, body: str,
@@ -113,17 +114,48 @@ class TestResolveQuery(unittest.TestCase):
         self.assertEqual(len(r.manifest["selected"]), 1)
         self.assertEqual(r.manifest["dropped"][0]["reason"], "over max_nodes")
 
-    def test_budget_truncation_flagged(self):
+    def test_budget_omits_code_whole_never_the_record(self):
         r = resolve_query(self.tmp, {"nodes": [1]}, char_budget=200)
-        self.assertTrue(r.manifest["selected"][0]["truncated"])
-        self.assertLessEqual(r.manifest["selected"][0]["chars"], 260)
+        row = r.manifest["selected"][0]
+        block = r.blocks[0]
+        self.assertIn("Adds a route verifier", block)   # record intact
+        self.assertIn("## Outcome", block)
+        self.assertIn("(implementation omitted: edit_code.md is", block)
+        self.assertEqual(row["code_source"], "none")
+        self.assertNotIn("guard_1", block)
+        self.assertNotIn("chars elided", block)
+        self.assertNotIn("truncated", row)
 
-    def test_code_slice_defs_before_diff(self):
+    def test_fallback_code_slice_when_sources_missing(self):
         r = resolve_query(self.tmp, {"nodes": [1]})
         block = r.blocks[0]
         self.assertIn("guard_1", block)
         self.assertLess(block.find("Final-state definitions"),
                         block.find("Diff vs parent"))
+        self.assertEqual(r.manifest["selected"][0]["code_source"], "edit_code.md")
+
+    def test_implementation_view_from_sources(self):
+        _agent(self.tmp / "round_000", PARENT_WF)
+        _agent(self.tmp / "round_001", CHILD_WF)
+        r = resolve_query(self.tmp, {"nodes": [1]})
+        block = r.blocks[0]
+        row = r.manifest["selected"][0]
+        self.assertEqual(row["code_source"], "sources")
+        self.assertIn("## Implementation (added lines vs parent", block)
+        self.assertIn("### workflow.py :: run_task (function, changed)  +1/-1", block)
+        self.assertIn("+    return validate(None)", block)
+        self.assertIn("## New definitions (full source)", block)
+        self.assertIn("def validate(out):", block)
+        self.assertIn("class RouteGuard:", block)
+        self.assertNotIn("Diff vs parent", block)
+        self.assertNotIn("guard_1", block)          # edit_code.md not used
+        self.assertGreater(row["hunks_shown"], 0)
+        self.assertEqual(row["defs_shown"], 2)
+        # A tiny budget drops whole units and says so; nothing is elided.
+        r2 = resolve_query(self.tmp, {"nodes": [1]}, char_budget=len(block) - 300)
+        self.assertIn("omitted (budget):", r2.blocks[0])
+        self.assertNotIn("chars elided", r2.blocks[0])
+        self.assertIn("Adds a route verifier", r2.blocks[0])
 
     def test_include_code_false(self):
         r = resolve_query(self.tmp, {"nodes": [1], "include_code": False})
@@ -150,8 +182,10 @@ class TestResolveQuery(unittest.TestCase):
         out.mkdir()
         write_manifest(out, r)
         data = json.loads((out / RETRIEVAL_MANIFEST).read_text(encoding="utf-8"))
-        self.assertEqual(data["version"], 1)
+        self.assertEqual(data["version"], 2)
         self.assertEqual(data["selected"][0]["node"], 1)
+        self.assertEqual(data["max_nodes"], 4)
+        self.assertEqual(data["per_node"], data["char_budget"])
 
 
 if __name__ == "__main__":

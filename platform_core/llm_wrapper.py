@@ -50,6 +50,15 @@ DEFAULT_MODEL_FALLBACK = "gpt-5.4-mini"
 # None = let the API choose. The reference agent codebase omits
 # max_output_tokens entirely from its responses.create call; mirror that
 # so reasoning-heavy cases don't hit a self-imposed cap.
+#
+# Uncapped means "generate until the context is full", which is how a
+# degenerate/looping generation turns into a case-killing stall: two calls
+# in the 2026-09-07 travel run emitted 80k+ tokens over ~830s, and requests
+# that never returned at all cost their case its entire score. Callers that
+# want a safety ceiling set ``LLM_MAX_OUTPUT_TOKENS`` for the processes that
+# need one (the evaluator does this per case subprocess) rather than
+# changing this default, which would also cap reasoning-heavy meta-agent
+# calls in the parent process.
 DEFAULT_MAX_OUTPUT_TOKENS: Optional[int] = None
 # Env fallback for the cap when the caller passes none. Set CHILD-ONLY by
 # SubprocessEvaluator._child_env from the YAML's ``task_agent.max_output_tokens``
@@ -369,6 +378,11 @@ def call_llm(
     that pass ``temperature=`` are byte-identical whether or not a global
     reasoning effort is configured. ``LLM_TEMPERATURE`` is set per evaluator
     child process, never globally (see module docstring).
+
+    ``max_output_tokens`` resolution: explicit argument > the
+    ``LLM_MAX_OUTPUT_TOKENS`` env var > uncapped. Like ``LLM_TEMPERATURE``
+    it is exported per evaluator child process, so it bounds task-agent
+    generation without capping meta-agent calls in the parent process.
     """
     try:
         from openai import OpenAI
@@ -380,6 +394,10 @@ def call_llm(
     resolved_model = model or _env_default_model()
     resolved_effort = reasoning_effort or _env_default_reasoning_effort()
     resolved_base_url = base_url or _env_default_base_url()
+    resolved_max_output = (
+        max_output_tokens if max_output_tokens is not None
+        else _env_default_max_output_tokens()
+    )
 
     # The temperature actually sent, or None when omitted (see docstring
     # for the resolution rules). Computed up front so the llm_call trace
@@ -465,14 +483,9 @@ def call_llm(
         "model": resolved_model,
         "input": messages,
     }
-    # Resolution: explicit positive arg > LLM_MAX_OUTPUT_TOKENS env > None.
-    # Omit the key entirely when the result is None — callers pass None to
-    # run uncapped (model's full output budget), matching agents whose
-    # reference does not send max_output_tokens at all. The env fallback
-    # lets a config bound runaway generation without editing the agent.
-    resolved_max_output = (
-        max_output_tokens if max_output_tokens else _env_default_max_output_tokens()
-    )
+    # Omit the key entirely when it resolves to None — callers run uncapped
+    # (model's full output budget), matching agents whose reference does not
+    # send max_output_tokens at all.
     if resolved_max_output is not None:
         request["max_output_tokens"] = resolved_max_output
     if norm_tools:

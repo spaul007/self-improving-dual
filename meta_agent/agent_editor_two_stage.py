@@ -1,10 +1,12 @@
 """Two-stage agent editor: propose -> retrieve -> edit.
 
-Stage 1 (one LLM call) reads the steering context (belief document, ledger,
-focus block), the feedback digest, and the parent's mutable sources, and
-produces: 1-3 tentative edits, a falsifiable PREDICTION naming the belief that
-justifies the edit, and an explicit MEMORY QUERY — which past nodes /
-categories / keywords it wants to inspect. The query is resolved
+Stage 1 (one LLM call) reads the steering context (in belief mode: the
+objective, the judge's line for the parent, the scope rule, the lineage, one
+judge-first line per sibling, and the belief document), the feedback digest,
+and the parent's mutable sources, and produces: 1-3 tentative edits, a
+falsifiable PREDICTION naming the belief that justifies the edit plus the
+judge verdict and targeted checks it expects, and an explicit MEMORY QUERY —
+which past nodes / categories / keywords it wants to inspect. The query is resolved
 deterministically (``edit_archive``) into record + code slices, and stage 2 is
 the ordinary single-call self-improvement with the advisory proposal and the
 retrieved memory appended to its context.
@@ -25,8 +27,9 @@ from typing import Any, Callable, Iterable, Optional
 
 from . import edit_archive, verbose_log
 from .agent_editor import AgentEditor, Validator
-from .edit_beliefs import PREDICTION_NAME, write_prediction
+from .edit_beliefs import PREDICTION_NAME
 from .models import AgentFeedback, EditResult
+from .perf_text import judge_summary, perf_summary, regressions_summary
 from .registry import register
 
 PROPOSAL_TOOL: dict[str, Any] = {
@@ -50,11 +53,16 @@ PROPOSAL_TOOL: dict[str, Any] = {
             },
             "prediction": {"type": "object", "properties": {
                 "belief_id": {"type": "string"},
+                "expected_effect": {"type": "string",
+                                    "enum": ["improved", "no_effect", "regressed"]},
+                "expected_targets": {"type": "array",
+                                     "items": {"type": "string"}},
+                # Legacy (pre-judge) fields: still accepted and persisted.
                 "expected_direction": {"type": "string",
                                        "enum": ["up", "down", "neutral"]},
                 "expected_delta": {"type": "number"},
                 "why": {"type": "string"}},
-                "required": ["belief_id", "expected_direction"]},
+                "required": ["belief_id", "expected_effect"]},
             "memory_query": {"type": "object", "properties": {
                 "nodes": {"type": "array", "items": {"type": "integer"}},
                 "strategies": {"type": "array", "items": {"type": "string"}},
@@ -68,20 +76,20 @@ PROPOSAL_TOOL: dict[str, Any] = {
 
 PROPOSE_SYSTEM = (
     "You are the planning pass of a self-improving agent's editor. A second "
-    "call with the full code will write the actual edits and MAY OVERRIDE "
-    "you — your proposal is advisory. Your main leverage is the memory query: "
-    "the run keeps a full record (prose + outcome + analysis + code) of every "
-    "past edit, and whatever you request is retrieved verbatim for the "
-    "editing call. Request exactly the past nodes, strategies, areas, or "
-    "keywords whose records and implementations would make the next edit "
-    "better — e.g. the nodes behind a belief you want to build on or repair.\n"
-    "Propose 1-3 tentative edits (goal + mechanism sketch; tag each with the "
-    "strategy/area ids from the steering block where they fit).\n"
-    "Record a prediction: name the belief (its `belief:<slug>` id from the "
-    "belief document, when one exists) that justifies your main edit, and the "
-    "expected score-delta direction. The prediction is joined against the "
-    "measured outcome later and fed back to the belief maintainer — an honest "
-    "prediction, including 'neutral', is worth more than an optimistic one.\n"
+    "call with the same context and the full code writes the actual edit and "
+    "may override you. Do three things. (1) Memory query: name the past nodes, "
+    "strategy/area ids, or keywords whose records and implementation the "
+    "editing call should see — they are retrieved verbatim (each node's "
+    "record plus the lines its edit added, per definition). (2) Sketch 1-3 "
+    "candidate edits (goal + mechanism), tagged with the strategy/area ids "
+    "used in the belief document where they fit. (3) Prediction: the "
+    "`belief:<slug>` from the belief document that your main edit relies on "
+    "(omit when none applies), the checks you expect the judge to see move "
+    "(`expected_targets`, names as in the failure analysis), and the verdict "
+    "you expect the judge to give the main mechanism (`expected_effect`: "
+    "improved / no_effect / regressed). The score Δ is context, never the "
+    "target. Prefer evidence not already seen: the registry block lists the "
+    "measured nodes and which nodes were retrieved for the parent's own edit. "
     "Call `submit_edit_proposal`."
 )
 
@@ -129,12 +137,13 @@ class TwoStageEditor(AgentEditor):
         retrieval_char_budget: int = edit_archive.DEFAULT_CHAR_BUDGET,
         max_retrieved_nodes: int = edit_archive.DEFAULT_MAX_NODES,
         propose_enabled: bool = True,
+        objective: str = "score",
     ) -> None:
         super().__init__(
             llm_caller, validators, max_attempts=max_attempts, model=model,
             reasoning_effort=reasoning_effort, base_url=base_url,
             tools_source=tools_source, db_schema=db_schema,
-            scorer_source=scorer_source,
+            scorer_source=scorer_source, objective=objective,
         )
         self.propose_model = propose_model
         self.propose_reasoning_effort = propose_reasoning_effort
@@ -182,12 +191,12 @@ class TwoStageEditor(AgentEditor):
             print(f"[editor:two_stage] retrieval failed: {exc!r}", flush=True)
             retrieved = ""
 
-        context2 += ("\n## Advisory proposal (from your planning pass — you "
-                     "may override it with better judgment)\n"
+        context2 += ("\n\n## Planning-pass proposal (advisory — override it "
+                     "if the code says otherwise)\n"
                      + self._render_proposal(proposal))
         if retrieved:
-            context2 += ("\n\n## Retrieved memory (the records and code the "
-                         "planning pass asked for)\n" + retrieved)
+            context2 += ("\n\n## Retrieved records and implementations "
+                         "(what the planning pass asked for)\n" + retrieved)
         return super().apply(feedback, base_dir, out_dir, context=context2)
 
     # ------------------------------------------------------------------ #
@@ -197,6 +206,15 @@ class TwoStageEditor(AgentEditor):
         parts: list[str] = []
         if context:
             parts.append(f"## Steering context\n{context}\n")
+        # The registry ids the memory query can name (data for retrieval,
+        # not steering): without them the planner invents ids that match
+        # nothing and category retrieval silently returns empty.
+        registry_block = self._render_registry_ids(Path(base_dir).parent,
+                                                   base_dir=Path(base_dir))
+        if registry_block:
+            parts.append("## Registry ids for the memory query (strategy / "
+                         "area ids with the nodes that used them)\n"
+                         + registry_block + "\n")
         if feedback is not None:
             parts.append(self._format_feedback(feedback))
         sources = self._read_mutable_sources(base_dir / "task_agent")
@@ -244,6 +262,66 @@ class TwoStageEditor(AgentEditor):
 
     # ------------------------------------------------------------------ #
     @staticmethod
+    def _render_registry_ids(experiment_dir: Path, *, base_dir: Optional[Path] = None,
+                             cap: int = 40) -> str:
+        """Registry ids + node lists, the measured nodes with their Δ and
+        verdict (so the query can target evidence, not just ids), and the
+        nodes already retrieved for the parent's own edit (so successive
+        expands do not re-read the same four records)."""
+        from .edit_memory_render import _load_records
+        registry = edit_archive._load_registry(experiment_dir)
+        lines: list[str] = []
+        for axis, label in (("strategies", "strategy"), ("areas", "area")):
+            rows = []
+            for cid, entry in (registry.get(axis) or {}).items():
+                nodes = sorted({r.get("node") for r in (entry.get("edits") or [])
+                                if isinstance(r.get("node"), int)})
+                if nodes:
+                    rows.append((-len(nodes), cid, nodes))
+            rows.sort()
+            for _, cid, nodes in rows[:cap]:
+                lines.append(f"- {label} `{cid}` — nodes "
+                             + ", ".join(str(n) for n in nodes))
+        try:
+            records = _load_records(experiment_dir)
+        except Exception:  # noqa: BLE001
+            records = {}
+        measured = [(n, r) for n, r in sorted(records.items())
+                    if r.get("delta") is not None or r.get("delta_all") is not None
+                    or r.get("effect")]
+        if measured:
+            lines.append("measured nodes (judge verdict for the primary mechanism "
+                         "with the checks it targeted · regressions · "
+                         "implementation verdict · score as context: paired Δ over "
+                         "shared cases, else unpaired Δ ± SE):")
+            for n, r in measured[-cap:]:
+                v = ("implementation sound" if r.get("impl_sound") else
+                     "implementation unsound" if r.get("impl_sound") is False
+                     else "implementation not judged")
+                what = next((t.get("what") for t in (r.get("tags") or [])
+                             if t.get("what")), "")
+                bits = [f"judge {judge_summary(r) or 'not judged yet'}"]
+                reg = regressions_summary(r)
+                if reg:
+                    bits.append(f"regressions: {reg}")
+                bits += [v, f"score {perf_summary(r)}"]
+                lines.append(f"- node {n}: " + " · ".join(bits)
+                             + (f' · "{what[:90]}"' if what else ""))
+        if base_dir is not None:
+            try:
+                m = json.loads((Path(base_dir) / edit_archive.RETRIEVAL_MANIFEST)
+                               .read_text(encoding="utf-8"))
+                prev = [x.get("node") for x in m.get("selected", [])
+                        if isinstance(x.get("node"), int)]
+            except (OSError, json.JSONDecodeError, AttributeError):
+                prev = []
+            if prev:
+                lines.append("already retrieved for the parent's own edit "
+                             "(prefer others unless needed again): "
+                             + ", ".join(str(n) for n in prev))
+        return "\n".join(lines)
+
+    @staticmethod
     def _render_proposal(proposal: dict) -> str:
         lines: list[str] = []
         for i, e in enumerate(proposal.get("edits") or [], 1):
@@ -256,20 +334,48 @@ class TwoStageEditor(AgentEditor):
                 lines.append(f"   mechanism: {str(e['mechanism'])[:500]}")
         pred = proposal.get("prediction") or {}
         if isinstance(pred, dict) and pred.get("belief_id"):
-            lines.append(
-                f"prediction: belief:{pred['belief_id']} -> expected "
-                f"{pred.get('expected_direction', '?')}"
-                + (f" (Δ ~{pred['expected_delta']})"
-                   if isinstance(pred.get("expected_delta"), (int, float))
-                   else ""))
+            eff = str(pred.get("expected_effect") or "").strip()
+            targets = [str(t).strip() for t in (pred.get("expected_targets") or [])
+                       if str(t).strip()][:8]
+            if eff:
+                # Judge-first: what verdict, on which checks. The score Δ is
+                # never rendered into the editing call's context.
+                line = f"prediction: belief:{pred['belief_id']} -> judge expected {eff}"
+                if targets:
+                    line += " on " + ", ".join(targets)
+            else:
+                line = (f"prediction: belief:{pred['belief_id']} -> expected "
+                        f"{pred.get('expected_direction', '?')}")
+            lines.append(line)
         return "\n".join(lines) or "(empty proposal)"
 
     def _write_prediction(self, out_dir: Path, proposal: dict) -> None:
-        write_prediction(
-            out_dir, proposal.get("prediction"),
-            proposal_goals=[
-                str(e.get("goal", ""))
+        pred = proposal.get("prediction") or {}
+        if not isinstance(pred, dict):
+            pred = {}
+        # Models sometimes echo the "belief:" anchor prefix into the id;
+        # store the bare slug so joins/credit key consistently.
+        belief_id = str(pred.get("belief_id") or "")
+        if belief_id.lower().startswith("belief:"):
+            belief_id = belief_id[len("belief:"):]
+        payload = {
+            "version": 2,
+            "round_dir": out_dir.name,
+            "belief_id": belief_id,
+            # v2: the judge verdict and targeted checks the planner expects.
+            "expected_effect": str(pred.get("expected_effect") or ""),
+            "expected_targets": [str(t)[:80] for t in
+                                 (pred.get("expected_targets") or [])
+                                 if str(t).strip()][:8],
+            # Legacy (pre-judge) prediction fields, kept for old readers.
+            "expected_direction": str(pred.get("expected_direction") or ""),
+            "expected_delta": pred.get("expected_delta"),
+            "why": str(pred.get("why") or "")[:500],
+            "proposal_goals": [
+                str(e.get("goal", ""))[:300]
                 for e in (proposal.get("edits") or []) if isinstance(e, dict)
             ],
-            query=proposal.get("memory_query") or {},
-        )
+            "query": proposal.get("memory_query") or {},
+        }
+        _atomic_write(out_dir / PREDICTION_NAME,
+                      json.dumps(payload, indent=2) + "\n")

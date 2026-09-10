@@ -71,21 +71,31 @@ class TaskAgentSpec(LLMSpec):
     recommend ~0.6 and warn greedy can cause repetition loops on long
     reasoning chains), or e.g. ``0.6`` to match those recommendations.
 
+    ``timeout_s`` and ``max_output_tokens`` are task-agent-only in exactly
+    the same way (exported as ``LLM_TIMEOUT_S`` / ``LLM_MAX_OUTPUT_TOKENS``
+    on each case subprocess's env, never globally), and both exist to stop
+    one stalled or runaway generation from costing a case its whole score:
+
+    * ``timeout_s`` must sit well BELOW the evaluator's
+      ``wall_time_s_per_case``. The wrapper's own default is 3600s — longer
+      than a typical case limit — so a stalled request is never retried and
+      the case dies at its wall clock with score 0. At ~600s against an
+      1800s case limit a stall costs one retry, not the case.
+    * ``max_output_tokens`` bounds a degenerate/looping generation. Leave
+      generous: it should never truncate legitimate output, and a faster
+      model with a larger context can use more of it.
+
     Deliberately declared here and not on ``LLMSpec`` so editor /
     summarizer / edit-memory specs cannot grow a config-driven
-    temperature by accident.
+    temperature (or timeout, or output cap) by accident.
 
-    ``max_output_tokens`` is the per-call output cap for task-agent
-    inference, plumbed the same child-env-only way (``LLM_MAX_OUTPUT_TOKENS``)
-    and read by ``call_llm`` whenever the agent code does not pass its own
-    cap. Model-dependent: set it alongside ``model`` in the YAML. ``None``
-    (default) omits the parameter and lets the provider run uncapped,
-    matching the reference agents. Added 2026-09-12 after
+    History: ``max_output_tokens`` was added 2026-09-12 after
     deepseek-v4-pro-0813 with reasoning off fell into repetition loops
     while writing the travel plan and emitted the provider ceiling of
     131,072 tokens (~800 s, ~$0.26 per call) on 3/120 cases.
     """
     temperature: Optional[float] = 0.2
+    timeout_s: Optional[float] = None
     max_output_tokens: Optional[int] = None
 
 
@@ -288,8 +298,11 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
             # Task-agent-only sampling temperature; the evaluator exports it
             # to each case subprocess as LLM_TEMPERATURE (child env only).
             "task_agent_temperature": cfg.task_agent.temperature,
-            # Task-agent-only output cap, exported as LLM_MAX_OUTPUT_TOKENS
-            # (child env only) the same way.
+            # Same isolation for the per-request timeout and the output-token
+            # ceiling: LLM_TIMEOUT_S / LLM_MAX_OUTPUT_TOKENS on the child env
+            # only, so meta-agent calls in this process keep their own
+            # (much longer) budgets.
+            "task_agent_timeout_s": cfg.task_agent.timeout_s,
             "task_agent_max_output_tokens": cfg.task_agent.max_output_tokens,
         },
     )
@@ -336,6 +349,11 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
     }
     if cfg.eval_visibility == "whitebox":
         editor_injections["scorer_source"] = _read_scorer_source(benchmark_dir)
+    # Which objective sentence the editor's system prompt carries: "judge"
+    # under belief-mode steering, else the legacy "score" text (an explicit
+    # editor.config.objective in the YAML wins — _build_with_injection uses
+    # setdefault).
+    editor_injections["objective"] = editor_objective(cfg)
     editor_obj = _build_with_injection(cfg.editor, "editor", editor_injections)
 
     summarizer_obj: Any = None
@@ -349,6 +367,9 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         edit_memory_obj = _build_with_injection(
             cfg.edit_memory, "edit_memory", {"llm_caller": call_llm}
         )
+
+    for line in meta_base_url_warnings(cfg):
+        print(line, flush=True)
 
     manager_obj = registry.get("manager", cfg.manager.type)(**cfg.manager.config)
 
@@ -388,6 +409,42 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         train_case_ids=train_ids,
         eval_case_ids=eval_ids,
     )
+
+
+def editor_objective(cfg: FrameworkConfig) -> str:
+    """``"judge"`` when edit memory steers the editor in belief mode (the
+    per-node analysis's verdicts are what the editor is asked to fix), else
+    ``"score"`` — the legacy sentence, so the `full` steering mode and the
+    no-edit-memory control keep byte-identical prompts."""
+    spec = cfg.edit_memory
+    conf = (spec.config or {}) if spec is not None else {}
+    return "judge" if conf.get("steering_mode") == "belief" else "score"
+
+
+def meta_base_url_warnings(cfg: FrameworkConfig) -> list[str]:
+    """One warning per meta component (editor / summarizer / edit_memory)
+    that names its own ``model`` but no ``base_url`` while the task agent has
+    one. ``runtime_env.apply_task_agent_env`` exports the task agent's
+    ``LLM_BASE_URL`` for the evaluator's children, and ``call_llm`` falls back
+    to it when ``base_url`` is unset — so such a component silently sends its
+    calls to the task agent's endpoint (a local vLLM returned 404 "model
+    gpt-5.4 does not exist" on 2026-09-07). A component naming no model
+    inherits ``LLM_MODEL`` too, which is consistent, so it is not flagged."""
+    task_url = getattr(cfg.task_agent, "base_url", None)
+    if not task_url:
+        return []
+    out: list[str] = []
+    for name, spec in (("editor", cfg.editor), ("summarizer", cfg.summarizer),
+                       ("edit_memory", cfg.edit_memory)):
+        if spec is None:
+            continue
+        conf = spec.config or {}
+        if conf.get("model") and not conf.get("base_url"):
+            out.append(f"[config] warning: {name} names model {conf['model']!r} "
+                       f"but no base_url — its calls will inherit the task "
+                       f"agent's LLM_BASE_URL ({task_url}); set base_url "
+                       "explicitly if that endpoint does not serve this model")
+    return out
 
 
 def _build_with_injection(

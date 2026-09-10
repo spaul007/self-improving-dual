@@ -330,7 +330,16 @@ class HGMManager:
             except Exception as exc:  # noqa: BLE001
                 print(f"[edit_memory] unexpected error on node {node_id}: {exc!r}",
                       flush=True)
-            # Belief layer: register the new attempt (as tried, unmeasured)
+            # Pre-register the belief predictions that cover this node NOW —
+            # before any belief update can rewrite the document — so the p
+            # that is later scored is the p the editor was shown.
+            try:
+                getattr(self._edit_memory, "register_prediction",
+                        lambda *_a: None)(node_id, out_dir)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[edit_beliefs] prediction registration failed for node "
+                      f"{node_id}: {exc!r}", flush=True)
+            # Belief layer: fold the new attempt in (as tried, unmeasured)
             # before any sibling expand reads the belief document. Sig-gated
             # inside — a no-change call costs no LLM tokens.
             try:
@@ -415,7 +424,19 @@ class HGMManager:
         """Build the manager's steering context for an EXPAND: the parent's
         edit lineage, performance + clade metaproductivity, the best node
         so far, and the parent's feedback digest. Pure string assembly —
-        the editor reads the parent's actual code itself."""
+        the editor reads the parent's actual code itself.
+
+        In belief mode the whole context is authored in one place
+        (``meta_agent/steering.py``) and nothing below is appended; every
+        other mode keeps the legacy text byte-for-byte."""
+        em = self._edit_memory
+        if (em is not None and getattr(em, "steering", False)
+                and getattr(em, "steering_mode", "full") == "belief"):
+            try:
+                return self._render_belief_context(parent)
+            except Exception as exc:  # noqa: BLE001
+                print(f"[steering] belief context failed: {exc!r}; using the "
+                      "legacy context", flush=True)
         parts: list[str] = []
 
         # Edit lineage — the chain of optimization goals already applied
@@ -498,8 +519,40 @@ class HGMManager:
         )
         return "\n".join(parts)
 
+    def _render_belief_context(self, parent: HGMNode) -> str:
+        """Belief-mode steering: the objective (fix what the judge found; the
+        score is one labelled context line), the judge's line for the parent,
+        scope, lineage, one judge-first line per sibling already tried off
+        this parent, and the belief document verbatim. See
+        ``meta_agent/steering.py`` for the text."""
+        from ..edit_outcome import run_context
+        from ..steering import render_belief_steering
+        em = self._edit_memory
+        siblings: list[tuple[int, str, bool]] = []
+        for c in sorted(parent.children):
+            fb = self._feedback.get(c)
+            goal = fb.strategy.optimization_goal if fb is not None else ""
+            node = self._tree.nodes.get(c)
+            siblings.append((c, goal.split("\n")[0] if goal else "",
+                             bool(getattr(node, "edit_failed", False))))
+        parent_score = ((parent.mean_utility, parent.n_evals)
+                        if parent.n_evals > 0 else None)
+        return render_belief_steering(
+            experiment_dir=self._experiment_dir,
+            parent_id=parent.node_id,
+            lineage=self._ancestor_goals(parent.node_id),
+            parent_score=parent_score,
+            run_context=run_context(self._tree) or {},
+            siblings=siblings,
+            belief_doc=getattr(em, "render_belief_block", lambda: "")(),
+            calibration_line=getattr(em, "belief_calibration_line", lambda: "")(),
+            threshold=getattr(em, "verdict_threshold", 0.02),
+            min_shared=getattr(em, "min_shared", 8),
+        )
+
     def _render_edit_memory(self, parent: HGMNode) -> str:
-        """Accumulated edit memory across the whole tree, as one block.
+        """Accumulated edit memory across the whole tree, as one block (the
+        legacy ``full`` layout — belief mode never reaches this).
 
         Unlike the lineage behavior memory this is run-global — seeing what a
         sibling branch already tried is the point. Returns ``""`` when the
@@ -511,11 +564,6 @@ class HGMManager:
         try:
             from ..edit_memory_render import render_edit_memory
             from ..edit_outcome import run_context
-            mode = getattr(em, "steering_mode", "full")
-            belief_block = ""
-            if mode == "belief":
-                belief_block = getattr(em, "render_belief_block",
-                                       lambda: "")()
             return render_edit_memory(
                 self._experiment_dir,
                 token_budget=getattr(em, "steering_token_budget", 48000),
@@ -523,8 +571,6 @@ class HGMManager:
                 min_shared=getattr(em, "min_shared", 8),
                 focus_node_id=parent.node_id,
                 run_context=run_context(self._tree) or None,
-                mode=mode,
-                belief_block=belief_block,
             )
         except Exception as exc:  # noqa: BLE001
             print(f"[edit_memory] steering render failed: {exc!r}", flush=True)

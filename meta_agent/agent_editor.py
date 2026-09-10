@@ -188,6 +188,24 @@ SELF_IMPROVEMENT_TOOL: dict[str, Any] = {
 }
 
 
+# The one sentence of the editor's system prompt that says what to target.
+# "score" is the legacy text — byte-identical prompts for the `full` steering
+# mode and the no-edit-memory control. "judge" is selected by
+# ``config.editor_objective`` when edit memory steers in belief mode: the
+# per-node analysis (the judge) grades every edit on its own traces, and its
+# findings, not the benchmark number, are what the editor is asked to fix.
+OBJECTIVE_SCORE = "Target edits at the failures that most affect the score."
+OBJECTIVE_JUDGE = (
+    "Target the failures the judge named. The steering context carries the "
+    "per-node analysis's verdicts for this parent and its siblings — targeted "
+    "checks that did not move, mechanisms that never fired or disagreed with "
+    "the scorer, regressions — and the feedback below lists the failing "
+    "checks; your edit will be graded by that same judge on its own traces. "
+    "The benchmark score is context, not the objective."
+)
+OBJECTIVES = {"score": OBJECTIVE_SCORE, "judge": OBJECTIVE_JUDGE}
+
+
 @register("editor", "default")
 class AgentEditor:
     MUTABLE_FILES = MUTABLE_FILES
@@ -209,6 +227,8 @@ class AgentEditor:
         tools_source: Optional[str] = None,
         db_schema: Optional[str] = None,
         scorer_source: Optional[str] = None,
+        # Which OBJECTIVES sentence the system prompt carries (see above).
+        objective: str = "score",
     ) -> None:
         self.llm = llm_caller
         self.validators = list(validators)
@@ -219,6 +239,10 @@ class AgentEditor:
         self.tools_source = tools_source
         self.db_schema = db_schema
         self.scorer_source = scorer_source
+        if objective not in OBJECTIVES:
+            raise ValueError(f"editor objective must be one of "
+                             f"{sorted(OBJECTIVES)}, got {objective!r}")
+        self.objective = objective
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -319,7 +343,7 @@ class AgentEditor:
             "workflow.py, and (when provided below) the tool implementations, "
             "database schema, and evaluation scoring code — together they show "
             "what each tool does, what the data looks like, and how output is "
-            "graded. Target edits at the failures that most affect the score.\n"
+            "graded. " + OBJECTIVES[self.objective] + "\n"
             + EDITOR_MUTABLE_SURFACE
             + EDITOR_HARD_RULES
             + editor_import_forms()

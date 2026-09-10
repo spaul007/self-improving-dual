@@ -52,6 +52,24 @@ def classify(delta: float, *, threshold: float = NEUTRAL_BAND) -> str:
     return "neutral"
 
 
+def se_of(values: Sequence[float]) -> Optional[float]:
+    """Standard error of the mean of ``values``; ``None`` below 2 values."""
+    n = len(values)
+    if n < 2:
+        return None
+    m = sum(values) / n
+    var = sum((v - m) ** 2 for v in values) / (n - 1)
+    return round((var / n) ** 0.5, 4)
+
+
+def se_unpaired(a: Sequence[float], b: Sequence[float]) -> Optional[float]:
+    """Standard error of ``mean(a) - mean(b)`` for two independent samples."""
+    sa, sb = se_of(a), se_of(b)
+    if sa is None or sb is None:
+        return None
+    return round((sa ** 2 + sb ** 2) ** 0.5, 4)
+
+
 def extract_checks(case: Any, mode: Optional[str],
                    path: Optional[str]) -> Optional[set[str]]:
     """Failing criteria for one case, or ``None`` when the case produced no
@@ -269,6 +287,13 @@ class EditOutcome:
     parent_mean_all: float = 0.0
     child_mean_all: float = 0.0
     delta_all: float = 0.0
+    # Standard errors (None below 2 cases on a side). se_shared is the paired
+    # SE of the per-case differences over the shared set; se_all the unpaired
+    # SE of delta_all (each side's mean over its OWN cases). Batches of ~16
+    # cases put both near ±0.1 on a [0,1] score — five times the ±0.02 band —
+    # so readers must treat |Δ| < 2·SE as noise, paired or not.
+    se_shared: Optional[float] = None
+    se_all: Optional[float] = None
     threshold: float = NEUTRAL_BAND
     min_shared: int = MIN_SHARED_FOR_VERDICT
 
@@ -285,6 +310,8 @@ class EditOutcome:
             "parent_mean_all": self.parent_mean_all,
             "child_mean_all": self.child_mean_all,
             "delta_all": self.delta_all,
+            "se_shared": self.se_shared,
+            "se_all": self.se_all,
             "threshold": self.threshold,
             "min_shared": self.min_shared,
         }
@@ -322,10 +349,13 @@ def compute_outcome(
     p, c = _by_id(parent_cases), _by_id(child_cases)
     out = EditOutcome(threshold=threshold, min_shared=min_shared)
     out.parent_n_all, out.child_n_all = len(p), len(c)
-    pm = round(mean([_score(v) for v in p.values()]), 4) if p else 0.0
-    cm = round(mean([_score(v) for v in c.values()]), 4) if c else 0.0
+    p_scores = [_score(v) for v in p.values()]
+    c_scores = [_score(v) for v in c.values()]
+    pm = round(mean(p_scores), 4) if p else 0.0
+    cm = round(mean(c_scores), 4) if c else 0.0
     out.parent_mean_all, out.child_mean_all = pm, cm
     out.delta_all = round(cm - pm, 4)
+    out.se_all = se_unpaired(c_scores, p_scores)
 
     shared = sorted(set(p) & set(c))
     if not shared:
@@ -335,6 +365,7 @@ def compute_outcome(
     out.parent_mean_shared = round(mean([_score(p[i]) for i in shared]), 4)
     out.child_mean_shared = round(mean([_score(c[i]) for i in shared]), 4)
     out.delta_shared = round(out.child_mean_shared - out.parent_mean_shared, 4)
+    out.se_shared = se_of([_score(c[i]) - _score(p[i]) for i in shared])
     # Too thin an overlap to call: the standard error dwarfs the band.
     out.verdict = ("inconclusive" if out.n_shared < min_shared
                    else classify(out.delta_shared, threshold=threshold))

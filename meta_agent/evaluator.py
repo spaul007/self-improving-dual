@@ -91,6 +91,7 @@ class SubprocessEvaluator:
         max_cases: int | None = None,
         scorer: Any = None,
         task_agent_temperature: float | None = None,
+        task_agent_timeout_s: float | None = None,
         task_agent_max_output_tokens: int | None = None,
     ) -> None:
         self.wall_time_s = float(wall_time_s_per_case)
@@ -113,9 +114,25 @@ class SubprocessEvaluator:
             if task_agent_temperature is not None
             else None
         )
-        # Task-agent-only per-call output cap, injected from
-        # cfg.task_agent.max_output_tokens. None (default) = don't set, so
-        # the wrapper omits max_output_tokens and the provider runs uncapped.
+        # Task-agent-only per-request timeout and output-token ceiling,
+        # injected from cfg.task_agent by config.build_components. Both
+        # default to None (= don't set), so a directly-constructed
+        # evaluator behaves exactly as before. A timeout at or above
+        # wall_time_s_per_case cannot fire before the case is killed, which
+        # is the failure this setting exists to prevent — warn rather than
+        # silently keep a useless value.
+        self.task_agent_timeout_s = (
+            float(task_agent_timeout_s) if task_agent_timeout_s is not None else None
+        )
+        if (self.task_agent_timeout_s is not None
+                and self.task_agent_timeout_s >= self.wall_time_s):
+            print(
+                f"[evaluator] warning: task_agent.timeout_s "
+                f"({self.task_agent_timeout_s:.0f}s) is not below "
+                f"wall_time_s_per_case ({self.wall_time_s:.0f}s); a stalled "
+                "request will kill the case before it can be retried",
+                flush=True,
+            )
         self.task_agent_max_output_tokens = (
             int(task_agent_max_output_tokens)
             if task_agent_max_output_tokens is not None
@@ -230,7 +247,11 @@ class SubprocessEvaluator:
         # (e.g. via the YAML env: block) has chosen a global override.
         if self.task_agent_temperature is not None:
             env["LLM_TEMPERATURE"] = str(self.task_agent_temperature)
-        # Same child-env-only treatment for the task-agent output cap.
+        # Same child-env-only rule for the per-request timeout and the
+        # output ceiling (see __init__): they bound the task agent's own
+        # generation without touching the meta agent's budgets.
+        if self.task_agent_timeout_s is not None:
+            env["LLM_TIMEOUT_S"] = str(self.task_agent_timeout_s)
         if self.task_agent_max_output_tokens is not None:
             env["LLM_MAX_OUTPUT_TOKENS"] = str(self.task_agent_max_output_tokens)
         return env
