@@ -136,4 +136,5 @@ validators:
   - type: "immutable_files"
   - type: "load_test"
   - type: "undefined_names"
+  - type: "llm_backbone_config"
   - type: "smoke_test"

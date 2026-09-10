@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional, Protocol
 
@@ -28,6 +27,7 @@ from .failure_report import render_failure_report
 from .feedback_gatherer import render_metrics
 from .models import AgentFeedback, EditResult, EvolutionStrategy
 from .registry import register
+from .workspace import reset_workspace
 
 
 class Validator(Protocol):
@@ -358,12 +358,7 @@ class AgentEditor:
     # ------------------------------------------------------------------ #
 
     def _copy_workspace(self, base_dir: Path, out_dir: Path) -> None:
-        src = base_dir / "task_agent"
-        dst = out_dir / "task_agent"
-        if dst.exists():
-            shutil.rmtree(dst)
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src, dst)
+        reset_workspace(base_dir, out_dir)
 
     def _self_improve(
         self,

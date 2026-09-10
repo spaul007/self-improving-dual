@@ -86,7 +86,7 @@ def run_accounting_stage(task: Task, inbox: list[AgentMessage]) -> AgentMessage:
         f"Day-by-day itinerary (for computing the budget from -- do not "
         f"repeat it back):\n{sightseeing_body}\n"
     )
-    text = run_notool_stage(ACCOUNTING_SYSTEM_PROMPT, user_content)
+    text = run_notool_stage(ACCOUNTING_SYSTEM_PROMPT, user_content, "accounting")
     summary = _extract_budget_summary(text)
     if not summary:
         # One retry: nudge explicitly for the missing tag. If this also
@@ -99,7 +99,7 @@ def run_accounting_stage(task: Task, inbox: list[AgentMessage]) -> AgentMessage:
             "<budget_summary></budget_summary> tags. Re-send just the "
             "Budget Summary, wrapped in <budget_summary>...</budget_summary>."
         )
-        text = run_notool_stage(ACCOUNTING_SYSTEM_PROMPT, retry_note)
+        text = run_notool_stage(ACCOUNTING_SYSTEM_PROMPT, retry_note, "accounting")
         summary = _extract_budget_summary(text) or text.strip()
 
     plan = f"{sightseeing_body.strip()}\n\n{summary.strip()}"

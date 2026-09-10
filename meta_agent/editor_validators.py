@@ -25,6 +25,7 @@ import textwrap
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
+import yaml
 from pyflakes import checker as pyflakes_checker
 from pyflakes import messages as pyflakes_messages
 
@@ -477,6 +478,115 @@ class ImmutableFilesValidator:
                 continue
             if not (out_root / rel).exists():
                 errors.append(f"forbidden deletion: {rel} (outside MUTABLE region)")
+        return errors
+
+
+_BACKBONE_FIELDS = {"model", "base_url", "temperature", "max_output_tokens", "reasoning_effort"}
+
+
+@register("validator", "llm_backbone_config")
+class LLMBackboneConfigValidator:
+    """Structural check on ``mas_llm_backbone.yaml`` (see
+    ``projects/travel_mas_refactored/seed/agents/llm_backbone.py`` for the
+    reader side, and ``block_suggester.py``'s ``llm_backbone_selection``
+    block, whose whole purpose is to rewrite this file). Catches a
+    malformed edit (bad YAML, a model without its base_url or vice versa,
+    a non-numeric temperature, ...) before it burns a full evaluation
+    batch on every case failing identically.
+
+    Opt-in like every other validator (add ``- type: "llm_backbone_config"``
+    to a config's ``validators:`` list) and self-skips (no errors) when the
+    file doesn't exist at all -- most projects don't use this convention,
+    and even for ones that do, round 0 onward always ships one (see the
+    seed's own ``mas_llm_backbone.yaml``), so a genuinely missing file
+    reads as "this project doesn't use per-agent backbones" rather than
+    "the editor deleted something required".
+    """
+
+    def __init__(self, config_path: str = "mas_llm_backbone.yaml") -> None:
+        self.config_path = config_path
+
+    def validate(self, out_dir: Path, base_dir: Path) -> list[str]:
+        path = out_dir / "task_agent" / self.config_path
+        if not path.exists():
+            return []
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError as exc:
+            return [f"{self.config_path}: invalid YAML: {exc}"]
+        if not isinstance(data, dict):
+            return [f"{self.config_path}: top level must be a mapping, got {type(data).__name__}"]
+
+        agents = data.get("agents", {}) or {}
+        if not isinstance(agents, dict):
+            return [f"{self.config_path}: 'agents' must be a mapping, got {type(agents).__name__}"]
+
+        sections: dict[str, Any] = {"default": data.get("default") or {}}
+        sections.update({f"agents.{name}": entry for name, entry in agents.items()})
+
+        errors: list[str] = []
+        for label, entry in sections.items():
+            if entry is None:
+                continue  # e.g. "flight: {}" style shorthand -- inherit default entirely
+            if not isinstance(entry, dict):
+                errors.append(f"{self.config_path}: {label} must be a mapping, got {type(entry).__name__}")
+                continue
+            errors.extend(self._validate_entry(label, entry))
+        return errors
+
+    def _validate_entry(self, label: str, entry: dict) -> list[str]:
+        errors: list[str] = []
+        unknown = sorted(set(entry) - _BACKBONE_FIELDS)
+        if unknown:
+            errors.append(f"{self.config_path}: {label} has unrecognized field(s): {unknown}")
+
+        model = entry.get("model")
+        base_url = entry.get("base_url")
+        model_set = isinstance(model, str) and bool(model.strip())
+        base_url_set = isinstance(base_url, str) and bool(base_url.strip())
+        if "model" in entry and model is not None and not model_set:
+            errors.append(f"{self.config_path}: {label}.model must be a non-empty string or null, got {model!r}")
+        if "base_url" in entry and base_url is not None and not base_url_set:
+            errors.append(f"{self.config_path}: {label}.base_url must be a non-empty string or null, got {base_url!r}")
+        if model_set and not base_url_set:
+            errors.append(
+                f"{self.config_path}: {label} sets model={model!r} but no base_url -- "
+                "pair a real model with its endpoint, or leave both null to use the pipeline default"
+            )
+        if base_url_set and not model_set:
+            errors.append(
+                f"{self.config_path}: {label} sets base_url={base_url!r} but no model -- "
+                "pair a real endpoint with its model, or leave both null to use the pipeline default"
+            )
+        if base_url_set and not (base_url.startswith("http://") or base_url.startswith("https://")):
+            errors.append(
+                f"{self.config_path}: {label}.base_url {base_url!r} does not look like a "
+                "URL (expected it to start with http:// or https://)"
+            )
+
+        temperature = entry.get("temperature")
+        if "temperature" in entry and temperature is not None and not isinstance(temperature, (int, float)):
+            errors.append(f"{self.config_path}: {label}.temperature must be a number or null, got {temperature!r}")
+
+        max_output_tokens = entry.get("max_output_tokens")
+        if "max_output_tokens" in entry and max_output_tokens is not None:
+            valid_int = isinstance(max_output_tokens, int) and not isinstance(max_output_tokens, bool)
+            if not valid_int or max_output_tokens <= 0:
+                errors.append(
+                    f"{self.config_path}: {label}.max_output_tokens must be a positive "
+                    f"integer or null, got {max_output_tokens!r}"
+                )
+
+        reasoning_effort = entry.get("reasoning_effort")
+        if (
+            "reasoning_effort" in entry
+            and reasoning_effort is not None
+            and not isinstance(reasoning_effort, str)
+        ):
+            errors.append(
+                f"{self.config_path}: {label}.reasoning_effort must be a string or null, "
+                f"got {reasoning_effort!r}"
+            )
         return errors
 
 

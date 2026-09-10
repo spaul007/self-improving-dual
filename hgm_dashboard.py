@@ -50,16 +50,18 @@ if not experiments:
 # (every `refresh_interval` seconds via auto-refresh) turns into a massive,
 # unnecessary filesystem walk. `experiments` is already newest-mtime-first,
 # so a genuinely active run is always near the front -- only check a handful.
-_CANDIDATES_TO_CHECK = 5
-active = [p for p in experiments[:_CANDIDATES_TO_CHECK] if ri.run_is_active(p)]
-default_dir = active[0] if active else experiments[0]
-selected_name = default_dir.name
-st.sidebar.markdown(f"**Experiment (auto):** `{selected_name}`")
-experiment_dir = default_dir
+# _CANDIDATES_TO_CHECK = 5
+# active = [p for p in experiments[:_CANDIDATES_TO_CHECK] if ri.run_is_active(p)]
+# default_dir = active[0] if active else experiments[0]
+# selected_name = default_dir.name
+# st.sidebar.markdown(f"**Experiment (auto):** `{selected_name}`")
+# experiment_dir = default_dir
 
-# exp_names = [p.name for p in experiments]
-# selected_name = st.sidebar.selectbox("Experiment (newest first)", exp_names, index=0)
-# experiment_dir = runs_root / selected_name
+exp_names = [p.name for p in experiments]
+_REQUESTED = "20260904_215716_travel_mas_refactored_full_scale_block_tagged_no_summarizer_X100Y180"
+_default_index = exp_names.index(_REQUESTED) if _REQUESTED in exp_names else 0
+selected_name = st.sidebar.selectbox("Experiment (newest first)", exp_names, index=_default_index)
+experiment_dir = runs_root / selected_name
 
 auto_refresh = st.sidebar.checkbox("Auto-refresh", value=True)
 refresh_interval = st.sidebar.slider("Refresh interval (s)", 2, 30, 5)

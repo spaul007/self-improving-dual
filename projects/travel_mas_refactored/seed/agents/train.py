@@ -47,7 +47,7 @@ def run_train_stage(
     """Train has no upstream dependency (`inbox` is always `[]`)."""
     schema = filter_schema(full_schema, TRAIN_TOOLS)
     text, iters, exhausted, _messages = run_tool_stage(
-        TRAIN_SYSTEM_PROMPT, task.description, schema, wrapper
+        TRAIN_SYSTEM_PROMPT, task.description, schema, wrapper, "train"
     )
     content = text.strip() or "No train information produced."
     # No real failure signal exists for this stage today -- the fallback

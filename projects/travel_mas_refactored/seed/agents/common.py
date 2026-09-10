@@ -13,6 +13,7 @@ import json
 import os
 import re
 
+from agents.llm_backbone import get_backbone_config
 from platform_core.llm_wrapper import call_llm
 from tool_wrapper import ToolWrapper
 
@@ -95,20 +96,27 @@ def run_tool_stage(
     user_content: str,
     schema: list[dict],
     wrapper: ToolWrapper,
+    agent_name: str,
     max_iterations: int = MAX_ITERATIONS_PER_STAGE,
 ) -> tuple[str, int, bool, list]:
     """Run one role's bounded tool-calling loop. Returns
     (final_text, iterations_used, budget_exhausted, messages) -- the
     accumulated ``messages`` lets a caller do a follow-up nudge call with
     full context (see ``agents/sightseeing.py``'s retry) instead of
-    starting over."""
+    starting over.
+
+    ``agent_name`` selects this stage's backbone LLM settings from
+    ``mas_llm_backbone.yaml`` (see ``agents/llm_backbone.py``) -- any field
+    left null there falls back to the LLM_* env-var default exactly as
+    before this parameter existed."""
+    backbone = get_backbone_config(agent_name)
     messages: list = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content},
     ]
     last_text = ""
     for i in range(max_iterations):
-        response = call_llm(messages=messages, tools=schema)
+        response = call_llm(messages=messages, tools=schema, **backbone)
         last_text = response.content or last_text
 
         raw = getattr(response, "raw", None)
@@ -132,9 +140,10 @@ def run_tool_stage(
     return last_text, max_iterations, True, messages
 
 
-def run_notool_stage(system_prompt: str, user_content: str) -> str:
+def run_notool_stage(system_prompt: str, user_content: str, agent_name: str) -> str:
+    backbone = get_backbone_config(agent_name)
     response = call_llm(messages=[
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content},
-    ])
+    ], **backbone)
     return response.content or ""

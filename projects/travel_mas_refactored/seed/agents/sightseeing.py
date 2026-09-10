@@ -13,6 +13,7 @@ from platform_core.llm_wrapper import call_llm
 
 from agents.common import COMMON_RULES, filter_schema, run_tool_stage
 from agents.immutable.message import AgentMessage, from_sender
+from agents.llm_backbone import get_backbone_config
 from platform_core.runner import Task
 from tool_wrapper import ToolWrapper
 
@@ -128,17 +129,16 @@ def _extract_itinerary(text: str) -> str:
     return match.group(1).strip() if match else ""
 
 
-# Bumped from 40 -- live evaluation on the 122B endpoint found every single
-# no-plan failure (5/120 on a full run) had the identical signature:
-# sightseeing_iters == 40 (hit the cap exactly), sightseeing_failed=True.
-# Reasoning: the single agent gets 100 iterations for ALL of its work
-# (flights+trains+hotels+attractions+restaurants+roads+composing the plan);
-# Flight/Train here typically finish in 1-3 iterations each, so the single
-# agent effectively has ~90+ of its 100 iterations available for the same
-# scope of work Sightseeing alone is responsible for -- more than double
-# the 40 it had. This wasn't a model-capability problem (it happened even
-# at 122B) -- it was this cap being under-sized for complex multi-day,
-# many-constraint trips.
+# Bumped from 40 -- live evaluation found every no-plan failure had the
+# identical signature: sightseeing_iters == 40 (hit the cap exactly),
+# sightseeing_failed=True. Sightseeing is by far the heaviest of the four
+# split stages -- hotel + N attractions + N restaurants + road-route
+# lookups, then composing the full multi-day body -- versus flight/train's
+# much simpler single-decision task (see common.py's own
+# MAX_ITERATIONS_PER_STAGE=25 note, which observes the same imbalance).
+# This cap is this stage's OWN independent budget, not shared with any
+# other stage; 40 was simply under-sized for complex multi-day,
+# many-constraint trips regardless of which backbone model is running it.
 MAX_SIGHTSEEING_ITERATIONS = 80
 
 
@@ -165,7 +165,7 @@ def run_sightseeing_stage(
         f"Train specialist's note (do not change these legs):\n{train_note}\n"
     )
     text, iters, exhausted, messages = run_tool_stage(
-        SIGHTSEEING_SYSTEM_PROMPT, user_content, schema, wrapper,
+        SIGHTSEEING_SYSTEM_PROMPT, user_content, schema, wrapper, "sightseeing",
         max_iterations=MAX_SIGHTSEEING_ITERATIONS,
     )
     itinerary = _extract_itinerary(text)
@@ -181,7 +181,7 @@ def run_sightseeing_stage(
             "itinerary so far, wrapped in <itinerary></itinerary> tags."
         ),
     })
-    response = call_llm(messages=messages)
+    response = call_llm(messages=messages, **get_backbone_config("sightseeing"))
     itinerary = _extract_itinerary(response.content or "")
     if itinerary:
         return AgentMessage(sender="sightseeing", content=itinerary, ok=True, iterations=iters, budget_exhausted=exhausted)
