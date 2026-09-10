@@ -1,0 +1,125 @@
+# Standalone BASELINE EVAL ONLY -- no HGM loop is ever run from this
+# config (see eval_gemma4_31b_baseline_full_benchmark_3x.py, which only
+# ever uses fw.evaluator / fw.benchmark_dir / fw.train_case_ids /
+# fw.eval_case_ids / fw.seed_dir from the assembled framework, never
+# fw.manager.evolve(...)). The manager/editor/etc. sections below exist
+# only because meta_agent.config.build_components requires a complete,
+# valid FrameworkConfig to construct those four things -- copied verbatim
+# from configs/hgm_travel_full_scale_block_tagged_no_summarizer_X100Y180.yaml
+# (evaluator/gatherer/split/validators sizing) so this baseline is scored
+# under identical conditions to every other 3x full-benchmark baseline
+# this session (seed_baseline_full_eval_3x, sightseeing_122b_full_eval_3x).
+#
+# The ONE deliberate change: task_agent points at google/gemma-4-31b-it
+# via OpenRouter instead of the local vLLM Qwen3.5-35B-A3B default --
+# this becomes EVERY sub-agent's backbone (flight/train/sightseeing/
+# accounting all read model/base_url from the LLM_MODEL/LLM_BASE_URL env
+# vars via mas_llm_backbone.yaml's all-null fallback, see
+# agents/llm_backbone.py), since none of them have a per-agent override.
+#
+# google/gemma-4-31b-it confirmed real via a live OpenRouter
+# chat/completions call before this config was written (2026-09-10).
+#
+# OPENAI_API_KEY MUST be a real OpenRouter key before running this
+# (source /groups/AIC-MV/v.kulkarni1/.env) -- this project's own scorer
+# conversion step (TRAVEL_CONVERT_MODEL, below) stays on the local vLLM
+# default and is unaffected by this change.
+#
+#   source /groups/AIC-MV/v.kulkarni1/.env
+#   PYTHONPATH=. python3 eval_gemma4_31b_baseline_full_benchmark_3x.py
+
+experiment_name: "eval_baseline_gemma4_31b_X100Y180"
+project: "travel_mas_refactored"
+
+mutable_exclude:
+  - "workflow.py"
+  - "benchmark/"
+  - "agents/immutable/"
+
+loop:
+  max_rounds: 130
+  score_target: 1.0
+
+task_agent:
+  model: "google/gemma-4-31b-it"
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "https://openrouter.ai/api/v1"
+
+manager:
+  type: "hgm_block_tagged"
+  config:
+    eval_budget: 18000
+    init_expansions: 2
+    alpha: 0.470005
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 32
+    eval_repeats: 2
+    finalize_top_k: 5
+    full_eval_top_k: 0
+    seed: 42
+    block_selection_strategy: "adaptive"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    parallelism: 32
+    scorer: "travel_mas_refactored_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+    n_hard_cases: 1
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    max_attempts: 2
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+block_suggester:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    strategies_path: "strategies.md"
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-35B-A3B"
+
+split:
+  seed: 42
+  train_size: 60
+  eval_size: 60
+  stratify_by: "meta_info.days"
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+    config:
+      workflow_filenames: ["workflow.py", "mas_workflow.py"]
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"
+  - type: "undefined_names"
+  - type: "llm_backbone_config"
+  - type: "smoke_test"
