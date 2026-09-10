@@ -208,6 +208,25 @@ def _parse_strategies_md(text: str) -> dict[str, str]:
     return sections
 
 
+# Default catalog for the llm_backbone_selection block's
+# "{{BACKBONE_CATALOG}}" placeholder (see BlockSuggester.__init__'s
+# backbone_catalog param and _render_block_body below). Every slug here
+# was confirmed real via a live OpenRouter chat/completions call before
+# being added (2026-09-10) -- see this session's fabricated-slug incident
+# (qwen3.8-27b-a3b, qwen3.8-35b-a3b) for why this matters: an unverified
+# slug reaches every case using it and fails all of them identically.
+_DEFAULT_BACKBONE_CATALOG: list[dict[str, str]] = [
+    {"slug": "qwen/qwen3.5-35b-a3b", "note": "light/fast -- today's pipeline default"},
+    {"slug": "qwen/qwen3.6-35b-a3b", "note": "same size class, newer generation"},
+    {"slug": "qwen/qwen3.8-27b", "note": "newer generation, slightly smaller"},
+    {"slug": "google/gemini-2.5-flash", "note": "different provider, comparable fast tier"},
+]
+
+
+def _render_backbone_catalog(catalog: list[dict[str, str]]) -> str:
+    return "\n".join(f"  - {c['slug']} ({c['note']})" for c in catalog)
+
+
 _BLOCK_BODIES: dict[str, str] = {
     "individual_subagent": (
         "## Block: individual_subagent\n\n"
@@ -555,10 +574,7 @@ _BLOCK_BODIES: dict[str, str] = {
         "that may not exist or may have moved. Known-good OpenRouter "
         "model slugs you may assign (do not invent a slug not listed "
         "here -- an unknown one fails every case using it):\n"
-        "  - qwen/qwen3.5-35b-a3b (light/fast -- today's pipeline default)\n"
-        "  - qwen/qwen3.6-35b-a3b (same size class, newer generation)\n"
-        "  - qwen/qwen3.8-27b (newer generation, slightly smaller)\n"
-        "  - google/gemini-2.5-flash (different provider, comparable fast tier)\n\n"
+        "{{BACKBONE_CATALOG}}\n"
         "Diagnose which role's OUTCOMES would most benefit from a "
         "different backbone -- e.g. a role whose failures look like the "
         "model itself isn't strong/careful enough for the task (missed "
@@ -634,6 +650,15 @@ class BlockSuggester:
         agentic_access: bool = False,
         # Bounds the agentic loop (one LLM round-trip per turn).
         agentic_max_turns: int = 20,
+        # Catalog of OpenRouter slugs the llm_backbone_selection block may
+        # assign (see _BLOCK_BODIES's "{{BACKBONE_CATALOG}}" placeholder,
+        # substituted in _render_block_body below) -- each entry
+        # {"slug": ..., "note": ...}. None (default) uses
+        # _DEFAULT_BACKBONE_CATALOG, the same 4 slugs this session
+        # verified live against the real OpenRouter API. Irrelevant to
+        # every other block; only substituted when block ==
+        # "llm_backbone_selection".
+        backbone_catalog: Optional[list[dict[str, str]]] = None,
     ) -> None:
         self.llm = llm_caller
         self.model = model
@@ -647,6 +672,7 @@ class BlockSuggester:
         self.strategies_path = strategies_path
         self.agentic_access = agentic_access
         self.agentic_max_turns = agentic_max_turns
+        self.backbone_catalog = backbone_catalog or _DEFAULT_BACKBONE_CATALOG
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -710,7 +736,7 @@ class BlockSuggester:
             )
 
         system = (
-            _SYSTEM_PREAMBLE + "\n\n" + _BLOCK_BODIES[block]
+            _SYSTEM_PREAMBLE + "\n\n" + self._block_body(block)
             + self._render_strategies(block)
             + self._render_curriculum_focus(curriculum_directive)
             + _SYSTEM_CLOSING
@@ -768,6 +794,15 @@ class BlockSuggester:
     # ------------------------------------------------------------------ #
     # Internals
     # ------------------------------------------------------------------ #
+
+    def _block_body(self, block: str) -> str:
+        """``_BLOCK_BODIES[block]`` with the llm_backbone_selection block's
+        "{{BACKBONE_CATALOG}}" placeholder substituted from
+        ``self.backbone_catalog`` -- a no-op ``.replace()`` for every other
+        block, since none of their bodies contain that token."""
+        return _BLOCK_BODIES[block].replace(
+            "{{BACKBONE_CATALOG}}", _render_backbone_catalog(self.backbone_catalog)
+        )
 
     def _render_strategies(self, block: str) -> str:
         """"General" + this block's section from ``self.strategies_path``,
@@ -931,7 +966,7 @@ class BlockSuggester:
         round_dir = agent_dir.parent
 
         system = (
-            _SYSTEM_PREAMBLE + "\n\n" + _BLOCK_BODIES[block]
+            _SYSTEM_PREAMBLE + "\n\n" + self._block_body(block)
             + self._render_strategies(block)
             + self._render_curriculum_focus(curriculum_directive)
             + _SYSTEM_CLOSING_AGENTIC
