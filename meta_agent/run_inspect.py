@@ -32,6 +32,7 @@ from typing import Any, Optional
 import yaml
 
 from .editor_validators import is_excluded
+from .llm_failure_health import DEFAULT_INCIDENCE_THRESHOLD_PCT, incidence_rate_pct
 
 # Same noise-skip set every other exclude-mode scanner in this repo uses
 # (agent_editor.py, behavior_summarizer.py) -- generated/scratch output and
@@ -188,6 +189,29 @@ class RoundInfo:
     # selected (see meta_agent/block_bandit.py::AdaptiveStrategy) -- only
     # present when manager.config.block_selection_strategy == "adaptive".
     adaptive_strategy: Optional[dict[str, Any]] = None
+    # OpenRouter LLM-call failure summary for this round, written by
+    # HGMManager._record_batch (see meta_agent/llm_failure_health.py) --
+    # always present once that feature is running, regardless of whether
+    # exclude_llm_call_failures is turned on; absent (None) for any round
+    # from before this feature existed, or one still mid-EVALUATE.
+    llm_failure_health: Optional[dict[str, Any]] = None
+
+    @property
+    def llm_failure_rate_pct(self) -> Optional[float]:
+        """(status=failed retries + terminal failures) / responses, as a
+        percentage -- None when llm_failure_health is absent or there
+        were no LLM responses at all (nothing to report). Same formula
+        as meta_agent.llm_failure_health.incidence_rate_pct, reused
+        directly rather than duplicated."""
+        if not self.llm_failure_health or not self.llm_failure_health.get("n_llm_responses"):
+            return None
+        return incidence_rate_pct(self.llm_failure_health)
+
+    @property
+    def llm_terminal_failures(self) -> Optional[int]:
+        if not self.llm_failure_health:
+            return None
+        return self.llm_failure_health.get("n_terminal_failed_responses")
 
     @property
     def parent_id(self) -> Optional[int]:
@@ -296,6 +320,7 @@ def discover_rounds(experiment_dir: Path) -> list[RoundInfo]:
         )
         adaptive_strategy = _read_json(round_dir / "adaptive_strategy.json")
         behavior_aggregate = _read_json(round_dir / "behavior_aggregate.json")
+        llm_failure_health = _read_json(round_dir / "llm_failure_health.json")
         rounds.append(
             RoundInfo(
                 round_dir=round_dir,
@@ -309,6 +334,7 @@ def discover_rounds(experiment_dir: Path) -> list[RoundInfo]:
                 has_task_agent=(round_dir / "task_agent").is_dir(),
                 has_variants=(round_dir / "variants").is_dir(),
                 adaptive_strategy=adaptive_strategy,
+                llm_failure_health=llm_failure_health,
             )
         )
     rounds.sort(key=lambda r: r.node_id)
@@ -473,6 +499,20 @@ def extract_diagnostics(rounds: list[RoundInfo], *, is_active: bool) -> list[Ale
 
         if r.hgm_node is not None and r.n_evals > 0 and (r.mean_utility or 0) == 0:
             alerts.append(Alert("warning", r.node_id, f"zero mean utility over {r.n_evals} eval(s)"))
+
+        rate = r.llm_failure_rate_pct
+        if rate is not None and rate > DEFAULT_INCIDENCE_THRESHOLD_PCT:
+            health = r.llm_failure_health or {}
+            alerts.append(
+                Alert(
+                    "error", r.node_id,
+                    f"LLM call failure rate {rate:.1f}% exceeds "
+                    f"{DEFAULT_INCIDENCE_THRESHOLD_PCT:.1f}% "
+                    f"({health.get('n_terminal_failed_responses', 0)} terminal "
+                    f"failure(s) / {health.get('n_llm_responses', 0)} responses) "
+                    "-- see this round's llm_failure_health.json",
+                )
+            )
 
     alerts.sort(key=lambda a: (_SEVERITY_ORDER.get(a.severity, 3), a.node_id))
     return alerts

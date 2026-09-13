@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from meta_agent import run_inspect as ri  # noqa: E402
 from meta_agent.feedback_gatherer import render_metrics  # noqa: E402
+from meta_agent.llm_failure_health import DEFAULT_INCIDENCE_THRESHOLD_PCT  # noqa: E402
 
 st.set_page_config(page_title="HGM Run Dashboard", layout="wide")
 
@@ -277,6 +278,17 @@ for r in rounds:
             "+added": added,
             "-removed": removed,
             "optimization_goal": r.optimization_goal[:100],
+            # OpenRouter LLM-call failure rate for this round (see
+            # meta_agent.llm_failure_health / HGMManager._record_batch) --
+            # NaN (not 0) when llm_failure_health.json doesn't exist yet
+            # (round predates this feature, or is still mid-EVALUATE),
+            # same convention as mean_utility above.
+            "llm_failure_pct": (
+                r.llm_failure_rate_pct
+                if r.llm_failure_rate_pct is not None
+                else float("nan")
+            ),
+            "llm_terminal_failures": r.llm_terminal_failures,
         }
     )
 nodes_df = pd.DataFrame(rows)
@@ -285,6 +297,30 @@ st.dataframe(nodes_df, width="stretch", hide_index=True)
 trend_df = nodes_df[nodes_df["n_evals"] > 0][["node_id", "mean_utility"]]
 if not trend_df.empty:
     st.line_chart(trend_df.set_index("node_id"))
+
+st.subheader("LLM call failure rate")
+st.caption(
+    "Share of OpenRouter LLM responses this round that hit the "
+    "status=\"failed\" condition (retried-and-recovered or a terminal "
+    "failure that corrupts that case's score) -- see "
+    "openrouter_failure_report.md. A round with no bar/point yet either "
+    "predates this feature or is still mid-EVALUATE."
+)
+failure_trend_df = nodes_df[nodes_df["llm_failure_pct"].notna()][
+    ["node_id", "llm_failure_pct"]
+]
+if failure_trend_df.empty:
+    st.info("No LLM call failure data recorded for this run yet.")
+else:
+    st.line_chart(failure_trend_df.set_index("node_id"))
+    worst = failure_trend_df.loc[failure_trend_df["llm_failure_pct"].idxmax()]
+    if worst["llm_failure_pct"] > DEFAULT_INCIDENCE_THRESHOLD_PCT:
+        st.error(
+            f"⚠️ node {int(worst['node_id'])}: LLM call failure rate "
+            f"{worst['llm_failure_pct']:.1f}% exceeds the "
+            f"{DEFAULT_INCIDENCE_THRESHOLD_PCT:.0f}% threshold -- see the "
+            "Diagnostics panel above for every affected round."
+        )
 
 
 # --------------------------------------------------------------------------- #

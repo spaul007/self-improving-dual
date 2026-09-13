@@ -31,76 +31,21 @@ Usage:
 
 <run_dir> is a directory like runs/20260911_.../ (every round_*/logs/
 trace.jsonl under it is scanned) or a path directly to one trace.jsonl.
+
+The actual parsing logic lives in meta_agent/llm_failure_health.py
+(iter_trace_files/analyze_trace_file) -- shared with HGMManager, which
+uses the same signal to write a per-round monitoring artifact and
+(opt-in) exclude terminal-failure-corrupted cases from a node's reward.
+This file is just the CLI wrapper.
 """
 from __future__ import annotations
 
-import json
 import sys
 from collections import Counter
 from pathlib import Path
 
-
-def _iter_trace_files(path: Path) -> list[Path]:
-    if path.is_file():
-        return [path]
-    return sorted(path.glob("round_*/logs/trace.jsonl"))
-
-
-def _analyze_trace_file(path: Path) -> dict:
-    n_llm_calls = 0
-    n_llm_responses = 0
-    n_status_failed_retries = 0
-    n_exception_retries = 0
-    n_terminal_failed_responses = 0
-    cases_with_terminal_failure: Counter = Counter()
-    cases_with_status_failed_retry: Counter = Counter()
-    error_codes: Counter = Counter()
-
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            event = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        kind = event.get("kind")
-        payload = event.get("payload", {}) or {}
-
-        if kind == "llm_call":
-            n_llm_calls += 1
-        elif kind == "llm_call_retry":
-            err = str(payload.get("error", ""))
-            case_id = payload.get("case_id")
-            if "status/stop_reason == 'failed'" in err:
-                n_status_failed_retries += 1
-                if case_id is not None:
-                    cases_with_status_failed_retry[case_id] += 1
-                code = payload.get("response_error_code")
-                error_codes[code or "(none given by API)"] += 1
-            else:
-                n_exception_retries += 1
-        elif kind == "llm_response":
-            n_llm_responses += 1
-            if payload.get("stop_reason") == "failed":
-                n_terminal_failed_responses += 1
-                case_id = payload.get("case_id")
-                if case_id is not None:
-                    cases_with_terminal_failure[case_id] += 1
-                code = payload.get("response_error_code")
-                error_codes[code or "(none given by API)"] += 1
-
-    return {
-        "path": str(path),
-        "n_llm_calls": n_llm_calls,
-        "n_llm_responses": n_llm_responses,
-        "n_status_failed_retries": n_status_failed_retries,
-        "n_exception_retries": n_exception_retries,
-        "n_terminal_failed_responses": n_terminal_failed_responses,
-        "cases_with_status_failed_retry": dict(cases_with_status_failed_retry),
-        "cases_with_terminal_failure": dict(cases_with_terminal_failure),
-        "error_codes": dict(error_codes),
-    }
+from meta_agent.llm_failure_health import analyze_trace_file as _analyze_trace_file
+from meta_agent.llm_failure_health import iter_trace_files as _iter_trace_files
 
 
 def main(argv: list[str]) -> int:

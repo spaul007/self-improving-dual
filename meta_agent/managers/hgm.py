@@ -45,6 +45,11 @@ from ..block_bandit import AdaptiveStrategy, BlockBandit
 from ..curriculum import Curriculum, _combined_check_counts, infer_curriculum
 from ..evaluator import Evaluator, load_cases
 from ..feedback_gatherer import FeedbackGatherer, persist_round_artifacts, render_metrics
+from ..llm_failure_health import (
+    DEFAULT_INCIDENCE_THRESHOLD_PCT,
+    analyze_trace_file,
+    incidence_rate_pct,
+)
 from ..models import (
     AgentFeedback,
     CaseResult,
@@ -136,6 +141,36 @@ class HGMManager:
         # parent's, regardless of how many evals backed that mean -- see
         # meta_agent/block_bandit.py::BlockBandit for the full contrast.
         block_reward_metric: str = "fractional_score",
+        # Opt-in: exclude cases hit by a TERMINAL OpenRouter status="failed"
+        # LLM-call failure (see platform_core/llm_wrapper.py -- retries
+        # exhausted, not a real model-quality problem) from the reward a
+        # node/block sees. False (default -- zero behavior change for every
+        # existing config) records every case exactly as today, even ones
+        # a live outage silently corrupted (confirmed live: this can drop
+        # a real ~0.9 case to 0.0, and swing a node's reported score from
+        # ~0.10 to ~0.56-0.58 for the EXACT SAME code depending purely on
+        # whether the provider was degraded at eval time -- see
+        # openrouter_failure_report.md). True skips node.record(case) for
+        # any case_id appearing in that round's own
+        # llm_failure_health.json under "cases_with_terminal_failure"
+        # (cross-referenced from round_dir/logs/trace.jsonl, the only
+        # universal detector -- see _record_batch). Does not affect
+        # eval_budget accounting (_evaluate's returned `spent` is
+        # len(batch), independent of node.record()) -- only removes a
+        # corrupted data point from the node's own Beta tallies.
+        exclude_llm_call_failures: bool = False,
+        # Always-on (independent of exclude_llm_call_failures above):
+        # print a loud warning, and flag it in llm_failure_health.json,
+        # whenever a round's LLM-call failure incidence rate
+        # ((status=failed retries + terminal failures) / responses, same
+        # convention as analyze_llm_call_failures.py's own "incidence
+        # rate") exceeds this percentage. Shares its default with
+        # meta_agent/run_inspect.py's dashboard-side diagnostics flag
+        # (DEFAULT_INCIDENCE_THRESHOLD_PCT) so the two can't drift apart;
+        # 3.0 is a reasonable default given this session's observed
+        # baseline (a healthy round is normally <1%; a real provider
+        # outage was seen at 70%+).
+        llm_call_failure_threshold_pct: float = DEFAULT_INCIDENCE_THRESHOLD_PCT,
         # Opt-in curriculum layer: decomposes "maximize composite score"
         # into an ORDERED list of sub-goals -- one per failing check in the
         # seed's own top_failed_checks ranking (computed ONCE, right after
@@ -260,6 +295,8 @@ class HGMManager:
                 )
         self.active_blocks = active_blocks
         self.block_reward_metric = block_reward_metric
+        self.exclude_llm_call_failures = exclude_llm_call_failures
+        self.llm_call_failure_threshold_pct = llm_call_failure_threshold_pct
         self.block_initial_ranking = block_initial_ranking
         self.block_initial_rank_strength = block_initial_rank_strength
         if not (0.0 <= curriculum_resolution_threshold <= 1.0):
@@ -645,6 +682,64 @@ class HGMManager:
         print(f"node {node_id}: EXPAND from {parent_id}", flush=True)
         return node_id
 
+    def _record_batch(self, node: HGMNode, result: EvaluationResult) -> None:
+        """Fold ``result.per_case`` into ``node``'s tallies via
+        ``node.record()`` -- the single choke point all three EVALUATE
+        call sites (round_000 pre-eval, the main EVALUATE loop, finalist
+        re-evaluation) funnel through, so the OpenRouter LLM-call-failure
+        handling below only has to live in one place.
+
+        Always writes ``node.round_dir/logs/trace.jsonl``'s failure
+        summary to ``node.round_dir/llm_failure_health.json`` (a cheap,
+        always-on monitoring artifact -- meta_agent/run_inspect.py reads
+        it for the dashboard, independent of whether
+        ``exclude_llm_call_failures`` is even turned on) and always
+        prints a loud warning when this round's incidence rate exceeds
+        ``self.llm_call_failure_threshold_pct`` (see
+        meta_agent/llm_failure_health.py's own incidence-rate
+        convention). Only when ``self.exclude_llm_call_failures`` is
+        True does it actually skip ``node.record(case)`` for cases in
+        that round's own ``cases_with_terminal_failure`` -- the default
+        (False) records every case exactly as before this feature
+        existed."""
+        trace_path = node.round_dir / "logs" / "trace.jsonl"
+        health = analyze_trace_file(trace_path)
+        try:
+            (node.round_dir / "llm_failure_health.json").write_text(
+                json.dumps(health, indent=2), encoding="utf-8"
+            )
+        except OSError:
+            pass
+
+        rate = incidence_rate_pct(health)
+        if rate > self.llm_call_failure_threshold_pct:
+            print(
+                f"⚠️  node {node.node_id}: LLM call failure rate "
+                f"{rate:.1f}% exceeds {self.llm_call_failure_threshold_pct:.1f}% "
+                f"threshold ({health['n_status_failed_retries']} retries, "
+                f"{health['n_terminal_failed_responses']} terminal failures / "
+                f"{health['n_llm_responses']} responses) -- see {trace_path}",
+                flush=True,
+            )
+
+        excluded = (
+            set(health["cases_with_terminal_failure"])
+            if self.exclude_llm_call_failures
+            else set()
+        )
+        n_excluded = 0
+        for case in result.per_case:
+            if case.case_id in excluded:
+                n_excluded += 1
+                continue
+            node.record(case)
+        if n_excluded:
+            print(
+                f"node {node.node_id}: excluded {n_excluded} case(s) from reward "
+                f"(OpenRouter LLM-call terminal failure, see {trace_path})",
+                flush=True,
+            )
+
     def _evaluate(
         self, node_id: int, evaluator: Evaluator, gatherer: FeedbackGatherer
     ) -> int:
@@ -675,8 +770,7 @@ class HGMManager:
         batch = self._task_rng.sample(unevaluated, n_take)
 
         result = evaluator.run(node.round_dir, self._benchmark_dir, case_ids=batch)
-        for case in result.per_case:
-            node.record(case)
+        self._record_batch(node, result)
 
         self._refresh_node_feedback(node, gatherer)
         print(
@@ -1345,8 +1439,7 @@ class HGMManager:
             result = evaluator.run(
                 node.round_dir, self._benchmark_dir, case_ids=missing
             )
-            for case in result.per_case:
-                node.record(case)
+            self._record_batch(node, result)
             spent += len(missing)
             self._refresh_node_feedback(node, gatherer)
             self._run_failure_summarizer(node)
@@ -1518,8 +1611,7 @@ class HGMManager:
         result = evaluator.run(
             out_dir, self._benchmark_dir, case_ids=self._train_case_ids
         )
-        for case in result.per_case:
-            node.record(case)
+        self._record_batch(node, result)
 
         zero_strategy = EvolutionStrategy(
             target_files=[],
