@@ -110,6 +110,22 @@ class HGMManager:
         # selection, applied to a new axis. See tier_based_hgm.md's
         # "Block-level Thompson sampling" section for the design.
         block_selection_strategy: str = "collaboration",
+        # Restricts the "non_adaptive"/"adaptive" candidate set (see
+        # _select_block below and BlockBandit's `blocks` param) to
+        # exactly these block names -- e.g. every block_suggester.py::
+        # _BLOCK_BODIES key EXCEPT "llm_backbone_selection", to keep
+        # Thompson-sampling across the rest while making sure that one
+        # is never chosen. None (default -- zero change for every
+        # existing config) uses the full _BLOCK_BODIES set, exactly
+        # today's behavior -- including any block added to that dict
+        # later, matching this codebase's existing convention that a new
+        # _BLOCK_BODIES entry "stays correct automatically" for
+        # non_adaptive/adaptive. Has no effect on the four FIXED
+        # strategies ("collaboration"/"single_agent"/"verifiers"/
+        # "foundations"), which never consult _BLOCK_BODIES at all.
+        # Validated as a subset of _BLOCK_BODIES below, matching the
+        # block_selection_strategy validation's fail-fast convention.
+        active_blocks: Optional[list[str]] = None,
         # Reward signal the "adaptive" strategy's BlockBandit uses to score
         # each block. "fractional_score" (default -- zero change for every
         # existing config) sums each qualifying node's own accumulated
@@ -233,6 +249,16 @@ class HGMManager:
                 f"{block_selection_strategy!r}"
             )
         self.block_selection_strategy = block_selection_strategy
+        if active_blocks is not None:
+            from ..block_suggester import _BLOCK_BODIES
+
+            unknown = sorted(set(active_blocks) - set(_BLOCK_BODIES))
+            if unknown:
+                raise ValueError(
+                    f"active_blocks contains unknown block name(s) {unknown} "
+                    f"-- must be a subset of {sorted(_BLOCK_BODIES)}"
+                )
+        self.active_blocks = active_blocks
         self.block_reward_metric = block_reward_metric
         self.block_initial_ranking = block_initial_ranking
         self.block_initial_rank_strength = block_initial_rank_strength
@@ -320,6 +346,7 @@ class HGMManager:
             reward_metric=block_reward_metric,
             initial_block_ranking=block_initial_ranking,
             initial_rank_strength=block_initial_rank_strength,
+            blocks=sorted(self.active_blocks) if self.active_blocks is not None else None,
         )
         # Snapshot of the most recent adaptive selection (None for every
         # other strategy, and reset at the top of every _select_block call)
@@ -413,6 +440,7 @@ class HGMManager:
             reward_metric=self.block_reward_metric,
             initial_block_ranking=self.block_initial_ranking,
             initial_rank_strength=self.block_initial_rank_strength,
+            blocks=sorted(self.active_blocks) if self.active_blocks is not None else None,
         )
         self._last_block_selection = None
         self._last_suggestion_produced = False
@@ -730,11 +758,16 @@ class HGMManager:
             # block_suggester.py's own _BLOCK_BODIES rather than
             # duplicating the 4 literal names again here, so this stays
             # correct automatically if a block is ever added/renamed
-            # there. sorted() makes the choice order deterministic before
-            # sampling, independent of dict insertion order.
-            from ..block_suggester import _BLOCK_BODIES
+            # there -- unless self.active_blocks narrows it. sorted()
+            # makes the choice order deterministic before sampling,
+            # independent of dict insertion order.
+            if self.active_blocks is not None:
+                candidates = sorted(self.active_blocks)
+            else:
+                from ..block_suggester import _BLOCK_BODIES
 
-            return self._block_rng.choice(sorted(_BLOCK_BODIES))
+                candidates = sorted(_BLOCK_BODIES)
+            return self._block_rng.choice(candidates)
         if self.block_selection_strategy == "adaptive":
             adaptive = self._block_bandit.select(self._tree, self._feedback)
             self._last_block_selection = adaptive
