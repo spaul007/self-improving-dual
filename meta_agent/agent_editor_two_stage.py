@@ -25,7 +25,7 @@ from typing import Any, Callable, Iterable, Optional
 
 from . import edit_archive, verbose_log
 from .agent_editor import AgentEditor, Validator
-from .edit_beliefs import PREDICTION_NAME
+from .edit_beliefs import PREDICTION_NAME, write_prediction
 from .models import AgentFeedback, EditResult
 from .registry import register
 
@@ -265,26 +265,11 @@ class TwoStageEditor(AgentEditor):
         return "\n".join(lines) or "(empty proposal)"
 
     def _write_prediction(self, out_dir: Path, proposal: dict) -> None:
-        pred = proposal.get("prediction") or {}
-        if not isinstance(pred, dict):
-            pred = {}
-        # Models sometimes echo the "belief:" anchor prefix into the id;
-        # store the bare slug so joins/credit key consistently.
-        belief_id = str(pred.get("belief_id") or "")
-        if belief_id.lower().startswith("belief:"):
-            belief_id = belief_id[len("belief:"):]
-        payload = {
-            "version": 1,
-            "round_dir": out_dir.name,
-            "belief_id": belief_id,
-            "expected_direction": str(pred.get("expected_direction") or ""),
-            "expected_delta": pred.get("expected_delta"),
-            "why": str(pred.get("why") or "")[:500],
-            "proposal_goals": [
-                str(e.get("goal", ""))[:300]
+        write_prediction(
+            out_dir, proposal.get("prediction"),
+            proposal_goals=[
+                str(e.get("goal", ""))
                 for e in (proposal.get("edits") or []) if isinstance(e, dict)
             ],
-            "query": proposal.get("memory_query") or {},
-        }
-        _atomic_write(out_dir / PREDICTION_NAME,
-                      json.dumps(payload, indent=2) + "\n")
+            query=proposal.get("memory_query") or {},
+        )

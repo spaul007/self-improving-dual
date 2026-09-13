@@ -269,6 +269,47 @@ class TaskAgentTemperatureTests(unittest.TestCase):
         )
         self.assertEqual(ev.task_agent_temperature, 0.6)
 
+    # ----- task_agent.max_output_tokens (same child-env-only plumbing) ----
+
+    def test_max_output_tokens_spec_default_none(self) -> None:
+        spec = cfg_mod.TaskAgentSpec()
+        self.assertIsNone(spec.max_output_tokens)
+        self.assertEqual(
+            cfg_mod.TaskAgentSpec(max_output_tokens=65536).max_output_tokens, 65536
+        )
+
+    def test_child_env_carries_max_output_tokens_without_touching_os_environ(
+        self,
+    ) -> None:
+        import tempfile
+
+        from meta_agent.evaluator import SubprocessEvaluator
+
+        ev = SubprocessEvaluator(task_agent_max_output_tokens=65536)
+        with tempfile.TemporaryDirectory() as tmp:
+            env = ev._child_env(Path(tmp) / "trace.jsonl")
+        self.assertEqual(env.get("LLM_MAX_OUTPUT_TOKENS"), "65536")
+        self.assertNotIn("LLM_MAX_OUTPUT_TOKENS", os.environ)
+
+        ev_none = SubprocessEvaluator()
+        with tempfile.TemporaryDirectory() as tmp:
+            env = ev_none._child_env(Path(tmp) / "trace.jsonl")
+        self.assertNotIn("LLM_MAX_OUTPUT_TOKENS", env)
+
+    def test_injection_threads_max_output_tokens_into_evaluator(self) -> None:
+        cfg_mod._ensure_builtins_loaded()
+        spec = cfg_mod.ComponentSpec(type="subprocess", config={})
+        ev = cfg_mod._build_with_injection(
+            spec, "evaluator",
+            {"scorer": None, "task_agent_max_output_tokens": 65536},
+        )
+        self.assertEqual(ev.task_agent_max_output_tokens, 65536)
+        ev_null = cfg_mod._build_with_injection(
+            spec, "evaluator",
+            {"scorer": None, "task_agent_max_output_tokens": None},
+        )
+        self.assertIsNone(ev_null.task_agent_max_output_tokens)
+
     # ----- meta-agent invariant ------------------------------------------
 
     def test_editor_kwargs_unchanged_by_global_effort(self) -> None:

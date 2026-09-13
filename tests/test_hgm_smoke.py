@@ -225,7 +225,8 @@ class HGMEvolveTests(unittest.TestCase):
         self.experiment = self.tmp / "exp"
         self.experiment.mkdir()
 
-    def _run(self, *, fail_call=None, eval_budget=40, init_expansions=2):
+    def _run(self, *, fail_call=None, eval_budget=40, init_expansions=2,
+             finalize_top_k=5, seed_round_dir=None, experiment_dir=None):
         from meta_agent.feedback_gatherer import DefaultFeedbackGatherer
         from meta_agent.managers.hgm import HGMManager
 
@@ -235,9 +236,12 @@ class HGMEvolveTests(unittest.TestCase):
             eval_batch_size=4,
             alpha=0.6,
             seed=7,
+            finalize_top_k=finalize_top_k,
+            seed_round_dir=seed_round_dir,
         )
         editor = _StubEditor(fail_call=fail_call)
         evaluator = _StubEvaluator()
+        self.evaluator = evaluator
         # The stub editor does all the "editing" — the HGM manager makes no
         # LLM call of its own, so no call_llm patch is needed.
         outcome = manager.evolve(
@@ -246,7 +250,7 @@ class HGMEvolveTests(unittest.TestCase):
             gatherer=DefaultFeedbackGatherer(),
             seed_dir=self.seed,
             benchmark_dir=self.tmp / "bench",  # unused — stub evaluator
-            experiment_dir=self.experiment,
+            experiment_dir=experiment_dir or self.experiment,
             max_rounds=30,
             score_target=None,
             train_case_ids=[f"c{i}" for i in range(20)],
@@ -300,6 +304,55 @@ class HGMEvolveTests(unittest.TestCase):
         self.assertGreaterEqual(len(full), 2)
         # The selected best is one of the fully-evaluated finalists.
         self.assertEqual(manager._tree[outcome.best_round].n_evals, n_train)
+
+    def test_finalize_top_k_zero_disables_the_top_up(self) -> None:
+        """finalize_top_k: 0 (sanity-check runs) skips the finalist
+        re-evaluation entirely — no node but the root reaches full train
+        size — and the final pick is made among all evaluated nodes rather
+        than being forced back to the root."""
+        manager, outcome = self._run(finalize_top_k=0)
+        n_train = 20
+        self.assertEqual(manager._budget_spent, 40)
+        # Only the root's free pre-eval is at full size; total = 20 + 40.
+        full = [n for n in manager._tree.nodes.values() if n.n_evals == n_train]
+        self.assertEqual([n.node_id for n in full], [0])
+        self.assertEqual(manager._tree.total_evals, 60)
+        # Best is a real evaluated node (LCB over everyone), not forced to root.
+        best = manager._tree[outcome.best_round]
+        self.assertGreater(best.n_evals, 0)
+        self.assertFalse(best.edit_failed)
+        expected = manager._tree.lcb_select(manager.epsilon, restrict_to=None)
+        self.assertEqual(outcome.best_round, expected)
+
+    def test_seed_round_dir_reuses_a_previous_pre_eval(self) -> None:
+        """seed_round_dir copies a previous run's round_000 evidence instead
+        of re-running the free-but-not-cheap full-train seed pre-eval."""
+        first, _ = self._run()
+        first_calls = self.evaluator.run_calls
+        prev_root = first._tree[0].round_dir
+        self.assertTrue((prev_root / "eval_result.json").is_file())
+
+        second, outcome = self._run(
+            seed_round_dir=str(prev_root), experiment_dir=self.tmp / "exp2",
+        )
+        root = second._tree[0]
+        self.assertEqual(root.n_evals, 20)
+        self.assertAlmostEqual(root.mean_utility, first._tree[0].mean_utility)
+        # One fewer evaluator.run than a fresh run (the seed pre-eval).
+        self.assertEqual(self.evaluator.run_calls, first_calls - 1)
+        self.assertTrue((root.round_dir / "logs").is_dir())
+        self.assertTrue((root.round_dir / "feedback.json").is_file())
+        self.assertIn(outcome.best_round, second._tree.nodes)
+
+    def test_seed_round_dir_rejects_a_different_seed(self) -> None:
+        first, _ = self._run()
+        prev_root = first._tree[0].round_dir
+        (self.seed / "workflow.py").write_text(
+            (self.seed / "workflow.py").read_text() + "\n# changed\n"
+        )
+        with self.assertRaises(RuntimeError) as cm:
+            self._run(seed_round_dir=str(prev_root), experiment_dir=self.tmp / "exp3")
+        self.assertIn("differs from the seed", str(cm.exception))
 
     def test_every_round_dir_has_artifacts(self) -> None:
         manager, _ = self._run()

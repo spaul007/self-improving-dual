@@ -31,7 +31,7 @@ import shutil
 import tempfile
 from hashlib import blake2b
 from pathlib import Path
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional, Sequence
 
 from .edit_diff import truncate_middle
 from .edit_outcome import run_context
@@ -158,6 +158,41 @@ def _atomic_write(path: Path, text: str) -> None:
         except OSError:
             pass
         raise
+
+
+def write_prediction(
+    out_dir: Path,
+    prediction: Any,
+    *,
+    proposal_goals: Sequence[str] = (),
+    query: Optional[Mapping[str, Any]] = None,
+) -> None:
+    """Persist an editor's belief prediction as ``<out_dir>/edit_prediction.json``
+    — the file :meth:`BeliefStore._join_predictions` globs for calibration.
+
+    Shared by the two-stage editor (prediction inside its proposal) and the
+    agentic editor (prediction on its submit call). ``prediction`` is the raw
+    model-emitted dict; anything non-dict is stored as an empty prediction so
+    the join still sees the round.
+    """
+    pred = prediction if isinstance(prediction, dict) else {}
+    # Models sometimes echo the "belief:" anchor prefix into the id;
+    # store the bare slug so joins/credit key consistently.
+    belief_id = str(pred.get("belief_id") or "")
+    if belief_id.lower().startswith("belief:"):
+        belief_id = belief_id[len("belief:"):]
+    payload = {
+        "version": 1,
+        "round_dir": Path(out_dir).name,
+        "belief_id": belief_id,
+        "expected_direction": str(pred.get("expected_direction") or ""),
+        "expected_delta": pred.get("expected_delta"),
+        "why": str(pred.get("why") or "")[:500],
+        "proposal_goals": [str(g)[:300] for g in proposal_goals],
+        "query": dict(query or {}),
+    }
+    _atomic_write(Path(out_dir) / PREDICTION_NAME,
+                  json.dumps(payload, indent=2) + "\n")
 
 
 def strip_machine_section(document: str) -> str:

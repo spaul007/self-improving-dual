@@ -51,6 +51,14 @@ DEFAULT_MODEL_FALLBACK = "gpt-5.4-mini"
 # max_output_tokens entirely from its responses.create call; mirror that
 # so reasoning-heavy cases don't hit a self-imposed cap.
 DEFAULT_MAX_OUTPUT_TOKENS: Optional[int] = None
+# Env fallback for the cap when the caller passes none. Set CHILD-ONLY by
+# SubprocessEvaluator._child_env from the YAML's ``task_agent.max_output_tokens``
+# (model-dependent, next to ``model``/``temperature``), never globally, so
+# meta-agent calls in the parent stay uncapped. Added 2026-09-12 after
+# deepseek-v4-pro-0813 (reasoning off) fell into repetition loops while
+# writing the travel <plan> and emitted exactly 131,072 tokens (the
+# provider ceiling) on 3/120 cases — ~800 s and ~$0.26 each.
+_MAX_OUTPUT_TOKENS_ENV = "LLM_MAX_OUTPUT_TOKENS"
 
 # Legacy default for the non-reasoning branch when neither the caller nor
 # the LLM_TEMPERATURE env var supplies a value.
@@ -135,6 +143,20 @@ def _env_default_timeout_s() -> float:
     except (TypeError, ValueError):
         return DEFAULT_API_TIMEOUT_S
     return val if val > 0 else DEFAULT_API_TIMEOUT_S
+
+
+def _env_default_max_output_tokens() -> Optional[int]:
+    """Output-token cap from ``LLM_MAX_OUTPUT_TOKENS``. Unset, unparseable
+    or non-positive all mean "no cap" (``None``), preserving the
+    reference behaviour of omitting ``max_output_tokens`` entirely."""
+    raw = os.environ.get(_MAX_OUTPUT_TOKENS_ENV)
+    if not raw:
+        return None
+    try:
+        val = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return val if val > 0 else None
 
 
 @dataclass
@@ -311,19 +333,32 @@ def call_llm(
     reasoning_effort: Optional[str] = None,
     base_url: Optional[str] = None,
     max_output_tokens: Optional[int] = DEFAULT_MAX_OUTPUT_TOKENS,
+    api_key_env: Optional[str] = None,
+    timeout_s: Optional[float] = None,
     **kwargs: Any,
 ) -> LLMResponse:
     """Make one Responses-API round-trip and return a normalised response.
 
     Required env var: ``OPENAI_API_KEY`` (relaxed when ``base_url`` /
     ``LLM_BASE_URL`` is set — local servers ignore auth, so any
-    non-empty string is accepted).
+    non-empty string is accepted). ``api_key_env`` names a different env
+    var to take the key from for THIS call — how one call site (e.g. the
+    agentic editor on OpenRouter) uses a second provider while the rest of
+    the run keeps the global key; it must be set and non-empty. The env var
+    ``LLM_API_KEY_ENV`` supplies a run-wide default for it.
+
+    ``timeout_s`` is the per-request client timeout for this call; omitted,
+    it falls back to ``LLM_TIMEOUT_S`` / the module default.
 
     ``model``, ``reasoning_effort``, and ``base_url`` fall back to the
     ``LLM_MODEL`` / ``LLM_REASONING_EFFORT`` / ``LLM_BASE_URL`` environment
     variables, which lets the meta-agent set them once for the whole run
     and have them propagate into every evaluator subprocess without
     threading them through the seed code.
+
+    ``max_output_tokens`` resolution: explicit positive argument >
+    ``LLM_MAX_OUTPUT_TOKENS`` env (set child-only by the evaluator from
+    ``task_agent.max_output_tokens``) > omitted (provider uncapped).
 
     ``temperature`` resolution: explicit argument > ``LLM_TEMPERATURE`` env
     var > legacy default (1.0 without reasoning effort; omitted with it).
@@ -367,7 +402,19 @@ def call_llm(
         else:
             resolved_temperature = DEFAULT_TEMPERATURE
 
-    api_key = os.environ.get("OPENAI_API_KEY")
+    # LLM_API_KEY_ENV (exported from a YAML ``env:`` block) is the run-wide
+    # default — how a whole run, task-agent subprocesses included, moves to a
+    # second provider's key without touching OPENAI_API_KEY.
+    api_key_env = api_key_env or os.environ.get("LLM_API_KEY_ENV") or None
+    if api_key_env:
+        api_key = os.environ.get(api_key_env)
+        if not api_key:
+            raise RuntimeError(
+                f"api_key_env={api_key_env!r} is set but that environment "
+                "variable is empty or missing (source the file that exports it)"
+            )
+    else:
+        api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         if resolved_base_url:
             # Local OpenAI-compatible servers (vLLM, etc.) ignore the key,
@@ -403,7 +450,8 @@ def call_llm(
 
     client_kwargs: dict[str, Any] = {
         "api_key": api_key,
-        "timeout": _env_default_timeout_s(),
+        "timeout": (float(timeout_s) if timeout_s and float(timeout_s) > 0
+                    else _env_default_timeout_s()),
         # The retry loop below is the single source of retry truth. The SDK
         # defaults to 2 of its own retries *per* iteration of that loop, so
         # leaving it on multiplies the effective attempt count (30 -> 90) and
@@ -417,11 +465,16 @@ def call_llm(
         "model": resolved_model,
         "input": messages,
     }
-    # Omit the key entirely when max_output_tokens is None — callers pass
-    # None to run uncapped (model's full output budget), matching agents
-    # whose reference does not send max_output_tokens at all.
-    if max_output_tokens is not None:
-        request["max_output_tokens"] = max_output_tokens
+    # Resolution: explicit positive arg > LLM_MAX_OUTPUT_TOKENS env > None.
+    # Omit the key entirely when the result is None — callers pass None to
+    # run uncapped (model's full output budget), matching agents whose
+    # reference does not send max_output_tokens at all. The env fallback
+    # lets a config bound runaway generation without editing the agent.
+    resolved_max_output = (
+        max_output_tokens if max_output_tokens else _env_default_max_output_tokens()
+    )
+    if resolved_max_output is not None:
+        request["max_output_tokens"] = resolved_max_output
     if norm_tools:
         request["tools"] = norm_tools
     if resolved_effort:

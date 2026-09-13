@@ -1,0 +1,135 @@
+experiment_name: "travel_hgm_smoke60_agentic"
+
+# End-to-end smoke for the AGENTIC editor (HGM-seed-style bash + editor tool
+# loop, bubblewrap-sandboxed, no docker) on the REAL 60-case train split with a
+# small budget (96 evals ≈ 6 batches, ≤8 rounds). Same manager / evaluator /
+# edit-memory + beliefs stack as hgm_travel_smoke_beliefs2stage.yaml; only the
+# editor block differs. Checks the artifacts, not the score:
+#   * every expanded round_*/agentic/ has transcript.jsonl + session.json with
+#     sandbox_mode == "bwrap", end_reason == "submitted", validation_rounds <= 3
+#   * transcript shows reads of the parent's feedback.json / logs/case_*.json
+#     and the run-level memory files, str_replace edits, a `validate` call,
+#     then submit_self_improvement
+#   * round_*/edit_prediction.json exists once edit_memory_beliefs.md exists
+#   * with META_AGENT_VERBOSE=1, verbose/editor_agentic_instruction.txt lists
+#     paths only (no inlined source, no feedback digest, no steering context)
+#   * the parent console prints no "[editor:agentic] bwrap unavailable" line
+# Task agent / edit memory need the node-5 vLLM endpoint; the editor needs the
+# OpenRouter key (see the editor block). Run:
+#   source /groups/AIC-MV/sudipta.paul/code/random/api.sh
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_smoke_agentic.yaml
+project: "travel"
+
+eval_visibility: "blackbox"   # ignored by the agentic editor: scorer never exposed
+
+loop:
+  max_rounds: 8
+  score_target: 0.99
+
+task_agent:
+  model: "Qwen/Qwen3.5-122B-A10B"
+  reasoning_effort: "medium"
+  base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 96
+    init_expansions: 2
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 2
+    snapshot_tree: false
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+# The agentic editor: one tool-use session per expansion. The model reads the
+# parent node's evidence and the run's memory/diff/belief/registry files from
+# disk itself; the manager's steering context and the feedback digest are NOT
+# put in the prompt (include_manager_context: false).
+# META-MODEL: DeepSeek V4 Pro on OpenRouter (dated pin deepseek-v4-pro-0813,
+# $0.66/M in, $1.98/M out — the slug the 2026-09-10 travel evals used). Only
+# the agentic editor goes to OpenRouter; the task agent and edit memory stay
+# on the local node-5 Qwen. api_key_env makes the editor read the OpenRouter
+# key from its own env var, so the launch is just:
+#   source /groups/AIC-MV/sudipta.paul/code/random/api.sh   # exports OpenRouter_API_KEY (+ OPENAI_API_KEY)
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_smoke_agentic.yaml
+# reasoning_effort "low": at "medium" this model's per-turn reasoning drifted to
+# 33k tokens / 444 s in long tool loops (see eval_travel_or_dsv4pro_0813_noreason.yaml);
+# a 25-40 turn editing session is exactly that shape. llm_timeout_s caps one
+# request so a stalled OpenRouter call cannot eat the session budget.
+# Cost: the Qwen dry run re-sent ~530k input tokens over 26 calls ⇒ ≈$0.4 per
+# expansion at this budget.
+editor:
+  type: "agentic"
+  config:
+    model: "deepseek/deepseek-v4-pro-0813"
+    reasoning_effort: "low"
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OpenRouter_API_KEY"
+    llm_timeout_s: 600
+    max_attempts: 3          # submission / validation rounds
+    max_llm_calls: 25        # tool-loop iterations (whole history re-sent each call)
+    timeout_s: 1200          # wall-clock per session; stops at 90%
+    bash_timeout_s: 120
+    max_tool_output_chars: 20000
+    max_view_chars: 40000
+    sandbox: "auto"          # bwrap when usable, else cwd-only with a warning
+    include_manager_context: false
+
+edit_memory:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "low"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    steering: true
+    steering_token_budget: 48000
+    verdict_threshold: 0.02
+    min_shared: 8
+    max_strategies: 18
+    max_subedits: 3
+    diff_char_cap: 6000
+    setup_pass: true
+    per_check_recipe: null
+    code_record: true
+    code_diff_char_cap: 20000
+    steering_mode: "belief"
+    beliefs:
+      enabled: true
+      reflect_every: 3     # smoke: make the reflection path fire early
+      doc_char_cap: 48000
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  META_AGENT_VERBOSE: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-122B-A10B"
+  TRAVEL_CONVERT_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+split:
+  train_ids_path: "configs/travel_train_ids.json"   # the full 60-case set
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"

@@ -138,6 +138,20 @@ class TestPromptMatchesValidators(unittest.TestCase):
         self.assertRegex(self.prompt, r"ONLY in tool_wrapper\.py")
 
 
+class TestAgenticPromptMatchesValidators(TestPromptMatchesValidators):
+    """The agentic editor composes its system prompt from the same shared
+    rule constants; every check above must hold for it too."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from meta_agent.agentic.session import AGENTIC_SYSTEM_PROMPT
+
+        cls.prompt = AGENTIC_SYSTEM_PROMPT
+
+    def test_agentic_prompt_does_not_promise_inlined_sources(self) -> None:
+        self.assertNotIn("shown below", self.prompt)
+
+
 class TestImportForms(unittest.TestCase):
     """The four spellings, validated as documented."""
 

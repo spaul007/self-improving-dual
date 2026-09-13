@@ -3,8 +3,10 @@
 This is intentionally brittle: it loops at most ``MAX_ITERATIONS`` LLM
 calls, dispatches every tool call the model emits, and extracts the final
 ``<plan>...</plan>`` block from the final text. It does no reflection, no
-retry on bad arguments, no re-prompting when the budget runs out. The
-optimizer's job is to do better.
+retry on bad arguments, no re-prompting when the budget runs out. The one
+concession: if the model's final (no-tool-call) message lacks ``<plan>``
+tags, a single follow-up call asks it to re-emit the plan inside them.
+The optimizer's job is to do better.
 
 Interface contract (preserved across rounds):
     def run_task(task: Task) -> AgentOutput
@@ -21,6 +23,19 @@ from platform_core.runner import AgentOutput, Task
 from tool_wrapper import ToolWrapper
 
 MAX_ITERATIONS = 100
+
+# Sent as one extra user turn when the model's final message has no
+# ``<plan>`` tags. Phrased with the system prompt's own vocabulary so it
+# reads as a continuation of those instructions, not a new spec.
+PLAN_RESCUE_PROMPT = (
+    "Your previous message did not place the final plan within "
+    "<plan></plan> tags. You are in PHASE 2 – PLANNING PHASE: information "
+    "collection is complete, do not call any tools. Output your final and "
+    "complete itinerary now within <plan></plan> tags, strictly adhering to "
+    "all rules and the OUTPUT FORMAT REQUIREMENTS given in the system "
+    "prompt (daily header, activity line formats, budget summary). Use only "
+    "data already returned by the tools in this conversation."
+)
 
 SYSTEM_PROMPT = """You are a top-tier travel planning expert. Your task is to create a comprehensive, executable, and logically rigorous travel plan. All information provided by the user is complete and includes all their preferences; you must not and cannot ask the user any additional preferences or requirements. Your workflow is divided into two stages: First, use tools to collect all necessary information (such as flights, routes, prices, etc.). After sufficient information is gathered, generate the final plan within <plan></plan> tags, strictly adhering to all rules and formats below.
 
@@ -249,6 +264,23 @@ def _extract_plan(text: str) -> str:
     return "\n\n".join(cleaned) if cleaned else ""
 
 
+def _rescue_plan(messages: list) -> str:
+    """One follow-up call asking the model to re-emit its plan in tags.
+
+    ``messages`` is the full trajectory (system prompt, task, every echoed
+    assistant item incl. the untagged plan, every tool output), so the
+    format spec and the data are both in context. ``tools`` is omitted so
+    the model must answer with text. Any failure yields ``""`` — a rescue
+    must never turn a 0-score case into a crash.
+    """
+    messages.append({"role": "user", "content": PLAN_RESCUE_PROMPT})
+    try:
+        response = call_llm(messages=messages)
+    except Exception:  # noqa: BLE001 - rescue is best-effort
+        return ""
+    return _extract_plan(response.content or "")
+
+
 def _item_type(item) -> str:
     """Type tag of a Responses-API output item, robust to either a
     Pydantic model (with `.type`) or a plain dict (with `["type"]`)."""
@@ -314,14 +346,22 @@ def run_task(task: Task) -> AgentOutput:
         messages.extend(_strip_reasoning(raw_output))
 
         if not response.tool_calls:
-            # No tool calls — extract whatever plan is in the final
-            # message and return. Matches reference behavior: no
-            # force-plan rescue, no extra LLM call. If no plan is
-            # found, return empty and let the scorer handle it.
+            # No tool calls — extract the plan from the final message.
+            # If the model wrote its plan without <plan> tags, make one
+            # extra call asking it to re-emit inside the tags; if that
+            # also fails, return empty and let the scorer handle it.
             plan = _extract_plan(response.content or "")
+            rescued = False
+            if not plan:
+                plan = _rescue_plan(messages)
+                rescued = True
             return AgentOutput(
                 result=plan,
-                metadata={"iterations": iterations, "budget_exhausted": False},
+                metadata={
+                    "iterations": iterations,
+                    "budget_exhausted": False,
+                    "plan_rescued": rescued,
+                },
             )
 
         # Append the tool result for each function_call we just got.

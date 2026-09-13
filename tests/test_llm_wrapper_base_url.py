@@ -254,10 +254,10 @@ class TemperaturePlumbingTests(unittest.TestCase):
             k: os.environ.get(k)
             for k in ("OPENAI_API_KEY", "LLM_BASE_URL", "LLM_MODEL",
                       "LLM_REASONING_EFFORT", "LLM_TEMPERATURE",
-                      "META_AGENT_TRACE_PATH")
+                      "LLM_MAX_OUTPUT_TOKENS", "META_AGENT_TRACE_PATH")
         }
         for k in ("LLM_BASE_URL", "LLM_REASONING_EFFORT", "LLM_TEMPERATURE",
-                  "META_AGENT_TRACE_PATH"):
+                  "LLM_MAX_OUTPUT_TOKENS", "META_AGENT_TRACE_PATH"):
             os.environ.pop(k, None)
         os.environ["OPENAI_API_KEY"] = "sk-test"
         os.environ["LLM_MODEL"] = "gpt-5.4-mini"
@@ -351,6 +351,29 @@ class TemperaturePlumbingTests(unittest.TestCase):
         os.environ["LLM_TEMPERATURE"] = "abc"
         kwargs = self._create_kwargs()
         self.assertEqual(kwargs.get("temperature"), 1.0)
+
+    # ----- max_output_tokens: explicit arg > LLM_MAX_OUTPUT_TOKENS > omit -----
+
+    def test_max_output_tokens_omitted_by_default(self) -> None:
+        kwargs = self._create_kwargs()
+        self.assertNotIn("max_output_tokens", kwargs)
+
+    def test_env_max_output_tokens_sent_when_caller_passes_none(self) -> None:
+        os.environ["LLM_MAX_OUTPUT_TOKENS"] = "65536"
+        self.assertEqual(self._create_kwargs().get("max_output_tokens"), 65536)
+        # Explicit None (shopping seed style) still picks up the env cap.
+        kwargs = self._create_kwargs(max_output_tokens=None)
+        self.assertEqual(kwargs.get("max_output_tokens"), 65536)
+
+    def test_explicit_max_output_tokens_wins_over_env(self) -> None:
+        os.environ["LLM_MAX_OUTPUT_TOKENS"] = "65536"
+        kwargs = self._create_kwargs(max_output_tokens=512)
+        self.assertEqual(kwargs.get("max_output_tokens"), 512)
+
+    def test_bad_env_max_output_tokens_treated_as_unset(self) -> None:
+        for bad in ("abc", "0", "-5", ""):
+            os.environ["LLM_MAX_OUTPUT_TOKENS"] = bad
+            self.assertNotIn("max_output_tokens", self._create_kwargs(), bad)
         os.environ["LLM_REASONING_EFFORT"] = "medium"
         os.environ["LLM_MODEL"] = "qwen/qwen3.5-122b-a10b"
         kwargs = self._create_kwargs()
@@ -498,6 +521,63 @@ class ReasoningFallbackTests(unittest.TestCase):
         resp = SimpleNamespace(output=[item])
         content, _ = _extract_output(resp)
         self.assertEqual(content, "hi")
+
+
+class ApiKeyEnvAndTimeoutTests(BaseUrlPlumbingTests):
+    """Per-call ``api_key_env`` / ``timeout_s`` (used by the agentic editor to
+    run on a second provider without touching the global key)."""
+
+    def test_api_key_env_selects_a_different_key(self) -> None:
+        from platform_core import llm_wrapper
+        os.environ["OpenRouter_API_KEY"] = "sk-or-test"
+        try:
+            llm_wrapper.call_llm(
+                [{"role": "user", "content": "hi"}],
+                base_url="https://openrouter.ai/api/v1",
+                api_key_env="OpenRouter_API_KEY",
+            )
+        finally:
+            os.environ.pop("OpenRouter_API_KEY", None)
+        self.assertEqual(_FakeOpenAI.instances[-1].init_kwargs["api_key"], "sk-or-test")
+
+    def test_default_key_unchanged_without_api_key_env(self) -> None:
+        from platform_core import llm_wrapper
+        llm_wrapper.call_llm([{"role": "user", "content": "hi"}])
+        self.assertEqual(_FakeOpenAI.instances[-1].init_kwargs["api_key"], "sk-test")
+
+    def test_missing_api_key_env_var_is_a_clear_error(self) -> None:
+        from platform_core import llm_wrapper
+        os.environ.pop("NOPE_KEY", None)
+        with self.assertRaises(RuntimeError) as cm:
+            llm_wrapper.call_llm([{"role": "user", "content": "hi"}],
+                                 base_url="https://openrouter.ai/api/v1",
+                                 api_key_env="NOPE_KEY")
+        self.assertIn("NOPE_KEY", str(cm.exception))
+
+    def test_llm_api_key_env_is_the_run_wide_default(self) -> None:
+        """A YAML env block can move the whole run (task-agent subprocesses
+        included) to a second provider's key via LLM_API_KEY_ENV; an explicit
+        api_key_env still wins."""
+        from platform_core import llm_wrapper
+        os.environ["OpenRouter_API_KEY"] = "sk-or-test"
+        os.environ["OTHER_KEY"] = "sk-other"
+        os.environ["LLM_API_KEY_ENV"] = "OpenRouter_API_KEY"
+        try:
+            llm_wrapper.call_llm([{"role": "user", "content": "hi"}])
+            self.assertEqual(_FakeOpenAI.instances[-1].init_kwargs["api_key"], "sk-or-test")
+            llm_wrapper.call_llm([{"role": "user", "content": "hi"}], api_key_env="OTHER_KEY")
+            self.assertEqual(_FakeOpenAI.instances[-1].init_kwargs["api_key"], "sk-other")
+        finally:
+            for k in ("OpenRouter_API_KEY", "OTHER_KEY", "LLM_API_KEY_ENV"):
+                os.environ.pop(k, None)
+
+    def test_timeout_s_overrides_env_default(self) -> None:
+        from platform_core import llm_wrapper
+        llm_wrapper.call_llm([{"role": "user", "content": "hi"}], timeout_s=600)
+        self.assertEqual(_FakeOpenAI.instances[-1].init_kwargs["timeout"], 600.0)
+        llm_wrapper.call_llm([{"role": "user", "content": "hi"}])
+        self.assertEqual(_FakeOpenAI.instances[-1].init_kwargs["timeout"],
+                         llm_wrapper._env_default_timeout_s())
 
 
 if __name__ == "__main__":

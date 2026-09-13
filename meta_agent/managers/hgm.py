@@ -77,8 +77,14 @@ class HGMManager:
         snapshot_tree: bool = False,
         lineage_memory_token_budget: int = 15000,
         seed: int = 42,
+        seed_round_dir: Optional[str] = None,
     ) -> None:
         self.eval_budget = eval_budget
+        # Reuse a previous run's round_000 (its task_agent copy, logs and
+        # eval_result.json) instead of re-running the free-but-not-cheap
+        # full-train seed pre-eval. Relative paths resolve against the cwd
+        # (the repo root under main_loop.py).
+        self.seed_round_dir = Path(seed_round_dir) if seed_round_dir else None
         self.init_expansions = init_expansions
         self.alpha = alpha
         self.epsilon = epsilon
@@ -90,6 +96,8 @@ class HGMManager:
         self.beta = beta
         self.eval_batch_size = max(1, eval_batch_size)
         # How many top finalists are re-evaluated on the full train split
+        # (0 disables the top-up; the final pick then compares all evaluated
+        # nodes on the evidence they have)
         # before the final selection (the small-sample-overfit fix).
         self.finalize_top_k = finalize_top_k
         # Sidecar audit: 0 disables; >0 runs that many top finalists on the
@@ -710,14 +718,19 @@ class HGMManager:
         # finalists `_finalize_top_k` just topped up). A thinly-evaluated
         # non-finalist's optimistic partial estimate must not win.
         n_train = len(self._train_case_ids)
-        fully_evaluated = {
-            nid
-            for nid, n in self._tree.nodes.items()
-            if not n.edit_failed and n.n_evals >= n_train
-        }
-        best_id = self._tree.lcb_select(
-            self.epsilon, restrict_to=fully_evaluated
-        )
+        if self.finalize_top_k <= 0:
+            # Top-up disabled: nothing but the root is fully evaluated, so
+            # restricting would always return the root. Compare every
+            # evaluated node on the evidence it has (LCB still penalizes thin
+            # samples).
+            restrict = None
+        else:
+            restrict = {
+                nid
+                for nid, n in self._tree.nodes.items()
+                if not n.edit_failed and n.n_evals >= n_train
+            }
+        best_id = self._tree.lcb_select(self.epsilon, restrict_to=restrict)
         if self._eval_case_ids:
             self._run_eval_split(best_id, evaluator)
         self._run_top_k_full_eval(evaluator)
@@ -743,6 +756,10 @@ class HGMManager:
         train cases they have not yet seen, so every finalist has a full
         train-split estimate before ``lcb_select``. These evaluations are a
         separate finalization budget — not charged to ``eval_budget``."""
+        if self.finalize_top_k <= 0:
+            print("finalize: top-k re-evaluation disabled (finalize_top_k=0)",
+                  flush=True)
+            return
         candidates = [
             n for n in self._tree.nodes.values()
             if not n.edit_failed and n.n_evals > 0
@@ -750,7 +767,7 @@ class HGMManager:
         if not candidates:
             return
         candidates.sort(key=lambda n: n.mean_utility, reverse=True)
-        finalists = candidates[: max(1, self.finalize_top_k)]
+        finalists = candidates[: self.finalize_top_k]
 
         n_train = len(self._train_case_ids)
         spent = 0
@@ -929,13 +946,16 @@ class HGMManager:
         self._tree.add(node)
         self._next_id = 1
 
-        # Pre-evaluate the seed on the FULL train set. Like the reference's
-        # initial-agent evaluation this is free — not charged to
-        # eval_budget — and gives the root a real score so it is an
-        # eligible expansion parent for the init expansions.
-        result = evaluator.run(
-            out_dir, self._benchmark_dir, case_ids=self._train_case_ids
-        )
+        if self.seed_round_dir is not None:
+            result = self._reuse_seed_round(out_dir, seed_dir)
+        else:
+            # Pre-evaluate the seed on the FULL train set. Like the
+            # reference's initial-agent evaluation this is free — not
+            # charged to eval_budget — and gives the root a real score so it
+            # is an eligible expansion parent for the init expansions.
+            result = evaluator.run(
+                out_dir, self._benchmark_dir, case_ids=self._train_case_ids
+            )
         for case in result.per_case:
             node.record(case)
 
@@ -953,6 +973,57 @@ class HGMManager:
             f"node 0: SEED pre-eval -> mean={node.mean_utility:.3f} "
             f"n={node.n_evals} (free, not charged to budget)",
             flush=True,
+        )
+
+    def _reuse_seed_round(self, out_dir: Path, seed_dir: Path) -> EvaluationResult:
+        """Copy a previous run's ``round_000`` evidence (``logs/``,
+        ``eval_result.json``) into this run's root and return its
+        ``EvaluationResult`` restricted to the current train split, so the
+        seed pre-eval is not paid for twice. The previous run's seed code
+        must match ``seed_dir`` byte-for-byte."""
+        src = self.seed_round_dir
+        assert src is not None
+        src_result = src / "eval_result.json"
+        if not src_result.is_file():
+            raise FileNotFoundError(
+                f"seed_round_dir has no eval_result.json: {src}"
+            )
+        # The reused evidence is only valid for the same seed code.
+        import filecmp
+        mismatch = [
+            rel for rel in _iter_rel_files(seed_dir)
+            if not (src / "task_agent" / rel).is_file()
+            or not filecmp.cmp(seed_dir / rel, src / "task_agent" / rel, shallow=False)
+        ]
+        if mismatch:
+            raise RuntimeError(
+                f"seed_round_dir task_agent differs from the seed for "
+                f"{mismatch[:5]} — cannot reuse its evaluation"
+            )
+        src_logs = src / "logs"
+        if src_logs.is_dir():
+            shutil.copytree(src_logs, out_dir / "logs", dirs_exist_ok=True)
+        result = EvaluationResult.model_validate_json(
+            src_result.read_text(encoding="utf-8")
+        )
+        train = set(self._train_case_ids)
+        kept = [c for c in result.per_case if c.case_id in train]
+        missing = sorted(train - {c.case_id for c in kept})
+        if missing:
+            raise RuntimeError(
+                f"seed_round_dir evaluation lacks {len(missing)} train case(s) "
+                f"(e.g. {missing[:5]}): {src}"
+            )
+        print(
+            f"node 0: SEED pre-eval REUSED from {src} "
+            f"({len(kept)} of {len(result.per_case)} recorded cases on the "
+            f"train split)",
+            flush=True,
+        )
+        return EvaluationResult(
+            score=result.score, metrics=result.metrics, passed=result.passed,
+            failed=result.failed, per_case=kept, wall_time_s=result.wall_time_s,
+            crashed=result.crashed,
         )
 
     def _refresh_node_feedback(
@@ -1055,3 +1126,11 @@ class HGMManager:
             ),
             encoding="utf-8",
         )
+
+
+def _iter_rel_files(root: Path) -> list[Path]:
+    """Every regular file under ``root`` (relative), skipping ``__pycache__``."""
+    return sorted(
+        p.relative_to(root) for p in root.rglob("*")
+        if p.is_file() and "__pycache__" not in p.parts
+    )

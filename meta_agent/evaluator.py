@@ -8,6 +8,8 @@ Each benchmark case spawns a fresh Python child running
     env META_AGENT_TRACE_PATH = round_dir/logs/trace.jsonl
     env LLM_TEMPERATURE = task-agent sampling temperature (child env only,
         when configured — see ``task_agent_temperature``)
+    env LLM_MAX_OUTPUT_TOKENS = task-agent per-call output cap (child env
+        only, when configured — see ``task_agent_max_output_tokens``)
     stdin    = JSON Task (description, case_id, context)
 
 The runner imports ``workflow.run_task``, calls it with the Task, and
@@ -89,6 +91,7 @@ class SubprocessEvaluator:
         max_cases: int | None = None,
         scorer: Any = None,
         task_agent_temperature: float | None = None,
+        task_agent_max_output_tokens: int | None = None,
     ) -> None:
         self.wall_time_s = float(wall_time_s_per_case)
         self.memory_bytes = int(memory_mb) * 1024 * 1024
@@ -108,6 +111,14 @@ class SubprocessEvaluator:
         self.task_agent_temperature = (
             float(task_agent_temperature)
             if task_agent_temperature is not None
+            else None
+        )
+        # Task-agent-only per-call output cap, injected from
+        # cfg.task_agent.max_output_tokens. None (default) = don't set, so
+        # the wrapper omits max_output_tokens and the provider runs uncapped.
+        self.task_agent_max_output_tokens = (
+            int(task_agent_max_output_tokens)
+            if task_agent_max_output_tokens is not None
             else None
         )
 
@@ -219,6 +230,9 @@ class SubprocessEvaluator:
         # (e.g. via the YAML env: block) has chosen a global override.
         if self.task_agent_temperature is not None:
             env["LLM_TEMPERATURE"] = str(self.task_agent_temperature)
+        # Same child-env-only treatment for the task-agent output cap.
+        if self.task_agent_max_output_tokens is not None:
+            env["LLM_MAX_OUTPUT_TOKENS"] = str(self.task_agent_max_output_tokens)
         return env
 
     def _preexec(self):

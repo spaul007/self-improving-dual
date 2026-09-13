@@ -74,8 +74,19 @@ class TaskAgentSpec(LLMSpec):
     Deliberately declared here and not on ``LLMSpec`` so editor /
     summarizer / edit-memory specs cannot grow a config-driven
     temperature by accident.
+
+    ``max_output_tokens`` is the per-call output cap for task-agent
+    inference, plumbed the same child-env-only way (``LLM_MAX_OUTPUT_TOKENS``)
+    and read by ``call_llm`` whenever the agent code does not pass its own
+    cap. Model-dependent: set it alongside ``model`` in the YAML. ``None``
+    (default) omits the parameter and lets the provider run uncapped,
+    matching the reference agents. Added 2026-09-12 after
+    deepseek-v4-pro-0813 with reasoning off fell into repetition loops
+    while writing the travel plan and emitted the provider ceiling of
+    131,072 tokens (~800 s, ~$0.26 per call) on 3/120 cases.
     """
     temperature: Optional[float] = 0.2
+    max_output_tokens: Optional[int] = None
 
 
 class SplitSpec(BaseModel):
@@ -211,6 +222,7 @@ def _ensure_builtins_loaded() -> None:
     importlib.import_module("meta_agent.feedback_gatherer")
     importlib.import_module("meta_agent.agent_editor")
     importlib.import_module("meta_agent.agent_editor_two_stage")
+    importlib.import_module("meta_agent.agent_editor_agentic")
     importlib.import_module("meta_agent.behavior_summarizer")
     importlib.import_module("meta_agent.edit_memory")
     importlib.import_module("meta_agent.managers")  # imports submodules
@@ -276,6 +288,9 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
             # Task-agent-only sampling temperature; the evaluator exports it
             # to each case subprocess as LLM_TEMPERATURE (child env only).
             "task_agent_temperature": cfg.task_agent.temperature,
+            # Task-agent-only output cap, exported as LLM_MAX_OUTPUT_TOKENS
+            # (child env only) the same way.
+            "task_agent_max_output_tokens": cfg.task_agent.max_output_tokens,
         },
     )
 
@@ -315,6 +330,9 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         "validators": validators_obj,
         "tools_source": _read_tools_source(project_root),
         "db_schema": _read_db_schema(project_root),
+        # Only the agentic editor declares this: it reads project tools and
+        # the DB schema from disk (never benchmark/ or data/).
+        "project_root": project_root,
     }
     if cfg.eval_visibility == "whitebox":
         editor_injections["scorer_source"] = _read_scorer_source(benchmark_dir)
