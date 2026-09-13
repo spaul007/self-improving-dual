@@ -1,0 +1,158 @@
+# HGM run on a NEW project, travel_mas_refactored_gemma -- a full copy of
+# projects/travel_mas_refactored (seed/benchmark/adapter/tools/data,
+# symlink preserved) made specifically so the original project is never
+# touched. Same manager/sizing/validators as
+# hgm_travel_full_scale_block_tagged_no_summarizer_X100Y180.yaml (the "v3"
+# run: HGM, NO curriculum, block_selection_strategy: "adaptive", full
+# 120-case benchmark, 60 train / 60 held-out, seed=42), with two
+# deliberate differences:
+#
+#   1. task_agent (the SEED backbone, used by ALL FOUR sub-agents --
+#      flight/train/sightseeing/accounting -- since none of them have a
+#      per-agent override in the pristine mas_llm_backbone.yaml) is
+#      google/gemma-4-31b-it via OpenRouter instead of the local vLLM
+#      Qwen3.5-35B-A3B default. Confirmed real via a live OpenRouter
+#      chat/completions call before this config was written, and already
+#      validated standalone (see eval_gemma4_31b_baseline_full_benchmark_3x.py:
+#      mean composite 0.5063 across 3 clean passes, zero crashes,
+#      case_acc 0.83%).
+#
+#   2. block_suggester.config.backbone_catalog is a NON-DEFAULT catalog
+#      for the llm_backbone_selection block -- deliberately NOT the
+#      pipeline default (Gemma-4-31B) or the previous production
+#      catalogs' slugs, so this run's llm_backbone_selection proposals
+#      are genuinely distinct choices, not "switch back to what v1/v3
+#      already tried": qwen/qwen3.6-27b, qwen/qwen3.8-27b,
+#      google/gemini-3.6-flash, google/gemini-3.8-flash -- all four
+#      confirmed real via live OpenRouter chat/completions calls before
+#      being added to meta_agent/block_suggester.py's *available* set
+#      (2026-09-10).
+#
+# scorer/gatherer/summarizer are registered under
+# "travel_mas_refactored_gemma_default" in the new project's own
+# adapter/*.py (renamed from "travel_mas_refactored_default" to avoid any
+# registry-name collision if both projects' scorer.py are ever imported
+# in the same process) -- evaluator.config.scorer below matches.
+#
+# OPENAI_API_KEY MUST be a real OpenRouter key before launch (source
+# /groups/AIC-MV/v.kulkarni1/.env) -- both the task_agent default AND any
+# llm_backbone_selection override in this run go through OpenRouter.
+#
+#   source /groups/AIC-MV/v.kulkarni1/.env
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_gemma_full_scale_block_tagged_X100Y180.yaml
+
+experiment_name: "travel_mas_refactored_gemma_full_scale_block_tagged_X100Y180"
+project: "travel_mas_refactored_gemma"
+
+mutable_exclude:
+  - "workflow.py"
+  - "benchmark/"
+  - "agents/immutable/"
+
+loop:
+  max_rounds: 130
+  score_target: 1.0
+
+task_agent:
+  model: "google/gemma-4-31b-it"
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "https://openrouter.ai/api/v1"
+
+manager:
+  type: "hgm_block_tagged"
+  config:
+    eval_budget: 18000
+    init_expansions: 2
+    alpha: 0.470005
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 32
+    eval_repeats: 2  # >1 = repeats enabled (on/off switch, not a cap)
+    finalize_top_k: 5
+    full_eval_top_k: 0
+    seed: 42
+    block_selection_strategy: "adaptive"
+    # Curriculum stays OFF (curriculum_enabled defaults to False).
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    parallelism: 32
+    scorer: "travel_mas_refactored_gemma_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+    n_hard_cases: 1
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    max_attempts: 2
+    # Opt-in agentic loop: lets the editor read_file/grep the actual
+    # workspace (code, logs, trace.jsonl) before proposing its edit,
+    # instead of only seeing the pre-built feedback report.
+    agentic_editing: true
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+block_suggester:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    strategies_path: "strategies.md"
+    # Opt-in agentic loop: lets the block suggester read_file/grep the
+    # actual workspace (code, logs, trace.jsonl) before writing its
+    # steering prose, instead of only seeing the pre-built feedback report.
+    agentic_access: true
+    # Non-default catalog -- see header comment. All 4 verified live
+    # against the real OpenRouter API before being added.
+    backbone_catalog:
+      - slug: "qwen/qwen3.6-27b"
+        note: "newer generation, smaller than the pipeline default"
+      - slug: "qwen/qwen3.8-27b"
+        note: "newest Qwen generation available"
+      - slug: "google/gemini-3.6-flash"
+        note: "different provider, newer Gemini generation"
+      - slug: "google/gemini-3.8-flash"
+        note: "different provider, newest Gemini generation"
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-35B-A3B"
+
+split:
+  seed: 42
+  train_size: 60
+  eval_size: 60
+  stratify_by: "meta_info.days"
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+    config:
+      workflow_filenames: ["workflow.py", "mas_workflow.py"]
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"
+  - type: "undefined_names"
+  - type: "llm_backbone_config"
+  - type: "smoke_test"
