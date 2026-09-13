@@ -51,6 +51,10 @@ def apply_task_agent_env(spec: cfg_mod.TaskAgentSpec) -> None:
         # constructor requires *some* string. Set a placeholder only when
         # the parent doesn't already have a real key — never overwrite.
         os.environ.setdefault("OPENAI_API_KEY", "EMPTY")
+    if spec.provider:
+        import json as _json
+
+        os.environ["LLM_PROVIDER_PREFERENCE"] = _json.dumps(spec.provider)
 
 
 def apply_project_tools(

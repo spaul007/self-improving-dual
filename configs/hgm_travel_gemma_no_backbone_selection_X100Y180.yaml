@@ -39,6 +39,19 @@ task_agent:
   temperature: 0.2
   max_output_tokens: 16384
   base_url: "https://openrouter.ai/api/v1"
+  # OpenRouter provider-routing preference -- excludes DeepInfra and
+  # requires bf16 (no quantization). Added 2026-09-13 after this
+  # session traced the OpenRouter status="failed" reliability issue
+  # to DeepInfra + an NVFP4-quantized backend (see
+  # openrouter_failure_report.md); confirmed live that OpenRouter
+  # honors this field (a test call with ignore=["DeepInfra"] was
+  # served by Venice instead), and validated at production scale --
+  # 3x independent 120-case passes at parallelism 32, 0 terminal
+  # failures out of 3511 real calls (round013_provider_fix_3x_120/).
+  provider:
+    ignore: ["DeepInfra"]
+    quantizations: ["bf16"]
+    allow_fallbacks: false
 
 manager:
   type: "hgm_block_tagged"

@@ -54,6 +54,17 @@ class LLMSpec(BaseModel):
     base_url: Optional[str] = None
     temperature: Optional[float] = None  # None -> call_llm's own default (1.0)
     max_output_tokens: Optional[int] = None  # None -> call_llm sends no cap at all
+    # OpenRouter-specific provider-routing preference (order/ignore/
+    # quantizations/allow_fallbacks), forwarded verbatim as call_llm's
+    # `provider` param -- e.g. {"ignore": ["DeepInfra"], "quantizations":
+    # ["bf16"]} to steer away from a specific provider or quantization
+    # level. None (default -- zero behavior change) leaves routing to
+    # OpenRouter's own defaults. Confirmed live (2026-09-13) against the
+    # real OpenRouter API + its /generation stats endpoint that this
+    # field is genuinely honored, and validated at production scale (3x
+    # independent 120-case passes, 0 terminal failures out of 3511 real
+    # calls) -- see openrouter_failure_report.md.
+    provider: Optional[dict[str, Any]] = None
 
 
 class TaskAgentSpec(LLMSpec):
