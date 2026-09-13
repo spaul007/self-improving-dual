@@ -121,6 +121,11 @@ def editor_tool_info(*, max_view_chars: int) -> dict[str, Any]:
             "`view`, including indentation); add surrounding lines to make it "
             "unique. This is how you edit — there is no whole-file overwrite.\n"
             "* `insert`: insert `new_str` after line `insert_line` (0 = top).\n"
+            "* `replace_lines`: replace lines `start_line`..`end_line` "
+            "(1-based, inclusive, as numbered by `view`) with `new_str`. Use "
+            "it only when the exact text cannot be reproduced for "
+            "`str_replace` (the error message tells you where the mismatch "
+            "is); take the line numbers from a fresh `view`.\n"
             f"* Long output is truncated at {max_view_chars} chars and marked "
             "`<response clipped>`; use `view_range` to see the rest."
         ),
@@ -129,7 +134,7 @@ def editor_tool_info(*, max_view_chars: int) -> dict[str, Any]:
             "properties": {
                 "command": {
                     "type": "string",
-                    "enum": ["view", "create", "str_replace", "insert"],
+                    "enum": ["view", "create", "str_replace", "insert", "replace_lines"],
                 },
                 "path": {
                     "type": "string",
@@ -146,6 +151,12 @@ def editor_tool_info(*, max_view_chars: int) -> dict[str, Any]:
                 },
                 "insert_line": {
                     "type": "integer", "description": "insert: line number to insert after (0 = top).",
+                },
+                "start_line": {
+                    "type": "integer", "description": "replace_lines: first line to replace (1-based).",
+                },
+                "end_line": {
+                    "type": "integer", "description": "replace_lines: last line to replace (inclusive).",
                 },
                 "view_range": {
                     "type": "array", "items": {"type": "integer"},
@@ -224,6 +235,8 @@ class EditorTool:
         new_str: Any = None,
         insert_line: Any = None,
         view_range: Any = None,
+        start_line: Any = None,
+        end_line: Any = None,
     ) -> str:
         try:
             target = self.policy.resolve(path)
@@ -237,8 +250,10 @@ class EditorTool:
             return self._str_replace(target, old_str, new_str)
         if command == "insert":
             return self._insert(target, insert_line, new_str)
+        if command == "replace_lines":
+            return self._replace_lines(target, start_line, end_line, new_str)
         return (f"Error: unknown command {command!r}; expected one of "
-                "view, create, str_replace, insert")
+                "view, create, str_replace, insert, replace_lines")
 
     # -- view ------------------------------------------------------------ #
 
@@ -333,8 +348,7 @@ class EditorTool:
         count = content.count(old)
         if count == 0:
             return (f"Error: no replacement performed — old_str did not appear "
-                    f"verbatim in {target} (check whitespace/indentation; use "
-                    "view to copy the exact text)")
+                    f"verbatim in {target}. {_closest_match_hint(content, old)}")
         if count > 1:
             at = [content[:i].count("\n") + 1
                   for i in _find_all(content, old)]
@@ -353,6 +367,42 @@ class EditorTool:
                 f"region:\n{_snippet(updated.split(chr(10)), first, last)}")
 
     # -- insert ------------------------------------------------------------ #
+
+    def _replace_lines(self, target: Path, start_line: Any, end_line: Any,
+                       new_str: Any) -> str:
+        """Line-addressed replacement — the escape hatch for text the model
+        cannot reproduce verbatim (special tokens, odd unicode). ``start_line``
+        .. ``end_line`` are 1-based and inclusive, as ``view`` numbers them."""
+        if new_str is None:
+            return "Error: missing required 'new_str' for replace_lines"
+        err = self._writable_existing(target)
+        if err:
+            return err
+        content = target.read_text(encoding="utf-8")
+        lines = content.split("\n")
+        n = len(lines) - (1 if content.endswith("\n") else 0)
+        try:
+            a, b = int(start_line), int(end_line)
+        except (TypeError, ValueError):
+            return (f"Error: start_line and end_line must be integers between 1 "
+                    f"and {n}")
+        if a < 1 or b > n or b < a:
+            return (f"Error: invalid line range [{a}, {b}]; file has {n} lines "
+                    "(1 <= start_line <= end_line <= line count)")
+        replaced = "\n".join(lines[a - 1:b])
+        new_lines = str(new_str).split("\n")
+        if new_lines and new_lines[-1] == "" and len(new_lines) > 1:
+            new_lines = new_lines[:-1]
+        lines[a - 1:b] = new_lines
+        try:
+            target.write_text("\n".join(lines), encoding="utf-8")
+        except OSError as exc:
+            return f"Error: failed to write {target}: {exc}"
+        return (f"The file {target} has been edited: lines {a}-{b} "
+                f"({b - a + 1} line(s)) replaced by {len(new_lines)} line(s). "
+                f"Replaced text was:\n{format_numbered(replaced, start=a)}\n"
+                f"Snippet of the edited region:\n"
+                f"{_snippet(lines, a - 1, a - 1 + len(new_lines))}")
 
     def _insert(self, target: Path, insert_line: Any, new_str: Any) -> str:
         if new_str is None:
@@ -406,6 +456,35 @@ class ValidateTool:
         if not errors:
             return "All validators passed."
         return "Validation errors:\n" + "\n".join(f"  - {e}" for e in errors)
+
+
+def _closest_match_hint(content: str, old: str) -> str:
+    """Explain a missed ``str_replace``: locate the file region most similar
+    to ``old_str`` and name the first divergent characters, so the model can
+    tell an indentation slip from text it cannot reproduce (e.g. a model's
+    own special token such as ``</think>``) and pick ``replace_lines``."""
+    import difflib
+    lines = content.split("\n")
+    probe = next((l for l in old.split("\n") if l.strip()), old).strip()
+    if not probe or not lines:
+        return "Check whitespace/indentation; use view to copy the exact text."
+    best_i, best_r = -1, 0.0
+    for i, line in enumerate(lines):
+        r = difflib.SequenceMatcher(None, probe, line.strip(), autojunk=False).ratio()
+        if r > best_r:
+            best_i, best_r = i, r
+    if best_i < 0 or best_r < 0.5:
+        return ("No similar line found in the file; view the region and copy "
+                "the exact text, or use replace_lines with line numbers.")
+    old_lines = old.split("\n")
+    file_seg = "\n".join(lines[best_i:best_i + len(old_lines)])
+    k = next((j for j, (a, b) in enumerate(zip(old, file_seg)) if a != b),
+             min(len(old), len(file_seg)))
+    lo, hi = max(0, k - 25), k + 25
+    return (f"Closest match starts at line {best_i + 1}; your old_str first "
+            f"differs at char {k}: old_str has {old[lo:hi]!r} but the file has "
+            f"{file_seg[lo:hi]!r}. If you cannot reproduce that text exactly, "
+            f"use replace_lines with the line numbers from view.")
 
 
 def _find_all(haystack: str, needle: str) -> list[int]:

@@ -130,6 +130,35 @@ class TestEditorEdits(ToolBase):
         self.assertIn("[1, 3]", out)
         self.assertEqual(self.wf.read_text(), "a\nb\na\n")  # untouched
 
+    def test_str_replace_miss_names_the_closest_match(self) -> None:
+        # The live DeepSeek run: the model cannot emit `</think>` (its own
+        # special token) and kept retrying. The error must point at the
+        # divergence and at replace_lines.
+        self.wf.write_text('import re\n_THINK_END_RE = re.compile(r"</think>", re.IGNORECASE)\n_PLAN_RE = 1\n')
+        out = self.editor("str_replace", str(self.wf),
+                          old_str='_THINK_END_RE = re.compile(r" response", re.IGNORECASE)\n_PLAN_RE', new_str="x")
+        self.assertIn("did not appear", out)
+        self.assertIn("Closest match starts at line 2", out)
+        self.assertIn(" response", out)
+        self.assertIn("</think>", out)
+        self.assertIn("replace_lines", out)
+        # Nothing similar at all → generic hint, still mentions replace_lines.
+        out2 = self.editor("str_replace", str(self.wf), old_str="zzzz qqqq wwww", new_str="x")
+        self.assertIn("No similar line found", out2)
+
+    def test_replace_lines(self) -> None:
+        out = self.editor("replace_lines", str(self.wf), start_line=2, end_line=2, new_str="    x = 2")
+        self.assertIn("lines 2-2", out)
+        self.assertIn("Replaced text was", out)
+        self.assertIn("x = 1", out)   # the old text is echoed back
+        self.assertEqual(self.wf.read_text(), "def run_task(task):\n    x = 2\n    return None\n")
+        out = self.editor("replace_lines", "workflow.py", start_line=2, end_line=3, new_str="    y = 3\n    return y\n")
+        self.assertEqual(self.wf.read_text(), "def run_task(task):\n    y = 3\n    return y\n")
+        self.assertIn("file has 3 lines", self.editor("replace_lines", str(self.wf), start_line=2, end_line=9, new_str="x"))
+        self.assertIn("must be integers", self.editor("replace_lines", str(self.wf), start_line="a", end_line=2, new_str="x"))
+        self.assertIn("missing required 'new_str'", self.editor("replace_lines", str(self.wf), start_line=1, end_line=1))
+        self.assertIn("not writable", self.editor("replace_lines", str(self.base / "task_agent" / "workflow.py"), start_line=1, end_line=1, new_str="x"))
+
     def test_str_replace_policy_and_missing(self) -> None:
         self.assertIn("missing required 'old_str'", self.editor("str_replace", str(self.wf), new_str="y"))
         ro = self.base / "task_agent" / "workflow.py"
