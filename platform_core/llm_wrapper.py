@@ -109,6 +109,29 @@ def _env_default_max_output_tokens() -> Optional[int]:
     return int(val)
 
 
+def _env_default_provider() -> Optional[dict[str, Any]]:
+    """OpenRouter-specific provider-routing preference (``order``/``ignore``/
+    ``quantizations``/``allow_fallbacks``, forwarded verbatim as the
+    request's ``provider`` field) -- e.g. ``{"ignore": ["DeepInfra"],
+    "quantizations": ["bf16"]}`` to steer away from a specific provider or
+    quantization level. Confirmed live (2026-09-13) against the real
+    OpenRouter API + its /generation stats endpoint: this field is
+    genuinely honored (a test call with ignore=["DeepInfra"] was served by
+    Venice instead). Local/non-OpenRouter endpoints simply ignore an
+    unrecognized ``provider`` field in extra_body, so this is safe to set
+    unconditionally once desired -- but defaults to None (todays exact
+    behavior) until a caller or the LLM_PROVIDER_PREFERENCE env var
+    (a JSON object, same shape) opts in."""
+    val = os.environ.get("LLM_PROVIDER_PREFERENCE")
+    if not val:
+        return None
+    try:
+        parsed = json.loads(val)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
 def _env_default_request_timeout() -> float:
     """Per-attempt HTTP timeout for the OpenAI client (seconds). Without an
     explicit value, the SDK's own default (~600s) applies -- combined with
@@ -218,6 +241,19 @@ def _reasoning_item_text(item: Any) -> str:
     return "\n".join(c for c in chunks if c)
 
 
+def _response_error_info(response: Any) -> tuple[Optional[str], Optional[str]]:
+    """Extract (error_code, error_message) from a Responses-API response's
+    own ``error`` field (a ``ResponseError`` with ``code``/``message`` --
+    populated by the API itself when ``status == "failed"``, distinct
+    from a thrown Python exception). Returns (None, None) when absent --
+    e.g. a normal successful response, or a provider that doesn't
+    populate this field even on failure."""
+    error = getattr(response, "error", None)
+    if error is None:
+        return None, None
+    return getattr(error, "code", None), getattr(error, "message", None)
+
+
 def _extract_output(response: Any) -> tuple[Optional[str], list[ToolCall]]:
     text_parts: list[str] = []
     reasoning_parts: list[str] = []
@@ -301,6 +337,7 @@ def call_llm(
     reasoning_effort: Optional[str] = None,
     base_url: Optional[str] = None,
     max_output_tokens: Optional[int] = DEFAULT_MAX_OUTPUT_TOKENS,
+    provider: Optional[dict[str, Any]] = None,
     **kwargs: Any,
 ) -> LLMResponse:
     """Make one Responses-API round-trip and return a normalised response.
@@ -332,6 +369,7 @@ def call_llm(
         max_output_tokens if max_output_tokens is not None
         else _env_default_max_output_tokens()
     )
+    resolved_provider = provider if provider is not None else _env_default_provider()
 
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -355,6 +393,7 @@ def call_llm(
             "temperature": resolved_temperature,
             "tool_names": [t["name"] for t in norm_tools],
             "num_messages": len(messages),
+            "provider": resolved_provider,
         },
     )
     if os.environ.get("META_AGENT_VERBOSE") == "1":
@@ -398,6 +437,12 @@ def call_llm(
         request["reasoning"] = {"effort": resolved_effort}
     else:
         request["temperature"] = resolved_temperature
+    if resolved_provider:
+        # OpenRouter-specific extension, not part of the OpenAI Responses
+        # API schema -- forwarded via extra_body, which the SDK passes
+        # through verbatim in the JSON body. Any other OpenAI-compatible
+        # endpoint (local vLLM, etc.) simply ignores an unrecognized field.
+        request["extra_body"] = {"provider": resolved_provider}
 
     started = time.time()
     last_err: Optional[Exception] = None
@@ -415,7 +460,6 @@ def call_llm(
             ) from last_err
         try:
             response = client.responses.create(**request)
-            break
         except Exception as exc:  # noqa: BLE001 - retry on any transient error
             last_err = exc
             if attempt == DEFAULT_API_MAX_RETRIES - 1:
@@ -430,12 +474,51 @@ def call_llm(
                 },
             )
             time.sleep(DEFAULT_API_BACKOFF_S)
+            continue
+        # A call that returns without raising can still report its own
+        # generation as failed (status/stop_reason == "failed", content
+        # empty) -- confirmed live (2026-09-11) to happen intermittently
+        # with OpenRouter-proxied models under the Responses API (seen with
+        # both google/gemma-4-31b-it and, in an earlier run, qwen models
+        # accessed the same way -- never with a local vLLM endpoint).
+        # Unlike a thrown exception, this was previously accepted as-is and
+        # handed downstream unchanged, masquerading as the task agent's own
+        # output-quality problem (e.g. sightseeing's "no <itinerary> tag"
+        # failure, traced to a 43.75%-vs-1.7% no_plan_rate spike in one
+        # HGM round) instead of a transient provider issue. Retry it the
+        # same way, against the same budget, unless this was the last
+        # attempt -- in which case fall through unchanged, exactly as
+        # today, so exhausting retries never raises where it didn't before.
+        resp_status = getattr(response, "status", None) or getattr(
+            response, "stop_reason", None
+        )
+        if resp_status == "failed" and attempt < DEFAULT_API_MAX_RETRIES - 1:
+            error_code, error_message = _response_error_info(response)
+            last_err = RuntimeError(
+                f"response status/stop_reason == 'failed' "
+                f"(error_code={error_code!r}, error_message={error_message!r}): {response!r}"
+            )
+            trace.emit(
+                "llm_call_retry",
+                {
+                    "id": call_id,
+                    "attempt": attempt + 1,
+                    "max_retries": DEFAULT_API_MAX_RETRIES,
+                    "error": "response status/stop_reason == 'failed' (no exception raised)",
+                    "response_error_code": error_code,
+                    "response_error_message": error_message,
+                },
+            )
+            time.sleep(DEFAULT_API_BACKOFF_S)
+            continue
+        break
     elapsed = time.time() - started
 
     content, tool_calls = _extract_output(response)
     stop_reason = getattr(response, "status", None) or getattr(
         response, "stop_reason", None
     )
+    response_error_code, response_error_message = _response_error_info(response)
 
     usage = getattr(response, "usage", None)
     trace.emit(
@@ -444,6 +527,10 @@ def call_llm(
             "id": call_id,
             "elapsed_s": elapsed,
             "stop_reason": stop_reason,
+            # Populated by the API itself only when stop_reason=="failed"
+            # (see _response_error_info) -- None the rest of the time.
+            "response_error_code": response_error_code,
+            "response_error_message": response_error_message,
             "input_tokens": getattr(usage, "input_tokens", None) if usage else None,
             "output_tokens": getattr(usage, "output_tokens", None) if usage else None,
             "reasoning_tokens": (
