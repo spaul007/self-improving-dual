@@ -73,9 +73,9 @@ manager:
     clade_pseudo_count: 10000
     eval_batch_size: 16
     finalize_top_k: 0        # no top-k fill-up (sanity check)
-    # Reuse the 60-case seed pre-eval of the first (aborted) attempt of this
+    # Reuse the 60-case seed pre-eval of the finished 2026-09-12 run of this
     # arm instead of paying for it again; the seed code must be unchanged.
-    seed_round_dir: "runs/aborted/20260912_051511_hgm_travel_100_dsv4pro_agentic_editmem/round_000"
+    seed_round_dir: "runs/20260912_061539_hgm_travel_100_dsv4pro_agentic_editmem/round_000"
     full_eval_top_k: 0
     snapshot_tree: true
     seed: 42

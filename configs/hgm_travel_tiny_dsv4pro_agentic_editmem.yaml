@@ -1,8 +1,13 @@
-experiment_name: "hgm_travel_100_dsv4pro_agentic_no_editmem"
+experiment_name: "hgm_travel_tiny_dsv4pro_agentic_editmem"
 
-# SANITY-CHECK PAIR (2026-09-12): agentic editor, eval_budget 100, 60-case train
+# TINY COMPONENT CHECK (2026-09-13): the 100-eval sanity pair scaled down to
+# exercise every component once — 48 evals = 3 batches (2 init expansions ->
+# evaluate both -> 1 more expansion -> evaluate), seed pre-eval reused, editor
+# capped at 60 calls, belief optimizer thresholds lowered so register ->
+# judge -> Brier scoring -> guidance step all fire within the run.
+# Derived from the 100-eval pair (2026-09-12): agentic editor, eval_budget 100, 60-case train
 # split, DeepSeek V4 Pro (dated pin deepseek-v4-pro-0813 on OpenRouter) for
-# BOTH the meta-agent (agentic editor) and the task agent.
+# BOTH the meta-agent (agentic editor + edit memory / beliefs) and the task agent.
 #   treatment : hgm_travel_100_dsv4pro_agentic_editmem.yaml     (edit_memory + code records + beliefs ON)
 #   control   : hgm_travel_100_dsv4pro_agentic_no_editmem.yaml  (no edit memory generated at all)
 # The two files differ ONLY in the presence of the `edit_memory:` block.
@@ -46,7 +51,7 @@ experiment_name: "hgm_travel_100_dsv4pro_agentic_no_editmem"
 # on the local node-5 Qwen (ignores auth; comparable with every earlier travel
 # eval). Launch:
 #   source /groups/AIC-MV/sudipta.paul/code/random/api.sh
-#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_100_dsv4pro_agentic_no_editmem.yaml
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_100_dsv4pro_agentic_editmem.yaml
 project: "travel"
 
 eval_visibility: "blackbox"   # ignored by the agentic editor: scorer never exposed
@@ -65,8 +70,8 @@ task_agent:
 manager:
   type: "hgm"
   config:
-    eval_budget: 100
-    init_expansions: 3
+    eval_budget: 48
+    init_expansions: 2
     alpha: 0.5
     epsilon: 0.25
     beta_prior: 1.0
@@ -75,7 +80,7 @@ manager:
     finalize_top_k: 0        # no top-k fill-up (sanity check)
     # Reuse the 60-case seed pre-eval of the finished 2026-09-12 run of this
     # arm instead of paying for it again; the seed code must be unchanged.
-    seed_round_dir: "runs/20260912_061539_hgm_travel_100_dsv4pro_agentic_no_editmem/round_000"
+    seed_round_dir: "runs/20260912_061539_hgm_travel_100_dsv4pro_agentic_editmem/round_000"
     full_eval_top_k: 0
     snapshot_tree: true
     seed: 42
@@ -96,7 +101,7 @@ gatherer:
 # Agentic editor on DeepSeek V4 Pro. reasoning "low" (medium drifts in long
 # tool loops); llm_timeout_s caps one request so a stall cannot eat the
 # session. The prompt is paths + budget only (include_manager_context false):
-# the agent reads the parent's evidence from disk itself.
+# the agent reads the parent's evidence and the run's edit memory, diffs, beliefs and category registry from disk itself.
 editor:
   type: "agentic"
   config:
@@ -106,8 +111,8 @@ editor:
     api_key_env: "OpenRouter_API_KEY"
     llm_timeout_s: 600
     max_attempts: 3
-    max_llm_calls: 150
-    timeout_s: 5400
+    max_llm_calls: 60
+    timeout_s: 3600
     bash_timeout_s: 120
     max_tool_output_chars: 20000
     max_view_chars: 40000
@@ -116,9 +121,51 @@ editor:
 
 # summarizer: INTENTIONALLY ABSENT — behavioral summary stays off.
 
-# edit_memory: INTENTIONALLY ABSENT — no edit_memory.md / edit_code.md /
-# registry / beliefs are generated, so the agent sees only the raw node
-# artifacts (strategy.json, feedback.json, eval_result.json, logs/, code).
+# Per-node edit memory + code records + beliefs (the full sep6 stack), all on
+# DeepSeek. Writes round_NNN/edit_memory.md + edit_code.md + edit_prediction.json,
+# run-level edit_memory_registry.json / edit_memory_candidates.json /
+# edit_memory_beliefs.md. `steering: true` only renders the deterministic
+# steering block the agentic editor does not receive; the belief updates cost
+# one LLM call per eval batch.
+edit_memory:
+  type: "default"
+  config:
+    model: "deepseek/deepseek-v4-pro-0813"
+    reasoning_effort: "low"
+    base_url: "https://openrouter.ai/api/v1"
+    steering: true                   # renders the deterministic steering block only; the agentic editor does not receive it
+    steering_token_budget: 48000
+    verdict_threshold: 0.02
+    min_shared: 8
+    # Judge-as-signal (analysis v7): strategy beliefs are scored against the
+    # per-node analysis's effect verdict for the matched sub-edit, not the
+    # score Δ; the analysis runs once a node has one batch of its OWN cases.
+    # One extra LLM call per node analysis on this model.
+    strategy_label: judge
+    analysis_min_own_evals: 16
+    judge_min_evidence: moderate     # weak-evidence verdicts stay pending
+    analysis_code_char_budget: 20000 # implementation view shown to the judge
+    max_strategies: 30
+    max_subedits: 3
+    diff_char_cap: 6000
+    setup_pass: true
+    per_check_recipe: null
+    code_record: true                # per-node edit_code.md (the diff the agent may read)
+    code_diff_char_cap: 20000
+    steering_mode: "belief"
+    # Self-predicting beliefs: BeliefStore.register() freezes the matched
+    # belief's p into round_NNN/belief_prediction.json when a node is
+    # recorded; once judged, Brier loss is paid and every optimize_every
+    # scored predictions the guidance text is revised from the misses.
+    # The meta agent never writes a prediction.
+    beliefs:
+      enabled: true
+      doc_char_cap: 40000
+      optimize_enabled: true
+      optimize_every: 2
+      optimize_min_scored: 2
+      optimize_rollback_margin: 0.02
+      instruction_char_cap: 2500
 
 env:
   LLM_API_KEY_ENV: "OpenRouter_API_KEY"   # run-wide: task agent + edit memory + editor

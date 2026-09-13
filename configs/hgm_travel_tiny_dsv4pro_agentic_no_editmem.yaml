@@ -1,6 +1,11 @@
-experiment_name: "hgm_travel_100_dsv4pro_agentic_no_editmem"
+experiment_name: "hgm_travel_tiny_dsv4pro_agentic_no_editmem"
 
-# SANITY-CHECK PAIR (2026-09-12): agentic editor, eval_budget 100, 60-case train
+# TINY COMPONENT CHECK (2026-09-13): the 100-eval sanity pair scaled down to
+# exercise every component once — 48 evals = 3 batches (2 init expansions ->
+# evaluate both -> 1 more expansion -> evaluate), seed pre-eval reused, editor
+# capped at 60 calls, belief optimizer thresholds lowered so register ->
+# judge -> Brier scoring -> guidance step all fire within the run.
+# Derived from the 100-eval pair (2026-09-12): agentic editor, eval_budget 100, 60-case train
 # split, DeepSeek V4 Pro (dated pin deepseek-v4-pro-0813 on OpenRouter) for
 # BOTH the meta-agent (agentic editor) and the task agent.
 #   treatment : hgm_travel_100_dsv4pro_agentic_editmem.yaml     (edit_memory + code records + beliefs ON)
@@ -65,8 +70,8 @@ task_agent:
 manager:
   type: "hgm"
   config:
-    eval_budget: 100
-    init_expansions: 3
+    eval_budget: 48
+    init_expansions: 2
     alpha: 0.5
     epsilon: 0.25
     beta_prior: 1.0
@@ -106,8 +111,8 @@ editor:
     api_key_env: "OpenRouter_API_KEY"
     llm_timeout_s: 600
     max_attempts: 3
-    max_llm_calls: 150
-    timeout_s: 5400
+    max_llm_calls: 60
+    timeout_s: 3600
     bash_timeout_s: 120
     max_tool_output_chars: 20000
     max_view_chars: 40000
