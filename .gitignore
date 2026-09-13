@@ -52,3 +52,40 @@ CLAUDE.md
 DEV_LOG.md
 api.sh
 nohup.out
+logs/
+
+# --- One-off standalone-script output dirs (analysis artifacts, not source;
+# same reasoning as Run artifacts/runs/ above -- each is produced by one of
+# this repo's eval_*.py/validate_*.py scripts and is safe to delete/regenerate) ---
+backbone_block_live_check/
+backbone_block_live_check_v2/
+backbone_block_live_check_v3/
+backbone_block_live_check_v4/
+backbone_block_live_check_v5/
+backbone_block_live_check_v6/
+backbone_slug_validation_32/
+backbone_smoke_repro/
+backbone_smoke_repro_v3r14/
+gemma4_31b_baseline_full_eval_3x/
+gemma_project_sanity_check/
+gemma_smoke_repro/
+iterative_validation_runs/
+modified_harness_full_eval_3x/
+round013_full_eval_120/
+round013_provider_fix_3x_120/
+round013_provider_fix_check/
+seed_baseline_full_eval_3x/
+sightseeing_122b_experiment/
+sightseeing_122b_experiment_sanity_pristine/
+sightseeing_122b_experiment_sanity_pristine2/
+sightseeing_122b_experiment_sanity_seed_refactor/
+sightseeing_122b_full_eval_3x/
+v3_round014_full_eval_3x/
+v3_round017_full_eval_3x/
+
+# --- One-off scratch files (not deliverables) ---
+single_hgm_tree.html
+tree_of_edits_v2.html
+node27_traceable_accommodation_full_context.txt
+strategies copy.md
+qwen_agentic_diagnosis_results.json
