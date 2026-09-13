@@ -162,7 +162,7 @@ def _env_default_max_output_tokens() -> Optional[int]:
     if not raw:
         return None
     try:
-        val = int(raw)
+        val = int(float(raw))
     except (TypeError, ValueError):
         return None
     return val if val > 0 else None

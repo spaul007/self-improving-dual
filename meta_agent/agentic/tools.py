@@ -20,7 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
-from .policy import PathPolicy, resolve
+from .policy import PathPolicy
 from .sandbox import Sandbox
 
 SUBMIT_TOOL_NAME = "submit_self_improvement"
@@ -32,8 +32,7 @@ SUBMIT_TOOL: dict[str, Any] = {
         "Finish the session. Your edits are already on disk — this call "
         "submits only a short summary of the self-improvement you made. The "
         "validators run on this call; if they report errors your workspace is "
-        "kept as-is: fix them and call this again. When a belief document "
-        "exists, include `prediction` against one of its belief ids."
+        "kept as-is: fix them and call this again."
     ),
     "input_schema": {
         "type": "object",
@@ -49,20 +48,6 @@ SUBMIT_TOOL: dict[str, Any] = {
             "rationale": {
                 "type": "string",
                 "description": "Why this change should raise the score (the evidence).",
-            },
-            "prediction": {
-                "type": "object",
-                "description": (
-                    "Optional. Which belief this edit tests and what you expect."
-                ),
-                "properties": {
-                    "belief_id": {"type": "string"},
-                    "expected_direction": {
-                        "type": "string", "enum": ["up", "down", "neutral"],
-                    },
-                    "expected_delta": {"type": "number"},
-                    "why": {"type": "string"},
-                },
             },
         },
         "required": ["optimization_goal", "proposed_changes"],
@@ -89,7 +74,9 @@ def bash_tool_info(*, bash_timeout_s: float, max_output_chars: int) -> dict[str,
         "description": (
             "Run a bash command in a fresh, sandboxed shell.\n"
             "* No internet access. Only the workspace paths listed in the task "
-            "message exist; everything else is absent or read-only.\n"
+            "message exist; everything else is absent or read-only. The roots "
+            "RUN_DIR, NODE_DIR, PARENT_DIR and REPO_DIR are environment "
+            "variables here.\n"
             "* Each call starts a NEW shell in the task_agent directory — cwd, "
             "variables and background processes do NOT persist between calls "
             "(chain with && or ;).\n"
@@ -121,7 +108,9 @@ def editor_tool_info(*, max_view_chars: int) -> dict[str, Any]:
     return {
         "name": "editor",
         "description": (
-            "View and edit files with targeted operations. Absolute paths only.\n"
+            "View and edit files with targeted operations. Paths: absolute, "
+            "`$VAR/...` with the roots from the task message, or relative to "
+            "the task_agent directory.\n"
             "* `view`: a file is shown with line numbers (`cat -n` style); pass "
             "`view_range` [start, end] (end -1 = EOF) for a slice. A directory "
             "is listed up to 2 levels deep, hidden entries excluded.\n"
@@ -142,7 +131,10 @@ def editor_tool_info(*, max_view_chars: int) -> dict[str, Any]:
                     "type": "string",
                     "enum": ["view", "create", "str_replace", "insert"],
                 },
-                "path": {"type": "string", "description": "Absolute path."},
+                "path": {
+                    "type": "string",
+                    "description": "Path: absolute, $VAR/... (roots from the task message), or relative to task_agent/.",
+                },
                 "file_text": {
                     "type": "string", "description": "create: full content of the new file.",
                 },
@@ -234,7 +226,7 @@ class EditorTool:
         view_range: Any = None,
     ) -> str:
         try:
-            target = resolve(path)
+            target = self.policy.resolve(path)
         except ValueError as exc:
             return str(exc)
         if command == "view":

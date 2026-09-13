@@ -31,7 +31,7 @@ from ..agent_editor import (
     editor_import_forms,
 )
 from ..models import EvolutionStrategy
-from .policy import PathPolicy
+from .policy import BELIEFS_FILE, PathPolicy
 from .tools import SUBMIT_TOOL, SUBMIT_TOOL_NAME, ToolSet
 
 TRANSCRIPT_NAME = "transcript.jsonl"
@@ -68,10 +68,9 @@ AGENTIC_SYSTEM_PROMPT = (
     "First understand the task: read the agent's system prompt in "
     "workflow.py, the tool implementations, and the database schema with the "
     "editor/bash tools — nothing is inlined in this conversation. The parent "
-    "node's logs/case_*.json and feedback.json hold concrete failing examples; "
-    "the run-level edit memory, diffs and beliefs show what earlier edits "
-    "tried and how they fared. Target edits at the failures that most affect "
-    "the score.\n"
+    "node's evaluation evidence (feedback.json, logs/case_*.json) holds the "
+    "concrete failures to target. Aim your edit at the failures that most "
+    "affect the score.\n"
     + EDITOR_MUTABLE_SURFACE
     + EDITOR_HARD_RULES
     + editor_import_forms("The seed's tool_wrapper.py (on disk)")
@@ -81,10 +80,15 @@ AGENTIC_SYSTEM_PROMPT = (
     "code and the database are not available — do not look for them, and do "
     "not try to run the task agent on cases (there is no model access inside "
     "the sandbox).\n"
+    "  - Paths: the task message defines the roots RUN_DIR, NODE_DIR, "
+    "PARENT_DIR and REPO_DIR. They are environment variables in every bash "
+    "call; the editor tool accepts the same `$VAR/...` form, absolute paths, "
+    "or paths relative to the task_agent directory.\n"
     "  - Verify with `validate` (the same validators that gate your "
     "submission), `python3 -c \"import workflow\"`, "
-    "`python3 -m json.tool tools_schema.json`, and small scratch scripts "
-    "under the scratch directory.\n"
+    "`python3 -m json.tool tools_schema.json`, and small throwaway scripts "
+    "in the scratch directory (yours alone — nothing there ships with the "
+    "agent or is validated).\n"
     "  - Edit with the `editor` tool's `str_replace` / `insert` commands "
     "(they are commands of `editor`, not tools of their own). Never "
     "re-create or rewrite a whole file; `create` is only for a new "
@@ -93,16 +97,41 @@ AGENTIC_SYSTEM_PROMPT = (
     "at most the first third of it reading (bash can `cat`/`sed -n` several "
     "files in one call; put independent commands in one call), then EDIT. A "
     "modest, well-verified change that is actually submitted beats a perfect "
-    "diagnosis that never becomes an edit. You will get reminders at the "
-    "halfway point and near the end.\n\n"
+    "diagnosis that never becomes an edit. You will get reminders at a third, "
+    "at the halfway point and near the end.\n\n"
     "Finishing: when your edits are complete and `validate` passes, call "
     "`submit_self_improvement` with a one-line optimization_goal, a "
     "proposed_changes summary and a rationale (a summary only — your edits "
-    "are already on disk), plus a `prediction` against one belief id when a "
-    "belief document exists. The validators run on submit; on errors your "
+    "are already on disk). The validators run on submit; on errors your "
     "workspace is kept — fix them and submit again (limited attempts). You "
     "must end the session by submitting; do not stop with a plain message."
 )
+
+STEP_PARENT = (
+    "Read the parent's hgm_node.json, strategy.json and feedback.json; open "
+    "the failing logs/case_*.json it names. Your edits should be motivated by "
+    "these failures."
+)
+STEP_MEMORY = (
+    "Before deciding what to change, check $RUN_DIR/edit_memory_beliefs.md{note}. "
+    "It is the accumulated understanding of every previous edit: how each "
+    "strategy worked out, whether something like your idea was already tried, "
+    "and when it failed whether the idea or its implementation was at fault. "
+    "Use it as guidance. Since it refers to where those strategies were used, "
+    "you can also check relevant node's edit_memory.md, edit_code.md, "
+    "task_agent/ and results to see what was actually done and how it scored, "
+    "and do better this time. You do not need to repeat the dominant strategy, "
+    "you can also diversify and try different kind of edits time to time."
+)
+STEP_VIEW = (
+    "View workflow.py (and tool_wrapper.py / tools_schema.json as needed); "
+    "check the immutable tools' source and db_schema.md for any tool you touch."
+)
+STEP_EDIT = (
+    "Make targeted str_replace edits; instrument new decision points with "
+    "platform_core.trace.log."
+)
+STEP_SUBMIT = "Run validate (and python3 -c \"import workflow\"); fix errors; submit."
 
 
 def render_instruction(
@@ -111,32 +140,32 @@ def render_instruction(
     max_llm_calls: int,
     timeout_s: float,
     max_attempts: int,
+    memory: Optional[bool] = None,
     manager_context: Optional[str] = None,
 ) -> str:
-    """The single task message. Paths and budget only — no inlined source,
-    no feedback digest; the agent reads evidence from the run directory."""
+    """The single task message: roots, workspace map, procedure, budget.
+    Paths are ``$VAR`` forms only — no experiment path, no inlined source,
+    no feedback digest. ``memory`` (default: the run has edit-memory files)
+    adds the memory block to the map and the belief-guidance step; the
+    no-memory arm never mentions memory or beliefs."""
+    if memory is None:
+        memory = policy.memory_enabled()
+    steps = [STEP_PARENT]
+    if memory:
+        beliefs_exist = (policy.roots()["RUN_DIR"] / BELIEFS_FILE).exists()
+        note = "" if beliefs_exist else " (not written yet at this round — skip this step)"
+        steps.append(STEP_MEMORY.format(note=note))
+    steps += [STEP_VIEW, STEP_EDIT, STEP_SUBMIT]
+    procedure = "\n".join(f"  {i}. {text}" for i, text in enumerate(steps, 1))
     parts = [
         "# Task\n"
-        f"Improve the task agent at {policy.task_agent} — a copy of node "
-        f"{policy.base_dir.name} ({policy.base_dir}). It is evaluated on a "
-        "benchmark of tasks; your goal is a targeted code change that raises "
-        "its score. You decide what to change based on the evidence in the "
-        "run directory.\n",
-        policy.describe(),
-        "## Suggested procedure\n"
-        "  1. Read the parent node's hgm_node.json, strategy.json and "
-        "feedback.json; open the failing logs/case_*.json it names.\n"
-        "  2. Consult the run-level edit_memory_beliefs.md and "
-        "edit_memory_registry.json, and the strategy.json / edit_code.md of "
-        "sibling and ancestor nodes, so you build on what worked and do not "
-        "repeat what failed.\n"
-        "  3. View workflow.py (and tool_wrapper.py / tools_schema.json as "
-        "needed); check the immutable tools' source and db_schema.md for any "
-        "tool you touch.\n"
-        "  4. Make targeted str_replace edits; instrument new decision points "
-        "with platform_core.trace.log.\n"
-        "  5. Run validate (and python3 -c \"import workflow\"); fix errors; "
-        "submit.\n",
+        "Improve the task agent's harness — its prompts, control flow, "
+        "verification and repair logic, and tools — so that it scores higher "
+        "on the benchmark it is evaluated on. The agent under edit is "
+        "$NODE_DIR/task_agent, a copy of its parent node $PARENT_DIR. You "
+        "decide what to change based on the evidence in the run directory.\n",
+        policy.describe(memory=memory),
+        f"## Procedure\n{procedure}\n",
         "## Budget\n"
         f"  - at most {max_llm_calls} model calls and {timeout_s:g}s "
         "wall-clock for this session\n"
@@ -260,7 +289,6 @@ class AgenticSession:
         *,
         run_validators: Callable[[], list[str]],
         changed_files: Callable[[], list[str]],
-        write_prediction: Callable[[dict[str, Any]], None],
         cfg: SessionConfig,
         transcript: Transcript,
     ) -> None:
@@ -268,7 +296,6 @@ class AgenticSession:
         self.toolset = toolset
         self.run_validators = run_validators
         self.changed_files = changed_files
-        self.write_prediction = write_prediction
         self.cfg = cfg
         self.transcript = transcript
         # Mutable session state
@@ -475,12 +502,6 @@ class AgenticSession:
             proposed_changes=_coerce_str(args.get("proposed_changes")),
             rationale=_coerce_str(args.get("rationale")),
         )
-        pred = args.get("prediction")
-        if isinstance(pred, dict) and pred:
-            try:
-                self.write_prediction(pred)
-            except Exception as exc:  # noqa: BLE001 - never fail a submit on bookkeeping
-                self.transcript.write("prediction_error", error=repr(exc)[:500])
         return "Submission accepted.", True, False
 
     # ------------------------------------------------------------------ #

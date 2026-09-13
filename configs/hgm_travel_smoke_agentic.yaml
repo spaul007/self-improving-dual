@@ -98,22 +98,39 @@ edit_memory:
     model: "Qwen/Qwen3.5-122B-A10B"
     reasoning_effort: "low"
     base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
-    steering: true
+    steering: true                   # renders the deterministic steering block only; the agentic editor does not receive it
     steering_token_budget: 48000
     verdict_threshold: 0.02
     min_shared: 8
-    max_strategies: 18
+    # Judge-as-signal (analysis v7): strategy beliefs are scored against the
+    # per-node analysis's effect verdict for the matched sub-edit, not the
+    # score Δ; the analysis runs once a node has one batch of its OWN cases.
+    # One extra LLM call per node analysis on this model.
+    strategy_label: judge
+    analysis_min_own_evals: 16
+    judge_min_evidence: moderate     # weak-evidence verdicts stay pending
+    analysis_code_char_budget: 20000 # implementation view shown to the judge
+    max_strategies: 30
     max_subedits: 3
     diff_char_cap: 6000
     setup_pass: true
     per_check_recipe: null
-    code_record: true
+    code_record: true                # per-node edit_code.md (the diff the agent may read)
     code_diff_char_cap: 20000
     steering_mode: "belief"
+    # Self-predicting beliefs: BeliefStore.register() freezes the matched
+    # belief's p into round_NNN/belief_prediction.json when a node is
+    # recorded; once judged, Brier loss is paid and every optimize_every
+    # scored predictions the guidance text is revised from the misses.
+    # The meta agent never writes a prediction.
     beliefs:
       enabled: true
-      reflect_every: 3     # smoke: make the reflection path fire early
-      doc_char_cap: 48000
+      doc_char_cap: 40000
+      optimize_enabled: true
+      optimize_every: 4
+      optimize_min_scored: 4
+      optimize_rollback_margin: 0.02
+      instruction_char_cap: 2500
 
 env:
   META_AGENT_STRIP_REASONING: "1"

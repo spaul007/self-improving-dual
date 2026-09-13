@@ -7,6 +7,14 @@ experiment_name: "hgm_travel_100_dsv4pro_agentic_no_editmem"
 #   control   : hgm_travel_100_dsv4pro_agentic_no_editmem.yaml  (no edit memory generated at all)
 # The two files differ ONLY in the presence of the `edit_memory:` block.
 #
+# PROMPTS (2026-09-13 review): one system prompt + one instruction message;
+# paths are $RUN_DIR / $NODE_DIR / $PARENT_DIR / $REPO_DIR (env vars in every
+# bash call, expanded by the editor tool) — no experiment path in the prompt.
+# The no-memory arm never mentions memory or beliefs; the memory arm gets the
+# memory files in its workspace map plus one belief-guidance step. The meta
+# agent never writes a prediction: the belief layer registers its own
+# (round_NNN/belief_prediction.json) and is Brier-scored against the judge.
+#
 # TASK AGENT: reasoning_effort "none" — the only value that actually disables
 # DeepSeek's reasoning (see eval_travel_or_dsv4pro_0813_noreason.yaml for the
 # measurement); at medium it ran away to 33k reasoning tokens / 444 s per turn.

@@ -116,7 +116,7 @@ class TestHappyPath(EditorBase):
             _Resp(content="looking", tool_calls=[_Call("c1", "editor", {"command": "view", "path": str(self.wf)})]),
             _Resp(tool_calls=[self.replace("c2", "x = 1", "x = 2")]),
             _Resp(tool_calls=[_Call("c3", "validate", {})]),
-            _Resp(tool_calls=[_submit(prediction={"belief_id": "belief:b", "expected_direction": "up", "expected_delta": 0.02, "why": "w"})]),
+            _Resp(tool_calls=[_submit()]),
         ])
         res = ed.apply(None, self.base, self.out, context="STEERING TEXT")
         self.assertTrue(res.success, res.errors)
@@ -133,13 +133,24 @@ class TestHappyPath(EditorBase):
         first = llm.calls[0]
         self.assertEqual(first["messages"][0]["content"], AGENTIC_SYSTEM_PROMPT)
         instr = first["messages"][1]["content"]
-        self.assertIn(str(self.out / "task_agent" / "workflow.py"), instr)
-        self.assertIn(str(self.base), instr)
-        self.assertIn("edit_memory_beliefs.md", instr)
+        # Paths are $VAR forms only — never the experiment's absolute path.
+        self.assertNotIn(str(self.run), instr)
+        self.assertNotIn(str(self.out), instr)
+        self.assertIn("$NODE_DIR/task_agent/workflow.py", instr)
+        self.assertIn("NODE_DIR    $RUN_DIR/round_002/   this node", instr)
+        self.assertIn("PARENT_DIR  $RUN_DIR/round_001/   its parent", instr)
+        # This run has a belief document → memory arm: memory block + step 2.
+        self.assertIn("$RUN_DIR/edit_memory_beliefs.md", instr)
+        self.assertIn("2. Before deciding what to change, check $RUN_DIR/edit_memory_beliefs.md.", instr)
+        self.assertIn("5. Run validate", instr)
+        self.assertIn("Your edits should be motivated by these failures.", instr)
+        self.assertIn("harness", instr)
         self.assertIn("at most 10 model calls", instr)
         self.assertNotIn("x = 1", instr)
         self.assertNotIn("STEERING TEXT", instr)
         self.assertNotIn("Last round's feedback", instr)
+        self.assertNotIn("prediction", instr)
+        self.assertNotIn("prediction", first["messages"][0]["content"])
         self.assertEqual([t["name"] for t in first["tools"]],
                          ["bash", "editor", "validate", SUBMIT_TOOL_NAME])
         self.assertEqual(first["temperature"], 0.2)
@@ -170,9 +181,47 @@ class TestHappyPath(EditorBase):
         self.assertEqual(s["n_tool_calls"], {"editor": 2, "validate": 1, SUBMIT_TOOL_NAME: 1})
         self.assertEqual(s["sandbox_mode"], "none")
         self.assertTrue((self.out / "agentic" / "scratch").is_dir())
-        pred = json.loads((self.out / PREDICTION_NAME).read_text())
-        self.assertEqual(pred["belief_id"], "b")
-        self.assertEqual(pred["expected_direction"], "up")
+        # The meta agent never writes a prediction; the belief layer does.
+        self.assertFalse((self.out / PREDICTION_NAME).exists())
+        self.assertTrue(s["memory_enabled"])
+        self.assertEqual(s["roots"]["NODE_DIR"], str(self.out.resolve()))
+
+    def test_no_memory_run_never_mentions_memory(self) -> None:
+        (self.run / "edit_memory_beliefs.md").unlink()
+        ed, llm = self.editor([_Resp(tool_calls=[self.replace("c1", "x = 1", "x = 3"), _submit()])])
+        self.assertTrue(ed.apply(None, self.base, self.out).success)
+        system = llm.calls[0]["messages"][0]["content"]
+        instr = llm.calls[0]["messages"][1]["content"]
+        for text in (system, instr):
+            for word in ("memory", "belief", "edit_memory_registry", "prediction"):
+                self.assertNotIn(word, text.lower(), word)
+        for t in llm.calls[0]["tools"]:
+            self.assertNotIn("belief", json.dumps(t).lower())
+        self.assertIn("2. View workflow.py", instr)
+        self.assertIn("4. Run validate", instr)
+        self.assertFalse(self.session()["memory_enabled"])
+
+    def test_memory_run_before_beliefs_exist(self) -> None:
+        (self.run / "edit_memory_beliefs.md").unlink()
+        (self.run / "edit_memory_candidates.json").write_text("{}")   # setup pass ran
+        ed, llm = self.editor([_Resp(tool_calls=[self.replace("c1", "x = 1", "x = 3"), _submit()])])
+        self.assertTrue(ed.apply(None, self.base, self.out).success)
+        instr = llm.calls[0]["messages"][1]["content"]
+        self.assertIn("(not written yet at this round — skip this step)", instr)
+        self.assertNotIn("$RUN_DIR/edit_memory_beliefs.md     belief document", instr)
+        self.assertIn("$RUN_DIR/round_NNN/edit_memory.md", instr)
+
+    def test_var_path_form_in_tool_calls(self) -> None:
+        ed, llm = self.editor([_Resp(tool_calls=[
+            _Call("c1", "editor", {"command": "str_replace", "path": "$NODE_DIR/task_agent/workflow.py",
+                                    "old_str": "x = 1", "new_str": "x = 8"}),
+            _Call("c2", "bash", {"command": "cat $PARENT_DIR/feedback.json"}),
+            _submit(),
+        ])])
+        self.assertTrue(ed.apply(None, self.base, self.out).success)
+        self.assertIn("x = 8", self.wf.read_text())
+        outs = [e for e in self.transcript() if e["kind"] == "tool_call"]
+        self.assertIn('"score": 0.4', outs[1]["result"])
 
     def test_manager_context_opt_in(self) -> None:
         ed, llm = self.editor([_Resp(tool_calls=[self.replace("c1", "x = 1", "x = 3"), _submit()])],
@@ -454,6 +503,13 @@ class TestConcurrencyAndWiring(EditorBase):
         self.assertFalse(ed.include_manager_context)
         self.assertIsNone(ed.api_key_env)
         self.assertIsNone(ed.llm_timeout_s)
+        # config.build_components injects "judge"/"score"; accepted, forwarded to
+        # the base class, and deliberately not spliced into the agentic prompt.
+        ed2 = _build_with_injection(
+            ComponentSpec(type="agentic", config={"sandbox": "none"}), "editor",
+            {"llm_caller": lambda **kw: None, "validators": [], "objective": "judge"},
+        )
+        self.assertEqual(ed2.objective, "judge")
 
     def test_api_key_env_and_timeout_reach_the_llm_call(self) -> None:
         ed, llm = self.editor([_Resp(tool_calls=[self.replace("c1", "x = 1", "x = 3"), _submit()])],
@@ -498,6 +554,9 @@ class TestConcurrencyAndWiring(EditorBase):
         b = load(REPO_ROOT / "configs" / "hgm_travel_100_dsv4pro_agentic_no_editmem.yaml")
         self.assertIsNotNone(a.edit_memory)
         self.assertIsNone(b.edit_memory)
+        self.assertEqual(a.edit_memory.config["strategy_label"], "judge")
+        self.assertTrue(a.edit_memory.config["beliefs"]["optimize_enabled"])
+        self.assertNotIn("reflect_every", a.edit_memory.config["beliefs"])
         for cfg in (a, b):
             self.assertEqual(cfg.task_agent.model, "deepseek/deepseek-v4-pro-0813")
             self.assertEqual(cfg.task_agent.reasoning_effort, "none")

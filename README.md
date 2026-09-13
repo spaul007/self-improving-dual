@@ -154,10 +154,22 @@ slurm/run_hgm.sh shopping      # configs/hgm_shopping.yaml
 calls in a response processed) that works directly on the round's
 `task_agent/` copy and ends with a structured `submit_self_improvement` call
 carrying only a summary — the edits are already on disk. It is **one agentic
-flow**: there is no proposal / retrieval stage and no feedback digest or
-steering context in the prompt; the agent reads the parent node's evidence
-and the run's edit memory, diffs, beliefs and category registry from disk
-itself. No docker.
+flow**: no proposal / retrieval stage, no feedback digest or steering context
+in the prompt; the agent reads the parent node's evidence (and, when the run
+has edit memory, the memory / diff / belief / registry files) from disk
+itself. No docker. The meta agent never writes a belief prediction — the
+belief layer registers its own (see "Edit memory").
+
+Prompts: one fixed system prompt (`meta_agent/agentic/session.py`) and one
+instruction message per session. Paths are expressed through four roots —
+`$RUN_DIR`, `$NODE_DIR`, `$PARENT_DIR`, `$REPO_DIR` — that are environment
+variables in every bash call and are expanded by the editor tool, so no
+experiment path ever appears in the prompt. A run **without** edit memory
+gets an instruction that never mentions memory or beliefs; a run **with** it
+additionally gets the run-level memory files in its workspace map and one
+procedure step telling it to consult the belief document (accumulated
+understanding of previous edits) as guidance, follow its node references,
+and diversify.
 
 Tools:
 
@@ -168,38 +180,40 @@ Tools:
   with a printed warning; `sandbox: bwrap` refuses to run unconfined.
 - `editor` — `view` (line-numbered, optional `view_range`), `create`,
   `str_replace` (`old_str` must match exactly once), `insert`. No whole-file
-  overwrite: the model edits, it does not rewrite.
+  overwrite: the model edits, it does not rewrite. Paths: absolute, `$VAR/...`,
+  or relative to `task_agent/`.
 - `validate` — runs the configured validators on demand (the fast "unit test";
   does not count as a submission).
 - `submit_self_improvement` — `optimization_goal`, `proposed_changes`,
-  `rationale`, optional `prediction` (written to `edit_prediction.json` so the
-  belief layer keeps scoring predictions). Validators run on submit; on errors
-  the workspace is **kept** and the error list goes back to the model (up to
-  `max_attempts` rounds).
+  `rationale`. Validators run on submit; on errors the workspace is **kept**
+  and the error list goes back to the model (up to `max_attempts` rounds).
 
 Read/write surface (`meta_agent/agentic/policy.py`; the editor tool enforces
 it in-process, the sandbox mirrors it as binds):
 
 | access | paths |
 |---|---|
-| writable | `round_NNN/task_agent/{workflow.py,tool_wrapper.py,tools_schema.json}`, `task_agent/mutable_tools/*.py` (new files allowed), `round_NNN/agentic/scratch/` |
-| read-only | the whole run directory — every `round_NNN/` (`hgm_node.json`, `strategy.json`, `feedback.json`, `eval_result.json`, `logs/`, `edit_memory.md`, `edit_code.md`, `edit_prediction.json`, `task_agent/`) and the run-level `edit_memory_registry.json`, `edit_memory_candidates.json`, `edit_memory_beliefs*.{md,json}`, `edit_memory_beliefs_archive/`, `tree_snapshots.jsonl` — plus `platform_core/`, `projects/<p>/tools/`, `projects/<p>/db_schema.md` |
+| writable | `round_NNN/task_agent/{workflow.py,tool_wrapper.py,tools_schema.json}`, `task_agent/mutable_tools/*.py` (new files allowed), `round_NNN/agentic/scratch/` (the agent's own throwaway scripts; never validated) |
+| read-only | the whole run directory — every `round_NNN/` (`hgm_node.json`, `strategy.json`, `feedback.json`, `eval_result.json`, `logs/`, `edit_memory.md`, `edit_code.md`, `task_agent/`) and the run-level `edit_memory_registry.json`, `edit_memory_candidates.json`, `edit_memory_beliefs*.{md,json}`, `tree_snapshots.jsonl` — plus `platform_core/`, `projects/<p>/tools/`, `projects/<p>/db_schema.md` |
 | never | `projects/<p>/benchmark/` (scorer, `_eval/`, cases.jsonl), `projects/<p>/data/`, the categorizer, `meta_agent/`, other runs. `eval_visibility` is ignored by this editor. |
 
 Because bwrap binds are live views, files the framework writes to the run
 root later (new memory records, belief updates) are visible without any
 rebinding. The task agent can *not* be run on cases inside the sandbox (no
 model access, no database) — by design; checks are `validate`, import checks
-and scratch scripts.
+and scratch scripts. Budget reminders are injected at a third and at the
+halfway point of `max_llm_calls` (while nothing has been edited) and in the
+final stretch.
 
 Per-session artifacts: `round_NNN/agentic/transcript.jsonl` (every LLM call,
 tool call with input/result, validation round) and `agentic/session.json`
 (`end_reason`, `n_llm_calls`, per-tool counts, `validation_rounds`,
-`sandbox_mode`, token usage). With `META_AGENT_VERBOSE=1` the exact system
-prompt, instruction and final message history land in `verbose/`. In
-`hgm_dual` mode these stay under `variants/var_k/` (only `task_agent/` and
-`logs/` are promoted), and the dual manager's per-variant category focus is
-only delivered when `include_manager_context: true`.
+`sandbox_mode`, `memory_enabled`, roots, token usage). With
+`META_AGENT_VERBOSE=1` the exact system prompt, instruction and final message
+history land in `verbose/`. In `hgm_dual` mode these stay under
+`variants/var_k/` (only `task_agent/` and `logs/` are promoted), and the dual
+manager's per-variant category focus is only delivered when
+`include_manager_context: true`.
 
 ```yaml
 editor:
@@ -212,8 +226,8 @@ editor:
                                              # task agent / edit memory keep OPENAI_API_KEY
     llm_timeout_s: 600                       # per-request cap so a stall can't eat the session
     max_attempts: 3            # submission / validation rounds
-    max_llm_calls: 40          # tool-loop iterations (history re-sent each call)
-    timeout_s: 1800            # wall-clock per session; stops at 90%
+    max_llm_calls: 150         # tool-loop iterations (history re-sent each call)
+    timeout_s: 5400            # wall-clock per session; stops at 90%
     bash_timeout_s: 120
     max_tool_output_chars: 20000
     max_view_chars: 40000
@@ -229,12 +243,13 @@ YAML `env:` block — the run-wide default for `api_key_env`. The
 `hgm_travel_100_dsv4pro_agentic_{editmem,no_editmem}.yaml` pair does this
 (DeepSeek V4 Pro for meta and task agent, task reasoning `none`,
 `finalize_top_k: 0` = no end-of-run top-k fill-up, `verbose: true` so every
-session's full message history is kept).
+session's full message history is kept, `seed_round_dir` to reuse a previous
+run's seed pre-evaluation).
 
 ```bash
 source /groups/AIC-MV/sudipta.paul/code/random/api.sh   # exports OpenRouter_API_KEY
 PYTHONPATH=. META_AGENT_VERBOSE=1 python3 main_loop.py --config configs/hgm_travel_smoke_agentic.yaml
-PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_1000_qwen122b_node5_agentic_editmem.yaml
+PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_100_dsv4pro_agentic_editmem.yaml
 ```
 
 ## Standalone evaluation

@@ -3,11 +3,13 @@
 Instead of one LLM call that must emit full replacement files, the model
 runs a tool-use session (``bash`` in a bubblewrap sandbox, a targeted-edit
 ``editor``, ``validate``) directly on the round's ``task_agent/`` copy, and
-ends by calling ``submit_self_improvement`` with a summary. There is one
-instruction prompt: paths and budget. No feedback digest, no steering
-context, no retrieval stage — the agent reads the parent node's evidence and
-the run's edit memory / diffs / beliefs / category registry from disk itself
-(see ``meta_agent/agentic/policy.py`` for exactly what is visible).
+ends by calling ``submit_self_improvement`` with a summary (no belief
+prediction — the belief layer registers its own). There is one instruction
+prompt: roots as ``$VAR`` paths, workspace map, procedure, budget. No
+feedback digest, no steering context, no retrieval stage — the agent reads
+the parent node's evidence (and, when the run has edit memory, the memory /
+diff / belief / registry files) from disk itself; a run without edit memory
+never hears the words (see ``meta_agent/agentic/policy.py``).
 
 Contract to the managers is unchanged: ``apply(feedback, base_dir, out_dir,
 context=...)`` → ``EditResult`` with the final code under
@@ -43,7 +45,6 @@ from .agentic.tools import (
     bash_tool_info,
     editor_tool_info,
 )
-from .edit_beliefs import write_prediction
 from .edit_diff import changed_mutable_files
 from .models import AgentFeedback, EditResult
 from .registry import register
@@ -83,12 +84,17 @@ class AgenticEditor(AgentEditor):
         include_manager_context: bool = False,
         api_key_env: Optional[str] = None,
         llm_timeout_s: Optional[float] = None,
+        # Injected by config.build_components ("judge" under belief-mode
+        # steering, else "score"). Accepted for the shared injection
+        # contract and forwarded to the base class; the agentic prompts are
+        # fixed text reviewed as a whole and do not splice it in.
+        objective: str = "score",
     ) -> None:
         super().__init__(
             llm_caller, validators, max_attempts=max_attempts, model=model,
             reasoning_effort=reasoning_effort, base_url=base_url,
             tools_source=tools_source, db_schema=db_schema,
-            scorer_source=scorer_source,
+            scorer_source=scorer_source, objective=objective,
         )
         self.project_root = Path(project_root) if project_root else None
         self.max_llm_calls = int(max_llm_calls)
@@ -157,13 +163,13 @@ class AgenticEditor(AgentEditor):
             self.llm, toolset,
             run_validators=lambda: self._run_validators(out_dir, base_dir),
             changed_files=lambda: self._changed_files(out_dir, base_dir),
-            write_prediction=lambda pred: write_prediction(out_dir, pred),
             cfg=cfg,
             transcript=Transcript(agentic_dir / TRANSCRIPT_NAME),
         )
+        memory = policy.memory_enabled()
         instruction = render_instruction(
             policy, max_llm_calls=self.max_llm_calls, timeout_s=self.timeout_s,
-            max_attempts=self.max_attempts,
+            max_attempts=self.max_attempts, memory=memory,
             manager_context=context if self.include_manager_context else None,
         )
         if verbose_log.is_enabled():
@@ -174,6 +180,8 @@ class AgenticEditor(AgentEditor):
 
         summary = result.to_dict()
         summary["sandbox_mode"] = sandbox_mode
+        summary["memory_enabled"] = memory
+        summary["roots"] = {k: str(v) for k, v in policy.roots().items()}
         (agentic_dir / SESSION_NAME).write_text(
             json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
         )

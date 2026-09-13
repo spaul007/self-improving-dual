@@ -88,8 +88,17 @@ class TestEditorView(ToolBase):
         self.assertIn("not readable", denied)
         self.assertIn("does not exist", self.editor("view", str(self.out / "nope.py")))
 
-    def test_relative_path_rejected(self) -> None:
-        self.assertIn("must be absolute", self.editor("view", "workflow.py"))
+    def test_path_forms(self) -> None:
+        # relative to task_agent, $VAR and ${VAR} roots, absolute — all the same file
+        for form in ("workflow.py", "$NODE_DIR/task_agent/workflow.py",
+                     "${NODE_DIR}/task_agent/workflow.py", str(self.wf)):
+            self.assertIn("     1\tdef run_task(task):", self.editor("view", form), form)
+        self.assertIn("feedback.json", self.editor("view", "$PARENT_DIR"))
+        self.assertIn("unknown root", self.editor("view", "$NOPE/workflow.py"))
+        self.assertIn("Error: path is required", self.editor("view", ""))
+        out = self.editor("str_replace", "workflow.py", old_str="x = 1", new_str="x = 7")
+        self.assertIn("has been edited", out)
+        self.assertIn("x = 7", self.wf.read_text())
 
     def test_unknown_command(self) -> None:
         self.assertIn("unknown command", self.editor("edit", str(self.wf)))
@@ -170,7 +179,9 @@ class TestToolSetAndHelpers(ToolBase):
             self.assertIn("input_schema", info)
             self.assertIn("name", info)
         self.assertNotIn("files", SUBMIT_TOOL["input_schema"]["properties"])
-        self.assertIn("prediction", SUBMIT_TOOL["input_schema"]["properties"])
+        # The meta agent never predicts; the belief layer registers its own.
+        self.assertNotIn("prediction", SUBMIT_TOOL["input_schema"]["properties"])
+        self.assertNotIn("belief", SUBMIT_TOOL["description"].lower())
 
 
 class TestBashFallback(ToolBase):
@@ -201,6 +212,12 @@ class TestBashFallback(ToolBase):
         self.assertIn("line1\n", out)
         self.assertIn("line200", out)
         self.assertIn("[truncated", out)
+
+    def test_roots_exported_to_bash(self) -> None:
+        out = self.bash('echo "$RUN_DIR|$NODE_DIR|$PARENT_DIR|$REPO_DIR"')
+        roots = self.policy.roots()
+        self.assertEqual(out, "|".join(str(roots[k]) for k in ("RUN_DIR", "NODE_DIR", "PARENT_DIR", "REPO_DIR")))
+        self.assertIn("feedback.json", self.bash("ls $PARENT_DIR"))
 
     def test_env_is_scrubbed(self) -> None:
         os.environ["OPENAI_API_KEY"] = "sk-test-secret"
@@ -333,6 +350,10 @@ class TestBwrapConfinement(unittest.TestCase):
         self.assertIn("META_AGENT_PROJECT=travel", env)
         net = self.bash('python3 -c "import socket; socket.create_connection((\'1.1.1.1\', 80), 2)"')
         self.assertIn("unreachable", net.lower())
+
+    def test_roots_inside_sandbox(self) -> None:
+        self.assertIn("belief:a", self.bash("cat $RUN_DIR/edit_memory_beliefs.md"))
+        self.assertEqual(self.bash("cd $NODE_DIR/task_agent && python3 -c 'import workflow; print(1)'"), "1")
 
     def test_fresh_shell_per_call(self) -> None:
         self.bash("export FOO=1; cd /tmp")

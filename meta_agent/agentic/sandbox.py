@@ -114,6 +114,10 @@ def sandbox_env(policy: PathPolicy, *, path: str) -> dict[str, str]:
     }
     if policy.project_name:
         env["META_AGENT_PROJECT"] = policy.project_name
+    # The roots the instruction prompt names as $VAR — same values in bash
+    # and in the editor tool.
+    for var, path in policy.roots().items():
+        env[var] = str(path)
     return env
 
 

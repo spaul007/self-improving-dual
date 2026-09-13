@@ -7,6 +7,14 @@ experiment_name: "hgm_travel_100_dsv4pro_agentic_editmem"
 #   control   : hgm_travel_100_dsv4pro_agentic_no_editmem.yaml  (no edit memory generated at all)
 # The two files differ ONLY in the presence of the `edit_memory:` block.
 #
+# PROMPTS (2026-09-13 review): one system prompt + one instruction message;
+# paths are $RUN_DIR / $NODE_DIR / $PARENT_DIR / $REPO_DIR (env vars in every
+# bash call, expanded by the editor tool) — no experiment path in the prompt.
+# The no-memory arm never mentions memory or beliefs; the memory arm gets the
+# memory files in its workspace map plus one belief-guidance step. The meta
+# agent never writes a prediction: the belief layer registers its own
+# (round_NNN/belief_prediction.json) and is Brier-scored against the judge.
+#
 # TASK AGENT: reasoning_effort "none" — the only value that actually disables
 # DeepSeek's reasoning (see eval_travel_or_dsv4pro_0813_noreason.yaml for the
 # measurement); at medium it ran away to 33k reasoning tokens / 444 s per turn.
@@ -120,22 +128,39 @@ edit_memory:
     model: "deepseek/deepseek-v4-pro-0813"
     reasoning_effort: "low"
     base_url: "https://openrouter.ai/api/v1"
-    steering: true
+    steering: true                   # renders the deterministic steering block only; the agentic editor does not receive it
     steering_token_budget: 48000
     verdict_threshold: 0.02
     min_shared: 8
-    max_strategies: 18
+    # Judge-as-signal (analysis v7): strategy beliefs are scored against the
+    # per-node analysis's effect verdict for the matched sub-edit, not the
+    # score Δ; the analysis runs once a node has one batch of its OWN cases.
+    # One extra LLM call per node analysis on this model.
+    strategy_label: judge
+    analysis_min_own_evals: 16
+    judge_min_evidence: moderate     # weak-evidence verdicts stay pending
+    analysis_code_char_budget: 20000 # implementation view shown to the judge
+    max_strategies: 30
     max_subedits: 3
     diff_char_cap: 6000
     setup_pass: true
     per_check_recipe: null
-    code_record: true
+    code_record: true                # per-node edit_code.md (the diff the agent may read)
     code_diff_char_cap: 20000
     steering_mode: "belief"
+    # Self-predicting beliefs: BeliefStore.register() freezes the matched
+    # belief's p into round_NNN/belief_prediction.json when a node is
+    # recorded; once judged, Brier loss is paid and every optimize_every
+    # scored predictions the guidance text is revised from the misses.
+    # The meta agent never writes a prediction.
     beliefs:
       enabled: true
-      reflect_every: 3
-      doc_char_cap: 48000
+      doc_char_cap: 40000
+      optimize_enabled: true
+      optimize_every: 8
+      optimize_min_scored: 8
+      optimize_rollback_margin: 0.02
+      instruction_char_cap: 2500
 
 env:
   LLM_API_KEY_ENV: "OpenRouter_API_KEY"   # run-wide: task agent + edit memory + editor

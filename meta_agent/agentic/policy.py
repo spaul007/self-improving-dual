@@ -20,6 +20,7 @@ they are not roots, and a deny-list guards against a misconfigured root.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -33,27 +34,26 @@ RUN_ROOT_MARKER = "config.snapshot.yaml"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRATCH_SUBDIR = ("agentic", "scratch")
 LIST_SKIP_NAMES = {"__pycache__"}
-# Run-root files the instruction prompt explains to the agent (only the ones
-# present are listed). Name -> one-line meaning.
-RUN_ROOT_LEGEND = (
-    ("edit_memory_registry.json", "category registry across all edits (deterministic)"),
-    ("edit_memory_candidates.json", "proxy categories from the setup pass (tagger-only)"),
-    ("edit_memory_beliefs.md", "current belief document about which edit strategies work"),
-    ("edit_memory_beliefs_state.json", "machine bookkeeping for the beliefs"),
-    ("edit_memory_beliefs_archive", "earlier belief documents"),
-    ("beliefs_archive", "earlier belief documents"),
-    ("tree_snapshots.jsonl", "search-tree history, one snapshot per line"),
+# Root variables the instruction prompt and the sandbox share: the prompt
+# names paths as ``$VAR/...``, every bash call has them exported, and the
+# editor tool expands them. Keeps the prompt free of experiment paths.
+ROOT_VARS = ("RUN_DIR", "NODE_DIR", "PARENT_DIR", "REPO_DIR")
+# Run-level edit-memory files the prompt explains (only listed when present).
+MEMORY_LEGEND = (
+    ("edit_memory_beliefs.md",
+     "belief document — which edit strategies have worked, which have not and why, with node citations"),
+    ("edit_memory_registry.json", "category registry of every edit made so far"),
 )
+MEMORY_MARKERS = ("edit_memory_registry.json", "edit_memory_candidates.json",
+                  "edit_memory_beliefs.md")
+BELIEFS_FILE = "edit_memory_beliefs.md"
 ROUND_LEGEND = (
-    ("hgm_node.json", "tree stats: parent_id, mean_utility, n_evals, cmp"),
+    ("hgm_node.json", "tree stats: parent_id, mean_utility, n_evals"),
     ("strategy.json", "the edit summary that produced this node"),
     ("feedback.json", "evaluation digest incl. the failure report"),
     ("eval_result.json", "per-case scores and details"),
-    ("logs/case_<id>.json", "one CaseResult per evaluated case"),
+    ("logs/case_<id>.json", "one result per evaluated case"),
     ("logs/trace.jsonl", "llm/tool trace of the evaluation"),
-    ("edit_memory.md", "memory record of this node's edit"),
-    ("edit_code.md", "the diff vs its parent + changed defs"),
-    ("edit_prediction.json", "the belief prediction made for this edit"),
     ("task_agent/", "this node's code"),
 )
 
@@ -72,6 +72,64 @@ class PathPolicy:
     repo_root: Path
     project_root: Optional[Path]
     project_name: str
+
+    # ------------------------------------------------------------------ #
+    # Roots
+    # ------------------------------------------------------------------ #
+
+    def roots(self) -> dict[str, Path]:
+        """``RUN_DIR`` / ``NODE_DIR`` / ``PARENT_DIR`` / ``REPO_DIR`` — the
+        only absolute paths the agent ever needs; exported as env vars in
+        every bash call and expanded by the editor tool."""
+        return {
+            "RUN_DIR": self.run_root if self.run_root is not None else self.out_dir.parent,
+            "NODE_DIR": self.out_dir,
+            "PARENT_DIR": self.base_dir,
+            "REPO_DIR": self.repo_root,
+        }
+
+    def var_path(self, path: Path) -> str:
+        """Render ``path`` as ``$VAR/...`` using the most specific root
+        (NODE_DIR before RUN_DIR, since it lies inside it)."""
+        path = Path(path)
+        for var in ("NODE_DIR", "PARENT_DIR", "RUN_DIR", "REPO_DIR"):
+            root = self.roots()[var]
+            if path == root:
+                return f"${var}"
+            if root in path.parents:
+                return f"${var}/{path.relative_to(root)}"
+        return str(path)
+
+    def resolve(self, path_str: str) -> Path:
+        """Turn a tool-supplied path into the realpath the policy is keyed
+        on: ``$VAR/...`` and ``${VAR}/...`` expand from :meth:`roots`,
+        absolute paths pass through, relative paths resolve against the
+        task_agent directory (the bash cwd). Raises ``ValueError`` with the
+        message the model should see."""
+        if not isinstance(path_str, str) or not path_str.strip():
+            raise ValueError("Error: path is required")
+        text = path_str.strip()
+        m = re.match(r"^\$\{?([A-Z_]+)\}?(?:/|$)(.*)$", text)
+        if m:
+            var, rest = m.group(1), m.group(2)
+            if var not in self.roots():
+                raise ValueError(
+                    f"Error: unknown root ${var}; known roots: "
+                    + ", ".join(f"${v}" for v in ROOT_VARS)
+                )
+            p = self.roots()[var] / rest if rest else self.roots()[var]
+        else:
+            p = Path(text)
+            if not p.is_absolute():
+                p = self.task_agent / p
+        return _real(p)
+
+    def memory_enabled(self) -> bool:
+        """Edit memory is on for this run iff the framework has written any
+        of its run-level files (the setup pass writes the registry and
+        candidates before the first expansion)."""
+        run = self.roots()["RUN_DIR"]
+        return any((run / name).exists() for name in MEMORY_MARKERS)
 
     # ------------------------------------------------------------------ #
     # Queries
@@ -110,56 +168,91 @@ class PathPolicy:
     # Rendering for the instruction prompt
     # ------------------------------------------------------------------ #
 
-    def describe(self, *, listing_depth: int = 2) -> str:
+    def describe(self, *, listing_depth: int = 2, memory: Optional[bool] = None) -> str:
+        """The workspace map for the instruction prompt: roots as ``$VAR``,
+        writable files, the parent's evidence legend, the run-level memory
+        files (only when ``memory`` — default: :meth:`memory_enabled`), the
+        platform/project reference, and a listing of the agent."""
+        if memory is None:
+            memory = self.memory_enabled()
+        run = self.roots()["RUN_DIR"]
+
+        def under_run(p: Path) -> str:
+            # The roots table defines NODE_DIR / PARENT_DIR in terms of RUN_DIR.
+            return (f"$RUN_DIR/{p.relative_to(run)}" if run in p.parents
+                    else str(p))
+
+        node_rel = under_run(self.out_dir)
+        parent_rel = under_run(self.base_dir)
         lines = [
-            "## Workspace (absolute paths; nothing outside these exists for "
-            "bash or the editor tool)",
-            f"Agent under edit — bash cwd: {self.task_agent}",
+            "## Roots (environment variables in every bash call; the editor "
+            "tool accepts the same $VAR form)",
+            "  RUN_DIR     the run directory (runs/<experiment>/) — one "
+            "round_NNN/ per node; 'node N' means round_NNN/ (zero-padded)",
+            f"  NODE_DIR    {node_rel}/   this node",
+            f"  PARENT_DIR  {parent_rel}/   its parent",
+            "  REPO_DIR    the repository root",
+            "",
+            "## Workspace (nothing outside these exists for bash or the "
+            "editor tool)",
+            "Agent under edit — bash cwd: $NODE_DIR/task_agent/",
             "  WRITABLE (edit with the editor tool):",
         ]
+        order = ("workflow.py", "tool_wrapper.py", "tools_schema.json")
+        for name in order:
+            f = self.task_agent / name
+            if f in self.write_files:
+                lines.append(f"    {self.var_path(f)}")
         for f in self.write_files:
-            lines.append(f"    {f}")
+            if f.name not in order:
+                lines.append(f"    {self.var_path(f)}")
         for d in self.write_dirs:
             if d == self.scratch:
                 continue
-            lines.append(f"    {d}/      (new *.py files allowed)")
-        lines.append(f"  Scratch (writable, ignored by validators): {self.scratch}/")
+            lines.append(f"    {self.var_path(d)}/      (new *.py files allowed)")
+        lines.append(
+            "  Scratch for your own throwaway scripts (not part of the agent, "
+            f"not validated): {self.var_path(self.scratch)}/"
+        )
         lines.append("READ-ONLY reference:")
         lines.append(
-            f"  parent node (the agent you are improving + its evidence): {self.base_dir}/"
+            "  parent node $PARENT_DIR/ — the agent you are improving and its "
+            "evaluation evidence:"
         )
-        present = [(n, m) for n, m in ROUND_LEGEND
-                   if _round_entry_exists(self.base_dir, n)]
-        for name, meaning in present:
-            lines.append(f"     {name:<22} {meaning}")
-        if self.run_root is not None:
+        for name, meaning in ROUND_LEGEND:
+            if _round_entry_exists(self.base_dir, name):
+                lines.append(f"     {name:<22} {meaning}")
+        lines.append("  every other node $RUN_DIR/round_NNN/ has the same layout.")
+        if memory:
+            lines.append("  accumulated understanding of previous edits (run-level):")
+            for name, meaning in MEMORY_LEGEND:
+                if (run / name).exists():
+                    lines.append(f"     $RUN_DIR/{name:<26} {meaning}")
             lines.append(
-                f"  run directory (every node round_NNN/ has the same layout as "
-                f"the parent above; 'node N' in any memory/belief citation is "
-                f"round_NNN/ zero-padded, e.g. node 17 -> round_017/): {self.run_root}/"
+                "     $RUN_DIR/round_NNN/edit_memory.md    memory record of "
+                "that node's edit; edit_code.md next to it is its diff"
             )
-            for name, meaning in RUN_ROOT_LEGEND:
-                if (self.run_root / name).exists():
-                    lines.append(f"     {name:<32} {meaning}")
         lines.append(
-            f"  platform (call_llm, runner, trace, tools registry): "
-            f"{self.repo_root / 'platform_core'}/"
+            "  platform (call_llm, runner, trace, tools registry): "
+            "$REPO_DIR/platform_core/"
         )
         if self.project_root is not None:
             tools_dir = self.project_root / "tools"
             if tools_dir.exists():
                 lines.append(
-                    f"  immutable tools reached via call_tool: {tools_dir}/"
+                    f"  immutable tools reached via call_tool: {self.var_path(tools_dir)}/"
                 )
             schema = self.project_root / "db_schema.md"
             if schema.exists():
-                lines.append(f"  database schema the tools query against: {schema}")
+                lines.append(
+                    f"  database schema the tools query against: {self.var_path(schema)}"
+                )
         lines.append(
             "  NOT available anywhere: the benchmark's cases, scoring code and "
             "the database itself; the model API; the network."
         )
         lines.append("")
-        lines.append(f"Listing of {self.task_agent} ({listing_depth} levels):")
+        lines.append(f"Listing of $NODE_DIR/task_agent ({listing_depth} levels):")
         lines.append(self.list_dir(self.task_agent, depth=listing_depth, indent="  "))
         return "\n".join(lines) + "\n"
 
@@ -266,8 +359,8 @@ def find_run_root(start: Path) -> Optional[Path]:
 
 
 def resolve(path_str: str) -> Path:
-    """Turn a tool-supplied path into the realpath the policy is keyed on.
-    Raises ``ValueError`` with the message the model should see."""
+    """Absolute-path realpath (no roots, no relative resolution). Kept for
+    callers that have no policy at hand; tools use ``PathPolicy.resolve``."""
     if not isinstance(path_str, str) or not path_str.strip():
         raise ValueError("Error: path is required")
     p = Path(path_str.strip())

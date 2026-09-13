@@ -214,20 +214,67 @@ class TestResolveAndDescribe(PolicyBase):
         with self.assertRaises(ValueError):
             resolve("")
 
-    def test_describe_lists_paths_and_omits_missing(self) -> None:
+    def test_describe_uses_root_variables_and_omits_missing(self) -> None:
         text = self.policy.describe()
-        self.assertIn(str(self.r(self.out / "task_agent" / "workflow.py")), text)
-        self.assertIn(str(self.r(self.base)), text)
-        self.assertIn(str(self.r(self.run)), text)
-        self.assertIn("edit_memory_registry.json", text)
-        self.assertIn("edit_memory_beliefs.md", text)
-        self.assertNotIn("edit_memory_candidates.json", text)  # not present
+        # No absolute path anywhere: everything is expressed via $VAR roots.
+        for absolute in (str(self.r(self.out)), str(self.r(self.base)),
+                         str(self.r(self.run)), str(self.r(self.repo))):
+            self.assertNotIn(absolute, text)
+        self.assertIn("NODE_DIR    $RUN_DIR/round_002/variants/var_0/   this node", text)
+        self.assertIn("PARENT_DIR  $RUN_DIR/round_001/   its parent", text)
+        self.assertIn("$NODE_DIR/task_agent/workflow.py", text)
+        self.assertIn("$NODE_DIR/agentic/scratch/", text)
         self.assertIn("logs/case_<id>.json", text)
         self.assertNotIn("hgm_node.json", text)  # not present in this base
-        self.assertIn(str(self.r(self.proj / "tools")), text)
-        self.assertIn(str(self.r(self.proj / "db_schema.md")), text)
+        self.assertIn("$REPO_DIR/projects/travel/tools/", text)
+        self.assertIn("$REPO_DIR/projects/travel/db_schema.md", text)
         self.assertNotIn("benchmark", text.split("NOT available")[0])
         self.assertIn("workflow.py", text.split("Listing of")[1])
+        # Memory block: on by default because the run has memory files ...
+        self.assertTrue(self.policy.memory_enabled())
+        self.assertIn("accumulated understanding of previous edits", text)
+        self.assertIn("$RUN_DIR/edit_memory_registry.json", text)
+        self.assertIn("$RUN_DIR/edit_memory_beliefs.md", text)
+        self.assertIn("$RUN_DIR/round_NNN/edit_memory.md", text)
+        # ... and absent entirely when rendered for a no-memory run.
+        plain = self.policy.describe(memory=False)
+        for word in ("memory", "belief", "edit_memory_registry", "accumulated"):
+            self.assertNotIn(word, plain)
+
+    def test_roots_and_resolve_forms(self) -> None:
+        roots = self.policy.roots()
+        self.assertEqual(roots["RUN_DIR"], self.r(self.run))
+        self.assertEqual(roots["NODE_DIR"], self.r(self.out))
+        self.assertEqual(roots["PARENT_DIR"], self.r(self.base))
+        self.assertEqual(roots["REPO_DIR"], self.r(self.repo))
+        wf = self.r(self.out / "task_agent" / "workflow.py")
+        self.assertEqual(self.policy.resolve("$NODE_DIR/task_agent/workflow.py"), wf)
+        self.assertEqual(self.policy.resolve("${NODE_DIR}/task_agent/workflow.py"), wf)
+        self.assertEqual(self.policy.resolve("workflow.py"), wf)              # relative to task_agent
+        self.assertEqual(self.policy.resolve("./mutable_tools/../workflow.py"), wf)
+        self.assertEqual(self.policy.resolve(str(wf)), wf)                    # absolute
+        self.assertEqual(self.policy.resolve("$PARENT_DIR/feedback.json"),
+                         self.r(self.base / "feedback.json"))
+        self.assertEqual(self.policy.resolve("$RUN_DIR"), self.r(self.run))
+        with self.assertRaises(ValueError) as cm:
+            self.policy.resolve("$NOPE/x")
+        self.assertIn("unknown root", str(cm.exception))
+        with self.assertRaises(ValueError):
+            self.policy.resolve("")
+        self.assertEqual(self.policy.var_path(wf), "$NODE_DIR/task_agent/workflow.py")
+        self.assertEqual(self.policy.var_path(self.r(self.base) / "x"), "$PARENT_DIR/x")
+
+    def test_memory_enabled_detection(self) -> None:
+        run = self.proj / "runs" / "m"
+        run.mkdir(parents=True)
+        (run / RUN_ROOT_MARKER).write_text("")
+        base, out = run / "round_001", run / "round_002"
+        _agent(base, "def run_task(task):\n    return None\n")
+        _agent(out, "def run_task(task):\n    return None\n")
+        pol = build_policy(out_dir=out, base_dir=base, repo_root=self.repo, project_root=self.proj)
+        self.assertFalse(pol.memory_enabled())
+        (run / "edit_memory_candidates.json").write_text("{}")
+        self.assertTrue(pol.memory_enabled())  # live check, no rebuild needed
 
     def test_list_dir_filters_unreadable_and_hidden(self) -> None:
         (self.out / "task_agent" / ".hidden").write_text("")
