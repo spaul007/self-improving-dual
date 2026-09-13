@@ -252,6 +252,19 @@ PYTHONPATH=. META_AGENT_VERBOSE=1 python3 main_loop.py --config configs/hgm_trav
 PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_100_dsv4pro_agentic_editmem.yaml
 ```
 
+#### Expansion-paired evaluation (`manager.config.expand_eval_size`)
+
+By default (0) an expansion only creates the child; whether and when it is
+evaluated is the bandit's later decision, so some nodes end a run with no
+evaluation at all. `expand_eval_size: 16` evaluates every freshly expanded
+child on 16 random train cases immediately (charged to `eval_budget` and to
+the widening counter, like the dual manager's winner batch) and refuses to
+expand when the paired batch is unaffordable. At 1000 evals with `alpha 0.5`
+this leaves the tree width unchanged (32 nodes / 63 batches) but makes 32 of
+the batches mandatory child evaluations, so every editor session is measured
+and the belief judge sees every node; the bandit keeps the other 31 batches.
+The agentic configs enable it.
+
 ## Standalone evaluation
 
 `evaluate.py` runs a specific task_agent (the seed, a saved round, or any

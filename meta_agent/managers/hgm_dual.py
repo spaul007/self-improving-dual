@@ -212,10 +212,13 @@ class HGMDualManager(HGMManager):
         parent_id: int,
         editor: AgentEditor,
         gatherer: FeedbackGatherer,
+        evaluator: Optional[Evaluator] = None,
     ) -> int:
-        # NOTE: ``evaluator`` is captured off ``self._evaluator`` set in the
-        # subclass override of ``evolve`` (see below).
-        evaluator = self._evaluator  # type: ignore[attr-defined]
+        # NOTE: the base loop now passes ``evaluator``; older callers rely on
+        # ``self._evaluator`` set in the subclass override of ``evolve``.
+        # (The dual expansion always evaluates the winner intra-expand, so
+        # the base class's ``expand_eval_size`` pairing is not used here.)
+        evaluator = evaluator or self._evaluator  # type: ignore[attr-defined]
 
         parent = self._tree[parent_id]
         node_id = self._next_id

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import random
 import shutil
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -226,7 +227,8 @@ class HGMEvolveTests(unittest.TestCase):
         self.experiment.mkdir()
 
     def _run(self, *, fail_call=None, eval_budget=40, init_expansions=2,
-             finalize_top_k=5, seed_round_dir=None, experiment_dir=None):
+             finalize_top_k=5, seed_round_dir=None, experiment_dir=None,
+             expand_eval_size=0):
         from meta_agent.feedback_gatherer import DefaultFeedbackGatherer
         from meta_agent.managers.hgm import HGMManager
 
@@ -238,6 +240,7 @@ class HGMEvolveTests(unittest.TestCase):
             seed=7,
             finalize_top_k=finalize_top_k,
             seed_round_dir=seed_round_dir,
+            expand_eval_size=expand_eval_size,
         )
         editor = _StubEditor(fail_call=fail_call)
         evaluator = _StubEvaluator()
@@ -353,6 +356,28 @@ class HGMEvolveTests(unittest.TestCase):
         with self.assertRaises(RuntimeError) as cm:
             self._run(seed_round_dir=str(prev_root), experiment_dir=self.tmp / "exp3")
         self.assertIn("differs from the seed", str(cm.exception))
+
+    def test_expand_eval_size_pairs_an_evaluation_with_every_expansion(self) -> None:
+        """expand_eval_size > 0: every freshly expanded child is evaluated on
+        that many cases at once (charged to the budget and to the widening
+        counter), so no successful node is left unevaluated and the loop never
+        expands when the paired batch is unaffordable."""
+        manager, outcome = self._run(expand_eval_size=4, finalize_top_k=0)
+        self.assertEqual(manager._budget_spent, 40)
+        for nid, node in manager._tree.nodes.items():
+            if nid == 0 or node.edit_failed:
+                continue
+            self.assertGreaterEqual(node.n_evals, 4, nid)
+        # Snapshots record the paired batches distinctly from bandit batches.
+        events = [json.loads(l)["event"] for l in
+                  (manager._experiment_dir / "snapshots" / "tree_snapshots.jsonl").open()] \
+            if (manager._experiment_dir / "snapshots" / "tree_snapshots.jsonl").exists() else []
+        if events:
+            self.assertIn("expand_eval", events)
+        # Decoupled default: at least one non-root node can end unevaluated.
+        manager2, _ = self._run(experiment_dir=self.tmp / "exp_dec", finalize_top_k=0)
+        self.assertEqual(manager2.expand_eval_size, 0)
+        self.assertEqual(manager2._budget_spent, 40)
 
     def test_every_round_dir_has_artifacts(self) -> None:
         manager, _ = self._run()

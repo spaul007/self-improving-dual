@@ -78,8 +78,18 @@ class HGMManager:
         lineage_memory_token_budget: int = 15000,
         seed: int = 42,
         seed_round_dir: Optional[str] = None,
+        expand_eval_size: int = 0,
     ) -> None:
         self.eval_budget = eval_budget
+        # Expansion-paired evaluation: > 0 evaluates every freshly expanded
+        # child on this many random train cases immediately (charged to the
+        # budget and counted by the widening schedule, like the dual
+        # manager's winner batch), so no node is ever left unevaluated and
+        # every editor session gets measured. 0 (default) keeps the
+        # reference's decoupled behaviour: the bandit evaluates later, or
+        # never. The main loop refuses to expand when the remaining budget
+        # cannot fund the paired batch.
+        self.expand_eval_size = max(0, int(expand_eval_size))
         # Reuse a previous run's round_000 (its task_agent copy, logs and
         # eval_result.json) instead of re-running the free-but-not-cheap
         # full-train seed pre-eval. Relative paths resolve against the cwd
@@ -220,7 +230,7 @@ class HGMManager:
             # eval_budget is tiny relative to the dual expansion cost).
             if self.eval_budget - self._budget_spent < self._min_budget_to_expand():
                 break
-            self._expand(self._tree.argmax_expand(1.0, expandable), editor, gatherer)
+            self._expand(self._tree.argmax_expand(1.0, expandable), editor, gatherer, evaluator)
             self._snapshot("expand")
 
         # Scheduled EXPAND/EVALUATE loop. The while-stop keys off total spend
@@ -249,7 +259,7 @@ class HGMManager:
                 self._tree.schedule_favors_expand(self.alpha, self._node_evals_spent)
                 and can_grow
             ):
-                self._expand(self._tree.argmax_expand(tau, expandable), editor, gatherer)
+                self._expand(self._tree.argmax_expand(tau, expandable), editor, gatherer, evaluator)
                 self._snapshot("expand")
             elif evaluable:
                 node_id = self._tree.argmax_evaluate(tau, evaluable)
@@ -264,7 +274,7 @@ class HGMManager:
                     break
             elif can_grow:
                 # Nothing left to evaluate, but the tree can still widen.
-                self._expand(self._tree.argmax_expand(tau, expandable), editor, gatherer)
+                self._expand(self._tree.argmax_expand(tau, expandable), editor, gatherer, evaluator)
                 self._snapshot("expand")
             else:
                 break
@@ -276,10 +286,13 @@ class HGMManager:
     # ------------------------------------------------------------------ #
 
     def _expand(
-        self, parent_id: int, editor: AgentEditor, gatherer: FeedbackGatherer
+        self, parent_id: int, editor: AgentEditor, gatherer: FeedbackGatherer,
+        evaluator: Optional[Evaluator] = None,
     ) -> int:
         """Self-modify ``parent_id`` into a fresh child node via one editor
-        call. The editor emits its strategy summary on ``EditResult``."""
+        call. The editor emits its strategy summary on ``EditResult``. With
+        ``expand_eval_size`` > 0 and an ``evaluator``, the child is evaluated
+        on that many cases right away (see ``__init__``)."""
         parent = self._tree[parent_id]
         node_id = self._next_id
         self._next_id += 1
@@ -349,6 +362,13 @@ class HGMManager:
                 print(f"[edit_beliefs] post-expand update failed: {exc!r}",
                       flush=True)
         print(f"node {node_id}: EXPAND from {parent_id}", flush=True)
+        if self.expand_eval_size > 0 and evaluator is not None:
+            spent = self._evaluate(
+                node_id, evaluator, gatherer, batch_size=self.expand_eval_size
+            )
+            self._budget_spent += spent
+            self._node_evals_spent += spent
+            self._snapshot("expand_eval")
         return node_id
 
     def _lineage_ids(self, node_id: int) -> list[int]:
@@ -362,10 +382,12 @@ class HGMManager:
         return list(reversed(chain))
 
     def _evaluate(
-        self, node_id: int, evaluator: Evaluator, gatherer: FeedbackGatherer
+        self, node_id: int, evaluator: Evaluator, gatherer: FeedbackGatherer,
+        *, batch_size: Optional[int] = None,
     ) -> int:
         """Drip a random batch of un-run train cases to a node. Returns the
-        number of evaluations actually spent."""
+        number of evaluations actually spent. ``batch_size`` overrides
+        ``eval_batch_size`` (used by the expansion-paired evaluation)."""
         node = self._tree[node_id]
         unevaluated = [
             cid
@@ -376,7 +398,8 @@ class HGMManager:
         # eval_budget exactly. Tasks are sampled at RANDOM — the reference
         # runs with eval_random_level=1.0 (fully random task selection).
         remaining = self.eval_budget - self._budget_spent
-        n_take = min(self.eval_batch_size, len(unevaluated), max(remaining, 0))
+        n_take = min(batch_size or self.eval_batch_size, len(unevaluated),
+                     max(remaining, 0))
         if n_take <= 0:
             return 0
         batch = self._task_rng.sample(unevaluated, n_take)
@@ -725,15 +748,10 @@ class HGMManager:
         ]
 
     def _min_budget_to_expand(self) -> int:
-        """Minimum remaining eval budget required to make an EXPAND worthwhile.
-
-        Vanilla HGM evaluates lazily — ``_expand`` charges nothing at
-        expand-time (the bandit evaluates the new node later) — so there is no
-        minimum here (returns 0; behavior unchanged). The dual manager, whose
-        ``_expand`` runs an intra-evaluation, overrides this to
-        ``intra_expand_eval_size`` so the main loop stops instead of spawning
-        un-evaluated nodes once the budget can no longer fund one."""
-        return 0
+        """Budget an expansion needs at expand-time. Vanilla HGM: 0 (the
+        bandit evaluates the child later). With ``expand_eval_size`` the
+        paired batch is spent immediately, so that much must remain."""
+        return self.expand_eval_size
 
     # ------------------------------------------------------------------ #
     # Finalization
