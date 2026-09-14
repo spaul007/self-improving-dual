@@ -1,0 +1,334 @@
+<title>Belief Layer Anatomy</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Serif:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --bg: #F4F6F8; --bg-2: #FFFFFF; --ink: #18212B; --ink-2: #4B5563; --line: #D3D9E0;
+    --belief: #0E7C74; --belief-soft: #D9EFEC;
+    --llm: #B7791F; --llm-soft: #F7EBD2;
+    --det: #5B6B7C; --det-soft: #E3E8ED;
+    --file: #3B5BA5; --file-soft: #E0E7F5;
+    --bad: #B4472B;
+    --serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+    --sans: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+    --mono: "IBM Plex Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0F151C; --bg-2: #161E27; --ink: #E4E9EF; --ink-2: #A3AEBA; --line: #2B3644;
+      --belief: #3DD3C4; --belief-soft: #103A38;
+      --llm: #E7B04A; --llm-soft: #3A2E12;
+      --det: #9AA8B6; --det-soft: #232D38;
+      --file: #8FA8E8; --file-soft: #1C2740;
+      --bad: #E4795C;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0F151C; --bg-2: #161E27; --ink: #E4E9EF; --ink-2: #A3AEBA; --line: #2B3644;
+    --belief: #3DD3C4; --belief-soft: #103A38;
+    --llm: #E7B04A; --llm-soft: #3A2E12;
+    --det: #9AA8B6; --det-soft: #232D38;
+    --file: #8FA8E8; --file-soft: #1C2740;
+    --bad: #E4795C;
+  }
+  body { background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.55;
+         padding-block: 40px 80px; padding-inline: clamp(16px, 4vw, 48px); }
+  main { max-width: 1040px; margin: 0 auto; }
+  h1, h2, h3 { font-family: var(--serif); font-weight: 600; text-wrap: balance; letter-spacing: -0.01em; }
+  h1 { font-size: 2.2rem; line-height: 1.15; margin: 0 0 8px; }
+  h2 { font-size: 1.35rem; margin: 48px 0 12px; padding-top: 24px; border-top: 1px solid var(--line); }
+  h3 { font-size: 1.05rem; margin: 24px 0 8px; }
+  p { max-width: 68ch; margin: 0 0 12px; }
+  .lede { color: var(--ink-2); font-size: 1.05rem; max-width: 72ch; }
+  .eyebrow { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 14px; }
+  code, .mono { font-family: var(--mono); font-size: 0.86em; }
+  code { background: var(--det-soft); padding: 1px 5px; border-radius: 3px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px 22px; margin: 14px 0 6px; font-size: 0.86rem; color: var(--ink-2); }
+  .legend span::before { content: ""; display: inline-block; width: 12px; height: 12px; border-radius: 2px; margin-right: 7px; vertical-align: -1px; border: 1.5px solid currentColor; }
+  .legend .l-llm::before { background: var(--llm-soft); border-color: var(--llm); }
+  .legend .l-det::before { background: var(--det-soft); border-color: var(--det); }
+  .legend .l-file::before { background: var(--file-soft); border-color: var(--file); }
+  .legend .l-belief::before { background: var(--belief-soft); border-color: var(--belief); }
+  figure { margin: 0; }
+  .diagram { overflow-x: auto; background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; padding: 12px; }
+  .diagram svg { display: block; min-width: 900px; max-width: 100%; height: auto; color: var(--ink); font-family: var(--sans); }
+  figcaption { color: var(--ink-2); font-size: 0.9rem; margin: 10px 2px 0; max-width: 80ch; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin: 10px 0 18px; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { font-weight: 600; font-size: 0.78rem; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-2); }
+  td:first-child { white-space: nowrap; font-family: var(--mono); font-size: 0.82rem; }
+  .wrap { overflow-x: auto; }
+  .tag { display: inline-block; font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.04em; padding: 1px 7px; border-radius: 3px; border: 1px solid; margin-left: 6px; vertical-align: 2px; }
+  .tag.llm { color: var(--llm); border-color: var(--llm); background: var(--llm-soft); }
+  .tag.det { color: var(--det); border-color: var(--det); background: var(--det-soft); }
+  .steps { counter-reset: s; list-style: none; padding: 0; margin: 8px 0 16px; max-width: 78ch; }
+  .steps li { counter-increment: s; position: relative; padding-left: 40px; margin-bottom: 10px; }
+  .steps li::before { content: counter(s); position: absolute; left: 0; top: 1px; width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--belief); color: var(--belief); font-family: var(--mono); font-size: 0.8rem; display: grid; place-items: center; }
+  .note { border-left: 3px solid var(--belief); padding: 6px 14px; background: var(--bg-2); max-width: 78ch; margin: 14px 0; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px 28px; }
+  .num { font-variant-numeric: tabular-nums; }
+  .small { font-size: 0.86rem; color: var(--ink-2); }
+</style>
+
+<main>
+  <div class="eyebrow">edit-memory-sep11-agentic · meta_agent/edit_beliefs.py · belief_contract.py · belief_scoring.py · belief_optimizer.py</div>
+  <h1>Belief Layer Anatomy</h1>
+  <p class="lede">How the belief document is written, how it predicts, how it is scored, and how its own guidance is optimized — the machine loop that runs between the manager's expand and evaluate events. The meta agent (agentic editor) only <em>reads</em> the result; it never writes a prediction.</p>
+
+  <div class="legend">
+    <span class="l-llm">LLM call (edit-memory model)</span>
+    <span class="l-det">deterministic code</span>
+    <span class="l-file">file on disk (run root or round_NNN/)</span>
+    <span class="l-belief">the belief document itself</span>
+  </div>
+
+  <figure>
+    <div class="diagram">
+    <svg viewBox="0 0 1200 1000" role="img" aria-label="The per-node belief loop: an expansion is recorded by the tagger, a prediction is registered from the current belief document, the paired evaluation runs the judge, the prediction is scored with Brier loss, the calibration report may trigger a guidance optimization step, and the belief document is rewritten under a validated contract; the agentic editor reads the document at the next expansion.">
+      <defs>
+        <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+        <marker id="arr-b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="var(--belief)"/>
+        </marker>
+      </defs>
+
+      <!-- lane headers -->
+      <text x="130" y="28" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">MANAGER EVENT (hgm.py)</text>
+      <text x="560" y="28" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">BELIEF-LAYER COMPONENT</text>
+      <text x="1030" y="28" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">FILES</text>
+      <line x1="20" y1="38" x2="1180" y2="38" stroke="currentColor" stroke-opacity="0.25"/>
+      <line x1="270" y1="44" x2="270" y2="985" stroke="currentColor" stroke-opacity="0.12" stroke-dasharray="3 5"/>
+      <line x1="860" y1="44" x2="860" y2="985" stroke="currentColor" stroke-opacity="0.12" stroke-dasharray="3 5"/>
+
+      <!-- ROW 1: EXPAND -->
+      <rect x="30" y="60" width="200" height="54" rx="4" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <text x="130" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">EXPAND node N</text>
+      <text x="130" y="100" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.75">agentic editor session</text>
+      <line x1="230" y1="87" x2="300" y2="87" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <rect x="300" y="60" width="520" height="54" rx="4" fill="var(--llm-soft)" stroke="var(--llm)" stroke-width="1.2"/>
+      <text x="560" y="82" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Tagger — EditMemory.record_node()</text>
+      <text x="560" y="100" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.8">diff vs parent + strategy.json → sub-edits tagged (strategy, area, fit) · record written</text>
+      <line x1="820" y1="87" x2="890" y2="87" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <rect x="890" y="52" width="280" height="70" rx="4" fill="var(--file-soft)" stroke="var(--file)" stroke-width="1.2"/>
+      <text x="1030" y="72" text-anchor="middle" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor">round_N/edit_memory.md · edit_code.md</text>
+      <text x="1030" y="90" text-anchor="middle" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor">edit_memory_registry.json</text>
+      <text x="1030" y="108" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.75">(strategy / area ids, per-node record)</text>
+
+      <!-- ROW 2: register -->
+      <line x1="560" y1="114" x2="560" y2="150" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <text x="575" y="138" font-size="11" fill="currentColor" fill-opacity="0.75">record tags (forced fits excluded)</text>
+      <rect x="30" y="150" width="200" height="40" rx="4" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <text x="130" y="175" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">register_prediction(N)</text>
+      <line x1="230" y1="170" x2="300" y2="170" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <rect x="300" y="150" width="520" height="58" rx="4" fill="var(--det-soft)" stroke="var(--det)" stroke-width="1.2"/>
+      <text x="560" y="172" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">BeliefStore.register() — freeze the prediction</text>
+      <text x="560" y="192" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.8">match_belief(kind, tags) for kind ∈ {strategy, implementation} → p · uncovered kind = none · coverable? (strategy seen before)</text>
+      <line x1="820" y1="179" x2="890" y2="179" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <rect x="890" y="150" width="280" height="58" rx="4" fill="var(--file-soft)" stroke="var(--file)" stroke-width="1.2"/>
+      <text x="1030" y="172" text-anchor="middle" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor">round_N/belief_prediction.json</text>
+      <text x="1030" y="192" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.75">{strategy:{slug,p}, implementation:{slug,p}, coverable}</text>
+      <!-- reads current doc -->
+      <path d="M 700 208 C 700 240, 1030 226, 1030 262" fill="none" stroke="var(--belief)" stroke-width="1.4" stroke-dasharray="5 4"/>
+      <text x="800" y="238" font-size="11" fill="var(--belief)">reads the CURRENT document (belief_version = n_updates)</text>
+
+      <!-- ROW 3: paired evaluate + judge -->
+      <rect x="30" y="270" width="200" height="54" rx="4" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <text x="130" y="292" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">EVALUATE node N</text>
+      <text x="130" y="310" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.75">paired batch, 16 cases</text>
+      <line x1="230" y1="297" x2="300" y2="297" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <text x="236" y="288" font-size="10" fill="currentColor" fill-opacity="0.7">refresh_outcomes</text>
+      <rect x="300" y="270" width="520" height="58" rx="4" fill="var(--llm-soft)" stroke="var(--llm)" stroke-width="1.2"/>
+      <text x="560" y="292" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Judge — edit_usage analysis v7 (needs ≥16 own evals)</text>
+      <text x="560" y="312" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.8">implementation sound? · per sub-edit: effect improved | no_effect | regressed | unclear + evidence grade · regressions</text>
+      <line x1="820" y1="299" x2="890" y2="299" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <rect x="890" y="262" width="280" height="66" rx="4" fill="var(--file-soft)" stroke="var(--file)" stroke-width="1.2"/>
+      <text x="1030" y="284" text-anchor="middle" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor">round_N/edit_memory.md (verdict lines)</text>
+      <text x="1030" y="302" text-anchor="middle" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor">round_N/edit_usage.json</text>
+      <text x="1030" y="320" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.75">(fire counts per trace.log point, per-case rows)</text>
+
+      <!-- ROW 4: update_beliefs: resolve -->
+      <rect x="30" y="390" width="200" height="40" rx="4" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <text x="130" y="415" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">update_beliefs(tree)</text>
+      <text x="130" y="446" text-anchor="middle" font-size="10" fill="currentColor" fill-opacity="0.7">after every expand and every batch</text>
+      <line x1="230" y1="410" x2="300" y2="410" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <line x1="560" y1="328" x2="560" y2="384" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <text x="575" y="360" font-size="11" fill="currentColor" fill-opacity="0.75">verdict → label y per kind</text>
+
+      <rect x="300" y="384" width="520" height="58" rx="4" fill="var(--det-soft)" stroke="var(--det)" stroke-width="1.2"/>
+      <text x="560" y="406" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">① belief_scoring.resolve() — pay Brier loss</text>
+      <text x="560" y="426" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.8">implementation: y = sound · strategy: y = (effect == improved), only if sound &amp; evidence ≥ moderate · uncovered p = 0.5 · Brier (p−y)²</text>
+      <line x1="820" y1="413" x2="890" y2="413" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <rect x="890" y="384" width="280" height="58" rx="4" fill="var(--file-soft)" stroke="var(--file)" stroke-width="1.2"/>
+      <text x="1030" y="406" text-anchor="middle" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor">edit_memory_beliefs_state.json</text>
+      <text x="1030" y="426" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.75">scored[] · skipped[] · scored_since_step · n_updates</text>
+
+      <!-- ROW 5: track lines + report + optimizer -->
+      <line x1="560" y1="442" x2="560" y2="478" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <rect x="300" y="478" width="250" height="58" rx="4" fill="var(--det-soft)" stroke="var(--det)" stroke-width="1.2"/>
+      <text x="425" y="500" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">② track lines + report</text>
+      <text x="425" y="518" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.8">per-belief n · Brier · outcomes;</text>
+      <text x="425" y="531" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.8">calibration report (worst misses, uncovered…)</text>
+      <line x1="550" y1="507" x2="570" y2="507" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <rect x="570" y="478" width="250" height="58" rx="4" fill="var(--llm-soft)" stroke="var(--llm)" stroke-width="1.2"/>
+      <text x="695" y="500" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">③ InstructionOptimizer.maybe_step</text>
+      <text x="695" y="518" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.8">fires when scored_since_step ≥ optimize_every;</text>
+      <text x="695" y="531" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.8">rollback if a past version is better by margin</text>
+      <line x1="820" y1="507" x2="890" y2="507" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <rect x="890" y="478" width="280" height="58" rx="4" fill="var(--file-soft)" stroke="var(--file)" stroke-width="1.2"/>
+      <text x="1030" y="500" text-anchor="middle" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor">belief_instruction.md (guidance vN)</text>
+      <text x="1030" y="518" text-anchor="middle" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor">belief_instruction_archive/vNNN.md</text>
+      <text x="1030" y="531" text-anchor="middle" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor">step_NNN_prompt.txt / _response.json</text>
+
+      <!-- ROW 6: signature gate -->
+      <line x1="425" y1="536" x2="425" y2="572" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <path d="M 425 572 L 500 604 L 425 636 L 350 604 Z" fill="var(--det-soft)" stroke="var(--det)" stroke-width="1.2"/>
+      <text x="425" y="600" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">④ evidence</text>
+      <text x="425" y="614" text-anchor="middle" font-size="11" font-weight="600" fill="currentColor">changed?</text>
+      <line x1="350" y1="604" x2="300" y2="604" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <text x="292" y="596" text-anchor="end" font-size="11" fill="currentColor" fill-opacity="0.75">no → return</text>
+      <text x="292" y="610" text-anchor="end" font-size="11" fill="currentColor" fill-opacity="0.75">(0 LLM calls)</text>
+      <text x="510" y="600" font-size="11" fill="currentColor" fill-opacity="0.75">yes (signature over per-node</text>
+      <text x="510" y="614" font-size="11" fill="currentColor" fill-opacity="0.75">case + analysis sigs, registry, joins)</text>
+
+      <!-- ROW 7: rewrite -->
+      <line x1="425" y1="636" x2="425" y2="672" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <rect x="300" y="672" width="520" height="86" rx="4" fill="var(--llm-soft)" stroke="var(--llm)" stroke-width="1.2"/>
+      <text x="560" y="694" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">⑤ Rewrite — submit_belief_update (one contract-driven retry)</text>
+      <text x="560" y="714" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.8">system = CONTRACT_SYSTEM + SCORING_JUDGE + GRAMMAR/EXAMPLE + guidance vN</text>
+      <text x="560" y="731" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.8">user = run context · registry ids · current doc + track lines · calibration report · judge ledger · changed records</text>
+      <text x="560" y="748" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.8">validate_document(): hard violation → retry once → still hard → keep previous document</text>
+      <line x1="820" y1="715" x2="890" y2="715" stroke="var(--belief)" stroke-width="1.6" marker-end="url(#arr-b)"/>
+      <rect x="890" y="672" width="280" height="86" rx="4" fill="var(--belief-soft)" stroke="var(--belief)" stroke-width="1.6"/>
+      <text x="1030" y="694" text-anchor="middle" font-size="11" font-weight="600" font-family="IBM Plex Mono, monospace" fill="currentColor">edit_memory_beliefs.md</text>
+      <text x="1030" y="712" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.8">### belief:&lt;slug&gt; sections, each with</text>
+      <text x="1030" y="727" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.8">kind · scope · predict p · evidence · next · track</text>
+      <text x="1030" y="748" text-anchor="middle" font-size="11" font-family="IBM Plex Mono, monospace" fill="currentColor">…_beliefs_archive/beliefs_NNNN.md · …_prompts/</text>
+
+      <!-- ROW 8: consumer -->
+      <path d="M 1030 758 C 1030 800, 130 790, 130 830" fill="none" stroke="var(--belief)" stroke-width="1.6" marker-end="url(#arr-b)"/>
+      <text x="600" y="800" text-anchor="middle" font-size="11" fill="var(--belief)">read from disk by the next editor session (memory arm only; instruction step 2)</text>
+      <rect x="30" y="830" width="200" height="64" rx="4" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      <text x="130" y="852" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">EXPAND node N+1</text>
+      <text x="130" y="870" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.75">agent reads beliefs, registry,</text>
+      <text x="130" y="884" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.75">cited nodes' records &amp; code</text>
+      <line x1="230" y1="862" x2="300" y2="862" stroke="currentColor" stroke-width="1.2" marker-end="url(#arr)"/>
+      <rect x="300" y="830" width="520" height="64" rx="4" fill="none" stroke="currentColor" stroke-width="1.2" stroke-dasharray="5 4"/>
+      <text x="560" y="852" text-anchor="middle" font-size="12" font-weight="600" fill="currentColor">Meta agent submits goal / changes / rationale only</text>
+      <text x="560" y="870" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.8">no prediction field; nothing in this lane is written by the editor</text>
+      <text x="560" y="884" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.8">→ the loop restarts at the tagger</text>
+
+      <!-- footer note -->
+      <text x="600" y="940" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.75">Numbered ①–⑤ = the five steps inside one BeliefStore.update() call. Rows 1–3 happen once per node; rows 4–7 run at every update trigger.</text>
+      <text x="600" y="958" text-anchor="middle" font-size="11" fill="currentColor" fill-opacity="0.75">Dashed teal = reads of the belief document; solid teal = its write. Amber components each cost one LLM call (the tagger and judge on the edit-memory model).</text>
+    </svg>
+    </div>
+    <figcaption>The belief loop for one node. A prediction is frozen from the document that existed <em>before</em> the node's outcome was known (row 2), scored against the judge's verdict rather than the raw score (rows 3–4), and the losses feed both the document rewrite and the optimizer that rewrites the document's own guidance.</figcaption>
+  </figure>
+
+  <h2>1. Where the loop is triggered</h2>
+  <p>The manager (<code>meta_agent/managers/hgm.py</code>) owns every trigger. Nothing in the belief layer runs on its own schedule, and nothing is called by the editor.</p>
+  <div class="wrap"><table>
+    <tr><th>Manager point</th><th>Belief-layer call</th><th>What happens</th></tr>
+    <tr><td>setup (once, after seed eval)</td><td><code>EditMemory.setup()</code></td><td>Proxy categories from the seed's failures; writes <code>edit_memory_candidates.json</code>. No beliefs yet.</td></tr>
+    <tr><td>EXPAND — after the editor returns</td><td><code>record_node()</code> → <code>register_prediction()</code> → <code>update_beliefs()</code></td><td>Tag the edit (LLM), freeze a prediction from the current document (deterministic), then an update that is usually signature-gated to zero cost.</td></tr>
+    <tr><td>EVALUATE — after every batch (incl. the paired batch)</td><td><code>refresh_outcomes()</code> → <code>update_beliefs()</code></td><td>Recompute paired outcomes, run the judge once the node has ≥16 own evals (LLM), then score + report + optimizer + rewrite.</td></tr>
+    <tr><td>finalize</td><td><code>finalize()</code></td><td>Last outcome sweep so every record is final.</td></tr>
+  </table></div>
+
+  <h2>2. Tagger — the record every prediction is keyed on <span class="tag llm">LLM</span></h2>
+  <p><code>EditMemory.record_node()</code> reads the diff vs the parent plus the editor's <code>strategy.json</code> summary and writes <code>round_N/edit_memory.md</code>: up to <code>max_subedits</code> sub-edits, each tagged with a <strong>strategy</strong> id and an <strong>area</strong> id from the run-level registry (new ids are defined on first use; <code>max_strategies</code> caps growth, and a tag forced by the cap is marked <code>fit: forced</code> and never scored). The record also carries the performance line (child vs parent on shared cases, unpaired Δ ± SE) and, later, the judge's verdict lines. <code>edit_code.md</code> stores the diff and changed definitions for the editor to read.</p>
+
+  <h2>3. register() — the prediction is frozen before the outcome <span class="tag det">deterministic</span></h2>
+  <ol class="steps">
+    <li>Load the node's record tags (drop <code>fit: forced</code> ones) and parse the current <code>edit_memory_beliefs.md</code>.</li>
+    <li>For each kind in <code>("strategy", "implementation")</code>, <code>match_belief()</code> picks the most specific belief whose scope matches: <em>strategy + area</em> beats <em>strategy only</em>; ties resolved by sub-edit order.</li>
+    <li>Write <code>round_N/belief_prediction.json</code>: per kind <code>{slug, p, scope, matched_edit, section}</code> (or <code>null</code> when no belief covers it), plus <code>belief_version</code>, <code>instruction_version</code>, and <code>coverable</code> — true only if an earlier node already used one of this node's strategies. A first-of-its-strategy node is not charged for silence.</li>
+  </ol>
+  <p class="note">This is why the meta agent no longer predicts: the belief document <em>is</em> the predictor, and the prediction is made by construction before anything about the node's outcome is known.</p>
+
+  <h2>4. The contract — what a belief document must look like <span class="tag det">deterministic</span></h2>
+  <div class="grid2">
+    <div>
+      <h3>Grammar (<code>belief_contract.py</code>)</h3>
+<pre class="mono" style="white-space:pre-wrap;font-size:0.8rem;background:var(--bg-2);border:1px solid var(--line);padding:10px;border-radius:4px">## Summary            (optional, first, ≤ 1200 chars)
+
+### belief:&lt;slug&gt; — &lt;title&gt;
+- kind: strategy | implementation
+- scope: strategy=&lt;registry id&gt; [area=&lt;registry id&gt;]
+- predict: p=&lt;0.05..0.95&gt;
+- evidence: … [node N: improved] [node N: regressed; Δ+0.03/12] …
+- next: &lt;one concrete move for the editor&gt;
+- track: (code-generated, never written by the LLM)</pre>
+    </div>
+    <div>
+      <h3>Validation</h3>
+      <div class="wrap"><table>
+        <tr><th>Hard (reject → one retry → keep old doc)</th><th>Soft (accepted, counted)</th></tr>
+        <tr><td style="white-space:normal;font-family:var(--sans);font-size:0.88rem">prose above the first belief; unknown section or field; duplicate slug/field; missing required key; bad kind; scope id not in the registry; p outside [0.05, 0.95]; duplicate (kind, scope); no beliefs; document over <code>doc_char_cap</code></td>
+            <td style="white-space:normal;font-family:var(--sans);font-size:0.88rem">citation names a node with no record; cites a verdict or Δ the record doesn't have (misquote) — reported in the track line and the calibration report until corrected</td></tr>
+      </table></div>
+      <p class="small">Citations are verified against the deterministic records: <code>[node N: improved]</code> must match the judge's effect verdict; a quoted Δ must be within 0.005 of the record's paired delta.</p>
+    </div>
+  </div>
+
+  <h2>5. Scoring — belief_scoring.resolve() <span class="tag det">deterministic</span></h2>
+  <div class="wrap"><table>
+    <tr><th>Kind</th><th>Predicts</th><th>Label y (judge mode, <code>strategy_label: judge</code>)</th><th>Not scored when</th></tr>
+    <tr><td>implementation</td><td>P(implementation sound)</td><td>1 if the judge found the matched sub-edit (else the node) sound, else 0</td><td>no judge verdict yet</td></tr>
+    <tr><td>strategy</td><td>P(judge says <em>improved</em> | implementation sound)</td><td>1 if effect == improved, 0 if no_effect / regressed</td><td>implementation unsound; effect <em>unclear</em>; evidence below <code>judge_min_evidence</code> (moderate)</td></tr>
+    <tr><td>(uncovered kind)</td><td>—</td><td>scored at p = 0.5 → Brier 0.25 ("silence is not free")</td><td>node not <em>coverable</em> → recorded as skipped</td></tr>
+  </table></div>
+  <p>Loss per scored prediction is <span class="num">(p − y)²</span>; 0.25 is the uninformative baseline. Each <code>Scored</code> row keeps node, kind, slug, p, y, brier, the belief and guidance versions in force at registration, the judge's effect/evidence/reason, and the Δ context. <code>label_source: delta</code> swaps the labels for "Δ ≥ threshold over ≥ min_shared shared cases" (ablation only).</p>
+  <h3>Track lines and the calibration report</h3>
+  <p>After each scoring batch the code regenerates one <code>- track:</code> line per belief (<span class="num">n · Brier · outcomes</span>) and injects it into the document, so the editor always sees current calibration without an LLM call. The report — per belief, worst misses, uncovered measured nodes, not-scored reasons, open predictions, judge-vs-score diagnostic, verdict changes, citation checks — is built once and shared by the rewrite prompt and the optimizer prompt.</p>
+
+  <h2>6. Optimizer — the guidance text learns from misses <span class="tag llm">LLM</span></h2>
+  <ol class="steps">
+    <li><strong>Trigger:</strong> <code>scored_since_step ≥ optimize_every</code> (8 in the 1000-eval configs). Guidance starts at <code>SEED_INSTRUCTION</code> (v000).</li>
+    <li><strong>Rollback first:</strong> if the current guidance version has ≥ <code>optimize_min_scored</code> samples and an earlier version's mean Brier is lower by more than <code>optimize_rollback_margin</code> (0.02), restore that text (event <code>revert</code>).</li>
+    <li><strong>Step:</strong> one call with <code>OPTIMIZER_SYSTEM</code>: the window of scored rows since the last step (each with the belief text that made the prediction, the judge's verdict and reason, targeted checks, well-measured score) plus the calibration report → tool <code>submit_instruction_update(critique, instruction)</code>, capped at <code>instruction_char_cap</code> (2500; one retry when over).</li>
+    <li><strong>Persist:</strong> <code>belief_instruction.md</code> ← new text; archive <code>vNNN.md</code>, <code>step_NNN_prompt.txt</code>, <code>step_NNN_response.json</code>; state <code>instruction.version</code> bumped and every later prediction stamped with it — that is what makes per-version Brier (and rollback) possible.</li>
+  </ol>
+
+  <h2>7. Rewrite — the document is replaced wholesale <span class="tag llm">LLM</span></h2>
+  <p><code>update()</code> reaches the rewrite only if the evidence signature changed (per-node case and analysis signatures, the registry bytes, the prediction joins, salted with <code>BELIEF_FORMAT</code>). The system prompt is fixed contract text — <code>CONTRACT_SYSTEM</code> with <code>SCORING_JUDGE</code>, the grammar, the example and the rules — plus the <em>learned</em> guidance vN. The user prompt carries, in order: run context (seed, best so far, node count), the registry ids allowed in scope lines, the current document with its track lines, the calibration report, the judge ledger (per-strategy verdict tallies) and the deterministic per-strategy ledger, and the full records of the nodes whose evidence changed (newest first, within <code>evidence_char_budget</code>, at most <code>max_delta_records</code>). The old document is archived as <code>beliefs_NNNN.md</code>; every attempted prompt is dumped under <code>edit_memory_beliefs_prompts/</code>.</p>
+
+  <h2>8. The judge the beliefs are scored against <span class="tag llm">LLM</span></h2>
+  <p><code>edit_usage.py</code> analysis v7 runs per node once it has <code>analysis_min_own_evals</code> (16) own cases. Inputs: the implementation view of the diff (added lines grouped by definition, within <code>analysis_code_char_budget</code>), the fire counts of every <code>trace.log</code> point the edit added, per-check pass/fail on the node's own cases, and up to 32 per-case rows. Output (tool call, all fields required): <code>implementation_sound</code> + reason; per sub-edit <code>sound</code>, <code>targeted_checks</code>, <code>effect</code> ∈ {improved, no_effect, regressed, unclear}, <code>evidence</code> ∈ {strong, moderate, weak}, reason; and <code>regressions</code>. These lines are appended to the record and are the only labels scoring uses.</p>
+
+  <h2>9. What the meta agent sees, and what it cannot touch</h2>
+  <p>In a run with edit memory the agentic editor's instruction lists the run-level files and tells it (step 2) to consult <code>edit_memory_beliefs.md</code> as accumulated understanding, follow its node citations into <code>edit_memory.md</code> / <code>edit_code.md</code> / <code>task_agent/</code>, and diversify. It reads through the bwrap sandbox (live bind of the run root), so an update landing mid-session is visible. It writes only its code and a summary; the only editor input to this layer is the <code>strategy.json</code> text the tagger reads. A run without edit memory has none of these files and its prompt never mentions them.</p>
+
+  <h2>10. Files, one place</h2>
+  <div class="wrap"><table>
+    <tr><th>Path</th><th>Writer</th><th>Contents</th></tr>
+    <tr><td>edit_memory_beliefs.md</td><td>rewrite (LLM) + track lines (code)</td><td>the belief document</td></tr>
+    <tr><td>edit_memory_beliefs_state.json</td><td>BeliefStore</td><td>scored[], skipped[], scored_since_step, n_updates, updated_at_signature, per_node_sigs, prediction_joins, beliefs_index, instruction{version, versions[], events[]}</td></tr>
+    <tr><td>edit_memory_beliefs_archive/beliefs_NNNN.md</td><td>BeliefStore</td><td>every superseded document</td></tr>
+    <tr><td>edit_memory_beliefs_prompts/update_NNNN.txt</td><td>BeliefStore</td><td>system + user prompt of every attempted rewrite</td></tr>
+    <tr><td>belief_instruction.md · belief_instruction_archive/</td><td>InstructionOptimizer</td><td>current guidance; vNNN.md, step prompts and responses</td></tr>
+    <tr><td>round_N/belief_prediction.json</td><td>register()</td><td>the frozen prediction per kind</td></tr>
+    <tr><td>round_N/edit_memory.md · edit_code.md · edit_usage.json</td><td>tagger / judge (edit memory)</td><td>record, diff, runtime usage — the layer's inputs</td></tr>
+    <tr><td>edit_memory_registry.json · edit_memory_candidates.json</td><td>edit memory</td><td>strategy / area ids and definitions (the scope vocabulary)</td></tr>
+  </table></div>
+
+  <h2>11. Configuration (the <code>edit_memory.config</code> block)</h2>
+  <div class="wrap"><table>
+    <tr><th>Key</th><th>Default</th><th>Role</th></tr>
+    <tr><td>strategy_label</td><td>judge</td><td>label source for strategy beliefs (judge verdict) — <code>delta</code> for the score-based ablation</td></tr>
+    <tr><td>analysis_min_own_evals</td><td>16</td><td>own cases a node needs before the judge runs (= one paired batch)</td></tr>
+    <tr><td>judge_min_evidence</td><td>moderate</td><td>weak-evidence verdicts stay pending</td></tr>
+    <tr><td>analysis_code_char_budget</td><td>20000</td><td>implementation view shown to the judge</td></tr>
+    <tr><td>max_strategies / max_subedits</td><td>30 / 3</td><td>registry cap (forced fits are never scored) and sub-edits per record</td></tr>
+    <tr><td>beliefs.enabled</td><td>true</td><td>the layer on/off; model, effort, base_url inherit from <code>edit_memory</code></td></tr>
+    <tr><td>beliefs.doc_char_cap</td><td>40000</td><td>hard cap on the document (reject + retry, never truncated)</td></tr>
+    <tr><td>beliefs.optimize_enabled / optimize_every</td><td>true / 8</td><td>guidance optimization and its cadence in scored predictions</td></tr>
+    <tr><td>beliefs.optimize_min_scored / optimize_rollback_margin</td><td>8 / 0.02</td><td>samples a guidance version needs before it can be compared; Brier gap that triggers a revert</td></tr>
+    <tr><td>beliefs.instruction_char_cap</td><td>2500</td><td>length of the guidance text</td></tr>
+    <tr><td>beliefs.max_delta_records / evidence_char_budget</td><td>12 / 60000</td><td>how much changed evidence the rewrite prompt carries</td></tr>
+  </table></div>
+
+  <h2>12. Read on the live run (1000-eval editmem arm, 20% in)</h2>
+  <p>25 updates, 12 scored predictions with mean Brier <span class="num">0.19</span> (uninformative = 0.25), 5 skipped as first-of-strategy, guidance at v1 after one optimizer step. The first revision told the writer to predict the judge's verdict rather than the score Δ and to cover every edit type with a committed probability instead of p = 0.5. Beliefs currently rate prompt-only edits sound at p ≈ 0.85 (3/3 correct) and post-plan validation code at p ≈ 0.40 — which is why that arm's edits stayed small and instrumented.</p>
+</main>
