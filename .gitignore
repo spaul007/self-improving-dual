@@ -82,6 +82,7 @@ sightseeing_122b_experiment_sanity_seed_refactor/
 sightseeing_122b_full_eval_3x/
 v3_round014_full_eval_3x/
 v3_round017_full_eval_3x/
+deepinfra_only_3x_32/
 
 # --- One-off scratch files (not deliverables) ---
 single_hgm_tree.html

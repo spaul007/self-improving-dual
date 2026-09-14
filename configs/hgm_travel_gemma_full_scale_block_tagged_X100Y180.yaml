@@ -58,18 +58,30 @@ task_agent:
   temperature: 0.2
   max_output_tokens: 16384
   base_url: "https://openrouter.ai/api/v1"
-  # OpenRouter provider-routing preference -- excludes DeepInfra and
-  # requires bf16 (no quantization). Added 2026-09-13 after this
-  # session traced the OpenRouter status="failed" reliability issue
-  # to DeepInfra + an NVFP4-quantized backend (see
-  # openrouter_failure_report.md); confirmed live that OpenRouter
-  # honors this field (a test call with ignore=["DeepInfra"] was
-  # served by Venice instead), and validated at production scale --
-  # 3x independent 120-case passes at parallelism 32, 0 terminal
-  # failures out of 3511 real calls (round013_provider_fix_3x_120/).
+  # OpenRouter provider-routing preference -- excludes DeepInfra.
+  # Added 2026-09-13 after this session traced the OpenRouter
+  # status="failed" reliability issue to DeepInfra + an
+  # NVFP4-quantized backend (see openrouter_failure_report.md);
+  # confirmed live that OpenRouter honors this field (a test call
+  # with ignore=["DeepInfra"] was served by Venice instead), and
+  # validated at production scale -- 3x independent 120-case passes
+  # at parallelism 32, 0 terminal failures out of 3511 real calls
+  # (round013_provider_fix_3x_120/).
+  #
+  # NOTE (2026-09-14): the original fix also required quantizations:
+  # ["bf16"] -- dropped after discovering live that ALL FOUR
+  # llm_backbone_selection catalog slugs (qwen/qwen3.6-27b,
+  # qwen/qwen3.8-27b, google/gemini-3.6-flash, google/gemini-3.8-flash)
+  # 404 under a bf16 requirement ("No endpoints found for the
+  # request with quantization: bf16") -- confirmed live, one-off
+  # calls to each. ignore-DeepInfra-only was independently
+  # re-validated for reliability before this change: 3x independent
+  # 32-case passes, 0 terminal failures out of 1075 real calls, 0.09%
+  # incidence rate (deepinfra_only_3x_32/) -- as good as the
+  # bf16-included version's 0.20%, while no longer blocking any
+  # backbone-catalog model.
   provider:
     ignore: ["DeepInfra"]
-    quantizations: ["bf16"]
     allow_fallbacks: false
 
 manager:

@@ -101,15 +101,20 @@ class RealGemmaConfigWiringTests(unittest.TestCase):
 
     def _check_config(self, path: str) -> None:
         cfg = cfg_mod.load(path)
+        # No quantizations filter -- dropped 2026-09-14 after discovering
+        # live that it 404s every llm_backbone_selection catalog model
+        # ("No endpoints found for the request with quantization: bf16"),
+        # re-validated for reliability without it (0 terminal failures /
+        # 1075 real calls, deepinfra_only_3x_32/) before this change.
         self.assertEqual(
             cfg.task_agent.provider,
-            {"ignore": ["DeepInfra"], "quantizations": ["bf16"], "allow_fallbacks": False},
+            {"ignore": ["DeepInfra"], "allow_fallbacks": False},
         )
         runtime_env.apply_task_agent_env(cfg.task_agent)
         import json
         self.assertEqual(
             json.loads(os.environ["LLM_PROVIDER_PREFERENCE"]),
-            {"ignore": ["DeepInfra"], "quantizations": ["bf16"], "allow_fallbacks": False},
+            {"ignore": ["DeepInfra"], "allow_fallbacks": False},
         )
 
     def test_backbone_selection_on_config(self) -> None:
