@@ -1,8 +1,9 @@
 """PathPolicy: the agentic editor's read/write surface.
 
 The write set must be exactly the validators' mutable surface plus scratch;
-the read set must cover the whole run directory (so dynamically generated
-memory / diff / belief / registry files are visible) and the platform +
+the read set must cover the whole run directory under read_scope "run" (so
+dynamically generated node files are visible) — and only the parent's and
+this node's round dirs under read_scope "parent" — plus the platform +
 project tool code, and must NEVER include the benchmark, the database, the
 categorizer or the meta-agent itself.
 """
@@ -19,7 +20,7 @@ from meta_agent.agentic.policy import (
     find_run_root,
     resolve,
 )
-from tests.test_edit_code import _agent
+from tests.test_agentic_editor import _agent
 
 
 def _fake_repo(root: Path) -> tuple[Path, Path]:
@@ -57,10 +58,12 @@ def _fake_run(root: Path) -> tuple[Path, Path, Path]:
     (base / "logs").mkdir()
     (base / "logs" / "case_7.json").write_text("{}")
     (base / "feedback.json").write_text("{}")
-    (base / "edit_memory.md").write_text("# memory\n")
-    (base / "edit_code.md").write_text("# diff\n")
-    (run / "edit_memory_registry.json").write_text("{}")
-    (run / "edit_memory_beliefs.md").write_text("### belief:a — b\n")
+    (base / "strategy.json").write_text("{}")
+    (run / "tree_snapshots.jsonl").write_text("{}\n")
+    # A sibling node (another branch of the run).
+    sib = run / "round_000"
+    _agent(sib, "def run_task(task):\n    return None\n")
+    (sib / "strategy.json").write_text('{"optimization_goal": "sibling"}')
     out = run / "round_002" / "variants" / "var_0"
     _agent(out, "def run_task(task):\n    return None\n")
     (out / "agentic" / "scratch").mkdir(parents=True)
@@ -125,17 +128,17 @@ class TestReadSurface(PolicyBase):
         for p in (
             self.base / "logs" / "case_7.json",
             self.base / "feedback.json",
-            self.base / "edit_memory.md",
-            self.base / "edit_code.md",
+            self.base / "strategy.json",
             self.base / "task_agent" / "workflow.py",
-            self.run / "edit_memory_registry.json",
-            self.run / "edit_memory_beliefs.md",
+            self.run / "round_000" / "strategy.json",
+            self.run / "tree_snapshots.jsonl",
             self.run / RUN_ROOT_MARKER,
         ):
             self.assertTrue(self.policy.can_read(self.r(p)), str(p))
         # Written after the policy was built (the framework does this between
         # rounds and during a run): still readable, no rebuild needed.
-        later = self.run / "edit_memory_beliefs_state.json"
+        later = self.run / "round_003" / "hgm_node.json"
+        later.parent.mkdir()
         later.write_text("{}")
         self.assertTrue(self.policy.can_read(self.r(later)))
         sibling = self.run / "round_003"
@@ -230,16 +233,9 @@ class TestResolveAndDescribe(PolicyBase):
         self.assertIn("$REPO_DIR/projects/travel/db_schema.md", text)
         self.assertNotIn("benchmark", text.split("NOT available")[0])
         self.assertIn("workflow.py", text.split("Listing of")[1])
-        # Memory block: on by default because the run has memory files ...
-        self.assertTrue(self.policy.memory_enabled())
-        self.assertIn("accumulated understanding of previous edits", text)
-        self.assertIn("$RUN_DIR/edit_memory_registry.json", text)
-        self.assertIn("$RUN_DIR/edit_memory_beliefs.md", text)
-        self.assertIn("$RUN_DIR/round_NNN/edit_memory.md", text)
-        # ... and absent entirely when rendered for a no-memory run.
-        plain = self.policy.describe(memory=False)
-        for word in ("memory", "belief", "edit_memory_registry", "accumulated"):
-            self.assertNotIn(word, plain)
+        self.assertIn("every other node $RUN_DIR/round_NNN/ has the same layout.", text)
+        for word in ("memory", "belief", "accumulated"):
+            self.assertNotIn(word, text)
 
     def test_roots_and_resolve_forms(self) -> None:
         roots = self.policy.roots()
@@ -264,17 +260,84 @@ class TestResolveAndDescribe(PolicyBase):
         self.assertEqual(self.policy.var_path(wf), "$NODE_DIR/task_agent/workflow.py")
         self.assertEqual(self.policy.var_path(self.r(self.base) / "x"), "$PARENT_DIR/x")
 
-    def test_memory_enabled_detection(self) -> None:
-        run = self.proj / "runs" / "m"
-        run.mkdir(parents=True)
-        (run / RUN_ROOT_MARKER).write_text("")
-        base, out = run / "round_001", run / "round_002"
-        _agent(base, "def run_task(task):\n    return None\n")
-        _agent(out, "def run_task(task):\n    return None\n")
-        pol = build_policy(out_dir=out, base_dir=base, repo_root=self.repo, project_root=self.proj)
-        self.assertFalse(pol.memory_enabled())
-        (run / "edit_memory_candidates.json").write_text("{}")
-        self.assertTrue(pol.memory_enabled())  # live check, no rebuild needed
+
+
+class TestParentReadScope(PolicyBase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.parent_policy = build_policy(
+            out_dir=self.out, base_dir=self.base, repo_root=self.repo,
+            project_root=self.proj, read_scope="parent",
+        )
+
+    def test_read_roots_are_the_two_round_dirs_only(self) -> None:
+        pol = self.parent_policy
+        self.assertEqual(pol.read_scope, "parent")
+        self.assertEqual(pol.run_root, self.r(self.run))       # still located ...
+        self.assertNotIn(self.r(self.run), pol.read_roots)     # ... but not readable
+        self.assertIn(self.r(self.base), pol.read_roots)
+        self.assertIn(self.r(self.out), pol.read_roots)
+        for p in (self.base / "feedback.json", self.base / "strategy.json",
+                  self.base / "logs" / "case_7.json", self.base / "task_agent" / "workflow.py",
+                  self.out / "task_agent" / "workflow.py", self.out / "agentic" / "scratch",
+                  self.repo / "platform_core" / "runner.py", self.proj / "tools" / "flight.py"):
+            self.assertTrue(pol.can_read(self.r(p)), str(p))
+        for p in (self.run / "round_000" / "strategy.json", self.run / "round_000" / "task_agent" / "workflow.py",
+                  self.run / "tree_snapshots.jsonl", self.run / RUN_ROOT_MARKER, self.run):
+            self.assertFalse(pol.can_read(self.r(p)), str(p))
+        # The write surface is unchanged.
+        self.assertTrue(pol.can_write(self.r(self.out / "task_agent" / "workflow.py")))
+        self.assertFalse(pol.can_write(self.r(self.base / "task_agent" / "workflow.py")))
+
+    def test_no_run_dir_root(self) -> None:
+        pol = self.parent_policy
+        self.assertEqual(list(pol.roots()), ["NODE_DIR", "PARENT_DIR", "REPO_DIR"])
+        self.assertEqual(pol.root_vars(), ("NODE_DIR", "PARENT_DIR", "REPO_DIR"))
+        with self.assertRaises(ValueError) as cm:
+            pol.resolve("$RUN_DIR/round_000/strategy.json")
+        self.assertIn("unknown root $RUN_DIR", str(cm.exception))
+        self.assertIn("$NODE_DIR, $PARENT_DIR, $REPO_DIR", str(cm.exception))
+        self.assertEqual(pol.resolve("$PARENT_DIR/feedback.json"), self.r(self.base / "feedback.json"))
+        # A path outside every root renders as-is (never as $RUN_DIR/...).
+        self.assertEqual(pol.var_path(self.r(self.run / "round_000")), str(self.r(self.run / "round_000")))
+        self.assertEqual(pol.var_path(self.r(self.base) / "x"), "$PARENT_DIR/x")
+
+    def test_describe_never_mentions_other_nodes(self) -> None:
+        text = self.parent_policy.describe()
+        for needle in ("RUN_DIR", "round_NNN", "every other node", "run directory"):
+            self.assertNotIn(needle, text)
+        self.assertIn("  NODE_DIR    this node", text)
+        self.assertIn("  PARENT_DIR  its parent", text)
+        self.assertIn("parent node $PARENT_DIR/ — the agent you are improving", text)
+        self.assertIn("feedback.json", text)
+        self.assertIn("$NODE_DIR/task_agent/workflow.py", text)
+        self.assertIn("$REPO_DIR/projects/travel/tools/", text)
+        for absolute in (str(self.r(self.out)), str(self.r(self.base)),
+                         str(self.r(self.run)), str(self.r(self.repo))):
+            self.assertNotIn(absolute, text)
+
+    def test_run_scope_is_the_default_and_bad_values_raise(self) -> None:
+        self.assertEqual(self.policy.read_scope, "run")
+        with self.assertRaises(ValueError):
+            build_policy(out_dir=self.out, base_dir=self.base, repo_root=self.repo,
+                         project_root=self.proj, read_scope="node")
+
+    def test_sandbox_binds_follow_the_scope(self) -> None:
+        from meta_agent.agentic.sandbox import bwrap_argv, sandbox_env
+        run_argv = bwrap_argv(self.policy, command="true", prefixes=[Path("/nonexistent/prefix")])
+        par_argv = bwrap_argv(self.parent_policy, command="true", prefixes=[Path("/nonexistent/prefix")])
+        self.assertIn(str(self.r(self.run)), run_argv)
+        self.assertNotIn(str(self.r(self.run)), par_argv)
+        self.assertNotIn(str(self.r(self.run / "round_000")), par_argv)
+        self.assertIn(str(self.r(self.base)), par_argv)
+        self.assertIn(str(self.r(self.out)), par_argv)
+        env = sandbox_env(self.parent_policy, path="/bin")
+        self.assertNotIn("RUN_DIR", env)
+        self.assertEqual(env["PARENT_DIR"], str(self.r(self.base)))
+        self.assertEqual(env["NODE_DIR"], str(self.r(self.out)))
+        self.assertIn("RUN_DIR", sandbox_env(self.policy, path="/bin"))
+        i = par_argv.index("--setenv", par_argv.index("--clearenv"))
+        self.assertNotIn("RUN_DIR", par_argv[i:])
 
     def test_list_dir_filters_unreadable_and_hidden(self) -> None:
         (self.out / "task_agent" / ".hidden").write_text("")

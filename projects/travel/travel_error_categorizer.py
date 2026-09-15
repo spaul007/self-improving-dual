@@ -39,9 +39,9 @@ _HARD_PREFIXES = (
     "budget",
 )
 
-# Bucket priority for HGMDualManager's "balanced_by_type" category selection
-# (round-robin across category_type buckets; resolved by convention from this
-# module). "generic" (synthetic crash / plan-failed) is last.
+# Bucket priority across category_type buckets (resolved by convention from
+# this module by consumers that round-robin over categories). "generic"
+# (synthetic crash / plan-failed) is last.
 category_type_priority = ["commonsense", "hard_constraint", "generic"]
 
 
@@ -266,10 +266,9 @@ def per_case_category_checks(case_details: dict, category_id: str) -> list[bool]
       maps to ``<prefix>`` (see :func:`_hard_prefix`).
     - ``generic__*`` → ``[]`` (no per-case mapping).
 
-    Resolved by convention (same module as ``categorize_errors``) and consumed
-    by ``HGMDualManager`` when ``select_metric == 'category_significance'``.
-    Previously lived in ``meta_agent/managers/hgm_dual.py``; moved here so the
-    manager carries no travel-schema knowledge.
+    Resolved by convention (same module as ``categorize_errors``). Kept for
+    consumers that want per-category pass/fail vectors; the framework itself
+    carries no travel-schema knowledge.
     """
     if not case_details or not category_id:
         return []

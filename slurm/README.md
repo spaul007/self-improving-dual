@@ -43,7 +43,7 @@ the YAML, which wins). `slurm/run_hgm.sh` sets both automatically; for
 ```bash
 SLURM_LOG_DIR=/groups/AIC-MV/n.tzou/meta-agent/slurm \
 META_AGENT_RUNS_ROOT=/groups/AIC-MV/n.tzou/meta-agent/runs \
-  slurm/run.sh configs/travel.yaml
+  slurm/run.sh configs/hgm_travel.yaml
 ```
 
 In practice on this cluster `cpu-prepro-queue-02` is frequently in
@@ -54,7 +54,7 @@ GPU allocation:
 ```bash
 SLURM_PARTITION=gpu-aic-mv-01 SLURM_GRES=none \
   SLURM_TIME=04:00:00 SLURM_CPUS=16 SLURM_MEM=32G \
-  slurm/run.sh configs/travel.yaml
+  slurm/run.sh configs/hgm_travel.yaml
 ```
 
 Check current partition health with `sinfo -p <partition>` before
@@ -71,14 +71,14 @@ slurm/smoke.sh
 slurm/smoke.sh tests.test_travel_smoke
 
 # Full evolution run (math benchmark).
-slurm/run.sh configs/default.yaml
+slurm/run.sh configs/hgm_math.yaml
 
 # Travel benchmark (uses train/eval split from the YAML — train drives
 # optimization, eval is a sidecar score per round).
-slurm/run.sh configs/travel.yaml
+slurm/run.sh configs/hgm_travel.yaml
 
 # Bigger memory and longer time.
-SLURM_MEM=32G SLURM_TIME=12:00:00 slurm/run.sh configs/travel.yaml
+SLURM_MEM=32G SLURM_TIME=12:00:00 slurm/run.sh configs/hgm_travel.yaml
 
 # HGM (Huxley-Gödel-Machine) optimization run — the wrapper applies
 # HGM-sized SLURM defaults (gpu-aic-mv-01, GRES=none, 16 CPU, 32 G, 14 h).

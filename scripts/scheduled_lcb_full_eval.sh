@@ -5,7 +5,7 @@
 #
 #   scripts/scheduled_lcb_full_eval.sh <experiment_dir> <eval_config> "<start time>" [repeats] [parallelism]
 #   e.g. scripts/scheduled_lcb_full_eval.sh \
-#          runs/20260913_090207_hgm_travel_1000_dsv4pro_agentic_editmem \
+#          runs/20260913_090207_hgm_travel_1000_dsv4pro_agentic_no_editmem \
 #          configs/eval_travel_dsv4pro_agentic_node.yaml "2026-09-14 07:00" 2 40
 #
 # <start time> is interpreted in America/Los_Angeles. Outputs land under

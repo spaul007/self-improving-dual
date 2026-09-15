@@ -85,9 +85,9 @@ class TaskAgentSpec(LLMSpec):
       generous: it should never truncate legitimate output, and a faster
       model with a larger context can use more of it.
 
-    Deliberately declared here and not on ``LLMSpec`` so editor /
-    summarizer / edit-memory specs cannot grow a config-driven
-    temperature (or timeout, or output cap) by accident.
+    Deliberately declared here and not on ``LLMSpec`` so the editor spec
+    cannot grow a config-driven temperature (or timeout, or output cap)
+    by accident.
 
     History: ``max_output_tokens`` was added 2026-09-12 after
     deepseek-v4-pro-0813 with reasoning off fell into repetition loops
@@ -134,7 +134,7 @@ class SplitSpec(BaseModel):
     # ``train_ids_path`` points to a JSON file containing a list of ids (or an
     # object with a top-level ``train_ids`` list), resolved relative to the repo
     # root if not absolute. Use this to fix the same set across runs (e.g. to
-    # compare hgm vs hgm_dual on identical cases).
+    # compare two arms on identical cases).
     train_ids: Optional[list[str]] = None
     train_ids_path: Optional[str] = None
 
@@ -168,16 +168,6 @@ class FrameworkConfig(BaseModel):
     editor: ComponentSpec
     gatherer: ComponentSpec
     validators: list[ComponentSpec]
-    # Optional. When set, an LLM-summarized "behavior_memory.md" is written
-    # after every (non-seed) round and injected into descendants' steering
-    # contexts. Omit (or null) to disable; existing configs keep current
-    # behavior without changes.
-    summarizer: Optional[ComponentSpec] = None
-    # Optional. When set, a per-node "edit_memory.md" is written recording what
-    # each edit changed and what it did to the score, plus a run-global category
-    # registry; the accumulated memory is injected into the editor's steering
-    # context. Omit (or null) to disable — no files written, no behavior change.
-    edit_memory: Optional[ComponentSpec] = None
     plugins: list[str] = Field(default_factory=list)
 
     task_agent: TaskAgentSpec = Field(default_factory=TaskAgentSpec)
@@ -218,8 +208,6 @@ class AssembledFramework:
     seed_dir: Path
     benchmark_dir: Path
     runs_root: Path
-    summarizer: Any = None
-    edit_memory: Any = None
     train_case_ids: Optional[list[str]] = None
     eval_case_ids: Optional[list[str]] = None
 
@@ -230,11 +218,7 @@ def _ensure_builtins_loaded() -> None:
     importlib.import_module("meta_agent.editor_validators")
     importlib.import_module("meta_agent.evaluator")
     importlib.import_module("meta_agent.feedback_gatherer")
-    importlib.import_module("meta_agent.agent_editor")
-    importlib.import_module("meta_agent.agent_editor_two_stage")
     importlib.import_module("meta_agent.agent_editor_agentic")
-    importlib.import_module("meta_agent.behavior_summarizer")
-    importlib.import_module("meta_agent.edit_memory")
     importlib.import_module("meta_agent.managers")  # imports submodules
 
 
@@ -349,24 +333,7 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
     }
     if cfg.eval_visibility == "whitebox":
         editor_injections["scorer_source"] = _read_scorer_source(benchmark_dir)
-    # Which objective sentence the editor's system prompt carries: "judge"
-    # under belief-mode steering, else the legacy "score" text (an explicit
-    # editor.config.objective in the YAML wins — _build_with_injection uses
-    # setdefault).
-    editor_injections["objective"] = editor_objective(cfg)
     editor_obj = _build_with_injection(cfg.editor, "editor", editor_injections)
-
-    summarizer_obj: Any = None
-    if cfg.summarizer is not None:
-        summarizer_obj = _build_with_injection(
-            cfg.summarizer, "summarizer", {"llm_caller": call_llm}
-        )
-
-    edit_memory_obj: Any = None
-    if cfg.edit_memory is not None:
-        edit_memory_obj = _build_with_injection(
-            cfg.edit_memory, "edit_memory", {"llm_caller": call_llm}
-        )
 
     for line in meta_base_url_warnings(cfg):
         print(line, flush=True)
@@ -404,27 +371,15 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         seed_dir=seed_dir,
         benchmark_dir=benchmark_dir,
         runs_root=runs_root,
-        summarizer=summarizer_obj,
-        edit_memory=edit_memory_obj,
         train_case_ids=train_ids,
         eval_case_ids=eval_ids,
     )
 
 
-def editor_objective(cfg: FrameworkConfig) -> str:
-    """``"judge"`` when edit memory steers the editor in belief mode (the
-    per-node analysis's verdicts are what the editor is asked to fix), else
-    ``"score"`` — the legacy sentence, so the `full` steering mode and the
-    no-edit-memory control keep byte-identical prompts."""
-    spec = cfg.edit_memory
-    conf = (spec.config or {}) if spec is not None else {}
-    return "judge" if conf.get("steering_mode") == "belief" else "score"
-
-
 def meta_base_url_warnings(cfg: FrameworkConfig) -> list[str]:
-    """One warning per meta component (editor / summarizer / edit_memory)
-    that names its own ``model`` but no ``base_url`` while the task agent has
-    one. ``runtime_env.apply_task_agent_env`` exports the task agent's
+    """One warning per meta component (currently just the editor) that names
+    its own ``model`` but no ``base_url`` while the task agent has one.
+    ``runtime_env.apply_task_agent_env`` exports the task agent's
     ``LLM_BASE_URL`` for the evaluator's children, and ``call_llm`` falls back
     to it when ``base_url`` is unset — so such a component silently sends its
     calls to the task agent's endpoint (a local vLLM returned 404 "model
@@ -434,8 +389,7 @@ def meta_base_url_warnings(cfg: FrameworkConfig) -> list[str]:
     if not task_url:
         return []
     out: list[str] = []
-    for name, spec in (("editor", cfg.editor), ("summarizer", cfg.summarizer),
-                       ("edit_memory", cfg.edit_memory)):
+    for name, spec in (("editor", cfg.editor),):
         if spec is None:
             continue
         conf = spec.config or {}

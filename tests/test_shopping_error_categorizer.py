@@ -4,9 +4,9 @@
 
 Focus: (1) categorize_errors groups the scorer's enriched ``details`` into the
 expected category families, and (2) per_case_category_checks returns trial
-vectors whose denominator is fixed by ground truth / the case — so the
-HGMDualManager's category_significance bootstrap can detect improvements for
-BOTH recall categories (missing_*) and precision/absence categories
+vectors whose denominator is fixed by ground truth / the case — so a
+per-category significance test can detect improvements for BOTH recall
+categories (missing_*) and precision/absence categories
 (extra_coupon, wrong_coupon_quantity). ``extra_product`` is intentionally
 suppressed and must never appear as a category.
 """
@@ -15,9 +15,6 @@ from __future__ import annotations
 import unittest
 from types import SimpleNamespace
 
-import numpy as np
-
-from meta_agent.managers.hgm_dual import _bootstrap_p_greater
 from projects.shopping.shopping_error_categorizer import (
     categorize_errors,
     per_case_category_checks,
@@ -150,26 +147,6 @@ class PerCaseChecksPrecisionTest(unittest.TestCase):
         clean = {"coupon_details": [{"match": True, "expected_quantity": 2}]}
         self.assertEqual(per_case_category_checks(dirty, "wrong_coupon_quantity"), [False])
         self.assertEqual(per_case_category_checks(clean, "wrong_coupon_quantity"), [True])
-
-    def test_bootstrap_detects_extra_coupon_cleanup(self) -> None:
-        """End-to-end on the manager's bootstrap: a variant that removes every
-        extra coupon is significant. (extra_product used to be the example here
-        but is now suppressed, so this exercises the same path via extra_coupon.)"""
-        sa = [{"extra_coupons": ["x1", "x2"]}, {"extra_coupons": ["x3"]}, {"extra_coupons": []}]
-        var = [{"extra_coupons": []}, {"extra_coupons": []}, {"extra_coupons": []}]
-        sa_pool, v_pool = [], []
-        for sd, vd in zip(sa, var):
-            s = per_case_category_checks(sd, "extra_coupon")
-            if not s:
-                continue
-            sa_pool += s
-            v = per_case_category_checks(vd, "extra_coupon")
-            v = (v + [False] * len(s))[: len(s)]
-            v_pool += v
-        n = len(sa_pool)
-        p = _bootstrap_p_greater(sum(v_pool), n, sum(sa_pool), n, np.random.default_rng(0), 2000)
-        self.assertEqual((sum(sa_pool), sum(v_pool), n), (1, 3, 3))
-        self.assertGreater(p, 0.95)  # significant cleanup
 
 
 if __name__ == "__main__":

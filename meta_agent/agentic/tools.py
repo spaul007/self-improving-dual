@@ -68,14 +68,18 @@ VALIDATE_TOOL: dict[str, Any] = {
 }
 
 
-def bash_tool_info(*, bash_timeout_s: float, max_output_chars: int) -> dict[str, Any]:
+def bash_tool_info(
+    *, bash_timeout_s: float, max_output_chars: int,
+    root_vars: tuple[str, ...] = ("RUN_DIR", "NODE_DIR", "PARENT_DIR", "REPO_DIR"),
+) -> dict[str, Any]:
+    roots = ", ".join(root_vars[:-1]) + " and " + root_vars[-1]
     return {
         "name": "bash",
         "description": (
             "Run a bash command in a fresh, sandboxed shell.\n"
             "* No internet access. Only the workspace paths listed in the task "
             "message exist; everything else is absent or read-only. The roots "
-            "RUN_DIR, NODE_DIR, PARENT_DIR and REPO_DIR are environment "
+            + roots + " are environment "
             "variables here.\n"
             "* Each call starts a NEW shell in the task_agent directory — cwd, "
             "variables and background processes do NOT persist between calls "

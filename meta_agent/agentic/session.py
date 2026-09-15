@@ -31,7 +31,7 @@ from ..agent_editor import (
     editor_import_forms,
 )
 from ..models import EvolutionStrategy
-from .policy import BELIEFS_FILE, PathPolicy
+from .policy import READ_SCOPE_RUN, READ_SCOPES, PathPolicy
 from .tools import SUBMIT_TOOL, SUBMIT_TOOL_NAME, ToolSet
 
 TRANSCRIPT_NAME = "transcript.jsonl"
@@ -59,11 +59,35 @@ WRAP_UP_MESSAGE = (
     "now with a summary of what you changed. Do not call other tools."
 )
 
-AGENTIC_SYSTEM_PROMPT = (
+# Scope-dependent sentences of the system prompt. "run" is the legacy text,
+# byte-for-byte; "parent" never mentions the run directory or a RUN_DIR root.
+_EVIDENCE_SOURCE = {
+    "run": "the evidence in the run directory",
+    "parent": "the parent node's evidence",
+}
+_ROOTS_SENTENCE = {
+    "run": "the roots RUN_DIR, NODE_DIR, PARENT_DIR and REPO_DIR",
+    "parent": "the roots NODE_DIR, PARENT_DIR and REPO_DIR",
+}
+
+
+def agentic_system_prompt(read_scope: str = READ_SCOPE_RUN) -> str:
+    """The system prompt for one session. ``read_scope`` selects the two
+    sentences that name where the agent may look (see ``policy.py``)."""
+    if read_scope not in READ_SCOPES:
+        raise ValueError(f"read_scope must be one of {sorted(READ_SCOPES)}, "
+                         f"got {read_scope!r}")
+    return _agentic_system_prompt(
+        evidence=_EVIDENCE_SOURCE[read_scope], roots=_ROOTS_SENTENCE[read_scope]
+    )
+
+
+def _agentic_system_prompt(*, evidence: str, roots: str) -> str:
+    return (
     "You are the self-improvement module of a self-evolving agent, working as "
     "an autonomous coding agent. You have four tools: `bash`, `editor`, "
     "`validate`, and `submit_self_improvement`. Diagnose what to change from "
-    "the evidence in the run directory and the current code, make targeted "
+    + evidence + " and the current code, make targeted "
     "edits, verify them, then submit.\n"
     "First understand the task: read the agent's system prompt in "
     "workflow.py, the tool implementations, and the database schema with the "
@@ -80,8 +104,8 @@ AGENTIC_SYSTEM_PROMPT = (
     "code and the database are not available — do not look for them, and do "
     "not try to run the task agent on cases (there is no model access inside "
     "the sandbox).\n"
-    "  - Paths: the task message defines the roots RUN_DIR, NODE_DIR, "
-    "PARENT_DIR and REPO_DIR. They are environment variables in every bash "
+    "  - Paths: the task message defines " + roots + ". They are "
+    "environment variables in every bash "
     "call; the editor tool accepts the same `$VAR/...` form, absolute paths, "
     "or paths relative to the task_agent directory.\n"
     "  - Verify with `validate` (the same validators that gate your "
@@ -107,23 +131,16 @@ AGENTIC_SYSTEM_PROMPT = (
     "are already on disk). The validators run on submit; on errors your "
     "workspace is kept — fix them and submit again (limited attempts). You "
     "must end the session by submitting; do not stop with a plain message."
-)
+    )
+
+
+# Legacy name: the "run"-scope prompt (kept for callers/tests that pin it).
+AGENTIC_SYSTEM_PROMPT = agentic_system_prompt(READ_SCOPE_RUN)
 
 STEP_PARENT = (
     "Read the parent's hgm_node.json, strategy.json and feedback.json; open "
     "the failing logs/case_*.json it names. Your edits should be motivated by "
     "these failures."
-)
-STEP_MEMORY = (
-    "Before deciding what to change, check $RUN_DIR/edit_memory_beliefs.md{note}. "
-    "It is the accumulated understanding of every previous edit: how each "
-    "strategy worked out, whether something like your idea was already tried, "
-    "and when it failed whether the idea or its implementation was at fault. "
-    "Use it as guidance. Since it refers to where those strategies were used, "
-    "you can also check relevant node's edit_memory.md, edit_code.md, "
-    "task_agent/ and results to see what was actually done and how it scored, "
-    "and do better this time. You do not need to repeat the dominant strategy, "
-    "you can also diversify and try different kind of edits time to time."
 )
 STEP_VIEW = (
     "View workflow.py (and tool_wrapper.py / tools_schema.json as needed); "
@@ -142,31 +159,24 @@ def render_instruction(
     max_llm_calls: int,
     timeout_s: float,
     max_attempts: int,
-    memory: Optional[bool] = None,
     manager_context: Optional[str] = None,
 ) -> str:
     """The single task message: roots, workspace map, procedure, budget.
     Paths are ``$VAR`` forms only — no experiment path, no inlined source,
-    no feedback digest. ``memory`` (default: the run has edit-memory files)
-    adds the memory block to the map and the belief-guidance step; the
-    no-memory arm never mentions memory or beliefs."""
-    if memory is None:
-        memory = policy.memory_enabled()
-    steps = [STEP_PARENT]
-    if memory:
-        beliefs_exist = (policy.roots()["RUN_DIR"] / BELIEFS_FILE).exists()
-        note = "" if beliefs_exist else " (not written yet at this round — skip this step)"
-        steps.append(STEP_MEMORY.format(note=note))
-    steps += [STEP_VIEW, STEP_EDIT, STEP_SUBMIT]
+    no feedback digest. The policy's ``read_scope`` decides whether the
+    message names the run directory ("run") or only the parent node
+    ("parent")."""
+    steps = [STEP_PARENT, STEP_VIEW, STEP_EDIT, STEP_SUBMIT]
     procedure = "\n".join(f"  {i}. {text}" for i, text in enumerate(steps, 1))
+    evidence = _EVIDENCE_SOURCE[policy.read_scope]
     parts = [
         "# Task\n"
         "Improve the task agent's harness — its prompts, control flow, "
         "verification and repair logic, and tools — so that it scores higher "
         "on the benchmark it is evaluated on. The agent under edit is "
         "$NODE_DIR/task_agent, a copy of its parent node $PARENT_DIR. You "
-        "decide what to change based on the evidence in the run directory.\n",
-        policy.describe(memory=memory),
+        "decide what to change based on " + evidence + ".\n",
+        policy.describe(),
         f"## Procedure\n{procedure}\n",
         "## Budget\n"
         f"  - at most {max_llm_calls} model calls and {timeout_s:g}s "

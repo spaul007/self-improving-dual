@@ -3,22 +3,17 @@ experiment_name: "hgm_travel_tiny_dsv4pro_agentic_no_editmem"
 # TINY COMPONENT CHECK (2026-09-13): the 100-eval sanity pair scaled down to
 # exercise every component once — 48 evals = 3 batches (2 init expansions ->
 # evaluate both -> 1 more expansion -> evaluate), seed pre-eval reused, editor
-# capped at 60 calls, belief optimizer thresholds lowered so register ->
-# judge -> Brier scoring -> guidance step all fire within the run.
+# capped at 60 calls.
 # Derived from the 100-eval pair (2026-09-12): agentic editor, eval_budget 100, 60-case train
 # split, DeepSeek V4 Pro (dated pin deepseek-v4-pro-0813 on OpenRouter) for
 # BOTH the meta-agent (agentic editor) and the task agent.
-#   treatment : hgm_travel_100_dsv4pro_agentic_editmem.yaml     (edit_memory + code records + beliefs ON)
-#   control   : hgm_travel_100_dsv4pro_agentic_no_editmem.yaml  (no edit memory generated at all)
-# The two files differ ONLY in the presence of the `edit_memory:` block.
+# No edit memory: the agent sees only the raw node artifacts (strategy.json,
+# feedback.json, eval_result.json, logs/, code).
 #
 # PROMPTS (2026-09-13 review): one system prompt + one instruction message;
 # paths are $RUN_DIR / $NODE_DIR / $PARENT_DIR / $REPO_DIR (env vars in every
 # bash call, expanded by the editor tool) — no experiment path in the prompt.
-# The no-memory arm never mentions memory or beliefs; the memory arm gets the
-# memory files in its workspace map plus one belief-guidance step. The meta
-# agent never writes a prediction: the belief layer registers its own
-# (round_NNN/belief_prediction.json) and is Brier-scored against the judge.
+# The prompt never mentions memory or beliefs.
 #
 # TASK AGENT: reasoning_effort "none" — the only value that actually disables
 # DeepSeek's reasoning (see eval_travel_or_dsv4pro_0813_noreason.yaml for the
@@ -80,8 +75,7 @@ manager:
     # Expansion-paired evaluation (agentic setups, per user request
     # 2026-09-13): every freshly expanded child is evaluated on 16 random
     # train cases immediately (charged to the budget and to the widening
-    # counter), so no editor session goes unmeasured and the belief judge
-    # sees every node. 0 restores the reference's decoupled behaviour. At
+    # counter), so no editor session goes unmeasured. 0 restores the reference's decoupled behaviour. At
     # 1000 evals this keeps 32 nodes / 63 batches but makes 32 of the
     # batches mandatory child evaluations (31 bandit-chosen instead of 63).
     expand_eval_size: 16
@@ -89,6 +83,8 @@ manager:
     # Reuse the 60-case seed pre-eval of the finished 2026-09-12 run of this
     # arm instead of paying for it again; the seed code must be unchanged.
     seed_round_dir: "runs/20260912_061539_hgm_travel_100_dsv4pro_agentic_no_editmem/round_000"
+    # NOTE: this run dir is not part of this repo — symlink/copy it into runs/
+    # (or drop seed_round_dir to pay for a fresh 60-case seed pre-eval).
     full_eval_top_k: 0
     snapshot_tree: true
     seed: 42
@@ -126,15 +122,13 @@ editor:
     max_view_chars: 40000
     sandbox: "auto"
     include_manager_context: false
-
-# summarizer: INTENTIONALLY ABSENT — behavioral summary stays off.
-
-# edit_memory: INTENTIONALLY ABSENT — no edit_memory.md / edit_code.md /
-# registry / beliefs are generated, so the agent sees only the raw node
-# artifacts (strategy.json, feedback.json, eval_result.json, logs/, code).
+    # How much of the run the meta-agent may read (bash + editor tool):
+    #   "run"    — every node of the run (the setting of the finished runs)
+    #   "parent" — only $PARENT_DIR and its own $NODE_DIR; no $RUN_DIR root
+    read_scope: "run"
 
 env:
-  LLM_API_KEY_ENV: "OpenRouter_API_KEY"   # run-wide: task agent + edit memory + editor
+  LLM_API_KEY_ENV: "OpenRouter_API_KEY"   # run-wide: task agent + editor
   LLM_TIMEOUT_S: "1200"                   # task-agent per-request cap (< wall_time_s_per_case)
   META_AGENT_STRIP_REASONING: "1"
   TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-122B-A10B"

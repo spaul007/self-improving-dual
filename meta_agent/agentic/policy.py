@@ -9,13 +9,22 @@ Writable: the task agent's mutable surface in the round being produced
 (``MUTABLE_FILES`` + ``mutable_tools/*.py``, the same contract the validators
 enforce) plus a scratch directory for throwaway scripts.
 
-Readable: the whole run directory (every node's code, evaluation evidence,
-edit memory record, diff, and the run-level registry / belief files — all of
-which the framework writes dynamically, so the agent reads them straight from
-disk), ``platform_core/`` and the project's tool implementations + database
-schema (needed to ``import workflow`` and to understand the tools). The
-project's ``benchmark/`` (scorer, cases) and ``data/`` are never readable —
-they are not roots, and a deny-list guards against a misconfigured root.
+Readable — decided by ``read_scope``:
+  * ``"run"``: the whole run directory (every node's code and evaluation
+    evidence, which the framework writes dynamically, so the agent reads
+    them straight from disk);
+  * ``"parent"``: only the parent node's round dir and this node's own
+    round dir — no ``$RUN_DIR`` root exists, so sibling / ancestor nodes are
+    neither named in the prompt nor bound into the sandbox.
+plus, in both scopes, ``platform_core/`` and the project's tool
+implementations + database schema (needed to ``import workflow`` and to
+understand the tools). The project's ``benchmark/`` (scorer, cases) and
+``data/`` are never readable — they are not roots, and a deny-list guards
+against a misconfigured root.
+
+The bash side of the policy is enforced by the bubblewrap binds built from
+``read_roots``; when the sandbox falls back to unconfined mode only the
+``editor`` tool enforces it.
 """
 from __future__ import annotations
 
@@ -37,16 +46,12 @@ LIST_SKIP_NAMES = {"__pycache__"}
 # Root variables the instruction prompt and the sandbox share: the prompt
 # names paths as ``$VAR/...``, every bash call has them exported, and the
 # editor tool expands them. Keeps the prompt free of experiment paths.
+# ``RUN_DIR`` exists only under read_scope "run".
 ROOT_VARS = ("RUN_DIR", "NODE_DIR", "PARENT_DIR", "REPO_DIR")
-# Run-level edit-memory files the prompt explains (only listed when present).
-MEMORY_LEGEND = (
-    ("edit_memory_beliefs.md",
-     "belief document — which edit strategies have worked, which have not and why, with node citations"),
-    ("edit_memory_registry.json", "category registry of every edit made so far"),
-)
-MEMORY_MARKERS = ("edit_memory_registry.json", "edit_memory_candidates.json",
-                  "edit_memory_beliefs.md")
-BELIEFS_FILE = "edit_memory_beliefs.md"
+# What the meta-agent may read beyond its own node (see module docstring).
+READ_SCOPE_RUN = "run"
+READ_SCOPE_PARENT = "parent"
+READ_SCOPES = (READ_SCOPE_RUN, READ_SCOPE_PARENT)
 ROUND_LEGEND = (
     ("hgm_node.json", "tree stats: parent_id, mean_utility, n_evals"),
     ("strategy.json", "the edit summary that produced this node"),
@@ -72,6 +77,7 @@ class PathPolicy:
     repo_root: Path
     project_root: Optional[Path]
     project_name: str
+    read_scope: str = READ_SCOPE_RUN
 
     # ------------------------------------------------------------------ #
     # Roots
@@ -80,20 +86,30 @@ class PathPolicy:
     def roots(self) -> dict[str, Path]:
         """``RUN_DIR`` / ``NODE_DIR`` / ``PARENT_DIR`` / ``REPO_DIR`` — the
         only absolute paths the agent ever needs; exported as env vars in
-        every bash call and expanded by the editor tool."""
-        return {
-            "RUN_DIR": self.run_root if self.run_root is not None else self.out_dir.parent,
-            "NODE_DIR": self.out_dir,
-            "PARENT_DIR": self.base_dir,
-            "REPO_DIR": self.repo_root,
-        }
+        every bash call and expanded by the editor tool. ``RUN_DIR`` is
+        absent under read_scope "parent"."""
+        out: dict[str, Path] = {}
+        if self.read_scope == READ_SCOPE_RUN:
+            out["RUN_DIR"] = (self.run_root if self.run_root is not None
+                              else self.out_dir.parent)
+        out["NODE_DIR"] = self.out_dir
+        out["PARENT_DIR"] = self.base_dir
+        out["REPO_DIR"] = self.repo_root
+        return out
+
+    def root_vars(self) -> tuple[str, ...]:
+        """The ``$VAR`` names this policy defines, in ``ROOT_VARS`` order."""
+        return tuple(v for v in ROOT_VARS if v in self.roots())
 
     def var_path(self, path: Path) -> str:
         """Render ``path`` as ``$VAR/...`` using the most specific root
         (NODE_DIR before RUN_DIR, since it lies inside it)."""
         path = Path(path)
+        roots = self.roots()
         for var in ("NODE_DIR", "PARENT_DIR", "RUN_DIR", "REPO_DIR"):
-            root = self.roots()[var]
+            if var not in roots:
+                continue
+            root = roots[var]
             if path == root:
                 return f"${var}"
             if root in path.parents:
@@ -115,7 +131,7 @@ class PathPolicy:
             if var not in self.roots():
                 raise ValueError(
                     f"Error: unknown root ${var}; known roots: "
-                    + ", ".join(f"${v}" for v in ROOT_VARS)
+                    + ", ".join(f"${v}" for v in self.root_vars())
                 )
             p = self.roots()[var] / rest if rest else self.roots()[var]
         else:
@@ -123,13 +139,6 @@ class PathPolicy:
             if not p.is_absolute():
                 p = self.task_agent / p
         return _real(p)
-
-    def memory_enabled(self) -> bool:
-        """Edit memory is on for this run iff the framework has written any
-        of its run-level files (the setup pass writes the registry and
-        candidates before the first expansion)."""
-        run = self.roots()["RUN_DIR"]
-        return any((run / name).exists() for name in MEMORY_MARKERS)
 
     # ------------------------------------------------------------------ #
     # Queries
@@ -168,29 +177,36 @@ class PathPolicy:
     # Rendering for the instruction prompt
     # ------------------------------------------------------------------ #
 
-    def describe(self, *, listing_depth: int = 2, memory: Optional[bool] = None) -> str:
+    def describe(self, *, listing_depth: int = 2) -> str:
         """The workspace map for the instruction prompt: roots as ``$VAR``,
-        writable files, the parent's evidence legend, the run-level memory
-        files (only when ``memory`` — default: :meth:`memory_enabled`), the
-        platform/project reference, and a listing of the agent."""
-        if memory is None:
-            memory = self.memory_enabled()
-        run = self.roots()["RUN_DIR"]
-
-        def under_run(p: Path) -> str:
-            # The roots table defines NODE_DIR / PARENT_DIR in terms of RUN_DIR.
-            return (f"$RUN_DIR/{p.relative_to(run)}" if run in p.parents
-                    else str(p))
-
-        node_rel = under_run(self.out_dir)
-        parent_rel = under_run(self.base_dir)
+        writable files, the parent's evidence legend, the platform/project
+        reference, and a listing of the agent. Under read_scope "parent"
+        there is no ``RUN_DIR`` row and no mention of other nodes."""
+        run_scope = self.read_scope == READ_SCOPE_RUN
         lines = [
             "## Roots (environment variables in every bash call; the editor "
             "tool accepts the same $VAR form)",
-            "  RUN_DIR     the run directory (runs/<experiment>/) — one "
-            "round_NNN/ per node; 'node N' means round_NNN/ (zero-padded)",
-            f"  NODE_DIR    {node_rel}/   this node",
-            f"  PARENT_DIR  {parent_rel}/   its parent",
+        ]
+        if run_scope:
+            run = self.roots()["RUN_DIR"]
+
+            def under_run(p: Path) -> str:
+                # The roots table defines NODE_DIR / PARENT_DIR in terms of RUN_DIR.
+                return (f"$RUN_DIR/{p.relative_to(run)}" if run in p.parents
+                        else str(p))
+
+            lines += [
+                "  RUN_DIR     the run directory (runs/<experiment>/) — one "
+                "round_NNN/ per node; 'node N' means round_NNN/ (zero-padded)",
+                f"  NODE_DIR    {under_run(self.out_dir)}/   this node",
+                f"  PARENT_DIR  {under_run(self.base_dir)}/   its parent",
+            ]
+        else:
+            lines += [
+                "  NODE_DIR    this node (the agent you are producing)",
+                "  PARENT_DIR  its parent (the agent you are improving)",
+            ]
+        lines += [
             "  REPO_DIR    the repository root",
             "",
             "## Workspace (nothing outside these exists for bash or the "
@@ -222,16 +238,8 @@ class PathPolicy:
         for name, meaning in ROUND_LEGEND:
             if _round_entry_exists(self.base_dir, name):
                 lines.append(f"     {name:<22} {meaning}")
-        lines.append("  every other node $RUN_DIR/round_NNN/ has the same layout.")
-        if memory:
-            lines.append("  accumulated understanding of previous edits (run-level):")
-            for name, meaning in MEMORY_LEGEND:
-                if (run / name).exists():
-                    lines.append(f"     $RUN_DIR/{name:<26} {meaning}")
-            lines.append(
-                "     $RUN_DIR/round_NNN/edit_memory.md    memory record of "
-                "that node's edit; edit_code.md next to it is its diff"
-            )
+        if run_scope:
+            lines.append("  every other node $RUN_DIR/round_NNN/ has the same layout.")
         lines.append(
             "  platform (call_llm, runner, trace, tools registry): "
             "$REPO_DIR/platform_core/"
@@ -298,7 +306,11 @@ def build_policy(
     repo_root: Path = REPO_ROOT,
     project_root: Optional[Path] = None,
     project_name: str = "",
+    read_scope: str = READ_SCOPE_RUN,
 ) -> PathPolicy:
+    if read_scope not in READ_SCOPES:
+        raise ValueError(f"read_scope must be one of {sorted(READ_SCOPES)}, "
+                         f"got {read_scope!r}")
     out_dir = _real(Path(out_dir))
     base_dir = _real(Path(base_dir))
     repo_root = _real(Path(repo_root))
@@ -313,10 +325,12 @@ def build_policy(
 
     run_root = find_run_root(out_dir)
     read_candidates: list[Path] = [task_agent]
-    if run_root is not None:
+    if read_scope == READ_SCOPE_RUN and run_root is not None:
         read_candidates.append(run_root)
     else:
-        # No run marker (tests, ad-hoc dirs): expose the two round dirs only.
+        # Parent scope, or no run marker (tests, ad-hoc dirs): expose the two
+        # round dirs only. The sandbox binds exactly these, so sibling nodes
+        # are invisible to bash as well as to the editor tool.
         read_candidates += [base_dir, out_dir]
     read_candidates.append(repo_root / "platform_core")
     read_candidates.append(repo_root / "projects" / "__init__.py")
@@ -345,6 +359,7 @@ def build_policy(
         repo_root=repo_root,
         project_root=project_root,
         project_name=project_name,
+        read_scope=read_scope,
     )
 
 

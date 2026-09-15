@@ -43,5 +43,3 @@ CLAUDE.md
 DEV_LOG.md
 api.sh
 nohup.out
-# --- study snapshots: absolute symlinks into study_snapshots/, dangling elsewhere ---
-study/out/asof/

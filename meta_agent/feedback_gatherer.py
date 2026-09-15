@@ -125,8 +125,8 @@ class DefaultFeedbackGatherer:
         scorer: Any = None,
         # Example-driven failure report (generic; see meta_agent/failure_report.py).
         failure_analysis: bool = True,
-        # Project error categorizer ("module.path:function"), same convention
-        # the dual manager uses. When set, its categories drive the report's
+        # Project error categorizer ("module.path:function"). When set, its
+        # categories drive the report's
         # recurring-failure grouping + representative examples. When unset, the
         # report degrades to hardest-cases-only — still fully generic.
         error_categorizer: Optional[str] = None,
@@ -157,8 +157,8 @@ class DefaultFeedbackGatherer:
             failure_char_cap=failure_char_cap,
             pass_threshold=pass_threshold,
         )
-        # Resolve the project categorizer once (same "module:func" convention
-        # as HGMDualManager). Kept generic: the gatherer only calls it and
+        # Resolve the project categorizer once ("module:func"). Kept generic:
+        # the gatherer only calls it and
         # consumes its contract; all domain parsing lives in that project module.
         self._categorize_errors = None
         if error_categorizer:

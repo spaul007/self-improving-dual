@@ -11,8 +11,6 @@ _REGISTRIES: dict[str, dict[str, type]] = {
     "validator": {},
     "scorer": {},
     "editor": {},
-    "summarizer": {},
-    "edit_memory": {},
 }
 
 

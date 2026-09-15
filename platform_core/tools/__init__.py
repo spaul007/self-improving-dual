@@ -125,15 +125,15 @@ def call_mutable_tool(name: str, **kwargs: Any) -> str:
 
     Mutable tools are dispatched directly (not via the immutable registry), so
     without this their invocations leave no trace event — invisible to the
-    feedback gatherer's ``tool_usage`` and the behavior summarizer. Routing the
+    feedback gatherer's ``tool_usage``. Routing the
     mutable branch of ``tool_wrapper.execute`` through here makes mutable-tool
     usage show up in ``trace.jsonl`` exactly like immutable tools. Keeping the
     emission in immutable ``platform_core`` (not in the editable wrapper) means
     tracing survives editor rewrites of ``tool_wrapper.py``.
     """
     call_id = uuid.uuid4().hex[:12]
-    # ``mutable: True`` lets consumers (behavior summarizer) tell editor-added
-    # tools apart from immutable ones in the trace.
+    # ``mutable: True`` lets trace consumers tell editor-added tools apart
+    # from immutable ones.
     trace.emit(
         "tool_call",
         {"id": call_id, "name": name, "arguments": kwargs, "mutable": True},

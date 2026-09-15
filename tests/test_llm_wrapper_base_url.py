@@ -320,7 +320,7 @@ class TemperaturePlumbingTests(unittest.TestCase):
         self.assertNotIn("temperature", kwargs)
 
     def test_explicit_arg_with_effort_still_omitted(self) -> None:
-        # The meta-agent invariant: editor/edit_memory/summarizer pass
+        # The meta-agent invariant: the editor passes
         # temperature=0.2 explicitly; with a global reasoning effort their
         # requests must stay byte-identical (no temperature) even when
         # LLM_TEMPERATURE happens to be set.

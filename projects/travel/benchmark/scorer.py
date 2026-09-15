@@ -222,7 +222,7 @@ class TravelCompositeScorer:
       case by the evaluator (in parallel). Converts the agent's plan
       to JSON via gpt-5-2025-08-07, runs commonsense + hard
       constraints, returns ``{score, passed, details}``.
-    - ``aggregate(per_case, trace_events)`` — round-level summarizer.
+    - ``aggregate(per_case, trace_events)`` — round-level metric roll-up.
       Called once per round by the framework gatherer. Reads the
       ``details`` shapes the per-case ``score()`` produced and
       returns the project_metrics dict that lands on

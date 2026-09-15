@@ -2,19 +2,16 @@ experiment_name: "travel_hgm_smoke60_agentic"
 
 # End-to-end smoke for the AGENTIC editor (HGM-seed-style bash + editor tool
 # loop, bubblewrap-sandboxed, no docker) on the REAL 60-case train split with a
-# small budget (96 evals ≈ 6 batches, ≤8 rounds). Same manager / evaluator /
-# edit-memory + beliefs stack as hgm_travel_smoke_beliefs2stage.yaml; only the
-# editor block differs. Checks the artifacts, not the score:
+# small budget (96 evals ≈ 6 batches, ≤8 rounds). No memory of any kind.
+# Checks the artifacts, not the score:
 #   * every expanded round_*/agentic/ has transcript.jsonl + session.json with
 #     sandbox_mode == "bwrap", end_reason == "submitted", validation_rounds <= 3
-#   * transcript shows reads of the parent's feedback.json / logs/case_*.json
-#     and the run-level memory files, str_replace edits, a `validate` call,
-#     then submit_self_improvement
-#   * round_*/edit_prediction.json exists once edit_memory_beliefs.md exists
+#   * transcript shows reads of the parent's feedback.json / logs/case_*.json,
+#     str_replace edits, a `validate` call, then submit_self_improvement
 #   * with META_AGENT_VERBOSE=1, verbose/editor_agentic_instruction.txt lists
 #     paths only (no inlined source, no feedback digest, no steering context)
 #   * the parent console prints no "[editor:agentic] bwrap unavailable" line
-# Task agent / edit memory need the node-5 vLLM endpoint; the editor needs the
+# The task agent needs the node-5 vLLM endpoint; the editor needs the
 # OpenRouter key (see the editor block). Run:
 #   source /groups/AIC-MV/sudipta.paul/code/random/api.sh
 #   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_smoke_agentic.yaml
@@ -44,8 +41,7 @@ manager:
     # Expansion-paired evaluation (agentic setups, per user request
     # 2026-09-13): every freshly expanded child is evaluated on 16 random
     # train cases immediately (charged to the budget and to the widening
-    # counter), so no editor session goes unmeasured and the belief judge
-    # sees every node. 0 restores the reference's decoupled behaviour. At
+    # counter), so no editor session goes unmeasured. 0 restores the reference's decoupled behaviour. At
     # 1000 evals this keeps 32 nodes / 63 batches but makes 32 of the
     # batches mandatory child evaluations (31 bandit-chosen instead of 63).
     expand_eval_size: 16
@@ -67,13 +63,12 @@ gatherer:
     error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
 
 # The agentic editor: one tool-use session per expansion. The model reads the
-# parent node's evidence and the run's memory/diff/belief/registry files from
-# disk itself; the manager's steering context and the feedback digest are NOT
-# put in the prompt (include_manager_context: false).
+# parent node's evidence from disk itself; the manager's steering context and
+# the feedback digest are NOT put in the prompt (include_manager_context: false).
 # META-MODEL: DeepSeek V4 Pro on OpenRouter (dated pin deepseek-v4-pro-0813,
 # $0.66/M in, $1.98/M out — the slug the 2026-09-10 travel evals used). Only
-# the agentic editor goes to OpenRouter; the task agent and edit memory stay
-# on the local node-5 Qwen. api_key_env makes the editor read the OpenRouter
+# the agentic editor goes to OpenRouter; the task agent stays on the local
+# node-5 Qwen. api_key_env makes the editor read the OpenRouter
 # key from its own env var, so the launch is just:
 #   source /groups/AIC-MV/sudipta.paul/code/random/api.sh   # exports OpenRouter_API_KEY (+ OPENAI_API_KEY)
 #   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_smoke_agentic.yaml
@@ -99,46 +94,10 @@ editor:
     max_view_chars: 40000
     sandbox: "auto"          # bwrap when usable, else cwd-only with a warning
     include_manager_context: false
-
-edit_memory:
-  type: "default"
-  config:
-    model: "Qwen/Qwen3.5-122B-A10B"
-    reasoning_effort: "low"
-    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
-    steering: true                   # renders the deterministic steering block only; the agentic editor does not receive it
-    steering_token_budget: 48000
-    verdict_threshold: 0.02
-    min_shared: 8
-    # Judge-as-signal (analysis v7): strategy beliefs are scored against the
-    # per-node analysis's effect verdict for the matched sub-edit, not the
-    # score Δ; the analysis runs once a node has one batch of its OWN cases.
-    # One extra LLM call per node analysis on this model.
-    strategy_label: judge
-    analysis_min_own_evals: 16
-    judge_min_evidence: moderate     # weak-evidence verdicts stay pending
-    analysis_code_char_budget: 20000 # implementation view shown to the judge
-    max_strategies: 30
-    max_subedits: 3
-    diff_char_cap: 6000
-    setup_pass: true
-    per_check_recipe: null
-    code_record: true                # per-node edit_code.md (the diff the agent may read)
-    code_diff_char_cap: 20000
-    steering_mode: "belief"
-    # Self-predicting beliefs: BeliefStore.register() freezes the matched
-    # belief's p into round_NNN/belief_prediction.json when a node is
-    # recorded; once judged, Brier loss is paid and every optimize_every
-    # scored predictions the guidance text is revised from the misses.
-    # The meta agent never writes a prediction.
-    beliefs:
-      enabled: true
-      doc_char_cap: 40000
-      optimize_enabled: true
-      optimize_every: 4
-      optimize_min_scored: 4
-      optimize_rollback_margin: 0.02
-      instruction_char_cap: 2500
+    # How much of the run the meta-agent may read (bash + editor tool):
+    #   "run"    — every node of the run
+    #   "parent" — only $PARENT_DIR and its own $NODE_DIR; no $RUN_DIR root
+    read_scope: "run"
 
 env:
   META_AGENT_STRIP_REASONING: "1"

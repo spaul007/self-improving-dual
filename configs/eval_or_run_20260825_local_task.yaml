@@ -1,23 +1,10 @@
 # EVAL-ONLY variant of the 20260825_224252 run config: task agent and
 # scorer conversion moved to the LOCAL vLLM node-5 serving of the same
 # Qwen3.5-122B weights. Used with snapshot_eval.py to re-evaluate the
-# run's best agent under local serving; editor/edit_memory blocks are
-# unused by snapshot_eval and left as-is.
+# run's best agent under local serving; the editor block is unused by
+# snapshot_eval.
 experiment_name: "travel_hgm_1000_or_qwen122b_qwenmeta_editmem"
 
-# All-OpenRouter arm with the reworked edit memory — the "edit_memory_v4"
-# preview format as approved (evidence-only analysis, likely-cause, signed
-# improvement-positive convention) plus the post-preview refinements
-# (sidecar machine state, interpretation header). Internally this is
-# RECORD_FORMAT 3 / ANALYSIS_VERSION 2 — those constants count record
-# layouts and analysis question-sets, not the preview folder numbers.
-#
-# Split of labour — every LLM site goes through OpenRouter:
-#   task agent + conversion -> qwen/qwen3.5-122b-a10b   (same weights/ctx as
-#                              the local vLLM node-5 serving; 262144 ctx)
-#   meta agent (editor)     -> qwen/qwen3.5-122b-a10b (reasoning medium)
-#   edit memory (tagger+analysis) -> qwen/qwen3.5-122b-a10b (reasoning medium)
-#
 # Task-agent reasoning_effort mirrors
 # runs/20260825_191551_travel_hgm_1000_dsv4flash_no_editmem: "high".
 #
@@ -36,6 +23,7 @@ task_agent:
   reasoning_effort: "high"
   base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
 
+# (manager/editor are required by the config schema but unused by evaluate.py / snapshot_eval.py)
 manager:
   type: "hgm"
   config:
@@ -64,32 +52,12 @@ gatherer:
     error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
 
 editor:
-  type: "default"
-  config:
-    model: "qwen/qwen3.5-122b-a10b"
-    reasoning_effort: "medium"
-    max_attempts: 2
-    base_url: "https://openrouter.ai/api/v1"
-
-# summarizer: INTENTIONALLY ABSENT — behavioral summary stays off.
-
-# Reworked edit memory (the approved "v4" preview format; see header note).
-# usage_tracking and analysis_mode="refresh" are the defaults.
-edit_memory:
-  type: "default"
+  type: "agentic"
   config:
     model: "qwen/qwen3.5-122b-a10b"
     reasoning_effort: "medium"
     base_url: "https://openrouter.ai/api/v1"
-    steering: true
-    steering_token_budget: 32000
-    verdict_threshold: 0.02
-    min_shared: 8
-    max_strategies: 18
-    max_subedits: 3
-    diff_char_cap: 6000
-    setup_pass: true
-    per_check_recipe: null
+    max_attempts: 3
 
 env:
   META_AGENT_STRIP_REASONING: "1"

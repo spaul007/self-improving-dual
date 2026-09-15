@@ -24,15 +24,23 @@ from meta_agent.agentic.session import (
 )
 from meta_agent.agentic.tools import SUBMIT_TOOL, SUBMIT_TOOL_NAME
 from meta_agent.config import ComponentSpec, _build_with_injection, _ensure_builtins_loaded
-from meta_agent.edit_beliefs import PREDICTION_NAME
 from meta_agent.editor_validators import (
     ImmutableFilesValidator,
     SignatureValidator,
     SyntaxValidator,
 )
-from tests.test_edit_code import _agent
 
 WF = "def run_task(task):\n    x = 1\n    return None\n"
+
+
+def _agent(round_dir: Path, workflow: str) -> None:
+    """A minimal task_agent/ under ``round_dir`` with the given workflow.py."""
+    a = round_dir / "task_agent"
+    (a / "mutable_tools").mkdir(parents=True, exist_ok=True)
+    (a / "workflow.py").write_text(workflow, encoding="utf-8")
+    (a / "tool_wrapper.py").write_text("def x(): return None\n", encoding="utf-8")
+    (a / "tools_schema.json").write_text("[]", encoding="utf-8")
+    (a / "mutable_tools" / "__init__.py").write_text("", encoding="utf-8")
 
 
 @dataclass
@@ -78,7 +86,6 @@ class EditorBase(unittest.TestCase):
         self.run = root / "run"
         self.run.mkdir()
         (self.run / RUN_ROOT_MARKER).write_text("")
-        (self.run / "edit_memory_beliefs.md").write_text("### belief:b — x\n")
         self.base = self.run / "round_001"
         self.out = self.run / "round_002"
         _agent(self.base, WF)
@@ -139,18 +146,21 @@ class TestHappyPath(EditorBase):
         self.assertIn("$NODE_DIR/task_agent/workflow.py", instr)
         self.assertIn("NODE_DIR    $RUN_DIR/round_002/   this node", instr)
         self.assertIn("PARENT_DIR  $RUN_DIR/round_001/   its parent", instr)
-        # This run has a belief document → memory arm: memory block + step 2.
-        self.assertIn("$RUN_DIR/edit_memory_beliefs.md", instr)
-        self.assertIn("2. Before deciding what to change, check $RUN_DIR/edit_memory_beliefs.md.", instr)
-        self.assertIn("5. Run validate", instr)
+        self.assertIn("every other node $RUN_DIR/round_NNN/ has the same layout.", instr)
+        self.assertIn("2. View workflow.py", instr)
+        self.assertIn("4. Run validate", instr)
         self.assertIn("Your edits should be motivated by these failures.", instr)
         self.assertIn("harness", instr)
         self.assertIn("at most 10 model calls", instr)
         self.assertNotIn("x = 1", instr)
         self.assertNotIn("STEERING TEXT", instr)
         self.assertNotIn("Last round's feedback", instr)
-        self.assertNotIn("prediction", instr)
-        self.assertNotIn("prediction", first["messages"][0]["content"])
+        # No memory of any kind is ever mentioned to the agent.
+        for text in (first["messages"][0]["content"], instr):
+            for word in ("memory", "belief", "prediction"):
+                self.assertNotIn(word, text.lower(), word)
+        for t in first["tools"]:
+            self.assertNotIn("belief", json.dumps(t).lower())
         self.assertEqual([t["name"] for t in first["tools"]],
                          ["bash", "editor", "validate", SUBMIT_TOOL_NAME])
         self.assertEqual(first["temperature"], 0.2)
@@ -181,35 +191,52 @@ class TestHappyPath(EditorBase):
         self.assertEqual(s["n_tool_calls"], {"editor": 2, "validate": 1, SUBMIT_TOOL_NAME: 1})
         self.assertEqual(s["sandbox_mode"], "none")
         self.assertTrue((self.out / "agentic" / "scratch").is_dir())
-        # The meta agent never writes a prediction; the belief layer does.
-        self.assertFalse((self.out / PREDICTION_NAME).exists())
-        self.assertTrue(s["memory_enabled"])
+        self.assertEqual(s["read_scope"], "run")
         self.assertEqual(s["roots"]["NODE_DIR"], str(self.out.resolve()))
+        self.assertIn("RUN_DIR", s["roots"])
 
-    def test_no_memory_run_never_mentions_memory(self) -> None:
-        (self.run / "edit_memory_beliefs.md").unlink()
-        ed, llm = self.editor([_Resp(tool_calls=[self.replace("c1", "x = 1", "x = 3"), _submit()])])
-        self.assertTrue(ed.apply(None, self.base, self.out).success)
+    def test_parent_read_scope(self) -> None:
+        """read_scope "parent": no RUN_DIR root anywhere (prompt, tool
+        descriptions, env, session roots); a sibling node is unreadable by
+        the editor tool while the parent's evidence still is."""
+        sibling = self.run / "round_000"
+        _agent(sibling, WF)
+        (sibling / "strategy.json").write_text('{"optimization_goal": "SIBLING SECRET"}')
+        ed, llm = self.editor([
+            _Resp(tool_calls=[_Call("c1", "editor", {"command": "view", "path": str(sibling / "strategy.json")})]),
+            _Resp(tool_calls=[_Call("c2", "editor", {"command": "view", "path": "$PARENT_DIR/feedback.json"})]),
+            _Resp(tool_calls=[_Call("c3", "editor", {"command": "view", "path": "$RUN_DIR/round_000/strategy.json"})]),
+            _Resp(tool_calls=[self.replace("c4", "x = 1", "x = 3"), _submit()]),
+        ], read_scope="parent")
+        self.assertTrue(ed.apply(None, self.base, self.out, context="STEERING TEXT").success)
         system = llm.calls[0]["messages"][0]["content"]
         instr = llm.calls[0]["messages"][1]["content"]
-        for text in (system, instr):
-            for word in ("memory", "belief", "edit_memory_registry", "prediction"):
-                self.assertNotIn(word, text.lower(), word)
-        for t in llm.calls[0]["tools"]:
-            self.assertNotIn("belief", json.dumps(t).lower())
-        self.assertIn("2. View workflow.py", instr)
-        self.assertIn("4. Run validate", instr)
-        self.assertFalse(self.session()["memory_enabled"])
+        for text in (system, instr, json.dumps(llm.calls[0]["tools"])):
+            self.assertNotIn("RUN_DIR", text)
+            self.assertNotIn("run directory", text)
+            self.assertNotIn("every other node", text)
+        self.assertIn("the parent node's evidence", system)
+        self.assertIn("the roots NODE_DIR, PARENT_DIR and REPO_DIR", system)
+        self.assertIn("based on the parent node's evidence.", instr)
+        self.assertIn("  NODE_DIR    this node", instr)
+        self.assertIn("  PARENT_DIR  its parent", instr)
+        self.assertIn("parent node $PARENT_DIR/ — the agent you are improving", instr)
+        self.assertIn("$NODE_DIR/task_agent/workflow.py", instr)
+        outs = [e for e in self.transcript() if e["kind"] == "tool_call"]
+        self.assertIn("not readable", outs[0]["result"])
+        self.assertNotIn("SIBLING SECRET", outs[0]["result"])
+        self.assertIn('"score": 0.4', outs[1]["result"])
+        self.assertIn("unknown root $RUN_DIR", outs[2]["result"])
+        self.assertIn("known roots: $NODE_DIR, $PARENT_DIR, $REPO_DIR", outs[2]["result"])
+        s = self.session()
+        self.assertEqual(s["read_scope"], "parent")
+        self.assertEqual(set(s["roots"]), {"NODE_DIR", "PARENT_DIR", "REPO_DIR"})
 
-    def test_memory_run_before_beliefs_exist(self) -> None:
-        (self.run / "edit_memory_beliefs.md").unlink()
-        (self.run / "edit_memory_candidates.json").write_text("{}")   # setup pass ran
-        ed, llm = self.editor([_Resp(tool_calls=[self.replace("c1", "x = 1", "x = 3"), _submit()])])
-        self.assertTrue(ed.apply(None, self.base, self.out).success)
-        instr = llm.calls[0]["messages"][1]["content"]
-        self.assertIn("(not written yet at this round — skip this step)", instr)
-        self.assertNotIn("$RUN_DIR/edit_memory_beliefs.md     belief document", instr)
-        self.assertIn("$RUN_DIR/round_NNN/edit_memory.md", instr)
+    def test_run_read_scope_is_the_default_and_bad_values_raise(self) -> None:
+        ed, _ = self.editor([])
+        self.assertEqual(ed.read_scope, "run")
+        with self.assertRaises(ValueError):
+            self.editor([], read_scope="node")
 
     def test_var_path_form_in_tool_calls(self) -> None:
         ed, llm = self.editor([_Resp(tool_calls=[
@@ -503,13 +530,12 @@ class TestConcurrencyAndWiring(EditorBase):
         self.assertFalse(ed.include_manager_context)
         self.assertIsNone(ed.api_key_env)
         self.assertIsNone(ed.llm_timeout_s)
-        # config.build_components injects "judge"/"score"; accepted, forwarded to
-        # the base class, and deliberately not spliced into the agentic prompt.
+        self.assertEqual(ed.read_scope, "run")
         ed2 = _build_with_injection(
-            ComponentSpec(type="agentic", config={"sandbox": "none"}), "editor",
-            {"llm_caller": lambda **kw: None, "validators": [], "objective": "judge"},
+            ComponentSpec(type="agentic", config={"sandbox": "none", "read_scope": "parent"}),
+            "editor", {"llm_caller": lambda **kw: None, "validators": []},
         )
-        self.assertEqual(ed2.objective, "judge")
+        self.assertEqual(ed2.read_scope, "parent")
 
     def test_api_key_env_and_timeout_reach_the_llm_call(self) -> None:
         ed, llm = self.editor([_Resp(tool_calls=[self.replace("c1", "x = 1", "x = 3"), _submit()])],
@@ -534,9 +560,10 @@ class TestConcurrencyAndWiring(EditorBase):
     def test_build_components_from_agentic_configs(self) -> None:
         from meta_agent.config import REPO_ROOT, build_components, load
         for name in ("hgm_travel_smoke_agentic",
-                     "hgm_travel_1000_qwen122b_node5_agentic_editmem",
-                     "hgm_travel_100_dsv4pro_agentic_editmem",
-                     "hgm_travel_100_dsv4pro_agentic_no_editmem"):
+                     "hgm_travel_tiny_dsv4pro_agentic_no_editmem",
+                     "hgm_travel_100_dsv4pro_agentic_no_editmem",
+                     "hgm_travel_1000_dsv4pro_agentic_no_editmem",
+                     "hgm_travel_1000_dsv4pro_agentic_no_editmem_t2"):
             cfg = load(REPO_ROOT / "configs" / f"{name}.yaml")
             fw = build_components(cfg)
             self.assertIsInstance(fw.editor, AgenticEditor, name)
@@ -547,33 +574,20 @@ class TestConcurrencyAndWiring(EditorBase):
             self.assertTrue(fw.editor.model.startswith("deepseek/deepseek-v4-pro"))
             self.assertEqual(fw.editor.base_url, "https://openrouter.ai/api/v1")
             self.assertFalse(fw.editor.include_manager_context)
-
-    def test_sanity_pair_differs_only_in_edit_memory(self) -> None:
-        from meta_agent.config import REPO_ROOT, build_components, load
-        a = load(REPO_ROOT / "configs" / "hgm_travel_100_dsv4pro_agentic_editmem.yaml")
-        b = load(REPO_ROOT / "configs" / "hgm_travel_100_dsv4pro_agentic_no_editmem.yaml")
-        self.assertIsNotNone(a.edit_memory)
-        self.assertIsNone(b.edit_memory)
-        self.assertEqual(a.edit_memory.config["strategy_label"], "judge")
-        self.assertTrue(a.edit_memory.config["beliefs"]["optimize_enabled"])
-        self.assertNotIn("reflect_every", a.edit_memory.config["beliefs"])
-        for cfg in (a, b):
-            self.assertEqual(cfg.task_agent.model, "deepseek/deepseek-v4-pro-0813")
-            self.assertEqual(cfg.task_agent.reasoning_effort, "none")
-            self.assertTrue(cfg.verbose)
-            self.assertEqual(cfg.env["LLM_API_KEY_ENV"], "OpenRouter_API_KEY")
-            self.assertEqual(cfg.manager.config["eval_budget"], 100)
-            self.assertEqual(cfg.manager.config["finalize_top_k"], 0)
-            fw = build_components(cfg)
+            self.assertEqual(fw.editor.read_scope, "run")
             self.assertEqual(len(fw.train_case_ids), 60)
-        da, db = a.model_dump(), b.model_dump()
-        for k in ("edit_memory", "experiment_name"):
-            da.pop(k), db.pop(k)
-        # Each arm reuses ITS OWN earlier seed pre-eval (same seed code).
-        for d in (da, db):
-            self.assertIn("seed_round_dir", d["manager"]["config"])
-            d["manager"]["config"].pop("seed_round_dir")
-        self.assertEqual(da, db)
+
+    def test_1000_run_config_matches_the_finished_run(self) -> None:
+        from meta_agent.config import REPO_ROOT, load
+        cfg = load(REPO_ROOT / "configs" / "hgm_travel_1000_dsv4pro_agentic_no_editmem.yaml")
+        self.assertEqual(cfg.task_agent.model, "deepseek/deepseek-v4-pro-0813")
+        self.assertEqual(cfg.task_agent.reasoning_effort, "none")
+        self.assertTrue(cfg.verbose)
+        self.assertEqual(cfg.env["LLM_API_KEY_ENV"], "OpenRouter_API_KEY")
+        self.assertEqual(cfg.manager.config["eval_budget"], 1000)
+        self.assertEqual(cfg.manager.config["expand_eval_size"], 16)
+        self.assertEqual(cfg.manager.config["finalize_top_k"], 3)
+        self.assertEqual(cfg.editor.config["read_scope"], "run")
 
 
 class TestPromptContract(unittest.TestCase):

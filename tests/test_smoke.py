@@ -3,7 +3,7 @@
 Covers:
   * Validators reject malformed agents and accept the seed.
   * The subprocess evaluator can run a stub task agent and produce results.
-  * The config loader instantiates real components from configs/default.yaml.
+  * The config loader instantiates real components from configs/hgm_math.yaml.
   * tools_schema_consistency catches name collisions and dangling names.
 
 Run from the repo root:
@@ -239,38 +239,39 @@ class ConfigLoaderTests(unittest.TestCase):
     def test_default_config_assembles(self) -> None:
         from meta_agent.config import build_components, load
 
-        cfg = load(REPO_ROOT / "configs" / "default.yaml")
+        cfg = load(REPO_ROOT / "configs" / "hgm_math.yaml")
         fw = build_components(cfg)
-        self.assertEqual(type(fw.manager).__name__, "HillClimbingManager")
+        self.assertEqual(type(fw.manager).__name__, "HGMManager")
         self.assertEqual(type(fw.evaluator).__name__, "SubprocessEvaluator")
         self.assertEqual(type(fw.gatherer).__name__, "DefaultFeedbackGatherer")
-        self.assertEqual(type(fw.editor).__name__, "AgentEditor")
+        self.assertEqual(type(fw.editor).__name__, "AgenticEditor")
         self.assertEqual(len(fw.validators), 8)
         self.assertTrue(fw.seed_dir.exists())
         self.assertTrue(fw.benchmark_dir.exists())
 
     def test_editor_is_pluggable_via_registry(self) -> None:
         """Editor is a ComponentSpec like every other pluggable component.
-        The YAML declares ``editor.type: "default"`` explicitly; the
-        framework looks it up in the registry."""
+        The YAML declares ``editor.type: "agentic"`` explicitly; the
+        framework looks it up in the registry — the only registered editor."""
         from meta_agent import registry
         from meta_agent.config import build_components, load
 
-        cfg = load(REPO_ROOT / "configs" / "default.yaml")
-        self.assertEqual(cfg.editor.type, "default")
-        self.assertEqual(cfg.editor.config.get("max_attempts"), 2)
+        cfg = load(REPO_ROOT / "configs" / "hgm_math.yaml")
+        self.assertEqual(cfg.editor.type, "agentic")
+        self.assertEqual(cfg.editor.config.get("max_attempts"), 3)
 
         fw = build_components(cfg)
-        self.assertEqual(type(fw.editor).__name__, "AgentEditor")
-        self.assertIn("default", registry.available("editor"))
+        self.assertEqual(type(fw.editor).__name__, "AgenticEditor")
+        self.assertEqual(registry.available("editor"), ["agentic"])
+        self.assertEqual(registry.available("manager"), ["hgm"])
 
     def test_project_field_parses(self) -> None:
         from meta_agent.config import load
 
-        default_cfg = load(REPO_ROOT / "configs" / "default.yaml")
+        default_cfg = load(REPO_ROOT / "configs" / "hgm_math.yaml")
         self.assertEqual(default_cfg.project, "math")
 
-        travel_cfg = load(REPO_ROOT / "configs" / "travel.yaml")
+        travel_cfg = load(REPO_ROOT / "configs" / "hgm_travel.yaml")
         self.assertEqual(travel_cfg.project, "travel")
 
     def test_load_project_filters_immutable_tools(self) -> None:
@@ -334,14 +335,14 @@ class ConfigLoaderTests(unittest.TestCase):
             self.assertIn(required, msg)
 
     def test_travel_yaml_uses_project_specific_scorer(self) -> None:
-        """``configs/travel.yaml`` names the project-specific scorer
+        """``configs/hgm_travel.yaml`` names the project-specific scorer
         (``travel_default``); the framework gatherer is the generic
         ``"default"`` one. Both end up holding the same scorer instance
         so the gatherer can call ``scorer.aggregate(...)`` to populate
         ``AgentFeedback.project_metrics``."""
         from meta_agent.config import build_components, load
 
-        cfg = load(REPO_ROOT / "configs" / "travel.yaml")
+        cfg = load(REPO_ROOT / "configs" / "hgm_travel.yaml")
         self.assertEqual(cfg.gatherer.type, "default")
         self.assertEqual(cfg.evaluator.config.get("scorer"), "travel_default")
 
@@ -411,7 +412,7 @@ class CaseSplitTests(unittest.TestCase):
     def test_travel_yaml_exposes_split(self) -> None:
         from meta_agent.config import load
 
-        cfg = load(REPO_ROOT / "configs" / "travel.yaml")
+        cfg = load(REPO_ROOT / "configs" / "hgm_travel.yaml")
         self.assertIsNotNone(cfg.split)
         self.assertEqual(cfg.split.seed, 42)
         self.assertEqual(cfg.split.train_size, 60)
@@ -420,7 +421,7 @@ class CaseSplitTests(unittest.TestCase):
         """Math benchmark must keep working without any split block."""
         from meta_agent.config import load
 
-        cfg = load(REPO_ROOT / "configs" / "default.yaml")
+        cfg = load(REPO_ROOT / "configs" / "hgm_math.yaml")
         self.assertIsNone(cfg.split)
 
 
@@ -623,93 +624,6 @@ class RunnerTests(unittest.TestCase):
         self.assertIn("boom", envelope["error"])
 
 
-class FailedEditFeedbackTests(unittest.TestCase):
-    """When the editor's mutation fails validation, the round must (a)
-    skip the held-out eval split (the workspace is identical to the
-    base round; running eval is wasted compute) and (b) surface the
-    ``edit_errors`` list into both the strategy prompt and the editor
-    prompt so the next round's optimizer can pivot."""
-
-    def _make_failed_edit_feedback(self, errors: list[str]):
-        from meta_agent.models import (
-            AgentFeedback,
-            EvaluationResult,
-            EvolutionStrategy,
-        )
-
-        return AgentFeedback(
-            round_number=1,
-            base_round=0,
-            strategy=EvolutionStrategy(
-                target_files=["workflow.py"],
-                optimization_goal="proposed something",
-                proposed_changes="x",
-            ),
-            eval_result=EvaluationResult(score=0.0),
-            edit_errors=errors,
-        )
-
-    def test_run_eval_split_skips_when_edit_errors(self) -> None:
-        """Eval split must be skipped (and the evaluator never called)
-        when ``feedback.edit_errors`` is non-empty."""
-        from meta_agent.managers.hill_climbing import HillClimbingManager
-
-        sentinel = []
-
-        class _ShouldNotRunEvaluator:
-            def run(self, *args, **kwargs):
-                sentinel.append(("called", args, kwargs))
-                from meta_agent.models import EvaluationResult
-                return EvaluationResult(score=0.0)
-
-        m = HillClimbingManager()
-        m._eval_case_ids = ["x"]  # split is configured
-
-        tmp = Path(tempfile.mkdtemp(prefix="failed_edit_"))
-        self.addCleanup(shutil.rmtree, tmp, True)
-        (tmp / "task_agent").mkdir()  # exists, mimicking editor's reset
-
-        fb = self._make_failed_edit_feedback(["signature broken"])
-        m._run_eval_split(
-            1, tmp, _ShouldNotRunEvaluator(), Path("."), fb,
-        )
-        self.assertEqual(sentinel, [], "evaluator must not have been called")
-
-        # Verify the skipped sidecar is written with the edit_errors.
-        score_path = tmp / "eval_score.json"
-        self.assertTrue(score_path.exists(), "expected eval_score.json")
-        side = json.loads(score_path.read_text(encoding="utf-8"))
-        self.assertTrue(side.get("skipped"))
-        self.assertEqual(side.get("edit_errors"), ["signature broken"])
-
-    def test_strategy_prompt_renders_edit_errors(self) -> None:
-        """The manager's steering context must surface ``edit_errors`` in
-        its recent-rounds section so the editor avoids the same mistake."""
-        from meta_agent.managers.hill_climbing import HillClimbingManager
-
-        m = HillClimbingManager()
-        fb = self._make_failed_edit_feedback(
-            ["run_task signature must be run_task(task) -> AgentOutput"]
-        )
-        text = m._render_change_context([fb], best=fb)
-        self.assertIn("edit_errors", text)
-        self.assertIn("run_task signature must be", text)
-
-    def test_editor_format_feedback_renders_edit_errors(self) -> None:
-        """The editor's ``_format_feedback`` (cross-round view of the
-        previous round's outcome) must include ``edit_errors`` so the
-        editor LLM avoids re-producing the broken structure."""
-        from meta_agent.agent_editor import AgentEditor
-
-        editor = AgentEditor(llm_caller=lambda **kw: None, validators=[])
-        fb = self._make_failed_edit_feedback(
-            ["forbidden edit path: 'platform_core/foo.py'"]
-        )
-        text = editor._format_feedback(fb)
-        self.assertIn("edit_errors", text)
-        self.assertIn("forbidden edit path", text)
-
-
 class RuntimeEnvTests(unittest.TestCase):
     """The framework forwards arbitrary env-var overrides via the YAML's
     ``env:`` block. There is no project-specific helper; project tools
@@ -739,7 +653,7 @@ class RuntimeEnvTests(unittest.TestCase):
         on their own."""
         from meta_agent.config import load
 
-        cfg = load(REPO_ROOT / "configs" / "travel.yaml")
+        cfg = load(REPO_ROOT / "configs" / "hgm_travel.yaml")
         self.assertEqual(cfg.env, {})
 
     def test_csv_database_root_falls_back_to_project_default(self) -> None:
@@ -832,52 +746,6 @@ class StrategyCoercionTests(unittest.TestCase):
     def test_coerce_str_stringifies_non_strings(self) -> None:
         self.assertEqual(self._coerce_str(42), "42")
         self.assertEqual(self._coerce_str(True), "True")
-
-
-class SelfImprovementParsingTests(unittest.TestCase):
-    """The editor's `submit_self_improvement` parsing must coerce malformed
-    tool-call args into a valid EvolutionStrategy instead of crashing on
-    Pydantic validation. Reproduces the gpt-oss-120b crash from job 140902
-    (now guarded inside ``AgentEditor._parse_self_improvement``)."""
-
-    def test_malformed_tool_args_do_not_crash(self) -> None:
-        from meta_agent.agent_editor import AgentEditor
-        from meta_agent.models import EvolutionStrategy
-
-        # Non-string scalars for text fields — the shape open-weights
-        # models produce when they ignore the declared schema.
-        strategy, files = AgentEditor._parse_self_improvement(
-            {
-                "optimization_goal": 42,
-                "proposed_changes": None,
-                "rationale": True,
-                "files": [{"path": "workflow.py", "content": "x"}],
-            }
-        )
-        self.assertIsInstance(strategy, EvolutionStrategy)
-        self.assertEqual(strategy.optimization_goal, "42")
-        self.assertEqual(strategy.proposed_changes, "")
-        self.assertEqual(strategy.target_files, ["workflow.py"])
-        self.assertEqual(len(files), 1)
-
-    def test_target_files_derived_from_emitted_files(self) -> None:
-        """`target_files` is derived from the emitted file paths; a
-        mutable_tools/* edit is applied but not an enum value, so it is
-        dropped from the summary's `target_files`."""
-        from meta_agent.agent_editor import AgentEditor
-
-        strategy, files = AgentEditor._parse_self_improvement(
-            {
-                "optimization_goal": "g",
-                "proposed_changes": "c",
-                "files": [
-                    {"path": "tool_wrapper.py", "content": "x"},
-                    {"path": "mutable_tools/foo.py", "content": "y"},
-                ],
-            }
-        )
-        self.assertEqual(strategy.target_files, ["tool_wrapper.py"])
-        self.assertEqual(len(files), 2)
 
 
 class EvaluateScriptTests(unittest.TestCase):

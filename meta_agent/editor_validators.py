@@ -255,8 +255,8 @@ class MutableToolRoutingValidator:
     ``mutable_tools.<name>`` and calling its ``run()`` directly.
 
     Routing through ``call_mutable_tool`` is what records mutable-tool calls in
-    the trace (``tool_call``/``tool_result``), so the feedback gatherer and the
-    behavior summarizer can see editor-added tools. This validator hard-enforces
+    the trace (``tool_call``/``tool_result``), so the feedback gatherer can see
+    editor-added tools. This validator hard-enforces
     editor hard-rule #5 so a wrapper rewrite can't silently lose that tracing.
 
     Heuristic (low false-positive): if the wrapper does any *direct* mutable

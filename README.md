@@ -48,15 +48,14 @@ The framework requires Python 3.10+ (uses `type | None` syntax and Pydantic v2).
 ## Run
 
 ```bash
-PYTHONPATH=. python3 main_loop.py --config configs/default.yaml
+PYTHONPATH=. python3 main_loop.py --config configs/hgm_math.yaml
 ```
 
-This evolves the math project's seed against its benchmark for up to 5
-rounds using the `hill_climbing` manager and the `subprocess` evaluator —
-all with `gpt-5.4-mini` at reasoning effort `high`. Each round the manager
-picks what to branch from, and the editor makes **one self-improvement
-call** that diagnoses *and* rewrites the agent's code in a single step
-(see "Optimization managers" below).
+This evolves the math project's seed against its benchmark with the `hgm`
+manager, the `subprocess` evaluator and the **agentic editor** — a coding
+agent (bash + editor tools in a sandbox) that diagnoses the parent node from
+its evidence on disk and edits the agent's code in place (see "Optimization
+manager" and "Agentic editor" below).
 
 Output lands under `runs/<timestamp>_<experiment_name>/`:
 
@@ -76,40 +75,35 @@ runs/20260504_153012_math_default/
 │   └── hgm_node.json             # HGM only — authoritative per-node tallies
 ├── round_001/
 │   ├── task_agent/               # editor's mutation of round_000
-│   ├── behavior_memory.md        # only when summarizer: enabled
-│   ├── behavior_aggregate.json   # ditto — the structured pre-aggregation
-│   ├── edit_memory.md            # only when edit_memory: enabled
+│   ├── agentic/                  # the editor session: transcript.jsonl, session.json, scratch/
 │   └── ...
-├── edit_memory_registry.json     # only when edit_memory: enabled (see below)
-├── edit_memory_candidates.json   # ditto
 └── ...
 ```
 
-## Optimization managers
+## Optimization manager
 
-The `manager` chosen in the YAML decides the search regime. Two ship:
+The `manager` chosen in the YAML decides the search regime. One ships:
 
-- **`hill_climbing`** — a linear trajectory: each round branches from the
-  best round so far, the editor makes one self-improvement, evaluate, repeat
-  for `loop.max_rounds`.
 - **`hgm`** — a **Huxley-Gödel-Machine** tree search (arXiv 2510.21614):
   keeps a *tree* of agents, decouples expansion from evaluation under an
-  adaptive schedule, picks which node to expand by Thompson sampling over
-  *clade metaproductivity*, and counts its budget in agent-task evaluations
-  (`eval_budget`) rather than rounds. `configs/hgm_{math,travel,shopping}.yaml`
-  wire it up. Before the final pick it re-evaluates the top finalists on the
-  full train split so a thinly-evaluated fluke can't win.
+  adaptive schedule (or pairs them — see `expand_eval_size` below), picks
+  which node to expand by Thompson sampling over *clade metaproductivity*,
+  and counts its budget in agent-task evaluations (`eval_budget`) rather than
+  rounds. `configs/hgm_{math,travel,shopping}.yaml` wire it up. Before the
+  final pick it re-evaluates the top finalists on the full train split so a
+  thinly-evaluated fluke can't win.
 
-In **both** managers a self-modification is **one editor call**: the manager
-selects what to work on and hands the editor a cheap steering `context`
-string; the editor's single `submit_self_improvement` call diagnoses the
-agent *and* rewrites its code, emitting an `EvolutionStrategy` summary
-(logged to `strategy.json`). There is no separate "propose a strategy" LLM
-call.
+A self-modification is **one editor call**: the manager selects the parent
+node; the editor's session diagnoses the agent *and* edits its code, ending
+with a `submit_self_improvement` call whose summary becomes the node's
+`EvolutionStrategy` (logged to `strategy.json`). There is no separate
+"propose a strategy" LLM call. The manager also builds a cheap steering
+`context` string (lineage, scores, sibling goals), which the agentic editor
+only includes when `include_manager_context: true`.
 
 ### What the editor sees (information gathering)
 
-To diagnose well, the editor is given, in addition to the agent's own code:
+To diagnose well, the editor can read, in addition to the agent's own code:
 
 - **Example-driven failure analysis** — the feedback gatherer turns each node's
   per-case results into a compact report: the top recurring failure categories
@@ -119,22 +113,17 @@ To diagnose well, the editor is given, in addition to the agent's own code:
   the gatherer reads only a contract (`details["query"]`, `details["raw_result"]`,
   score/passed/error) plus the project categorizer's output — all domain parsing
   stays in the project folder. Stored on `AgentFeedback.failure_report`.
+  The gatherer writes it (with the raw metrics) to each node's `feedback.json`,
+  which is the first thing the agentic editor is told to read.
 - **Tool implementations** (`projects/<p>/tools/*.py`) and a **database schema**
   (`projects/<p>/db_schema.md`) — so the editor understands what each tool does
   and what the data looks like when generating/modifying tool calls.
-- **Evaluation scoring code** — only when `eval_visibility: whitebox` (see below).
 
-Set per-run via a top-level key:
-
-```yaml
-eval_visibility: "blackbox"   # default: behavioral feedback + tools + DB schema
-# eval_visibility: "whitebox" # also inject projects/<p>/benchmark/scorer.py (+ _eval/)
-```
-
-Ground-truth data (`data/`, `cases.jsonl`, validation files) is **never** exposed
-in either mode. To enable the failure report, set the gatherer's
-`error_categorizer` to the project's categorizer (same `module:func` value the
-dual manager uses); without it the report degrades to hardest-cases-only.
+Ground-truth data (`data/`, `cases.jsonl`, validation files) and the scoring
+code are **never** exposed (the top-level `eval_visibility` key is accepted for
+compatibility but ignored by the agentic editor). To enable the failure report,
+set the gatherer's `error_categorizer` to the project's categorizer
+(`module:func`); without it the report degrades to hardest-cases-only.
 
 To run HGM:
 
@@ -147,29 +136,31 @@ slurm/run_hgm.sh travel        # configs/hgm_travel.yaml
 slurm/run_hgm.sh shopping      # configs/hgm_shopping.yaml
 ```
 
-### Agentic editor (optional)
+### Agentic editor
 
-`editor.type: "agentic"` replaces the single-shot editor with an HGM-seed-style
-**coding agent**: a tool-use session (one `call_llm` per iteration, all tool
-calls in a response processed) that works directly on the round's
-`task_agent/` copy and ends with a structured `submit_self_improvement` call
-carrying only a summary — the edits are already on disk. It is **one agentic
-flow**: no proposal / retrieval stage, no feedback digest or steering context
-in the prompt; the agent reads the parent node's evidence (and, when the run
-has edit memory, the memory / diff / belief / registry files) from disk
-itself. No docker. The meta agent never writes a belief prediction — the
-belief layer registers its own (see "Edit memory").
+`editor.type: "agentic"` (the only editor) is an HGM-seed-style **coding
+agent**: a tool-use session (one `call_llm` per iteration, all tool calls in a
+response processed) that works directly on the round's `task_agent/` copy and
+ends with a structured `submit_self_improvement` call carrying only a summary
+— the edits are already on disk. It is **one agentic flow**: no proposal
+stage, no feedback digest or steering context in the prompt; the agent reads
+the parent node's evidence from disk itself. No docker.
 
 Prompts: one fixed system prompt (`meta_agent/agentic/session.py`) and one
-instruction message per session. Paths are expressed through four roots —
+instruction message per session. Paths are expressed through roots —
 `$RUN_DIR`, `$NODE_DIR`, `$PARENT_DIR`, `$REPO_DIR` — that are environment
 variables in every bash call and are expanded by the editor tool, so no
-experiment path ever appears in the prompt. A run **without** edit memory
-gets an instruction that never mentions memory or beliefs; a run **with** it
-additionally gets the run-level memory files in its workspace map and one
-procedure step telling it to consult the belief document (accumulated
-understanding of previous edits) as guidance, follow its node references,
-and diversify.
+experiment path ever appears in the prompt. The prompt never mentions memory
+of any kind.
+
+**Read scope** (`editor.config.read_scope`) decides how far the agent may look:
+
+- `"run"` (default) — the whole run directory: every node's code, evidence
+  and logs, so the agent can compare siblings and ancestors itself.
+- `"parent"` — only `$PARENT_DIR` (the parent node's round dir) and its own
+  `$NODE_DIR`. There is no `$RUN_DIR` root at all: the prompt, the tool
+  descriptions, the bash environment and the sandbox binds all omit it, so
+  sibling and ancestor nodes are neither named nor reachable.
 
 Tools:
 
@@ -194,11 +185,12 @@ it in-process, the sandbox mirrors it as binds):
 | access | paths |
 |---|---|
 | writable | `round_NNN/task_agent/{workflow.py,tool_wrapper.py,tools_schema.json}`, `task_agent/mutable_tools/*.py` (new files allowed), `round_NNN/agentic/scratch/` (the agent's own throwaway scripts; never validated) |
-| read-only | the whole run directory — every `round_NNN/` (`hgm_node.json`, `strategy.json`, `feedback.json`, `eval_result.json`, `logs/`, `edit_memory.md`, `edit_code.md`, `task_agent/`) and the run-level `edit_memory_registry.json`, `edit_memory_candidates.json`, `edit_memory_beliefs*.{md,json}`, `tree_snapshots.jsonl` — plus `platform_core/`, `projects/<p>/tools/`, `projects/<p>/db_schema.md` |
+| read-only (`read_scope: run`) | the whole run directory — every `round_NNN/` (`hgm_node.json`, `strategy.json`, `feedback.json`, `eval_result.json`, `logs/`, `agentic/`, `task_agent/`) and run-level files such as `tree_snapshots.jsonl` — plus `platform_core/`, `projects/<p>/tools/`, `projects/<p>/db_schema.md` |
+| read-only (`read_scope: parent`) | `$PARENT_DIR/` and `$NODE_DIR/` only, plus the same `platform_core/` and project tool/schema paths |
 | never | `projects/<p>/benchmark/` (scorer, `_eval/`, cases.jsonl), `projects/<p>/data/`, the categorizer, `meta_agent/`, other runs. `eval_visibility` is ignored by this editor. |
 
-Because bwrap binds are live views, files the framework writes to the run
-root later (new memory records, belief updates) are visible without any
+Because bwrap binds are live views, files the framework writes to the bound
+directories later (new rounds under `run` scope) are visible without any
 rebinding. The task agent can *not* be run on cases inside the sandbox (no
 model access, no database) — by design; checks are `validate`, import checks
 and scratch scripts. Budget reminders are injected at a third and at the
@@ -208,12 +200,9 @@ final stretch.
 Per-session artifacts: `round_NNN/agentic/transcript.jsonl` (every LLM call,
 tool call with input/result, validation round) and `agentic/session.json`
 (`end_reason`, `n_llm_calls`, per-tool counts, `validation_rounds`,
-`sandbox_mode`, `memory_enabled`, roots, token usage). With
+`sandbox_mode`, `read_scope`, roots, token usage). With
 `META_AGENT_VERBOSE=1` the exact system prompt, instruction and final message
-history land in `verbose/`. In `hgm_dual` mode these stay under
-`variants/var_k/` (only `task_agent/` and `logs/` are promoted), and the dual
-manager's per-variant category focus is only delivered when
-`include_manager_context: true`.
+history land in `verbose/`.
 
 ```yaml
 editor:
@@ -223,7 +212,7 @@ editor:
     reasoning_effort: "low"
     base_url: "https://openrouter.ai/api/v1"
     api_key_env: "OpenRouter_API_KEY"        # key for THIS editor's calls (source api.sh);
-                                             # task agent / edit memory keep OPENAI_API_KEY
+                                             # the task agent keeps OPENAI_API_KEY
     llm_timeout_s: 600                       # per-request cap so a stall can't eat the session
     max_attempts: 3            # submission / validation rounds
     max_llm_calls: 150         # tool-loop iterations (history re-sent each call)
@@ -233,6 +222,7 @@ editor:
     max_view_chars: 40000
     sandbox: "auto"            # auto | bwrap | none
     include_manager_context: false
+    read_scope: "run"          # run | parent (see "Read scope" above)
 ```
 
 `api_key_env` (and `timeout_s`) are per-call parameters of `call_llm`, so the
@@ -240,16 +230,15 @@ editor can sit on a second provider while everything else in the run keeps
 the global `OPENAI_API_KEY`. To move the *whole* run (task-agent subprocesses
 included) to another provider's key, export `LLM_API_KEY_ENV: "<VAR>"` from the
 YAML `env:` block — the run-wide default for `api_key_env`. The
-`hgm_travel_100_dsv4pro_agentic_{editmem,no_editmem}.yaml` pair does this
+`hgm_travel_{100,1000}_dsv4pro_agentic_no_editmem.yaml` configs do this
 (DeepSeek V4 Pro for meta and task agent, task reasoning `none`,
-`finalize_top_k: 0` = no end-of-run top-k fill-up, `verbose: true` so every
-session's full message history is kept, `seed_round_dir` to reuse a previous
-run's seed pre-evaluation).
+`verbose: true` so every session's full message history is kept,
+`seed_round_dir` to reuse a previous run's seed pre-evaluation).
 
 ```bash
 source /groups/AIC-MV/sudipta.paul/code/random/api.sh   # exports OpenRouter_API_KEY
 PYTHONPATH=. META_AGENT_VERBOSE=1 python3 main_loop.py --config configs/hgm_travel_smoke_agentic.yaml
-PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_100_dsv4pro_agentic_editmem.yaml
+PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_1000_dsv4pro_agentic_no_editmem.yaml
 ```
 
 #### Expansion-paired evaluation (`manager.config.expand_eval_size`)
@@ -258,12 +247,12 @@ By default (0) an expansion only creates the child; whether and when it is
 evaluated is the bandit's later decision, so some nodes end a run with no
 evaluation at all. `expand_eval_size: 16` evaluates every freshly expanded
 child on 16 random train cases immediately (charged to `eval_budget` and to
-the widening counter, like the dual manager's winner batch) and refuses to
-expand when the paired batch is unaffordable. At 1000 evals with `alpha 0.5`
-this leaves the tree width unchanged (32 nodes / 63 batches) but makes 32 of
-the batches mandatory child evaluations, so every editor session is measured
-and the belief judge sees every node; the bandit keeps the other 31 batches.
-The agentic configs enable it.
+the widening counter) and refuses to expand when the paired batch is
+unaffordable. At 1000 evals with `alpha 0.5` this leaves the tree width
+unchanged (32 nodes / 63 batches) but makes 32 of the batches mandatory child
+evaluations, so every editor session is measured; the bandit keeps the other
+31 batches. The agentic configs enable it; set it to 0 for the reference's
+fully decoupled behaviour.
 
 ## Standalone evaluation
 
@@ -275,12 +264,12 @@ of an optimization run on the held-out evaluator.
 ```bash
 # Score the unedited seed
 PYTHONPATH=. python3 evaluate.py \
-    --config configs/travel.yaml \
+    --config configs/hgm_travel.yaml \
     --agent projects/travel/seed
 
 # Score round 3 of an optimization run
 PYTHONPATH=. python3 evaluate.py \
-    --config configs/travel.yaml \
+    --config configs/hgm_travel.yaml \
     --agent runs/20260506_140000_travel_default/round_003/task_agent
 ```
 
@@ -292,12 +281,12 @@ you can inspect partial scores while the run is still going.
 
 The optimization managers evaluate nodes dynamically, so "which node is the
 best so far" keeps changing as the budget is spent. To support budget-vs-budget
-method comparison, any manager (`hgm`, `hgm_dual`, `hill_climbing`) can record a
-**time series** of the whole tree. Enable it per run with an opt-in manager key:
+method comparison, the manager can record a **time series** of the whole tree.
+Enable it per run with an opt-in manager key:
 
 ```yaml
 manager:
-  type: "hgm"          # or hgm_dual, hill_climbing
+  type: "hgm"
   config:
     snapshot_tree: true
 ```
@@ -324,191 +313,6 @@ PYTHONPATH=. python3 snapshot_eval.py \
 ```
 
 Per-budget results are written to `runs/<exp>/snapshots/eval_at_budget_<B>.json`.
-
-## Edit memory (optional)
-
-A tree-global record of **what edits were attempted and what they did to the
-score**. Distinct from the behavior summarizer: that describes how an agent
-*behaved at runtime* along one lineage; this describes *what was changed and
-whether it paid off*, across every branch. Both can run together or apart.
-
-```yaml
-edit_memory:
-  type: "default"
-  config:
-    model: "gpt-5.4"
-    reasoning_effort: "medium"
-    steering: true              # inject the accumulated memory into the editor
-    steering_token_budget: 48000
-    verdict_threshold: 0.02     # helped/hurt boundary — see the caveat below
-    min_shared: 8
-    max_strategies: 30          # ceiling on the category vocabulary (code default 18; the
-                                # belief configs raise it — cap-forced fits are never scored)
-    max_subedits: 3             # a node may bundle several distinct changes
-    setup_pass: true            # one call per run: proxy categories + recipe
-```
-
-**Off by default.** Omit the block and nothing changes: no LLM calls, no files
-written, and the editor's prompt is byte-identical to before.
-
-Cost is **one LLM call per node**, plus one per run for setup. Outcomes are
-recomputed continuously but always deterministically — no LLM sits in that path.
-
-Artifacts:
-
-- `round_NNN/edit_memory.md` — one record per node: the sub-edits it made, each
-  with a name, a two-level category, what it did and which failure it targeted;
-  then the measured outcome.
-- `edit_memory_registry.json` — the run-global category vocabulary. Contains
-  **only categories some edit actually used**, so it is safe to show the editor.
-- `edit_memory_candidates.json` — proxy categories proposed by the setup pass.
-  **Tagger-only, never shown to the editor**: they are hypotheses, and letting
-  the editor read them as though they were tried history biases the tree search.
-
-Two things to know before enabling it:
-
-- **`verdict_threshold` assumes scores on `[0,1]` where higher is better.** It
-  is calibrated against a travel run; on a different scoring scale the
-  helped/hurt/neutral split becomes meaningless until re-checked. The same
-  threshold applied to one reference run gives "31 of 75 edits hurt" at 0.02
-  and "2 hurt" at 0.10.
-- **Edit memory requires the per-round `round_NNN/task_agent/` layout the
-  managers write**, since it diffs a node against its parent. A manager that
-  does not produce that layout silently produces no edit memory. It is
-  supported by `hgm` only — `hgm_dual` raises, because it makes more than one
-  editor call per node and cannot honour one-call-per-node.
-
-### Belief mode (learnable beliefs + two-stage editor)
-
-`steering_mode: "belief"` replaces the record dump with a **belief document**
-under a predictive contract, and the two-stage editor retrieves whole records
-and implementation slices on demand:
-
-```yaml
-editor:
-  type: "two_stage"
-  config:
-    base_url: "https://api.openai.com/v1"   # pin it — see the base_url warning under Configuration
-    propose_reasoning_effort: "medium"
-    retrieval_char_budget: 60000
-    max_retrieved_nodes: 4
-    # objective: judge          # injected automatically under steering_mode "belief";
-                                # "score" restores the legacy objective sentence
-edit_memory:
-  type: "default"
-  config:
-    code_record: true
-    steering_mode: "belief"
-    strategy_label: judge            # what strategy beliefs are scored against (below)
-    analysis_min_own_evals: 16       # the judge runs after one batch of the node's OWN cases
-    judge_min_evidence: moderate     # weak-evidence verdicts stay pending
-    analysis_code_char_budget: 20000 # implementation view shown to the judge
-    beliefs:
-      enabled: true
-      doc_char_cap: 40000            # HARD cap ~10k tokens; reject + one retry, never truncated
-      optimize_enabled: true         # online guidance optimization
-      optimize_every: 8              # step after this many newly scored predictions
-      optimize_min_scored: 8
-      optimize_rollback_margin: 0.02
-      instruction_char_cap: 2500
-```
-
-Contract (`meta_agent/belief_contract.py`): the document is only an optional
-`## Summary` (≤ 1200 chars) plus `### belief:<slug>` sections, each with
-`kind` (`strategy` | `implementation`), `scope` (`strategy=<registry id>
-[area=<registry id>]`), `predict` (`p=0.05..0.95`), `evidence` (with verified
-citations: `[node N: improved]` — the judge's verdict —, `[node N: improved;
-Δ+0.0310/12]`, `[node N: Δ-0.0117±0.1461]` — unpaired Δ ± SE — or `[node N:
-unmeasured]`) and `next`. Anything else is a violation: one retry names the
-violations, then the previous document is kept.
-
-The judge (`meta_agent/edit_usage.py`, analysis v7): the per-node analysis
-call is the outcome oracle. It reads the edit's implementation view (added
-lines per definition, whole units), the usage counts with scorer agreement,
-the runtime logs, a **paired** per-check table (shared cases, when any) and an
-**unpaired** one (each side over its own cases), one row per evaluated case
-(score, failed checks, which components fired with what verdict), and the
-performance numbers with their standard errors. Per sub-edit it returns the
-implementation verdict (`sound|unsound`) and an **effect verdict** —
-`improved | no_effect | regressed | unclear` with an evidence grade
-(`strong` = within-case or component counts over ≥ 8 cases, `moderate` =
-per-check movement, `weak` = score Δ or code only) and the targeted checks —
-rendered as `- **effect (edit N)**: improved (strong; targets: …) — reason`,
-plus a node-level `- **regressions**:` line. It runs once the node has
-`analysis_min_own_evals` evaluations of its own: no shared cases with the
-parent are needed (a random 16-case batch shares ~4 cases with a 16-eval
-parent, which is why the old `min_shared` gate left most nodes unjudged).
-Records also carry `- **unpaired**: child m/n vs parent m/n · Δ ± SE` (fmt 6);
-at ~16-case batches every SE is near ±0.1, so a Δ under 2×SE is noise —
-readers see the judge's verdict first and the score as context.
-
-Scoring (`meta_agent/belief_scoring.py`): when a node is expanded, the belief
-covering its registry tags is pre-registered per kind in
-`round_NNN/belief_prediction.json`. Once the analysis has run (requires
-`analysis_mode: refresh` + `usage_tracking`), each kind pays Brier loss:
-implementation beliefs predict P(sound); strategy beliefs predict
-P(the judge finds the mechanism improved its target | sound) — `improved` is
-y=1, `no_effect`/`regressed` y=0, `unclear` or evidence below
-`judge_min_evidence` stays pending — and are scored only on sound sub-edits.
-`strategy_label: delta` restores the pre-v7 rule (y = Δ ≥ threshold over
-≥ `min_shared` shared cases) for ablation. A belief matched to a sub-edit is
-scored on that sub-edit's verdicts, so one broken mechanism in a bundled edit
-no longer vetoes the others. A node no belief covers scores at p=0.5 (loss
-0.25) — unless no belief *could* have covered it (first node of a new
-strategy), or its strategy id was force-fitted at the registry cap
-(`- **fit**: forced …` in the record): those are retired unscored. Per-belief
-calibration is written back into the document as a code-generated `- track:`
-line and into the maintainer's calibration report, which in judge mode also
-shows a **judge-vs-score diagnostic** on rows whose score is well measured
-(≥ 16 shared cases, or |unpaired Δ| > 2×SE — a flag for nodes worth
-re-reading, not a yardstick for the judge) and any **verdict changes** since
-a row was scored (rows are scored once). `strategy_label: delta` (the
-`…_delta.yaml` config) restores the pre-judge Δ labels for ablation; the
-maintainer's, optimizer's and planner's prompts are judge-first — the judge's
-verdicts, targeted checks and regressions come first, the benchmark Δ is
-quoted only as context and only when well measured.
-
-Guidance optimization (`meta_agent/belief_optimizer.py`): the maintainer's
-system prompt is a fixed contract plus a learned guidance text
-(`belief_instruction.md`, seeded short). Every `optimize_every` scored
-predictions one LLM call critiques the misses and rewrites the guidance
-(`belief_instruction_archive/vNNN.md`, `step_NNN_prompt.txt`); a version that
-scores worse than an earlier one by more than `optimize_rollback_margin` is
-rolled back.
-
-Steering (`meta_agent/steering.py`): the editor's context in belief mode is one
-block — the objective ("fix what the judge found"; the seed / best / parent
-scores are demoted to one `Score context` line), the judge's verdict, targeted
-checks and regressions for the parent, the scope rule, lineage, one judge-first
-line per sibling already tried off the parent (verdict and targets, regressions,
-then the score as context), and the belief document verbatim. The editor's
-system prompt sentence on what to target follows (`editor.config.objective`,
-auto-set to `judge` in belief mode, `score` elsewhere so the `full` mode and
-the no-edit-memory control stay byte-identical). The planning pass predicts
-the judge's verdict and the checks it expects to move
-(`edit_prediction.json` v2: `expected_effect`, `expected_targets`;
-`expected_direction` / `expected_delta` kept as legacy). No ledger, nothing
-truncated; full records and implementations reach the editor only through
-retrieval (`retrieval_manifest.json` v2 records what was shown and what was
-omitted whole).
-
-Artifacts: `edit_memory_beliefs.md`, `edit_memory_beliefs_state.json`,
-`edit_memory_beliefs_archive/`, `edit_memory_beliefs_prompts/update_NNNN.txt`,
-`belief_instruction.md`, `belief_instruction_archive/`,
-`round_NNN/belief_prediction.json` (also records `coverable` — the first node
-of a brand-new strategy is never charged the silence loss, since no belief
-could have covered it), `round_NNN/edit_prediction.json`,
-`round_NNN/retrieval_manifest.json`, `round_NNN/edit_analysis_prompt.txt` (the
-judge's exact prompt), `round_NNN/edit_usage.json`, `round_NNN/edit_code.md`.
-`EDIT_MEMORY_SPEC.md` specifies every format; `EDIT_MEMORY.md` is a worked
-example assembled from one run by
-`PYTHONPATH=. python3 study/render_edit_memory_example.py runs/<run> --out EDIT_MEMORY.md`.
-
-Restarting without re-paying the seed evaluation: `run_seeded.py --config
-<same config> --donor runs/<donor_run>/round_000` copies the donor's
-`round_000` logs, replays its per-case results into node 0 and continues from
-round 1 (the donor's `config.snapshot.yaml` must match on `task_agent`,
-`split` and `project`; `--force` overrides).
 
 ## Train/eval split (optional)
 
@@ -543,17 +347,17 @@ committing.
 
 ## Configuration
 
-`configs/default.yaml` is the reference. Every swappable component is selected
+`configs/hgm_math.yaml` is the reference. Every swappable component is selected
 by name from a registry (`meta_agent/registry.py`) and uses the same
 `{type, config}` shape:
 
 ```yaml
 project:    "math"                  # filesystem layout: projects/math/{seed,benchmark,tools,data}/
-manager:    { type: "hill_climbing",   config: { branch_policy: "best",
-                                                 strategy_history_window: 5 } }
+manager:    { type: "hgm",             config: { eval_budget: 400, init_expansions: 5, alpha: 0.6, ... } }
 evaluator:  { type: "subprocess",      config: { wall_time_s_per_case: 120, parallelism: 1, ... } }
 gatherer:   { type: "default",         config: {} }
-editor:     { type: "default",         config: { model: "gpt-5.4-mini", reasoning_effort: "high", max_attempts: 2 } }
+editor:     { type: "agentic",         config: { model: "gpt-5.4-mini", reasoning_effort: "high",
+                                                 max_llm_calls: 40, sandbox: "auto", read_scope: "run", ... } }
 validators: [ {type: "syntax"}, {type: "signature"}, ... ]
 
 task_agent: { model: "gpt-5.4-mini", reasoning_effort: "high" }
@@ -569,8 +373,7 @@ with a small local disk point them at a bigger filesystem — either set
 `runs_root:` in the YAML, or export the `META_AGENT_RUNS_ROOT` env var
 (an explicit YAML value wins over the env var). SLURM job logs are
 separate — redirect those with `SLURM_LOG_DIR`. `slurm/run_hgm.sh` sets
-both to group storage automatically; `configs/default.yaml` carries a
-commented sample.
+both to group storage automatically.
 
 The YAML is the source of truth — every component (`manager`,
 `evaluator`, `editor`, `gatherer`, `validators`) must declare its
@@ -614,8 +417,8 @@ the travel configs use 65536, about 1.6× the historical p99.9. The evaluator
 warns at startup when `timeout_s` is not below the case limit.
 
 `build_components` also prints `[config] warning: <component> names model …
-but no base_url` for any editor / summarizer / edit_memory that names a
-`model` without a `base_url` while the task agent has one
+but no base_url` for an editor that names a `model` without a `base_url`
+while the task agent has one
 (`meta_agent/config.py::meta_base_url_warnings`): `call_llm` falls back to
 the task agent's `LLM_BASE_URL`, which once sent gpt-5.4 requests to a local
 vLLM server. Pin `base_url` on every meta component.
@@ -636,10 +439,9 @@ elsewhere).
 The manager owns the optimization regime end-to-end: bootstrapping round
 0, deciding what to branch from, calling the editor, evaluator, and
 gatherer, and deciding when to stop. It does **not** write code or make a
-"propose a strategy" LLM call — the editor's single self-improvement call
-does the diagnosis and the rewrite; the manager just selects and hands the
-editor an optional steering `context` string. `HillClimbingManager`
-(linear) and `HGMManager` (tree search) are the references — do whatever
+"propose a strategy" LLM call — the editor's session does the diagnosis and
+the edit; the manager just selects and hands the editor an optional steering
+`context` string. `HGMManager` (tree search) is the reference — do whatever
 fits your regime (random search, beam search, genetic, etc.).
 
 ```python
@@ -655,11 +457,8 @@ class RandomSearchManager:
         # own the entire round loop; write per-round folders matching the
         # disk layout contract (see meta_agent/managers/__init__.py for
         # the EvolutionManager Protocol). `round_NNN/task_agent/` is the
-        # load-bearing part: the behavior summarizer and edit memory both
-        # diff a node against its parent through it, and silently produce
-        # nothing for a manager that does not write it.
-        # Accept (and ignore, if unused) `summarizer=` and `edit_memory=`:
-        # main_loop passes both unconditionally.
+        # load-bearing part: the editor copies the parent's and diffs the
+        # child's against it.
         ...
 ```
 

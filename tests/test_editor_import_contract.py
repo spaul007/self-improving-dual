@@ -27,37 +27,27 @@ from meta_agent.editor_validators import (
 )
 
 
-class _Stop(Exception):
-    pass
-
-
 def _editor_system_prompt() -> str:
     """The system prompt the editor is actually sent, captured at the LLM call
     rather than duplicated here — a copy would drift out of date silently."""
-    from meta_agent.agent_editor import AgentEditor
+    from meta_agent.agent_editor_agentic import AgenticEditor
 
     captured: dict = {}
 
     def fake_llm(**kwargs):
         captured.update(kwargs)
-        raise _Stop()
+        raise RuntimeError("stop after the first call")
 
-    editor = AgentEditor(llm_caller=fake_llm, validators=[])
     with tempfile.TemporaryDirectory() as tmp:
-        out_dir = Path(tmp) / "round_001"
-        (out_dir / "task_agent" / "mutable_tools").mkdir(parents=True)
-        (out_dir / "task_agent" / "workflow.py").write_text(
+        base = Path(tmp) / "round_000"
+        (base / "task_agent" / "mutable_tools").mkdir(parents=True)
+        (base / "task_agent" / "workflow.py").write_text(
             "def run_task(task):\n    return None\n"
         )
-        (out_dir / "task_agent" / "tool_wrapper.py").write_text("")
-        (out_dir / "task_agent" / "tools_schema.json").write_text("[]")
-        try:
-            editor._self_improve(
-                out_dir=out_dir, feedback=None, context=None,
-                prior_errors=[], attempt=1,
-            )
-        except _Stop:
-            pass
+        (base / "task_agent" / "tool_wrapper.py").write_text("")
+        (base / "task_agent" / "tools_schema.json").write_text("[]")
+        editor = AgenticEditor(fake_llm, [], sandbox="none", max_llm_calls=2, timeout_s=30)
+        editor.apply(None, base, Path(tmp) / "round_001")
     for msg in captured["messages"]:
         if msg["role"] == "system":
             return msg["content"]
@@ -138,18 +128,42 @@ class TestPromptMatchesValidators(unittest.TestCase):
         self.assertRegex(self.prompt, r"ONLY in tool_wrapper\.py")
 
 
-class TestAgenticPromptMatchesValidators(TestPromptMatchesValidators):
-    """The agentic editor composes its system prompt from the same shared
-    rule constants; every check above must hold for it too."""
+    def test_agentic_prompt_does_not_promise_inlined_sources(self) -> None:
+        self.assertNotIn("shown below", self.prompt)
+
+
+
+class TestCapturedPromptIsTheRunScopeConstant(unittest.TestCase):
+    def test_equal(self) -> None:
+        from meta_agent.agentic.session import AGENTIC_SYSTEM_PROMPT, agentic_system_prompt
+
+        captured = _editor_system_prompt()
+        self.assertEqual(captured, AGENTIC_SYSTEM_PROMPT)
+        self.assertEqual(captured, agentic_system_prompt("run"))
+
+
+class TestParentScopePromptMatchesValidators(TestPromptMatchesValidators):
+    """The parent-scope prompt differs only in where the agent may look; the
+    rule text is shared, so every check above must hold for it too."""
 
     @classmethod
     def setUpClass(cls) -> None:
-        from meta_agent.agentic.session import AGENTIC_SYSTEM_PROMPT
+        from meta_agent.agentic.session import agentic_system_prompt
 
-        cls.prompt = AGENTIC_SYSTEM_PROMPT
+        cls.prompt = agentic_system_prompt("parent")
 
-    def test_agentic_prompt_does_not_promise_inlined_sources(self) -> None:
-        self.assertNotIn("shown below", self.prompt)
+    def test_only_the_scope_sentences_differ(self) -> None:
+        from meta_agent.agentic.session import agentic_system_prompt
+
+        run, parent = agentic_system_prompt("run"), self.prompt
+        self.assertNotEqual(run, parent)
+        self.assertNotIn("RUN_DIR", parent)
+        self.assertNotIn("run directory", parent)
+        norm = lambda t: (t.replace("the evidence in the run directory", "X")
+                           .replace("the parent node's evidence", "X")
+                           .replace("the roots RUN_DIR, NODE_DIR, PARENT_DIR and REPO_DIR", "Y")
+                           .replace("the roots NODE_DIR, PARENT_DIR and REPO_DIR", "Y"))
+        self.assertEqual(norm(run), norm(parent))
 
 
 class TestImportForms(unittest.TestCase):

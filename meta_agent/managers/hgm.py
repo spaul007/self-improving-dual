@@ -1,10 +1,10 @@
 """Huxley-Gödel Machine (HGM) evolution manager.
 
 A tree search over agent self-modifications, ported from arXiv 2510.21614
-(github.com/metauto-ai/HGM). Contrast with ``HillClimbingManager``'s linear
-loop: HGM keeps a *tree* of agents and *decouples* expansion from
-evaluation under an adaptive schedule, with a budget counted in agent-task
-evaluations rather than rounds.
+(github.com/metauto-ai/HGM). HGM keeps a *tree* of agents and *decouples*
+expansion from evaluation under an adaptive schedule (``expand_eval_size``
+optionally pairs them), with a budget counted in agent-task evaluations
+rather than rounds.
 
 Algorithm (the paper's Algorithm 1, adapted to continuous [0,1] scores):
 
@@ -26,10 +26,11 @@ Tree ↔ framework mapping: node id == ``round_number`` (a monotonic
 counter), parent == ``base_round``. Round dirs are therefore *not*
 contiguous-by-depth — every consumer keys off ``base_round``.
 
-A self-modification is ONE editor call: ``editor.apply`` self-diagnoses and
-edits in a single step and returns the ``EvolutionStrategy`` summary on
-``EditResult.strategy``. The manager only selects the node and builds a
-cheap (non-LLM) steering context string.
+A self-modification is ONE editor call: ``editor.apply`` runs the agentic
+session that diagnoses and edits, and returns the ``EvolutionStrategy``
+summary on ``EditResult.strategy``. The manager only selects the node and
+builds a cheap (non-LLM) steering context string (which the agentic editor
+uses only when ``include_manager_context`` is set).
 """
 from __future__ import annotations
 
@@ -53,10 +54,6 @@ from ..registry import register
 from ..tree_snapshot import NodeSnapshot, TreeSnapshotWriter
 from .hgm_tree import HGMNode, HGMTree
 
-# Rough char<->token proxy for the lineage-memory budget (avoids a hard
-# tiktoken dependency in the eval path; the budget is approximate by design).
-_CHARS_PER_TOKEN = 4
-
 
 @register("manager", "hgm")
 class HGMManager:
@@ -75,7 +72,6 @@ class HGMManager:
         finalize_top_k: int = 5,
         full_eval_top_k: int = 0,
         snapshot_tree: bool = False,
-        lineage_memory_token_budget: int = 15000,
         seed: int = 42,
         seed_round_dir: Optional[str] = None,
         expand_eval_size: int = 0,
@@ -83,9 +79,8 @@ class HGMManager:
         self.eval_budget = eval_budget
         # Expansion-paired evaluation: > 0 evaluates every freshly expanded
         # child on this many random train cases immediately (charged to the
-        # budget and counted by the widening schedule, like the dual
-        # manager's winner batch), so no node is ever left unevaluated and
-        # every editor session gets measured. 0 (default) keeps the
+        # budget and counted by the widening schedule), so no node is ever
+        # left unevaluated and every editor session gets measured. 0 (default) keeps the
         # reference's decoupled behaviour: the bandit evaluates later, or
         # never. The main loop refuses to expand when the remaining budget
         # cannot fund the paired batch.
@@ -114,12 +109,6 @@ class HGMManager:
         # FULL benchmark (train + held-out eval split) after LCB selection.
         # Does not influence selection — purely for head-to-head comparison.
         self.full_eval_top_k = full_eval_top_k
-        # Approx token budget for the lineage behavior-memory block injected into
-        # editor steering. Ancestors' full memories are included newest-first up
-        # the chain until this budget is reached (~4 chars/token). Applies to
-        # vanilla HGM expand + dual Stage A; dual Stage B also prepends the Stage
-        # A intermediate's memory as the most-recent.
-        self.lineage_memory_token_budget = lineage_memory_token_budget
         # Opt-in time-series snapshots of the whole tree, written after every
         # EXPAND/EVALUATE so the best node at any budget level can be recovered
         # and re-evaluated later (analysis/debug). See meta_agent/tree_snapshot.py
@@ -139,16 +128,6 @@ class HGMManager:
         # and the finalization re-evaluations.
         self._budget_spent: int = 0
         self._task_rng: random.Random = random.Random(seed)
-        # Optional per-round behavior summarizer. When set, ``_evaluate``
-        # fires it after a node's feedback is final, and steering contexts
-        # inject the lineage's behavior_memory.md files. ``None`` keeps
-        # the legacy behavior (no memory written, no memory in prompts).
-        self._summarizer: Any = None
-        # Optional edit memory. When set, ``_expand`` records one memory per
-        # node (one LLM call), ``_refresh_node_feedback`` refreshes the
-        # affected outcomes deterministically, and steering contexts inject
-        # the accumulated block. ``None`` changes nothing.
-        self._edit_memory: Any = None
         # Time-series tree snapshotter (a no-op unless snapshot_tree is on);
         # (re)created at the top of evolve() once experiment_dir is known.
         self._snapshotter: Optional[TreeSnapshotWriter] = None
@@ -169,14 +148,10 @@ class HGMManager:
         score_target: float | None,
         train_case_ids: Optional[list[str]] = None,
         eval_case_ids: Optional[list[str]] = None,
-        summarizer: Any = None,
-        edit_memory: Any = None,
     ) -> EvolutionOutcome:
         self._benchmark_dir = benchmark_dir
         self._experiment_dir = experiment_dir
         self._eval_case_ids = eval_case_ids
-        self._summarizer = summarizer
-        self._edit_memory = edit_memory
         self._tree = HGMTree(
             beta_prior=self.beta_prior,
             clade_pseudo_count=self.clade_pseudo_count,
@@ -185,10 +160,9 @@ class HGMManager:
         self._feedback = {}
         self._next_id = 0
         self._budget_spent = 0
-        # Evaluations attributed to committed nodes (main-loop top-ups plus,
-        # in the dual manager, the winner's reused intra batch). This drives
-        # the widening schedule; ``_budget_spent`` (which also includes the
-        # dual manager's throw-away variant trials) only caps total spend.
+        # Evaluations attributed to committed nodes (bandit top-ups plus the
+        # expansion-paired batches). This drives the widening schedule;
+        # ``_budget_spent`` caps total spend.
         self._node_evals_spent = 0
         self._task_rng = random.Random(self.seed)
         self._snapshotter = TreeSnapshotWriter(
@@ -212,40 +186,29 @@ class HGMManager:
         # branch off the freshly pre-evaluated root.
         self._run_seed(seed_dir, evaluator, gatherer)
         self._snapshot("seed")
-        # One call per run: proxy categories + the per-check extraction recipe,
-        # derived from the seed agent and its first evaluation.
-        if self._edit_memory is not None:
-            try:
-                root = self._tree[0]
-                self._edit_memory.setup(
-                    self._experiment_dir, root.round_dir, root.case_results
-                )
-            except Exception as exc:  # noqa: BLE001
-                print(f"[edit_memory] setup skipped: {exc!r}", flush=True)
         for _ in range(self.init_expansions):
             expandable = self._expandable()
             if not expandable or self._tree.n_real_nodes() > max_rounds:
                 break
             # Same affordability guard as the main loop (matters when
-            # eval_budget is tiny relative to the dual expansion cost).
+            # eval_budget is tiny relative to the paired expansion cost).
             if self.eval_budget - self._budget_spent < self._min_budget_to_expand():
                 break
             self._expand(self._tree.argmax_expand(1.0, expandable), editor, gatherer, evaluator)
             self._snapshot("expand")
 
         # Scheduled EXPAND/EVALUATE loop. The while-stop keys off total spend
-        # (``_budget_spent``), but the widening schedule keys off
-        # ``_node_evals_spent`` — evaluations attributed to committed nodes —
-        # so the dual manager's throw-away variant trials don't distort it.
+        # (``_budget_spent``); the widening schedule keys off
+        # ``_node_evals_spent`` — evaluations attributed to committed nodes.
         # The root's pre-evaluation is excluded from both.
         while self._budget_spent < self.eval_budget:
             remaining = self.eval_budget - self._budget_spent
             # Early stop: if the remaining budget can't fund an expansion's
-            # intra-evaluation, stop instead of spawning un-evaluated nodes that
-            # still cost an editor call. ``_min_budget_to_expand`` is 0 for
-            # vanilla HGM (expand is free at expand-time; the bandit evaluates
-            # the node later), so vanilla's decoupled behavior is unchanged; the
-            # dual manager returns ``intra_expand_eval_size``.
+            # paired evaluation, stop instead of spawning un-evaluated nodes that
+            # still cost an editor call. ``_min_budget_to_expand`` is 0 when
+            # ``expand_eval_size`` is 0 (expand is free at expand-time; the
+            # bandit evaluates the node later), so the decoupled behavior is
+            # unchanged.
             if remaining < self._min_budget_to_expand():
                 break
             tau = self._tree.tau(
@@ -327,40 +290,6 @@ class HGMManager:
             node_id, parent_id, strategy, self._empty_eval(), out_dir
         )
         self._write_node_sidecar(node)
-        # One LLM call per node, on the validated edit. Best-effort: a failure
-        # here must never cost the round its child.
-        if self._edit_memory is not None:
-            try:
-                self._edit_memory.record_node(
-                    round_dir=out_dir,
-                    parent_round_dir=parent.round_dir,
-                    node_id=node_id,
-                    parent_id=parent_id,
-                    ancestors=self._lineage_ids(parent_id),
-                    goal=strategy.optimization_goal,
-                    proposed=strategy.proposed_changes,
-                )
-            except Exception as exc:  # noqa: BLE001
-                print(f"[edit_memory] unexpected error on node {node_id}: {exc!r}",
-                      flush=True)
-            # Pre-register the belief predictions that cover this node NOW —
-            # before any belief update can rewrite the document — so the p
-            # that is later scored is the p the editor was shown.
-            try:
-                getattr(self._edit_memory, "register_prediction",
-                        lambda *_a: None)(node_id, out_dir)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[edit_beliefs] prediction registration failed for node "
-                      f"{node_id}: {exc!r}", flush=True)
-            # Belief layer: fold the new attempt in (as tried, unmeasured)
-            # before any sibling expand reads the belief document. Sig-gated
-            # inside — a no-change call costs no LLM tokens.
-            try:
-                getattr(self._edit_memory, "update_beliefs",
-                        lambda _t: False)(self._tree)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[edit_beliefs] post-expand update failed: {exc!r}",
-                      flush=True)
         print(f"node {node_id}: EXPAND from {parent_id}", flush=True)
         if self.expand_eval_size > 0 and evaluator is not None:
             spent = self._evaluate(
@@ -370,16 +299,6 @@ class HGMManager:
             self._node_evals_spent += spent
             self._snapshot("expand_eval")
         return node_id
-
-    def _lineage_ids(self, node_id: int) -> list[int]:
-        """Root -> ``node_id`` inclusive. Used to stamp lineage into a record
-        so it stays self-locating once records from all branches are pooled."""
-        chain: list[int] = []
-        nid: Optional[int] = node_id
-        while nid is not None and nid in self._tree.nodes:
-            chain.append(nid)
-            nid = self._tree[nid].parent_id
-        return list(reversed(chain))
 
     def _evaluate(
         self, node_id: int, evaluator: Evaluator, gatherer: FeedbackGatherer,
@@ -415,28 +334,6 @@ class HGMManager:
             f"cmp={self._tree.cmp(node_id):.3f}",
             flush=True,
         )
-        # Run the behavior summarizer after every batch. The first batch creates
-        # behavior_memory.md; later top-ups UPDATE it cumulatively (the
-        # summarizer reads the existing memo and merges this batch in). Pass the
-        # BATCH result (``result``) — not the cumulative one — so the aggregate's
-        # mutable_log/tool_calls cross-tab matches the per-batch trace.jsonl the
-        # summarizer reads (the evaluator truncates the trace each batch).
-        if self._summarizer is not None and node.parent_id is not None:
-            parent_round_dir = self._tree[node.parent_id].round_dir
-            try:
-                self._summarizer.summarize(
-                    round_dir=node.round_dir,
-                    parent_round_dir=parent_round_dir,
-                    eval_dir=node.round_dir,
-                    eval_result=result,
-                    node_id=node.node_id,
-                    parent_id=node.parent_id,
-                )
-            except Exception as exc:  # noqa: BLE001
-                print(
-                    f"[summarizer] unexpected error on node {node.node_id}: {exc!r}",
-                    flush=True,
-                )
         return len(batch)
 
     # ------------------------------------------------------------------ #
@@ -447,19 +344,7 @@ class HGMManager:
         """Build the manager's steering context for an EXPAND: the parent's
         edit lineage, performance + clade metaproductivity, the best node
         so far, and the parent's feedback digest. Pure string assembly —
-        the editor reads the parent's actual code itself.
-
-        In belief mode the whole context is authored in one place
-        (``meta_agent/steering.py``) and nothing below is appended; every
-        other mode keeps the legacy text byte-for-byte."""
-        em = self._edit_memory
-        if (em is not None and getattr(em, "steering", False)
-                and getattr(em, "steering_mode", "full") == "belief"):
-            try:
-                return self._render_belief_context(parent)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[steering] belief context failed: {exc!r}; using the "
-                      "legacy context", flush=True)
+        the editor reads the parent's actual code itself."""
         parts: list[str] = []
 
         # Edit lineage — the chain of optimization goals already applied
@@ -523,141 +408,10 @@ class HGMManager:
             for sib in siblings[:8]:
                 parts.append(f"  - {sib.strategy.optimization_goal[:160]}")
 
-        # Inject the lineage's behavior memories, newest-first up the chain
-        # within a token budget. Skipped silently when the summarizer isn't
-        # configured or no ancestor has a memory file.
-        memory_block = self._render_lineage_memory(parent)
-        if memory_block:
-            parts.append(memory_block)
-
-        # Tree-global edit memory: what has been tried on EVERY branch and what
-        # it did to the score. Silently absent when unconfigured.
-        edit_block = self._render_edit_memory(parent)
-        if edit_block:
-            parts.append(edit_block)
-
         parts.append(
             "\nMake targeted improvement to this parent agent. Keep the "
             "scope small enough to apply correctly in one pass."
         )
-        return "\n".join(parts)
-
-    def _render_belief_context(self, parent: HGMNode) -> str:
-        """Belief-mode steering: the objective (fix what the judge found; the
-        score is one labelled context line), the judge's line for the parent,
-        scope, lineage, one judge-first line per sibling already tried off
-        this parent, and the belief document verbatim. See
-        ``meta_agent/steering.py`` for the text."""
-        from ..edit_outcome import run_context
-        from ..steering import render_belief_steering
-        em = self._edit_memory
-        siblings: list[tuple[int, str, bool]] = []
-        for c in sorted(parent.children):
-            fb = self._feedback.get(c)
-            goal = fb.strategy.optimization_goal if fb is not None else ""
-            node = self._tree.nodes.get(c)
-            siblings.append((c, goal.split("\n")[0] if goal else "",
-                             bool(getattr(node, "edit_failed", False))))
-        parent_score = ((parent.mean_utility, parent.n_evals)
-                        if parent.n_evals > 0 else None)
-        return render_belief_steering(
-            experiment_dir=self._experiment_dir,
-            parent_id=parent.node_id,
-            lineage=self._ancestor_goals(parent.node_id),
-            parent_score=parent_score,
-            run_context=run_context(self._tree) or {},
-            siblings=siblings,
-            belief_doc=getattr(em, "render_belief_block", lambda: "")(),
-            calibration_line=getattr(em, "belief_calibration_line", lambda: "")(),
-            threshold=getattr(em, "verdict_threshold", 0.02),
-            min_shared=getattr(em, "min_shared", 8),
-        )
-
-    def _render_edit_memory(self, parent: HGMNode) -> str:
-        """Accumulated edit memory across the whole tree, as one block (the
-        legacy ``full`` layout — belief mode never reaches this).
-
-        Unlike the lineage behavior memory this is run-global — seeing what a
-        sibling branch already tried is the point. Returns ``""`` when the
-        component is disabled, steering is off, or nothing has been recorded.
-        """
-        em = self._edit_memory
-        if em is None or not getattr(em, "steering", False):
-            return ""
-        try:
-            from ..edit_memory_render import render_edit_memory
-            from ..edit_outcome import run_context
-            return render_edit_memory(
-                self._experiment_dir,
-                token_budget=getattr(em, "steering_token_budget", 48000),
-                threshold=getattr(em, "verdict_threshold", 0.02),
-                min_shared=getattr(em, "min_shared", 8),
-                focus_node_id=parent.node_id,
-                run_context=run_context(self._tree) or None,
-            )
-        except Exception as exc:  # noqa: BLE001
-            print(f"[edit_memory] steering render failed: {exc!r}", flush=True)
-            return ""
-
-    def _render_lineage_memory(
-        self,
-        parent: HGMNode,
-        *,
-        extra_recent: Optional[tuple[str, Path]] = None,
-    ) -> str:
-        """Render lineage behavior memories newest-first up the chain, within
-        ``lineage_memory_token_budget`` (approx; ~4 chars/token).
-
-        Walks ``parent -> grandparent -> ... -> root``, including each
-        ancestor's FULL ``behavior_memory.md`` greedily until the budget is
-        reached; the first memory that doesn't fully fit is truncated to the
-        remaining budget and the walk stops. ``extra_recent`` (a
-        ``(label, round_dir)`` pair — dual Stage B passes the Stage A
-        intermediate) is treated as the most-recent memory. Rendered oldest →
-        newest so the editor reads the evolution over time.
-
-        Returns ``""`` when no memory files exist along the lineage (e.g.
-        summarizer disabled, seed round, or write failed).
-        """
-        from ..behavior_summarizer import render_memory_for_steering
-
-        char_budget = max(0, self.lineage_memory_token_budget) * _CHARS_PER_TOKEN
-        if char_budget <= 0:
-            return ""
-
-        # Ordered most-recent-first: [extra_recent?, parent, grandparent, ..., root]
-        chain: list[tuple[str, Path]] = []
-        if extra_recent is not None:
-            chain.append(extra_recent)
-        nid: Optional[int] = parent.node_id
-        while nid is not None and nid in self._tree.nodes:
-            node = self._tree.nodes[nid]
-            chain.append((f"round {nid}", node.round_dir))
-            nid = node.parent_id
-
-        included: list[tuple[str, str]] = []  # (label, text), most-recent-first
-        used = 0
-        for label, round_dir in chain:
-            mem = render_memory_for_steering(round_dir)
-            if not mem:
-                continue
-            if used + len(mem) <= char_budget:
-                included.append((label, mem))
-                used += len(mem)
-            else:
-                remaining = char_budget - used
-                if remaining >= 400:  # only include a tail if a useful chunk fits
-                    included.append(
-                        (f"{label} (excerpt)", mem[:remaining].rstrip() + "\n<... truncated ...>")
-                    )
-                break  # budget exhausted — stop walking older ancestors
-
-        if not included:
-            return ""
-        parts: list[str] = []
-        for label, mem in reversed(included):  # oldest -> newest
-            parts.append(f"\n## Observed behavior memory — {label}:")
-            parts.append(mem)
         return "\n".join(parts)
 
     def _ancestor_goals(self, node_id: int) -> list[tuple[int, str]]:
@@ -770,13 +524,6 @@ class HGMManager:
         # Rewrite every sidecar so clade stats are final and consistent.
         for node in self._tree.nodes.values():
             self._write_node_sidecar(node)
-        # Authoritative outcome sweep: by now every node's case coverage is
-        # final. A no-op under the skip guard when nothing moved.
-        if self._edit_memory is not None:
-            try:
-                self._edit_memory.finalize(self._tree)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[edit_memory] finalize failed: {exc!r}", flush=True)
 
         # Select only among fully-train-evaluated nodes (the root + the
         # finalists `_finalize_top_k` just topped up). A thinly-evaluated
@@ -862,7 +609,7 @@ class HGMManager:
 
     def _run_eval_split(self, best_id: int, evaluator: Evaluator) -> None:
         """Held-out eval of the chosen best node — a sidecar metric, not
-        fed back into the search (mirrors HillClimbingManager)."""
+        fed back into the search."""
         node = self._tree[best_id]
         result = evaluator.run(
             node.round_dir, self._benchmark_dir, case_ids=self._eval_case_ids
@@ -1103,25 +850,6 @@ class HGMManager:
             self._build_eval_result(node), node.round_dir,
         )
         self._write_node_sidecar(node)
-        # Delta is measured over cases the parent and child BOTH ran, so this
-        # node's new batch also moves its children's numbers. Radius is exactly
-        # 1 downward — grandchildren depend on their own parent's cases, which
-        # did not change. Deterministic; no LLM call.
-        if self._edit_memory is not None:
-            try:
-                self._edit_memory.refresh_outcomes(self._tree, node.node_id)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[edit_memory] refresh failed for node {node.node_id}: {exc!r}",
-                      flush=True)
-            # Belief layer: fold this batch's outcomes in NOW — the per-eval
-            # local update. Sig-gated inside, so it only spends an LLM call
-            # when the refresh above actually moved evidence.
-            try:
-                getattr(self._edit_memory, "update_beliefs",
-                        lambda _t: False)(self._tree)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[edit_beliefs] post-eval update failed: {exc!r}",
-                      flush=True)
 
     @staticmethod
     def _empty_eval() -> EvaluationResult:

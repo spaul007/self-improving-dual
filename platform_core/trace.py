@@ -118,8 +118,8 @@ def log(label: str, **kwargs: Any) -> None:
             log("verifier_fired", name="budget_total", verdict="pass", total=total)
             return True
 
-    Conventions (not enforced, but the summarizer keys on them):
-        - ``label``: stable identifier; the summarizer groups events by label.
+    Conventions (not enforced, but consumers of the trace key on them):
+        - ``label``: stable identifier; events are grouped by label.
         - ``name``: when ``label`` is generic (e.g. ``"verifier_fired"``), use
           ``name`` to disambiguate the specific verifier/branch.
         - ``verdict``: ``"pass"`` | ``"fail"`` | ``"skip"`` — drives the

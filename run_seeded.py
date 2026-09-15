@@ -14,7 +14,7 @@ Use it ONLY with a donor produced by the same config: the donor's
 ``--force`` overrides), otherwise the borrowed baseline is not comparable.
 
     PYTHONPATH=. python3 run_seeded.py \\
-        --config configs/hgm_travel_1000_qwen122b_dsv4pro_beliefs2stage.yaml \\
+        --config configs/hgm_travel_1000_dsv4pro_agentic_no_editmem.yaml \\
         --donor  runs/<donor_run>/round_000
 """
 from __future__ import annotations

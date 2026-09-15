@@ -3,13 +3,12 @@
 Instead of one LLM call that must emit full replacement files, the model
 runs a tool-use session (``bash`` in a bubblewrap sandbox, a targeted-edit
 ``editor``, ``validate``) directly on the round's ``task_agent/`` copy, and
-ends by calling ``submit_self_improvement`` with a summary (no belief
-prediction — the belief layer registers its own). There is one instruction
-prompt: roots as ``$VAR`` paths, workspace map, procedure, budget. No
-feedback digest, no steering context, no retrieval stage — the agent reads
-the parent node's evidence (and, when the run has edit memory, the memory /
-diff / belief / registry files) from disk itself; a run without edit memory
-never hears the words (see ``meta_agent/agentic/policy.py``).
+ends by calling ``submit_self_improvement`` with a summary. There is one
+instruction prompt: roots as ``$VAR`` paths, workspace map, procedure,
+budget. No feedback digest, no steering context — the agent reads the
+parent node's evidence from disk itself. ``read_scope`` decides how far it
+may look: ``"run"`` exposes every node of the run, ``"parent"`` only the
+parent node and its own workspace (see ``meta_agent/agentic/policy.py``).
 
 Contract to the managers is unchanged: ``apply(feedback, base_dir, out_dir,
 context=...)`` → ``EditResult`` with the final code under
@@ -25,15 +24,15 @@ from typing import Callable, Iterable, Optional, Union
 
 from . import verbose_log
 from .agent_editor import AgentEditor, Validator
-from .agentic.policy import REPO_ROOT, build_policy
+from .agentic.policy import READ_SCOPES, REPO_ROOT, build_policy
 from .agentic.sandbox import Sandbox
 from .agentic.session import (
-    AGENTIC_SYSTEM_PROMPT,
     SESSION_NAME,
     TRANSCRIPT_NAME,
     AgenticSession,
     SessionConfig,
     Transcript,
+    agentic_system_prompt,
     render_instruction,
 )
 from .agentic.tools import (
@@ -84,18 +83,21 @@ class AgenticEditor(AgentEditor):
         include_manager_context: bool = False,
         api_key_env: Optional[str] = None,
         llm_timeout_s: Optional[float] = None,
-        # Injected by config.build_components ("judge" under belief-mode
-        # steering, else "score"). Accepted for the shared injection
-        # contract and forwarded to the base class; the agentic prompts are
-        # fixed text reviewed as a whole and do not splice it in.
-        objective: str = "score",
+        # How much of the run the meta-agent may read (bash + editor tool):
+        # "run" — the whole run directory, every node's code and evidence;
+        # "parent" — only $PARENT_DIR and its own $NODE_DIR (no $RUN_DIR root).
+        read_scope: str = "run",
     ) -> None:
         super().__init__(
             llm_caller, validators, max_attempts=max_attempts, model=model,
             reasoning_effort=reasoning_effort, base_url=base_url,
             tools_source=tools_source, db_schema=db_schema,
-            scorer_source=scorer_source, objective=objective,
+            scorer_source=scorer_source,
         )
+        if read_scope not in READ_SCOPES:
+            raise ValueError(f"editor read_scope must be one of "
+                             f"{sorted(READ_SCOPES)}, got {read_scope!r}")
+        self.read_scope = read_scope
         self.project_root = Path(project_root) if project_root else None
         self.max_llm_calls = int(max_llm_calls)
         self.timeout_s = float(timeout_s)
@@ -107,8 +109,8 @@ class AgenticEditor(AgentEditor):
         self.include_manager_context = bool(include_manager_context)
         # Second-provider support: read the key for THIS editor's calls from a
         # different env var (e.g. OpenRouter_API_KEY from api.sh) while the
-        # task agent / edit memory keep the global OPENAI_API_KEY, and cap each
-        # request so one stalled call cannot eat the whole session budget.
+        # task agent keeps the global OPENAI_API_KEY, and cap each request so
+        # one stalled call cannot eat the whole session budget.
         self.api_key_env = api_key_env or None
         self.llm_timeout_s = float(llm_timeout_s) if llm_timeout_s else None
 
@@ -137,6 +139,7 @@ class AgenticEditor(AgentEditor):
             project_root=self.project_root,
             project_name=(self.project_root.name if self.project_root
                           else os.environ.get("META_AGENT_PROJECT", "")),
+            read_scope=self.read_scope,
         )
         sandbox = Sandbox(policy, mode=self.sandbox, bash_timeout_s=self.bash_timeout_s)
         # Decide the confinement up front: mode="bwrap" fails fast here when
@@ -144,7 +147,8 @@ class AgenticEditor(AgentEditor):
         sandbox_mode = sandbox.effective_mode
         toolset = ToolSet([
             (bash_tool_info(bash_timeout_s=self.bash_timeout_s,
-                            max_output_chars=self.max_tool_output_chars),
+                            max_output_chars=self.max_tool_output_chars,
+                            root_vars=policy.root_vars()),
              BashTool(sandbox, max_output_chars=self.max_tool_output_chars)),
             (editor_tool_info(max_view_chars=self.max_view_chars),
              EditorTool(policy, max_view_chars=self.max_view_chars)),
@@ -166,21 +170,21 @@ class AgenticEditor(AgentEditor):
             cfg=cfg,
             transcript=Transcript(agentic_dir / TRANSCRIPT_NAME),
         )
-        memory = policy.memory_enabled()
+        system_prompt = agentic_system_prompt(self.read_scope)
         instruction = render_instruction(
             policy, max_llm_calls=self.max_llm_calls, timeout_s=self.timeout_s,
-            max_attempts=self.max_attempts, memory=memory,
+            max_attempts=self.max_attempts,
             manager_context=context if self.include_manager_context else None,
         )
         if verbose_log.is_enabled():
-            verbose_log.write_text(out_dir, "editor_agentic_system.txt", AGENTIC_SYSTEM_PROMPT)
+            verbose_log.write_text(out_dir, "editor_agentic_system.txt", system_prompt)
             verbose_log.write_text(out_dir, "editor_agentic_instruction.txt", instruction)
 
-        result = session.run(AGENTIC_SYSTEM_PROMPT, instruction)
+        result = session.run(system_prompt, instruction)
 
         summary = result.to_dict()
         summary["sandbox_mode"] = sandbox_mode
-        summary["memory_enabled"] = memory
+        summary["read_scope"] = self.read_scope
         summary["roots"] = {k: str(v) for k, v in policy.roots().items()}
         (agentic_dir / SESSION_NAME).write_text(
             json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"

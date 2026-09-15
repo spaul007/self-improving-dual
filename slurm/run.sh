@@ -5,8 +5,8 @@
 # evaluator spawns is in the job-step cgroup and is killed on job end.
 #
 # Usage:
-#   slurm/run.sh configs/travel.yaml
-#   slurm/run.sh configs/default.yaml
+#   slurm/run.sh configs/hgm_travel.yaml
+#   slurm/run.sh configs/hgm_math.yaml
 #
 # Env-var knobs same as slurm/submit.sh.
 

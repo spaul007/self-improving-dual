@@ -23,11 +23,20 @@ task_agent:
   base_url: "https://openrouter.ai/api/v1"
   temperature: 0.2
 
+# (manager/editor are required by the config schema but unused by evaluate.py / snapshot_eval.py)
 manager:
-  type: "hill_climbing"
+  type: "hgm"
   config:
-    branch_policy: "best"
-    strategy_history_window: 5
+    eval_budget: 1000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 3
+    snapshot_tree: true
+    seed: 42
 
 evaluator:
   type: "subprocess"
@@ -43,14 +52,15 @@ gatherer:
     error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
 
 editor:
-  type: "default"
+  type: "agentic"
   config:
     model: "deepseek/deepseek-v4-pro-0813"
     reasoning_effort: "low"
     base_url: "https://openrouter.ai/api/v1"
+    max_attempts: 3
 
 env:
-  LLM_API_KEY_ENV: "OpenRouter_API_KEY"   # run-wide: task agent + edit memory + editor
+  LLM_API_KEY_ENV: "OpenRouter_API_KEY"   # run-wide: task agent + editor
   LLM_TIMEOUT_S: "1200"                   # task-agent per-request cap (< wall_time_s_per_case)
   META_AGENT_STRIP_REASONING: "1"
   TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-122B-A10B"

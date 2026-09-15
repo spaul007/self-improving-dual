@@ -41,6 +41,7 @@ task_agent:
   reasoning_effort: "medium"
   base_url: "https://openrouter.ai/api/v1"
 
+# (manager/editor are required by the config schema but unused by evaluate.py / snapshot_eval.py)
 manager:
   type: "hgm"
   config:
@@ -70,12 +71,12 @@ gatherer:
 
 # editor unused by snapshot_eval; kept for config-schema completeness.
 editor:
-  type: "default"
+  type: "agentic"
   config:
     model: "~deepseek/deepseek-v4-flash-latest"
     reasoning_effort: "medium"
-    max_attempts: 2
     base_url: "https://openrouter.ai/api/v1"
+    max_attempts: 3
 
 env:
   META_AGENT_STRIP_REASONING: "1"

@@ -52,8 +52,8 @@ from meta_agent.models import CaseResult
 _MISSING_PREFIX = "missing_product__"
 _NO_VALIDATION_MSG = "validation_cases.json not found"
 
-# Bucket priority for HGMDualManager's "balanced_by_type" category selection
-# (resolved by convention from this module). Product-requirement misses first,
+# Bucket priority across category_type buckets (resolved by convention from
+# this module by consumers that round-robin over categories). Product-requirement misses first,
 # then coupon handling, then cart precision (extra products); the shared
 # "generic" (crash / missing-data) bucket last.
 category_type_priority = ["missing_feature", "coupon", "cart", "generic"]

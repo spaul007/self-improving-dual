@@ -51,7 +51,7 @@ task_agent symlink to the real agent), so the evaluator's per-run logs
 the original round's optimization logs.
 
     # 3 evaluation rounds, averaged, 40-wide, isolated logs:
-    python3 snapshot_eval.py --config configs/hgm_dual_travel_8000.yaml \\
+    python3 snapshot_eval.py --config configs/hgm_travel.yaml \\
         --experiment-dir runs/<exp> --at-budget 99999999 --select lcb \\
         --parallelism 40 --repeats 3
 """

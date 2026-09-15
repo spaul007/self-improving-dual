@@ -26,7 +26,7 @@ from meta_agent.agentic.tools import (
     editor_tool_info,
     truncate_head_tail,
 )
-from tests.test_edit_code import _agent
+from tests.test_agentic_editor import _agent
 
 WF = "def run_task(task):\n    x = 1\n    return None\n"
 
@@ -208,7 +208,7 @@ class TestToolSetAndHelpers(ToolBase):
             self.assertIn("input_schema", info)
             self.assertIn("name", info)
         self.assertNotIn("files", SUBMIT_TOOL["input_schema"]["properties"])
-        # The meta agent never predicts; the belief layer registers its own.
+        # The submission is a summary only — no prediction field of any kind.
         self.assertNotIn("prediction", SUBMIT_TOOL["input_schema"]["properties"])
         self.assertNotIn("belief", SUBMIT_TOOL["description"].lower())
 
@@ -327,7 +327,11 @@ class TestBwrapConfinement(unittest.TestCase):
         _agent(self.base, WF)
         _agent(self.out, WF)
         (self.out / "agentic" / "scratch").mkdir(parents=True)
-        (self.run / "edit_memory_beliefs.md").write_text("### belief:a — b\n")
+        (self.run / "tree_snapshots.jsonl").write_text('{"event": "seed"}\n')
+        # A sibling node on another branch of the run.
+        self.sib = self.run / "round_000"
+        _agent(self.sib, WF)
+        (self.sib / "strategy.json").write_text('{"optimization_goal": "SIBLING"}')
         self.policy = build_policy(out_dir=self.out, base_dir=self.base,
                                    repo_root=REPO_ROOT, project_root=self.proj)
         self.sb = Sandbox(self.policy, mode="bwrap", bash_timeout_s=30)
@@ -358,7 +362,8 @@ class TestBwrapConfinement(unittest.TestCase):
 
     def test_reads_confined(self) -> None:
         self.assertIn("workflow.py", self.bash(f"ls {self.base}/task_agent"))
-        self.assertIn("belief:a", self.bash(f"cat {self.run}/edit_memory_beliefs.md"))
+        self.assertIn('"event": "seed"', self.bash(f"cat {self.run}/tree_snapshots.jsonl"))
+        self.assertIn("SIBLING", self.bash(f"cat {self.sib}/strategy.json"))
         listing = self.bash(f"ls {self.proj}")
         self.assertIn("tools", listing)
         self.assertNotIn("benchmark", listing)
@@ -381,8 +386,22 @@ class TestBwrapConfinement(unittest.TestCase):
         self.assertIn("unreachable", net.lower())
 
     def test_roots_inside_sandbox(self) -> None:
-        self.assertIn("belief:a", self.bash("cat $RUN_DIR/edit_memory_beliefs.md"))
+        self.assertIn('"event": "seed"', self.bash("cat $RUN_DIR/tree_snapshots.jsonl"))
         self.assertEqual(self.bash("cd $NODE_DIR/task_agent && python3 -c 'import workflow; print(1)'"), "1")
+
+    def test_parent_read_scope_hides_other_nodes(self) -> None:
+        pol = build_policy(out_dir=self.out, base_dir=self.base, repo_root=REPO_ROOT,
+                           project_root=self.proj, read_scope="parent")
+        bash = BashTool(Sandbox(pol, mode="bwrap", bash_timeout_s=30), max_output_chars=5000)
+        # Parent and own node: visible. Sibling, run-level files, $RUN_DIR: not.
+        self.assertIn("workflow.py", bash("ls $PARENT_DIR/task_agent"))
+        self.assertEqual(bash("cd $NODE_DIR/task_agent && python3 -c 'import workflow; print(1)'"), "1")
+        self.assertIn("No such file", bash(f"cat {self.sib}/strategy.json"))
+        self.assertIn("No such file", bash(f"cat {self.run}/tree_snapshots.jsonl"))
+        self.assertIn("No such file", bash(f"cat {self.run}/{RUN_ROOT_MARKER}"))
+        self.assertNotIn("round_000", bash(f"ls {self.run} 2>&1"))
+        self.assertNotIn("SIBLING", bash(f"grep -r SIBLING {self.run} 2>&1"))
+        self.assertEqual(bash('echo "${RUN_DIR:-unset}"'), "unset")
 
     def test_fresh_shell_per_call(self) -> None:
         self.bash("export FOO=1; cd /tmp")

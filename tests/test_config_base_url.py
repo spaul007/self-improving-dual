@@ -95,21 +95,46 @@ class ApplyTaskAgentEnvBaseUrlTests(unittest.TestCase):
         self.assertEqual(os.environ["LLM_BASE_URL"], "http://vllm:8000/v1")
 
 
+
+
+def _first_editor_llm_kwargs(editor_kwargs: dict) -> dict:
+    """Run an AgenticEditor whose LLM stub records its first call's kwargs
+    and then stops the session; returns those kwargs."""
+    import tempfile
+    from meta_agent.agent_editor_agentic import AgenticEditor
+
+    captured: dict = {}
+
+    def fake_llm(**kwargs):
+        captured.update(kwargs)
+        raise RuntimeError("fake_llm intentionally stops here")
+
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp) / "round_000"
+        (base / "task_agent" / "mutable_tools").mkdir(parents=True)
+        (base / "task_agent" / "workflow.py").write_text(
+            "def run_task(task):\n    return None\n"
+        )
+        (base / "task_agent" / "tool_wrapper.py").write_text("")
+        (base / "task_agent" / "tools_schema.json").write_text("[]")
+        editor = AgenticEditor(fake_llm, [], sandbox="none", max_llm_calls=2,
+                               timeout_s=30, **editor_kwargs)
+        result = editor.apply(None, base, Path(tmp) / "round_001")
+        assert not result.success
+    return captured
+
+
 class EditorAndManagerBaseUrlTests(unittest.TestCase):
     """The editor must accept ``base_url`` via constructor and thread it
-    through to the LLM call (the single self-improvement step)."""
+    through to every LLM call of the session."""
 
     def test_editor_constructor_accepts_base_url(self) -> None:
-        from meta_agent.agent_editor import AgentEditor
-
-        captured: dict = {}
+        from meta_agent.agent_editor_agentic import AgenticEditor
 
         def fake_llm(**kwargs):
-            captured["base_url"] = kwargs.get("base_url")
-            # Don't actually invoke the tool path — just record the call.
             raise RuntimeError("fake_llm intentionally stops here")
 
-        editor = AgentEditor(
+        editor = AgenticEditor(
             llm_caller=fake_llm,
             validators=[],
             base_url="http://editor-local:8000/v1",
@@ -119,44 +144,7 @@ class EditorAndManagerBaseUrlTests(unittest.TestCase):
     def test_editor_threads_base_url_into_llm_kwargs(self) -> None:
         """End-to-end: editor passes base_url= through to the llm callable
         when its constructor was given one."""
-        from meta_agent.agent_editor import AgentEditor
-
-        captured: dict = {}
-
-        class _Stop(Exception):
-            pass
-
-        def fake_llm(**kwargs):
-            captured.update(kwargs)
-            raise _Stop()
-
-        editor = AgentEditor(
-            llm_caller=fake_llm,
-            validators=[],
-            base_url="http://editor-local:8000/v1",
-        )
-
-        # Call the single self-improvement step directly with minimal
-        # scaffolding. We don't care about the result — only that
-        # base_url was forwarded to the llm callable.
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as tmp:
-            out_dir = Path(tmp) / "round_001"
-            (out_dir / "task_agent" / "mutable_tools").mkdir(parents=True)
-            (out_dir / "task_agent" / "workflow.py").write_text(
-                "def run_task(task):\n    return None\n"
-            )
-            (out_dir / "task_agent" / "tool_wrapper.py").write_text("")
-            (out_dir / "task_agent" / "tools_schema.json").write_text("[]")
-            with self.assertRaises(_Stop):
-                editor._self_improve(
-                    out_dir=out_dir,
-                    feedback=None,
-                    context=None,
-                    prior_errors=[],
-                    attempt=1,
-                )
+        captured = _first_editor_llm_kwargs({"base_url": "http://editor-local:8000/v1"})
 
         self.assertEqual(
             captured.get("base_url"), "http://editor-local:8000/v1"
@@ -198,7 +186,7 @@ class TaskAgentTemperatureTests(unittest.TestCase):
         self.assertIsNone(spec.temperature)
 
     def test_llm_spec_has_no_temperature_field(self) -> None:
-        # Guard: editor/summarizer/edit_memory specs must not silently
+        # Guard: the editor spec must not silently
         # grow a config-driven temperature.
         self.assertNotIn("temperature", cfg_mod.LLMSpec.model_fields)
 
@@ -318,39 +306,9 @@ class TaskAgentTemperatureTests(unittest.TestCase):
         # temperature=0.2 — which call_llm drops in the reasoning branch
         # (covered by the wrapper tests). No env-sourced temperature can
         # reach it because LLM_TEMPERATURE is never in the parent process.
-        from meta_agent.agent_editor import AgentEditor
-
         os.environ["LLM_REASONING_EFFORT"] = "medium"
 
-        captured: dict = {}
-
-        class _Stop(Exception):
-            pass
-
-        def fake_llm(**kwargs):
-            captured.update(kwargs)
-            raise _Stop()
-
-        editor = AgentEditor(llm_caller=fake_llm, validators=[])
-
-        import tempfile
-
-        with tempfile.TemporaryDirectory() as tmp:
-            out_dir = Path(tmp) / "round_001"
-            (out_dir / "task_agent" / "mutable_tools").mkdir(parents=True)
-            (out_dir / "task_agent" / "workflow.py").write_text(
-                "def run_task(task):\n    return None\n"
-            )
-            (out_dir / "task_agent" / "tool_wrapper.py").write_text("")
-            (out_dir / "task_agent" / "tools_schema.json").write_text("[]")
-            with self.assertRaises(_Stop):
-                editor._self_improve(
-                    out_dir=out_dir,
-                    feedback=None,
-                    context=None,
-                    prior_errors=[],
-                    attempt=1,
-                )
+        captured = _first_editor_llm_kwargs({})
 
         self.assertEqual(captured.get("temperature"), 0.2)
         self.assertNotIn("LLM_TEMPERATURE", os.environ)
@@ -369,9 +327,9 @@ class MetaBaseUrlWarningTests(unittest.TestCase):
             experiment_name="t", project="math",
             task_agent={"model": "local", "reasoning_effort": "low",
                         "base_url": "http://vllm:8000/v1"},
-            editor={"type": "default", "config": {"model": "gpt-5.4",
+            editor={"type": "agentic", "config": {"model": "gpt-5.4",
                                                   "reasoning_effort": "medium"}},
-            manager={"type": "hill_climbing", "config": {}},
+            manager={"type": "hgm", "config": {}},
             evaluator={"type": "subprocess", "config": {}},
             gatherer={"type": "default", "config": {}},
             validators=[], loop={"max_rounds": 1})
@@ -385,22 +343,15 @@ class MetaBaseUrlWarningTests(unittest.TestCase):
         self.assertIn("http://vllm:8000/v1", got[0])
 
     def test_silent_when_base_url_set_or_no_task_base_url(self) -> None:
-        pinned = self._cfg(editor={"type": "default", "config": {
+        pinned = self._cfg(editor={"type": "agentic", "config": {
             "model": "gpt-5.4", "base_url": "https://api.openai.com/v1"}})
         self.assertEqual(cfg_mod.meta_base_url_warnings(pinned), [])
         no_task = self._cfg(task_agent={"model": "gpt-5.4-mini",
                                         "reasoning_effort": "low"})
         self.assertEqual(cfg_mod.meta_base_url_warnings(no_task), [])
         # no model on the component: it inherits LLM_MODEL too -> consistent
-        inherit = self._cfg(editor={"type": "default", "config": {}})
+        inherit = self._cfg(editor={"type": "agentic", "config": {}})
         self.assertEqual(cfg_mod.meta_base_url_warnings(inherit), [])
-
-    def test_edit_memory_and_summarizer_are_covered(self) -> None:
-        got = cfg_mod.meta_base_url_warnings(self._cfg(
-            edit_memory={"type": "default", "config": {"model": "gpt-5.4"}},
-            summarizer={"type": "default", "config": {"model": "gpt-5.4"}}))
-        self.assertEqual(sorted(w.split()[2] for w in got),
-                         ["edit_memory", "editor", "summarizer"])
 
 
 class TaskAgentStallGuardTests(unittest.TestCase):
@@ -470,14 +421,15 @@ class TaskAgentStallGuardTests(unittest.TestCase):
             os.environ["LLM_MAX_OUTPUT_TOKENS"] = raw
             self.assertEqual(f(), want, raw)
 
-    def test_belief_configs_guard_against_stalls(self) -> None:
-        for name in ("hgm_travel_1000_qwen122b_gpt54_beliefs2stage",
-                     "hgm_travel_1000_qwen122b_dsv4pro_beliefs2stage",
-                     "hgm_travel_1000_qwen122b_node5_editmem_beliefs2stage",
-                     "hgm_travel_1000_local_qwen122b_medium_beliefs2stage",
-                     "hgm_travel_smoke_beliefs2stage"):
+    def test_agentic_configs_keep_the_task_agent_timeout_below_the_wall_clock(self) -> None:
+        # The dsv4pro agentic runs cap each task-agent request via the env
+        # block (LLM_TIMEOUT_S) rather than task_agent.timeout_s; either way
+        # the cap must sit below the evaluator's per-case wall clock.
+        for name in ("hgm_travel_1000_dsv4pro_agentic_no_editmem",
+                     "hgm_travel_1000_dsv4pro_agentic_no_editmem_t2",
+                     "hgm_travel_100_dsv4pro_agentic_no_editmem",
+                     "hgm_travel_tiny_dsv4pro_agentic_no_editmem"):
             cfg = cfg_mod.load(Path("configs") / f"{name}.yaml")
             wall = float(cfg.evaluator.config["wall_time_s_per_case"])
-            self.assertIsNotNone(cfg.task_agent.timeout_s, name)
-            self.assertLess(cfg.task_agent.timeout_s, wall, name)
-            self.assertGreaterEqual(cfg.task_agent.max_output_tokens, 8192, name)
+            cap = cfg.task_agent.timeout_s or float(cfg.env["LLM_TIMEOUT_S"])
+            self.assertLess(cap, wall, name)

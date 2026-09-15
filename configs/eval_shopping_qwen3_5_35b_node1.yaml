@@ -23,11 +23,20 @@ task_agent:
   reasoning_effort: "medium"
   base_url: "http://gpu-aic-mv-02-st-p5-node-1:8000/v1"
 
+# (manager/editor are required by the config schema but unused by evaluate.py / snapshot_eval.py)
 manager:
-  type: "hill_climbing"
+  type: "hgm"
   config:
-    branch_policy: "best"
-    strategy_history_window: 5
+    eval_budget: 1000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 3
+    snapshot_tree: true
+    seed: 42
 
 evaluator:
   type: "subprocess"
@@ -46,11 +55,11 @@ gatherer:
   config: {}
 
 editor:
-  type: "default"
+  type: "agentic"
   config:
     model: "Qwen/Qwen3.5-35B-A3B"
     reasoning_effort: "medium"
-    max_attempts: 2
+    max_attempts: 3
 
 # Local models (Qwen3.x, gpt-oss) misread echoed `reasoning` items in the
 # conversation history as a "wrap up" signal — they exit the tool loop

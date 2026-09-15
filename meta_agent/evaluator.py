@@ -241,7 +241,7 @@ class SubprocessEvaluator:
         env["META_AGENT_TRACE_PATH"] = str(trace_path)
         # Task-agent sampling temperature. Set only on this local env dict —
         # never os.environ — so it reaches the case subprocesses while
-        # meta-agent components (editor, edit_memory, summarizer) running in
+        # meta-agent components (the editor) running in
         # this parent process never see it. When None we deliberately do not
         # pop an inherited LLM_TEMPERATURE: a user exporting one globally
         # (e.g. via the YAML env: block) has chosen a global override.

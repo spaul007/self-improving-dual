@@ -44,11 +44,19 @@ gatherer:
   config: {}
 
 editor:
-  type: "default"
+  type: "agentic"
   config:
     model: "gpt-5.4-mini"
     reasoning_effort: "high"
-    max_attempts: 2
+    max_attempts: 3          # submission / validation rounds
+    max_llm_calls: 40        # tool-loop iterations (whole history re-sent each call)
+    timeout_s: 1800          # wall-clock per session
+    bash_timeout_s: 120
+    max_tool_output_chars: 20000
+    max_view_chars: 40000
+    sandbox: "auto"          # bwrap when usable, else cwd-only with a warning
+    include_manager_context: false
+    read_scope: "run"        # or "parent": only $PARENT_DIR + own $NODE_DIR
 
 validators:
   - type: "syntax"

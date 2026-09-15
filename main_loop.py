@@ -10,8 +10,8 @@ project database root) before instantiating things.
 
 After the manager returns, a Markdown ``run_summary.md`` is written into the
 experiment directory naming the best round and detailing the top-3 agents
-(Stage A vs Stage B winner, optimization goal, train mean, full-benchmark
-score when ``full_eval_top_k`` is set).
+(optimization goal, train mean, full-benchmark score when ``full_eval_top_k``
+is set).
 """
 from __future__ import annotations
 
@@ -45,8 +45,6 @@ def run(config_path: Path) -> EvolutionOutcome:
         score_target=cfg.loop.score_target,
         train_case_ids=fw.train_case_ids,
         eval_case_ids=fw.eval_case_ids,
-        summarizer=fw.summarizer,
-        edit_memory=fw.edit_memory,
     )
 
     summary_path: Optional[Path] = None
@@ -84,7 +82,6 @@ def _parse_round(round_dir: Path) -> Optional[dict[str, Any]]:
     if node is None:
         return None
     strategy = _read_json(round_dir / "strategy.json") or {}
-    selection = _read_json(round_dir / "variants" / "selection.json")
     eval_score = _read_json(round_dir / "eval_score.json")
     full_eval = _read_json(round_dir / "full_eval_score.json")
     return {
@@ -96,7 +93,6 @@ def _parse_round(round_dir: Path) -> Optional[dict[str, Any]]:
         "n_evals": int(node.get("n_evals", 0)),
         "cmp": node.get("cmp"),
         "strategy": strategy,
-        "selection": selection,
         "eval_score": eval_score,
         "full_eval": full_eval,
     }
@@ -135,33 +131,8 @@ def _render_agent_block(
     pid = info["parent_id"]
     depth = _depth(nid, by_id)
     strategy = info["strategy"] or {}
-    selection = info["selection"]
     full_eval = info["full_eval"]
     eval_score = info["eval_score"]
-
-    stage_label = "Stage A (intermediate)"
-    category_block = ""
-    pool_block = ""
-    if selection:
-        winner = selection.get("winner") or {}
-        if winner.get("index", -1) != -1:
-            cat_name = winner.get("category_name") or "?"
-            cat_id = winner.get("category_id") or "?"
-            stage_label = f"Stage B specialist — {cat_name} ({cat_id})"
-        pool = selection.get("pool") or []
-        if pool:
-            rows = []
-            for entry in pool:
-                label = (
-                    "Stage A intermediate"
-                    if entry.get("index", -1) == -1
-                    else f"Stage B var_{entry.get('index')} — "
-                    f"{entry.get('category_name') or entry.get('category_id') or '?'}"
-                )
-                score = entry.get("mean_score")
-                score_s = "n/a" if score is None else f"{score:.3f}"
-                rows.append(f"    - {label}: mean={score_s}, n={entry.get('n_cases', 0)}")
-            pool_block = "\n  - Variant pool:\n" + "\n".join(rows)
 
     goal = _truncate(strategy.get("optimization_goal") or "(none)")
     changes = _truncate(strategy.get("proposed_changes") or "(none)", limit=400)
@@ -170,7 +141,6 @@ def _render_agent_block(
         f"### #{rank}. Round {nid:03d} (node {nid})",
         f"  - Parent: node {pid}; depth: {depth}",
         f"  - Train mean: **{info['mean_utility']:.3f}** over {info['n_evals']} case(s)",
-        f"  - Winner: {stage_label}",
     ]
     if full_eval is not None:
         passed = full_eval.get("passed")
@@ -185,10 +155,6 @@ def _render_agent_block(
             f" (passed {eval_score.get('passed')}/"
             f"{(eval_score.get('passed', 0) + eval_score.get('failed', 0))})"
         )
-    if category_block:
-        lines.append(category_block)
-    if pool_block:
-        lines.append(pool_block)
     lines.append(f"  - Optimization goal:\n\n    > {goal.replace(chr(10), chr(10) + '    > ')}")
     lines.append(f"  - Proposed changes:\n\n    > {changes.replace(chr(10), chr(10) + '    > ')}")
     return "\n".join(lines)
