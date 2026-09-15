@@ -1,0 +1,202 @@
+experiment_name: "hgm_travel_1000_dsv4pro_agentic_editmem_t2"
+
+# TRIAL 2 (2026-09-14, user request): identical to hgm_travel_1000_dsv4pro_agentic_editmem.yaml
+# except experiment_name and a FRESH seed evaluation (no seed_round_dir) — a
+# replicate of the 1000-eval pair to see whether the edit-memory advantage repeats.
+
+# FULL PAIR (2026-09-13): agentic editor, eval_budget 1000, expansion-paired
+# evaluation (expand_eval_size 16), 60-case train
+# split, DeepSeek V4 Pro (dated pin deepseek-v4-pro-0813 on OpenRouter) for
+# BOTH the meta-agent (agentic editor + edit memory / beliefs) and the task agent.
+#   treatment : hgm_travel_100_dsv4pro_agentic_editmem.yaml     (edit_memory + code records + beliefs ON)
+#   control   : hgm_travel_100_dsv4pro_agentic_no_editmem.yaml  (no edit memory generated at all)
+# The two files differ ONLY in the presence of the `edit_memory:` block.
+#
+# PROMPTS (2026-09-13 review): one system prompt + one instruction message;
+# paths are $RUN_DIR / $NODE_DIR / $PARENT_DIR / $REPO_DIR (env vars in every
+# bash call, expanded by the editor tool) — no experiment path in the prompt.
+# The no-memory arm never mentions memory or beliefs; the memory arm gets the
+# memory files in its workspace map plus one belief-guidance step. The meta
+# agent never writes a prediction: the belief layer registers its own
+# (round_NNN/belief_prediction.json) and is Brier-scored against the judge.
+#
+# TASK AGENT: reasoning_effort "none" — the only value that actually disables
+# DeepSeek's reasoning (see eval_travel_or_dsv4pro_0813_noreason.yaml for the
+# measurement); at medium it ran away to 33k reasoning tokens / 444 s per turn.
+# Measured cost at this setting: ~$0.15 per task-agent case (80-case eval
+# 2026-09-12: $12.28 for 839 calls). 60-case seed pre-eval (free w.r.t. the
+# budget, not w.r.t. the bill) + 100 budget evals ≈ 160 cases ≈ $24, plus
+# editor sessions: the first attempt (max_llm_calls 30) showed DeepSeek
+# reading until the budget was gone (~1.1M input tokens, 30-65k reasoning
+# tokens, ≈$0.9/session) and failing to edit, so the loop now sends budget
+# reminders at a third, at the halfway point and in the final stretch, and
+# the cap is now generous (150 calls / 90 min, per user request) — cost per
+# session scales with calls×context since the history is re-sent; budget for
+# a few $ per expansion.
+#
+# FINALIZE: finalize_top_k 3 re-evaluates the three best nodes on their
+# remaining train cases (≈ 130 extra evals, not charged to the budget) so the
+# final pick compares them on the full 60-case split. full_eval_top_k stays 0.
+# SCHEDULE: alpha 0.5 + paired evaluation ⇒ ≈ 32 expansions and 63 batches
+# (32 mandatory child batches + 31 bandit-chosen); expansions at 16, 32, …
+# 272 evals, then ≈ one per 48 evals. Estimated ≈ 30-35 h and ≈ $300 per arm.
+#
+# META-AGENT TRAJECTORY: every expansion writes round_NNN/agentic/transcript.jsonl
+# (each LLM call, each tool call with input + result, each validation round)
+# and session.json; verbose: true additionally keeps the exact system prompt,
+# instruction and the complete final message history under round_NNN/verbose/
+# (editor_agentic_{system,instruction}.txt, editor_agentic_messages.json).
+#
+# AUTH: everything goes to OpenRouter, keyed from OpenRouter_API_KEY via
+# LLM_API_KEY_ENV (run-wide default read by platform_core.llm_wrapper — the
+# task-agent subprocesses inherit it). The scorer's plan->JSON conversion stays
+# on the local node-5 Qwen (ignores auth; comparable with every earlier travel
+# eval). Launch:
+#   source /groups/AIC-MV/sudipta.paul/code/random/api.sh
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_100_dsv4pro_agentic_editmem.yaml
+project: "travel"
+
+eval_visibility: "blackbox"   # ignored by the agentic editor: scorer never exposed
+verbose: true                 # META_AGENT_VERBOSE=1: full prompts + message history per session
+
+loop:
+  max_rounds: 1000
+  score_target: 0.99
+
+task_agent:
+  model: "deepseek/deepseek-v4-pro-0813"
+  reasoning_effort: "none"
+  base_url: "https://openrouter.ai/api/v1"
+  temperature: 0.2
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 1000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    # Expansion-paired evaluation (agentic setups, per user request
+    # 2026-09-13): every freshly expanded child is evaluated on 16 random
+    # train cases immediately (charged to the budget and to the widening
+    # counter), so no editor session goes unmeasured and the belief judge
+    # sees every node. 0 restores the reference's decoupled behaviour. At
+    # 1000 evals this keeps 32 nodes / 63 batches but makes 32 of the
+    # batches mandatory child evaluations (31 bandit-chosen instead of 63).
+    expand_eval_size: 16
+    finalize_top_k: 3        # top-3 finalists topped up to the full 60-case train split before the final pick
+    # Reuse the 60-case seed pre-eval of the finished 2026-09-12 run of this
+    # arm instead of paying for it again; the seed code must be unchanged.
+    # seed_round_dir: (none in trial 2 — the seed is evaluated afresh on the 60 train cases)
+    full_eval_top_k: 0
+    snapshot_tree: true
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+
+# Agentic editor on DeepSeek V4 Pro. reasoning "low" (medium drifts in long
+# tool loops); llm_timeout_s caps one request so a stall cannot eat the
+# session. The prompt is paths + budget only (include_manager_context false):
+# the agent reads the parent's evidence and the run's edit memory, diffs, beliefs and category registry from disk itself.
+editor:
+  type: "agentic"
+  config:
+    model: "deepseek/deepseek-v4-pro-0813"
+    reasoning_effort: "low"
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OpenRouter_API_KEY"
+    llm_timeout_s: 600
+    max_attempts: 3
+    max_llm_calls: 150
+    timeout_s: 5400
+    bash_timeout_s: 120
+    max_tool_output_chars: 20000
+    max_view_chars: 40000
+    sandbox: "auto"
+    include_manager_context: false
+
+# summarizer: INTENTIONALLY ABSENT — behavioral summary stays off.
+
+# Per-node edit memory + code records + beliefs (the full sep6 stack), all on
+# DeepSeek. Writes round_NNN/edit_memory.md + edit_code.md + edit_prediction.json,
+# run-level edit_memory_registry.json / edit_memory_candidates.json /
+# edit_memory_beliefs.md. `steering: true` only renders the deterministic
+# steering block the agentic editor does not receive; the belief updates cost
+# one LLM call per eval batch.
+edit_memory:
+  type: "default"
+  config:
+    model: "deepseek/deepseek-v4-pro-0813"
+    reasoning_effort: "low"
+    base_url: "https://openrouter.ai/api/v1"
+    steering: true                   # renders the deterministic steering block only; the agentic editor does not receive it
+    steering_token_budget: 48000
+    verdict_threshold: 0.02
+    min_shared: 8
+    # Judge-as-signal (analysis v7): strategy beliefs are scored against the
+    # per-node analysis's effect verdict for the matched sub-edit, not the
+    # score Δ; the analysis runs once a node has one batch of its OWN cases.
+    # One extra LLM call per node analysis on this model.
+    strategy_label: judge
+    analysis_min_own_evals: 16
+    judge_min_evidence: moderate     # weak-evidence verdicts stay pending
+    analysis_code_char_budget: 20000 # implementation view shown to the judge
+    max_strategies: 30
+    max_subedits: 3
+    diff_char_cap: 6000
+    setup_pass: true
+    per_check_recipe: null
+    code_record: true                # per-node edit_code.md (the diff the agent may read)
+    code_diff_char_cap: 20000
+    steering_mode: "belief"
+    # Self-predicting beliefs: BeliefStore.register() freezes the matched
+    # belief's p into round_NNN/belief_prediction.json when a node is
+    # recorded; once judged, Brier loss is paid and every optimize_every
+    # scored predictions the guidance text is revised from the misses.
+    # The meta agent never writes a prediction.
+    beliefs:
+      enabled: true
+      doc_char_cap: 40000
+      optimize_enabled: true
+      optimize_every: 8
+      optimize_min_scored: 8
+      optimize_rollback_margin: 0.02
+      instruction_char_cap: 2500
+
+env:
+  LLM_API_KEY_ENV: "OpenRouter_API_KEY"   # run-wide: task agent + edit memory + editor
+  LLM_TIMEOUT_S: "1200"                   # task-agent per-request cap (< wall_time_s_per_case)
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-122B-A10B"
+  TRAVEL_CONVERT_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+  # Fallback if node-5 is down — conversion on OpenRouter instead (adds
+  # conversion tokens to the OpenRouter bill):
+  # TRAVEL_CONVERT_MODEL: "qwen/qwen3.5-122b-a10b"
+  # TRAVEL_CONVERT_BASE_URL: "https://openrouter.ai/api/v1"
+
+split:
+  train_ids_path: "configs/travel_train_ids.json"   # the 60 predetermined cases
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"
