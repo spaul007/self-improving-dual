@@ -249,8 +249,47 @@ Each `trace.jsonl` is newline-delimited JSON; grep for `"response_error_code"` t
 - **Confirmed the image-decode errors are not caused by our request** (§3d) — an exhaustive grep of every file in the call path (`platform_core/`, the project's seed code, `tools_schema.json`) found zero references to `image_url`, `base64`, or `data:image` anywhere, and `call_llm`'s own request dict has no field capable of carrying one. Seeing image-decode failures for a text-only request is a genuine anomaly on the provider side (most plausibly request/response mixing across tenants at the DeepInfra layer under load), not something originating in our code.
 - The same failure signature (differing model, same `status="failed"`/no-exception pattern) was also seen historically with Qwen models via OpenRouter, not just Gemma — reinforcing that this is a property of routing through OpenRouter under this API surface, not specific to one model.
 
-## 7. Suggested next steps (not yet actioned)
+## 7. Suggested next steps (as of 2026-09-13 — since actioned, see §8)
 
 1. Consider reporting this to OpenRouter support with the confirmed upstream chain (OpenRouter → DeepInfra → `nvidia/Gemma-4-31B-IT-NVFP4`) and the image-decode anomaly — that combination looks like something worth their attention regardless of what we do on our side.
 2. Treat any score computed during a window with a high observed failure rate as unreliable; check `analyze_llm_call_failures.py` output before trusting a round's score, as has become this session's practice.
 3. Decide whether to continue running against this backend while it's this unreliable, or fall back to the local vLLM Qwen default (zero occurrences of this bug all session) until it stabilizes.
+
+---
+
+## 8. Fix implemented and validated (2026-09-14)
+
+Went with option 3's third alternative: stay on OpenRouter/Gemma, but steer routing away from the identified culprit backend, plus add a defensive layer so any failure that still slips through can no longer corrupt the HGM's reward signal.
+
+### 8a. Provider-routing fix
+
+`platform_core/llm_wrapper.py::call_llm` gained an opt-in `provider: Optional[dict]` param, threaded through OpenRouter's own `extra_body={"provider": {...}}` request field (confirmed live that OpenRouter honors it — a test call with `ignore=["DeepInfra"]` was actually served by Venice instead). Wired into real configs via a new `TaskAgentSpec.provider` field (`meta_agent/config.py`) → `LLM_PROVIDER_PREFERENCE` env var (`meta_agent/runtime_env.py::apply_task_agent_env`) → `_env_default_provider()` in the wrapper.
+
+**Iteration 1 — `{"ignore": ["DeepInfra"], "quantizations": ["bf16"], "allow_fallbacks": false}`:**
+Validated at production scale before deploying: 3 independent full-120-case passes at parallelism 32, **0 terminal failures out of 3,511 real calls** (`round013_provider_fix_3x_120/`) — vs. this report's §2 baseline of 174 terminal failures / 82.5% of cases affected on the unfixed path. Deployed to both live production configs.
+
+**Regression found, then corrected — dropping the `bf16` requirement:**
+With the fix live, the `llm_backbone_selection` block (an HGM block that can reassign a sub-agent's backbone model, see `meta_agent/block_suggester.py`) turned out to be silently non-functional: all 4 catalog slugs (`qwen/qwen3.6-27b`, `qwen/qwen3.8-27b`, `google/gemini-3.6-flash`, `google/gemini-3.8-flash`) returned `404 No endpoints found for the request with quantization: bf16` — confirmed live, one-off calls to each. The `bf16` requirement, while fixing the DeepInfra issue, happened to exclude every endpoint those other models have.
+
+Before removing `bf16`, independently re-validated that `ignore: DeepInfra` ALONE (no `bf16`) keeps the same reliability: 3 independent 32-case passes, **0 terminal failures out of 1,075 real calls, 0.09% incidence rate** (`deepinfra_only_3x_32/`) — as good as the `bf16`-included version's 0.20% (5/2525 in early production rounds), while no longer blocking any backbone-catalog model. Both live production configs (`configs/hgm_travel_gemma_full_scale_block_tagged_X100Y180.yaml`, `configs/hgm_travel_gemma_no_backbone_selection_X100Y180.yaml`) were updated to the final fix:
+
+```yaml
+task_agent:
+  provider:
+    ignore: ["DeepInfra"]
+    allow_fallbacks: false
+```
+
+**Live production results since deploying the final fix** (both runs restarted 2026-09-14, tracked via the dashboard feature in §8b): failure rate has stayed at **0% for the large majority of rounds** on both runs, with exactly one round each briefly crossing the 3% alert threshold (ON run's round_002: 3.9%, 57 retries/1462 calls; OFF run's round_020: 3.8%, 11 retries/290 calls) — and **zero terminal failures across every round of both runs**, meaning every retry that fired was successfully recovered and no round's score was corrupted. A separate full-120-case standalone re-evaluation of a live node (node_11, `eval_node11_3x_120.py`) confirmed this at full scale outside the HGM's own round-robin sampling: 0.87% incidence (147 retries / 16,839 calls), 0 terminal failures.
+
+### 8b. Defensive layer — HGM reward robustness + dashboard visibility
+
+Because even a well-mitigated provider can still fail occasionally, and a terminal failure silently zeroes a case's score (this report's core finding), added a second, independent layer so that failure class can never silently corrupt the HGM's learning signal, and so its rate is always visible without re-deriving it by hand:
+
+- New `meta_agent/llm_failure_health.py` — the trace-parsing logic from `analyze_llm_call_failures.py`, extracted into a reusable module (`iter_trace_files`/`analyze_trace_file`/`incidence_rate_pct`, `DEFAULT_INCIDENCE_THRESHOLD_PCT = 3.0`).
+- `HGMManager._record_batch` (`meta_agent/managers/hgm.py`) — the single choke point all node-recording now goes through: always writes a per-round `llm_failure_health.json`, always prints a loud `⚠️` warning when a round's rate exceeds 3%, and optionally (opt-in `exclude_llm_call_failures`, default `False` — zero behavior change unless explicitly enabled) excludes any case hit by a terminal failure from that node's reward tally, without affecting eval-budget accounting.
+- `hgm_dashboard.py` / `meta_agent/run_inspect.py` — a new "LLM call failure rate" chart and nodes-table column, plus an automatic 🔴 Diagnostics alert whenever a round crosses the 3% threshold — this is what surfaced the two threshold-crossing rounds mentioned above in real time, and confirmed both recovered with 0 terminal failures.
+
+### 8c. Outcome
+
+Both live production runs and one standalone full-scale re-evaluation have now run for many hours/rounds under the fix with **zero terminal failures observed**, vs. the pre-fix baseline's 174 terminal failures in a single 120-case pass. The `llm_backbone_selection` block, previously silently broken by the `bf16` side-effect, is confirmed working again (e.g. it's part of the ON run's current best node's lineage). The dashboard/monitoring layer means any future recurrence — from DeepInfra or any other backend — would now be caught and flagged automatically rather than silently corrupting a round's score, as originally happened in round_013.
