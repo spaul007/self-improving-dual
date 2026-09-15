@@ -83,6 +83,13 @@ sightseeing_122b_full_eval_3x/
 v3_round014_full_eval_3x/
 v3_round017_full_eval_3x/
 deepinfra_only_3x_32/
+node11_full_eval_3x/
+node18_full_eval_3x/
+node21_full_eval_3x/
+node27_full_eval_1x/
+node31_full_eval_1x/
+node40_full_eval_1x/
+seed_node0_full_eval_3x/
 
 # --- One-off scratch files (not deliverables) ---
 single_hgm_tree.html
