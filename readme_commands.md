@@ -1,7 +1,7 @@
 # Launch cheat-sheet
 
 Agentic editor (bash + str_replace editor tool loop, bwrap-sandboxed, no docker),
-HGM manager, no memory of any kind. `editor.config.read_scope` picks what the
+HGM manager; the edit-memory layer is optional (`edit_memory:` block, see README). `editor.config.read_scope` picks what the
 meta-agent may read: `"run"` (every node of the run) or `"parent"` (only the
 parent node and its own workspace).
 
@@ -15,6 +15,10 @@ PYTHONPATH=. META_AGENT_VERBOSE=1 python3 main_loop.py --config configs/hgm_trav
 PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_tiny_dsv4pro_agentic_no_editmem.yaml
 # 1000-eval run (the 2026-09-13 setup; ~30-35 h, ~$300)
 PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_1000_dsv4pro_agentic_no_editmem.yaml
+# same + the edit-memory layer (agentic curators every 4 expansions, bandit over with/without arms)
+PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_1000_dsv4pro_agentic_editmem.yaml
+# edit-memory smoke (window 2, instruction every 1): check edit_memory/ under the run dir
+PYTHONPATH=. META_AGENT_VERBOSE=1 python3 main_loop.py --config configs/hgm_travel_smoke_agentic_editmem.yaml
 # tests
 PYTHONPATH=. python3 -m unittest discover -s tests
 ```

@@ -508,10 +508,16 @@ class ToolSet:
     """Name → (schema, callable). ``call`` has HGM ``process_tool_call``
     semantics: never raises, every failure is an ``Error: …`` string."""
 
-    def __init__(self, tools: list[tuple[dict[str, Any], Callable[..., str]]]) -> None:
+    def __init__(
+        self, tools: list[tuple[dict[str, Any], Callable[..., str]]],
+        *, submit_name: str = SUBMIT_TOOL_NAME,
+    ) -> None:
         self._tools: dict[str, tuple[dict[str, Any], Callable[..., str]]] = {
             info["name"]: (info, fn) for info, fn in tools
         }
+        # Only for the "not found" message: the submit tool is handled by
+        # the session, not dispatched here.
+        self._submit_name = submit_name
 
     def infos(self) -> list[dict[str, Any]]:
         return [info for info, _ in self._tools.values()]
@@ -522,7 +528,7 @@ class ToolSet:
     def call(self, name: str, args: Any) -> str:
         if name not in self._tools:
             return (f"Error: Tool {name!r} not found. Available: "
-                    f"{', '.join([*self._tools, SUBMIT_TOOL_NAME])}")
+                    f"{', '.join([*self._tools, self._submit_name])}")
         if not isinstance(args, dict):
             args = {}
         if "_raw_arguments" in args:

@@ -22,9 +22,18 @@ understand the tools). The project's ``benchmark/`` (scorer, cases) and
 ``data/`` are never readable — they are not roots, and a deny-list guards
 against a misconfigured root.
 
+Edit memory: the run-level ``edit_memory/`` directory is always denied to
+the editor (both arms of the with/without-memory bandit must not browse it);
+an expansion on the with-memory arm gets exactly one file back through
+``read_files`` — checked before the deny list — exposed as
+``$EDIT_MEMORY_FILE``. The curators of the edit-memory layer use the same
+``PathPolicy`` with ``named_roots`` (their own ``$WORK_DIR`` / ``$NODE_i``
+roots) instead of the editor's four.
+
 The bash side of the policy is enforced by the bubblewrap binds built from
-``read_roots``; when the sandbox falls back to unconfined mode only the
-``editor`` tool enforces it.
+``read_roots`` (deny roots inside a read root are masked with a tmpfs, then
+``read_files`` are bound back); when the sandbox falls back to unconfined
+mode only the ``editor`` tool enforces it.
 """
 from __future__ import annotations
 
@@ -52,6 +61,15 @@ ROOT_VARS = ("RUN_DIR", "NODE_DIR", "PARENT_DIR", "REPO_DIR")
 READ_SCOPE_RUN = "run"
 READ_SCOPE_PARENT = "parent"
 READ_SCOPES = (READ_SCOPE_RUN, READ_SCOPE_PARENT)
+# The edit-memory layer's directory under the run root (see
+# meta_agent/edit_memory); always denied to the editor.
+MEMORY_DIR_NAME = "edit_memory"
+# Root var + prompt row for the edit-memory file on the with-memory arm.
+MEMORY_ROOT_VAR = "EDIT_MEMORY_FILE"
+MEMORY_LEGEND_LINE = (
+    "  accumulated edit memory of previous edits in this run (ranked edits, "
+    "what worked, shortcomings): $EDIT_MEMORY_FILE"
+)
 ROUND_LEGEND = (
     ("hgm_node.json", "tree stats: parent_id, mean_utility, n_evals"),
     ("strategy.json", "the edit summary that produced this node"),
@@ -78,6 +96,14 @@ class PathPolicy:
     project_root: Optional[Path]
     project_name: str
     read_scope: str = READ_SCOPE_RUN
+    # Single files readable even inside a denied directory (checked before
+    # ``deny_roots``); the sandbox binds them back after masking the deny.
+    read_files: tuple[Path, ...] = ()
+    # The with-memory arm's memory file; rendered as $EDIT_MEMORY_FILE.
+    memory_file: Optional[Path] = None
+    # Curator policies: when non-empty these ARE the roots (name, path), in
+    # this order, and the editor's four are not used.
+    named_roots: tuple[tuple[str, Path], ...] = ()
 
     # ------------------------------------------------------------------ #
     # Roots
@@ -87,7 +113,11 @@ class PathPolicy:
         """``RUN_DIR`` / ``NODE_DIR`` / ``PARENT_DIR`` / ``REPO_DIR`` — the
         only absolute paths the agent ever needs; exported as env vars in
         every bash call and expanded by the editor tool. ``RUN_DIR`` is
-        absent under read_scope "parent"."""
+        absent under read_scope "parent"; ``EDIT_MEMORY_FILE`` present only
+        with a ``memory_file``. A curator policy returns its ``named_roots``
+        instead."""
+        if self.named_roots:
+            return {name: path for name, path in self.named_roots}
         out: dict[str, Path] = {}
         if self.read_scope == READ_SCOPE_RUN:
             out["RUN_DIR"] = (self.run_root if self.run_root is not None
@@ -95,23 +125,27 @@ class PathPolicy:
         out["NODE_DIR"] = self.out_dir
         out["PARENT_DIR"] = self.base_dir
         out["REPO_DIR"] = self.repo_root
+        if self.memory_file is not None:
+            out[MEMORY_ROOT_VAR] = self.memory_file
         return out
 
     def root_vars(self) -> tuple[str, ...]:
-        """The ``$VAR`` names this policy defines, in ``ROOT_VARS`` order."""
-        return tuple(v for v in ROOT_VARS if v in self.roots())
+        """The ``$VAR`` names this policy defines, in prompt order."""
+        return tuple(self.roots())
 
     def var_path(self, path: Path) -> str:
         """Render ``path`` as ``$VAR/...`` using the most specific root
         (NODE_DIR before RUN_DIR, since it lies inside it)."""
         path = Path(path)
         roots = self.roots()
-        for var in ("NODE_DIR", "PARENT_DIR", "RUN_DIR", "REPO_DIR"):
-            if var not in roots:
-                continue
-            root = roots[var]
-            if path == root:
+        # Most specific first for the editor's roots; curator roots in order.
+        order = [v for v in ("NODE_DIR", "PARENT_DIR", "RUN_DIR", "REPO_DIR") if v in roots]
+        order += [v for v in roots if v not in order]
+        for var in order:                       # an exact root (e.g. a file root) wins
+            if path == roots[var]:
                 return f"${var}"
+        for var in order:
+            root = roots[var]
             if root in path.parents:
                 return f"${var}/{path.relative_to(root)}"
         return str(path)
@@ -125,7 +159,7 @@ class PathPolicy:
         if not isinstance(path_str, str) or not path_str.strip():
             raise ValueError("Error: path is required")
         text = path_str.strip()
-        m = re.match(r"^\$\{?([A-Z_]+)\}?(?:/|$)(.*)$", text)
+        m = re.match(r"^\$\{?([A-Z_][A-Z0-9_]*)\}?(?:/|$)(.*)$", text)
         if m:
             var, rest = m.group(1), m.group(2)
             if var not in self.roots():
@@ -155,6 +189,8 @@ class PathPolicy:
         return self._under_write_dir(path)
 
     def can_read(self, path: Path) -> bool:
+        if path in self.read_files:
+            return True
         if _is_denied(path, self.deny_roots):
             return False
         if self.can_write(path):
@@ -181,7 +217,12 @@ class PathPolicy:
         """The workspace map for the instruction prompt: roots as ``$VAR``,
         writable files, the parent's evidence legend, the platform/project
         reference, and a listing of the agent. Under read_scope "parent"
-        there is no ``RUN_DIR`` row and no mention of other nodes."""
+        there is no ``RUN_DIR`` row and no mention of other nodes. With a
+        ``memory_file`` the roots table and the reference gain one row each.
+        Editor policies only (curators render their own map)."""
+        if self.named_roots:
+            raise ValueError("describe() renders the editor's map; curator "
+                             "policies use their own renderer")
         run_scope = self.read_scope == READ_SCOPE_RUN
         lines = [
             "## Roots (environment variables in every bash call; the editor "
@@ -208,6 +249,10 @@ class PathPolicy:
             ]
         lines += [
             "  REPO_DIR    the repository root",
+        ]
+        if self.memory_file is not None:
+            lines.append("  EDIT_MEMORY_FILE  the edit memory of this run (see below)")
+        lines += [
             "",
             "## Workspace (nothing outside these exists for bash or the "
             "editor tool)",
@@ -240,6 +285,8 @@ class PathPolicy:
                 lines.append(f"     {name:<22} {meaning}")
         if run_scope:
             lines.append("  every other node $RUN_DIR/round_NNN/ has the same layout.")
+        if self.memory_file is not None:
+            lines.append(MEMORY_LEGEND_LINE)
         lines.append(
             "  platform (call_llm, runner, trace, tools registry): "
             "$REPO_DIR/platform_core/"
@@ -307,7 +354,12 @@ def build_policy(
     project_root: Optional[Path] = None,
     project_name: str = "",
     read_scope: str = READ_SCOPE_RUN,
+    memory_dir: Optional[Path] = None,
+    memory_file: Optional[Path] = None,
 ) -> PathPolicy:
+    """The editor's policy. ``memory_dir`` (the run's ``edit_memory/``) is
+    always denied; ``memory_file`` (a file inside it) is readable on the
+    with-memory arm only, as ``$EDIT_MEMORY_FILE``."""
     if read_scope not in READ_SCOPES:
         raise ValueError(f"read_scope must be one of {sorted(READ_SCOPES)}, "
                          f"got {read_scope!r}")
@@ -346,6 +398,12 @@ def build_policy(
     if project_root is not None:
         deny += [project_root / "benchmark", project_root / "data"]
         deny += sorted(project_root.glob("*_error_categorizer.py"))
+    memory_dir_r = _real(Path(memory_dir)) if memory_dir else None
+    if memory_dir_r is not None:
+        deny.append(memory_dir_r)
+    memory_file_r = _real(Path(memory_file)) if memory_file else None
+    if memory_file_r is not None and memory_dir_r is None:
+        raise ValueError("memory_file requires memory_dir")
     return PathPolicy(
         out_dir=out_dir,
         base_dir=base_dir,
@@ -360,6 +418,8 @@ def build_policy(
         project_root=project_root,
         project_name=project_name,
         read_scope=read_scope,
+        read_files=(memory_file_r,) if memory_file_r is not None else (),
+        memory_file=memory_file_r,
     )
 
 

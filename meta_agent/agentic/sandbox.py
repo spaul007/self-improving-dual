@@ -152,6 +152,15 @@ def bwrap_argv(
         # --ro-bind-try: a root that vanished between policy build and this
         # call (e.g. an archive dir being rotated) must not abort the command.
         argv += ["--ro-bind-try", str(root), str(root)]
+    # A deny root that lies inside a read root (the run's edit_memory/ under
+    # $RUN_DIR) would be visible through the bind above: mask it with an empty
+    # tmpfs, then bind back the single files the policy allows (the
+    # with-memory arm's $EDIT_MEMORY_FILE). Same precedence as can_read.
+    for d in policy.deny_roots:
+        if d.exists() and any(_inside(d, r) for r in policy.read_roots):
+            argv += ["--tmpfs", str(d)]
+    for f in policy.read_files:
+        argv += ["--ro-bind-try", str(f), str(f)]
     for d in policy.write_dirs:
         if d.exists():
             argv += ["--bind", str(d), str(d)]
@@ -166,6 +175,10 @@ def bwrap_argv(
     argv += ["--chdir", str(policy.task_agent)]
     argv += ["bash", "-c", command]
     return argv
+
+
+def _inside(path: Path, root: Path) -> bool:
+    return path == root or root in path.parents
 
 
 def fallback_env(policy: PathPolicy) -> dict[str, str]:

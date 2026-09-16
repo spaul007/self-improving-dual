@@ -389,6 +389,56 @@ class TestBwrapConfinement(unittest.TestCase):
         self.assertIn('"event": "seed"', self.bash("cat $RUN_DIR/tree_snapshots.jsonl"))
         self.assertEqual(self.bash("cd $NODE_DIR/task_agent && python3 -c 'import workflow; print(1)'"), "1")
 
+    def test_edit_memory_dir_masked_and_file_bound_back(self) -> None:
+        mem_dir = self.run / "edit_memory"
+        (mem_dir / "window_001").mkdir(parents=True)
+        mem_file = mem_dir / "edit_memory_v001.md"
+        mem_file.write_text("MEMORY-CONTENT\n")
+        (mem_dir / "edit_memory.md").write_text("MEMORY-CONTENT\n")
+        (mem_dir / "window_001" / "curation.md").write_text("CURATION-SECRET\n")
+        for scope in ("run", "parent"):
+            without = build_policy(out_dir=self.out, base_dir=self.base, repo_root=REPO_ROOT,
+                                   project_root=self.proj, read_scope=scope, memory_dir=mem_dir)
+            bash = BashTool(Sandbox(without, mode="bwrap", bash_timeout_s=30), max_output_chars=5000)
+            self.assertNotIn("MEMORY-CONTENT", bash(f"cat {mem_dir}/edit_memory.md {mem_file} 2>&1"))
+            self.assertNotIn("CURATION-SECRET", bash(f"grep -r SECRET {self.run} 2>&1"))
+            self.assertEqual(bash(f"ls {mem_dir} 2>/dev/null | wc -l").strip(), "0")
+            self.assertEqual(bash('echo "${EDIT_MEMORY_FILE:-unset}"'), "unset")
+            with_ = build_policy(out_dir=self.out, base_dir=self.base, repo_root=REPO_ROOT,
+                                 project_root=self.proj, read_scope=scope, memory_dir=mem_dir,
+                                 memory_file=mem_file)
+            bash = BashTool(Sandbox(with_, mode="bwrap", bash_timeout_s=30), max_output_chars=5000)
+            self.assertEqual(bash("cat $EDIT_MEMORY_FILE").strip(), "MEMORY-CONTENT")
+            self.assertNotIn("MEMORY-CONTENT", bash(f"cat {mem_dir}/edit_memory.md 2>&1"))
+            self.assertNotIn("CURATION-SECRET", bash(f"cat {mem_dir}/window_001/curation.md 2>&1"))
+            # The masked dir shows nothing but the one bound-back file.
+            self.assertEqual(bash(f"ls {mem_dir}").strip(), "edit_memory_v001.md")
+
+    def test_curator_policy_sees_window_nodes_only(self) -> None:
+        from meta_agent.edit_memory.policy import build_curator_policy
+        mem_dir = self.run / "edit_memory"
+        (mem_dir / "window_001").mkdir(parents=True)
+        (mem_dir / "edit_memory.md").write_text("MEMORY-CONTENT\n")
+        (self.base / "strategy.json").write_text('{"goal": "PARENT-GOAL"}')
+        (self.out / "strategy.json").write_text('{"goal": "NODE-GOAL"}')
+        other = self.run / "round_009"
+        _agent(other, WF)
+        (other / "strategy.json").write_text('{"goal": "OTHER-SECRET"}')
+        pol = build_curator_policy(workspace=mem_dir / "window_001", memory_dir=mem_dir,
+                                   node_dirs=[self.out], parent_dirs=[self.base],
+                                   repo_root=REPO_ROOT, project_root=self.proj)
+        bash = BashTool(Sandbox(pol, mode="bwrap", bash_timeout_s=30), max_output_chars=5000)
+        self.assertIn("NODE-GOAL", bash("cat $NODE_1/strategy.json"))
+        self.assertIn("PARENT-GOAL", bash("cat $PARENT_1/strategy.json"))
+        self.assertIn("MEMORY-CONTENT", bash("cat $MEMORY_DIR/edit_memory.md"))
+        self.assertIn("No such file", bash(f"cat {other}/strategy.json 2>&1"))
+        self.assertNotIn("OTHER-SECRET", bash(f"grep -r SECRET {self.run} 2>&1"))
+        self.assertEqual(bash("pwd"), str(pol.out_dir))
+        self.assertEqual(bash("echo hi > $WORK_DIR/notes.txt && cat $WORK_DIR/notes.txt"), "hi")
+        self.assertIn("Read-only file system", bash("touch $NODE_1/x 2>&1; touch $MEMORY_DIR/x 2>&1"))
+        self.assertIn("No such file", bash(f"cat {self.proj}/data/db.csv 2>&1"))
+        self.assertIn("-    x = 1", bash("cd $WORK_DIR && printf 'def run_task(task):\\n    x = 2\\n' > v2.py && diff -u $NODE_1/task_agent/workflow.py v2.py; true"))
+
     def test_parent_read_scope_hides_other_nodes(self) -> None:
         pol = build_policy(out_dir=self.out, base_dir=self.base, repo_root=REPO_ROOT,
                            project_root=self.proj, read_scope="parent")

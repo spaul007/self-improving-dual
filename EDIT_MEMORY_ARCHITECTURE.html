@@ -1,0 +1,639 @@
+<title>Edit-Memory HGM Architecture</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    --paper: #f6f7f4;
+    --panel: #eceee9;
+    --ink: #1b2330;
+    --muted: #6a7480;
+    --line: #c9cec6;
+    --mem: #2c5f8f;
+    --mem-soft: #dbe6f1;
+    --instr: #b6741c;
+    --instr-soft: #f3e6d2;
+    --deny: #9a3b3b;
+    --deny-soft: #f2dcdc;
+    --ok: #3d7a4a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper: #141a21; --panel: #1d2530; --ink: #e5e9ec; --muted: #9aa5b1; --line: #3a4552;
+      --mem: #7fb2e3; --mem-soft: #1f3450; --instr: #e2a54e; --instr-soft: #3f3020;
+      --deny: #e08a8a; --deny-soft: #46262a; --ok: #7fc08b;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #141a21; --panel: #1d2530; --ink: #e5e9ec; --muted: #9aa5b1; --line: #3a4552;
+    --mem: #7fb2e3; --mem-soft: #1f3450; --instr: #e2a54e; --instr-soft: #3f3020;
+    --deny: #e08a8a; --deny-soft: #46262a; --ok: #7fc08b;
+  }
+  body { background: var(--paper); color: var(--ink); font-family: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif; font-size: 15px; line-height: 1.55; }
+  .wrap { max-width: 980px; margin: 0 auto; padding-block: 32px 64px; padding-inline: 20px; }
+  h1, h2, h3 { font-family: "Newsreader", Georgia, "Times New Roman", serif; font-weight: 600; text-wrap: balance; line-height: 1.15; margin: 0; }
+  h1 { font-size: 2.4rem; letter-spacing: -0.01em; }
+  h2 { font-size: 1.55rem; margin-top: 56px; padding-top: 16px; border-top: 1px solid var(--line); }
+  h3 { font-size: 1.15rem; margin-top: 28px; }
+  p { max-width: 68ch; margin: 12px 0; }
+  .lede { font-size: 1.05rem; color: var(--muted); max-width: 70ch; }
+  .eyebrow { font-family: "IBM Plex Mono", Menlo, Consolas, monospace; font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  code, .mono { font-family: "IBM Plex Mono", Menlo, Consolas, monospace; font-size: 0.86em; }
+  code { background: var(--panel); padding: 1px 5px; border-radius: 3px; }
+  pre { background: var(--panel); padding: 14px 16px; border-radius: 4px; overflow-x: auto; font-family: "IBM Plex Mono", Menlo, Consolas, monospace; font-size: 0.82rem; line-height: 1.5; margin: 14px 0; }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  figure { margin: 22px 0; }
+  .fig { overflow-x: auto; background: var(--panel); border-radius: 4px; padding: 12px; }
+  .fig svg { display: block; max-width: 100%; height: auto; min-width: 640px; color: var(--ink); font-family: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif; }
+  figcaption { font-size: 0.88rem; color: var(--muted); margin-top: 8px; max-width: 78ch; }
+  figcaption b { color: var(--ink); font-weight: 600; }
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; margin: 16px 0; }
+  .note { border-left: 3px solid var(--mem); padding: 8px 14px; background: var(--mem-soft); border-radius: 0 4px 4px 0; max-width: 72ch; }
+  .note.instr { border-color: var(--instr); background: var(--instr-soft); }
+  .note.warn { border-color: var(--deny); background: var(--deny-soft); }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin: 14px 0; }
+  .tbl { overflow-x: auto; }
+  th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  th { font-weight: 600; font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+  td.k { font-family: "IBM Plex Mono", Menlo, Consolas, monospace; font-size: 0.82rem; white-space: nowrap; }
+  .pill { display: inline-block; font-family: "IBM Plex Mono", Menlo, Consolas, monospace; font-size: 0.72rem; padding: 1px 7px; border-radius: 10px; border: 1px solid currentColor; }
+  .pill.ok { color: var(--ok); } .pill.no { color: var(--deny); } .pill.mem { color: var(--mem); } .pill.instr { color: var(--instr); }
+  ol.check { padding-left: 22px; max-width: 72ch; } ol.check li { margin: 6px 0; }
+  .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin: 22px 0 8px; }
+  .summary div { background: var(--panel); border-radius: 4px; padding: 10px 12px; font-size: 0.9rem; }
+  .summary .lbl { font-family: "IBM Plex Mono", Menlo, Consolas, monospace; font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  a { color: var(--mem); }
+  ul { max-width: 72ch; } li { margin: 4px 0; }
+  .toc { font-size: 0.9rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 18px 0 0; padding: 0; list-style: none; }
+  .toc a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--line); }
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">self-improving-dual · branch agentic-clean · design for review · 2026-09-16</div>
+  <h1>Edit-Memory HGM Architecture</h1>
+  <p class="lede">How the proposed edit-memory layer sits on the HGM tree search with the agentic editor: which arm each expansion takes, what the curators read, where the two textual variables (the memory <i>B</i> and the generator instruction <i>I</i>) are updated, and what every component can and cannot see.</p>
+
+  <div class="summary">
+    <div><span class="lbl">Search</span><br>HGM tree, <code>expand_eval_size 16</code>, budget 1000 evals</div>
+    <div><span class="lbl">Editor</span><br>agentic session (bash · editor · validate · submit), bwrap</div>
+    <div><span class="lbl">Memory B<sub>j</sub></span><br>written every <i>m</i> successful expansions, no score predictions</div>
+    <div><span class="lbl">Instruction I<sub>k</sub></span><br>fixed core + addendum, updated every <i>n</i> memory versions</div>
+    <div><span class="lbl">Arm choice</span><br>Thompson bandit: with-memory vs without</div>
+  </div>
+  <ul class="toc">
+    <li><a href="#loop">1 The loop</a></li><li><a href="#expand">2 One expansion</a></li><li><a href="#cadence">3 Cadence</a></li>
+    <li><a href="#memory">4 Memory update</a></li><li><a href="#instr">5 Instruction update</a></li><li><a href="#bandit">6 Bandit</a></li>
+    <li><a href="#vis">7 Visibility</a></li><li><a href="#io">8 Inputs &amp; outputs</a></li><li><a href="#layout">9 Files &amp; config</a></li><li><a href="#eval">10 Evaluation checklist</a></li>
+  </ul>
+
+  <h2 id="loop">1 · The loop with the memory layer attached</h2>
+  <p>The HGM manager is unchanged in its regime: a scheduler alternates EXPAND and EVALUATE steps until the evaluation budget is spent. The edit-memory layer is an observer that hooks the same events the tree snapshotter already sees, and one extra input into EXPAND.</p>
+  <figure>
+    <div class="fig">
+    <svg viewBox="0 0 1040 470" role="img" aria-label="HGM loop: seed, scheduler, expand with bandit-chosen arm, agentic editor, child node, paired evaluation, event hook into the edit-memory layer, which every m successful expansions writes a new memory version that feeds back into with-memory expansions">
+      <defs>
+        <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+        <marker id="a1m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--mem)"/></marker>
+        <marker id="a1i" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--instr)"/></marker>
+      </defs>
+      <!-- manager band -->
+      <rect x="20" y="20" width="1000" height="230" rx="4" fill="none" stroke="currentColor" stroke-dasharray="4 4" opacity="0.5"/>
+      <text x="32" y="40" font-size="11" fill="var(--muted)" letter-spacing="1.5">HGMManager.evolve()</text>
+
+      <!-- seed -->
+      <rect x="40" y="90" width="120" height="56" rx="3" fill="var(--paper)" stroke="currentColor"/>
+      <text x="100" y="113" font-size="12" text-anchor="middle" font-weight="600">seed root</text>
+      <text x="100" y="130" font-size="11" text-anchor="middle" fill="var(--muted)">pre-eval on 60 train</text>
+
+      <!-- scheduler -->
+      <rect x="200" y="80" width="150" height="76" rx="3" fill="var(--paper)" stroke="currentColor"/>
+      <text x="275" y="104" font-size="12" text-anchor="middle" font-weight="600">scheduler</text>
+      <text x="275" y="121" font-size="11" text-anchor="middle" fill="var(--muted)">spent^α vs #nodes</text>
+      <text x="275" y="137" font-size="11" text-anchor="middle" fill="var(--muted)">Thompson over CMP</text>
+      <line x1="160" y1="118" x2="200" y2="118" stroke="currentColor" marker-end="url(#a1)"/>
+
+      <!-- expand -->
+      <rect x="400" y="60" width="180" height="116" rx="3" fill="var(--paper)" stroke="currentColor"/>
+      <text x="490" y="82" font-size="12" text-anchor="middle" font-weight="600">EXPAND(parent)</text>
+      <text x="490" y="100" font-size="11" text-anchor="middle" fill="var(--muted)">1 · bandit picks arm</text>
+      <text x="490" y="116" font-size="11" text-anchor="middle" fill="var(--muted)">2 · copy parent → round_NNN</text>
+      <text x="490" y="132" font-size="11" text-anchor="middle" fill="var(--muted)">3 · agentic editor session</text>
+      <text x="490" y="148" font-size="11" text-anchor="middle" fill="var(--muted)">4 · strategy.json, hgm_node.json</text>
+      <text x="490" y="164" font-size="11" text-anchor="middle" fill="var(--muted)">5 · paired eval (16 cases)</text>
+      <line x1="350" y1="105" x2="400" y2="105" stroke="currentColor" marker-end="url(#a1)"/>
+      <text x="375" y="98" font-size="10" text-anchor="middle" fill="var(--muted)">expand</text>
+
+      <!-- evaluate -->
+      <rect x="400" y="196" width="180" height="44" rx="3" fill="var(--paper)" stroke="currentColor"/>
+      <text x="490" y="215" font-size="12" text-anchor="middle" font-weight="600">EVALUATE(node)</text>
+      <text x="490" y="231" font-size="11" text-anchor="middle" fill="var(--muted)">top-up batch of 16 cases</text>
+      <line x1="350" y1="140" x2="400" y2="215" stroke="currentColor" marker-end="url(#a1)"/>
+      <text x="360" y="190" font-size="10" fill="var(--muted)">evaluate</text>
+
+      <!-- tree -->
+      <rect x="640" y="60" width="160" height="180" rx="3" fill="var(--paper)" stroke="currentColor"/>
+      <text x="720" y="82" font-size="12" text-anchor="middle" font-weight="600">tree state</text>
+      <text x="720" y="100" font-size="11" text-anchor="middle" fill="var(--muted)">HGMNode per round_NNN</text>
+      <text x="720" y="116" font-size="11" text-anchor="middle" fill="var(--muted)">n_success, n_failure tallies</text>
+      <text x="720" y="132" font-size="11" text-anchor="middle" fill="var(--muted)">memory_arm, memory_version</text>
+      <text x="720" y="150" font-size="11" text-anchor="middle" fill="var(--muted)">on disk: task_agent/, logs/,</text>
+      <text x="720" y="166" font-size="11" text-anchor="middle" fill="var(--muted)">feedback.json, agentic/</text>
+      <text x="720" y="196" font-size="11" text-anchor="middle" fill="var(--muted)">every step: _snapshot(event)</text>
+      <text x="720" y="212" font-size="11" text-anchor="middle" fill="var(--muted)">+ memory.on_event(event)</text>
+      <line x1="580" y1="118" x2="640" y2="118" stroke="currentColor" marker-end="url(#a1)"/>
+      <text x="610" y="111" font-size="10" text-anchor="middle" fill="var(--muted)">child</text>
+      <line x1="580" y1="218" x2="640" y2="218" stroke="currentColor" marker-end="url(#a1)"/>
+      <text x="610" y="211" font-size="10" text-anchor="middle" fill="var(--muted)">tallies</text>
+      <path d="M640,90 C610,40 300,40 275,80" fill="none" stroke="currentColor" marker-end="url(#a1)"/>
+      <text x="450" y="46" font-size="10" text-anchor="middle" fill="var(--muted)">expandable / evaluable nodes</text>
+
+      <!-- finalize -->
+      <rect x="860" y="90" width="140" height="56" rx="3" fill="var(--paper)" stroke="currentColor"/>
+      <text x="930" y="113" font-size="12" text-anchor="middle" font-weight="600">finalize</text>
+      <text x="930" y="130" font-size="11" text-anchor="middle" fill="var(--muted)">top-k fill-up, LCB pick</text>
+      <line x1="800" y1="118" x2="860" y2="118" stroke="currentColor" marker-end="url(#a1)"/>
+      <text x="830" y="111" font-size="10" text-anchor="middle" fill="var(--muted)">budget out</text>
+
+      <!-- memory layer band -->
+      <rect x="20" y="290" width="1000" height="160" rx="4" fill="var(--mem-soft)" stroke="var(--mem)"/>
+      <text x="32" y="310" font-size="11" fill="var(--mem)" letter-spacing="1.5">EditMemoryLayer (registered edit_memory: block)</text>
+
+      <rect x="40" y="330" width="170" height="90" rx="3" fill="var(--paper)" stroke="var(--mem)"/>
+      <text x="125" y="352" font-size="12" text-anchor="middle" font-weight="600">window counter</text>
+      <text x="125" y="370" font-size="11" text-anchor="middle" fill="var(--muted)">+1 per successful,</text>
+      <text x="125" y="386" font-size="11" text-anchor="middle" fill="var(--muted)">paired-evaluated child</text>
+      <text x="125" y="404" font-size="11" text-anchor="middle" fill="var(--muted)">failed edits: listed, not counted</text>
+      <path d="M720,240 L720,270 L125,270 L125,330" fill="none" stroke="var(--mem)" marker-end="url(#a1m)"/>
+      <text x="420" y="264" font-size="10" text-anchor="middle" fill="var(--mem)">on_event("expand_eval", tree)</text>
+
+      <rect x="260" y="330" width="190" height="90" rx="3" fill="var(--paper)" stroke="var(--mem)"/>
+      <text x="355" y="352" font-size="12" text-anchor="middle" font-weight="600">memory curator</text>
+      <text x="355" y="370" font-size="11" text-anchor="middle" fill="var(--muted)">agentic session over the</text>
+      <text x="355" y="386" font-size="11" text-anchor="middle" fill="var(--muted)">last m nodes + parents</text>
+      <text x="355" y="404" font-size="11" text-anchor="middle" fill="var(--muted)">→ window_j/curation.md (Z)</text>
+      <line x1="210" y1="375" x2="260" y2="375" stroke="var(--mem)" marker-end="url(#a1m)"/>
+      <text x="235" y="368" font-size="10" text-anchor="middle" fill="var(--mem)">== m</text>
+
+      <rect x="500" y="330" width="190" height="90" rx="3" fill="var(--paper)" stroke="var(--mem)"/>
+      <text x="595" y="352" font-size="12" text-anchor="middle" font-weight="600">memory generator</text>
+      <text x="595" y="370" font-size="11" text-anchor="middle" fill="var(--muted)">one call: (Z, B_j, I_k)</text>
+      <text x="595" y="386" font-size="11" text-anchor="middle" fill="var(--muted)">validators: sections, size,</text>
+      <text x="595" y="404" font-size="11" text-anchor="middle" fill="var(--muted)">no score predictions</text>
+      <line x1="450" y1="375" x2="500" y2="375" stroke="var(--mem)" marker-end="url(#a1m)"/>
+      <text x="475" y="368" font-size="10" text-anchor="middle" fill="var(--mem)">Z</text>
+
+      <rect x="740" y="330" width="130" height="90" rx="3" fill="var(--paper)" stroke="var(--mem)"/>
+      <text x="805" y="352" font-size="12" text-anchor="middle" font-weight="600">B_{j+1}</text>
+      <text x="805" y="370" font-size="11" text-anchor="middle" fill="var(--muted)">edit_memory.md</text>
+      <text x="805" y="386" font-size="11" text-anchor="middle" fill="var(--muted)">edit_memory_v00j.md</text>
+      <text x="805" y="404" font-size="11" text-anchor="middle" fill="var(--muted)">state.json</text>
+      <line x1="690" y1="375" x2="740" y2="375" stroke="var(--mem)" marker-end="url(#a1m)"/>
+
+      <rect x="900" y="330" width="110" height="90" rx="3" fill="var(--paper)" stroke="var(--instr)"/>
+      <text x="955" y="352" font-size="12" text-anchor="middle" font-weight="600">I_{k+1}</text>
+      <text x="955" y="370" font-size="11" text-anchor="middle" fill="var(--muted)">every n memory</text>
+      <text x="955" y="386" font-size="11" text-anchor="middle" fill="var(--muted)">versions</text>
+      <text x="955" y="404" font-size="11" text-anchor="middle" fill="var(--muted)">see §5</text>
+      <line x1="870" y1="375" x2="900" y2="375" stroke="var(--instr)" marker-end="url(#a1i)"/>
+      <path d="M955,330 L955,300 L595,300 L595,330" fill="none" stroke="var(--instr)" marker-end="url(#a1i)"/>
+      <text x="775" y="296" font-size="10" text-anchor="middle" fill="var(--instr)">I_k instructs the generator</text>
+
+      <!-- feedback into expand -->
+      <path d="M805,330 L805,280 L830,280 L830,20 L520,20 L520,60" fill="none" stroke="var(--mem)" stroke-dasharray="5 3" marker-end="url(#a1m)"/>
+      <text x="675" y="16" font-size="10" text-anchor="middle" fill="var(--mem)">$EDIT_MEMORY_FILE, only on the with-memory arm</text>
+    </svg>
+    </div>
+    <figcaption><b>Figure 1.</b> The manager's regime is untouched; the memory layer consumes the same events as the tree snapshotter and returns one file to EXPAND. Every m successful expansions the layer curates the last m nodes (agentic session), generates B<sub>j+1</sub> from (Z, B<sub>j</sub>, I<sub>k</sub>) in one call, and every n such versions refreshes the generator instruction I<sub>k</sub>.</figcaption>
+  </figure>
+
+  <h2 id="expand">2 · One expansion: the two arms</h2>
+  <p>An expansion always runs the same agentic editor session on a copy of the parent. The with-memory arm gets <code>$EDIT_MEMORY_FILE</code> bound read-only into its sandbox, a procedure step telling it to read it, and — because the memory cites node ids — the whole run readable regardless of the configured <code>read_scope</code>, so it can open the code and results of every node the memory refers to. The without-memory arm gets the byte-identical prompts of the finished no-editmem run under the configured scope. Both arms are denied the <code>edit_memory/</code> directory itself.</p>
+  <figure>
+    <div class="fig">
+    <svg viewBox="0 0 1040 400" role="img" aria-label="One expansion: bandit chooses with-memory or without-memory arm; both run the agentic editor session on a copy of the parent with the same tools; the with-memory arm additionally gets the edit memory file and a read-memory step; both produce a child round dir which is then paired-evaluated">
+      <defs>
+        <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+        <marker id="a2m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--mem)"/></marker>
+      </defs>
+      <!-- parent -->
+      <rect x="20" y="130" width="150" height="120" rx="3" fill="var(--paper)" stroke="currentColor"/>
+      <text x="95" y="152" font-size="12" text-anchor="middle" font-weight="600">parent round_P</text>
+      <text x="95" y="172" font-size="11" text-anchor="middle" fill="var(--muted)">task_agent/</text>
+      <text x="95" y="188" font-size="11" text-anchor="middle" fill="var(--muted)">feedback.json</text>
+      <text x="95" y="204" font-size="11" text-anchor="middle" fill="var(--muted)">logs/case_*.json</text>
+      <text x="95" y="220" font-size="11" text-anchor="middle" fill="var(--muted)">strategy.json, hgm_node.json</text>
+      <text x="95" y="236" font-size="11" text-anchor="middle" fill="var(--muted)">agentic/transcript.jsonl</text>
+
+      <!-- bandit -->
+      <rect x="210" y="150" width="130" height="80" rx="3" fill="var(--paper)" stroke="currentColor"/>
+      <text x="275" y="172" font-size="12" text-anchor="middle" font-weight="600">bandit</text>
+      <text x="275" y="190" font-size="11" text-anchor="middle" fill="var(--muted)">Beta(S_a+1, F_a+1)</text>
+      <text x="275" y="206" font-size="11" text-anchor="middle" fill="var(--muted)">per arm, sample, argmax</text>
+      <text x="275" y="222" font-size="11" text-anchor="middle" fill="var(--muted)">pooled S_a, F_a per arm</text>
+      <line x1="170" y1="190" x2="210" y2="190" stroke="currentColor" marker-end="url(#a2)"/>
+
+      <!-- with arm -->
+      <line x1="340" y1="175" x2="400" y2="90" stroke="var(--mem)" marker-end="url(#a2m)"/>
+      <text x="352" y="120" font-size="11" fill="var(--mem)" font-weight="600">with</text>
+      <rect x="400" y="30" width="330" height="120" rx="3" fill="var(--mem-soft)" stroke="var(--mem)"/>
+      <text x="565" y="52" font-size="12" text-anchor="middle" font-weight="600">agentic editor session · arm "with"</text>
+      <text x="565" y="72" font-size="11" text-anchor="middle" fill="var(--muted)">tools: bash · editor · validate · submit_self_improvement</text>
+      <text x="565" y="90" font-size="11" text-anchor="middle" fill="var(--mem)" font-weight="600">roots: $RUN_DIR $NODE_DIR $PARENT_DIR $REPO_DIR — whole run, always</text>
+      <text x="565" y="110" font-size="11" text-anchor="middle" fill="var(--mem)" font-weight="600">+ $EDIT_MEMORY_FILE (ro-bind of edit_memory_v00j.md)</text>
+      <text x="565" y="128" font-size="11" text-anchor="middle" fill="var(--mem)" font-weight="600">+ step: read the memory; cited nodes are $RUN_DIR/round_NNN</text>
+
+      <!-- without arm -->
+      <line x1="340" y1="205" x2="400" y2="290" stroke="currentColor" marker-end="url(#a2)"/>
+      <text x="345" y="262" font-size="11" font-weight="600">without</text>
+      <rect x="400" y="230" width="330" height="120" rx="3" fill="var(--paper)" stroke="currentColor"/>
+      <text x="565" y="252" font-size="12" text-anchor="middle" font-weight="600">agentic editor session · arm "without"</text>
+      <text x="565" y="272" font-size="11" text-anchor="middle" fill="var(--muted)">same tools, same budgets; roots per configured read_scope</text>
+      <text x="565" y="290" font-size="11" text-anchor="middle" fill="var(--muted)">system prompt + instruction byte-identical to</text>
+      <text x="565" y="306" font-size="11" text-anchor="middle" fill="var(--muted)">run 20260913_090207 (…_no_editmem)</text>
+      <text x="565" y="330" font-size="11" text-anchor="middle" fill="var(--deny)">edit_memory/ masked with --tmpfs in the sandbox</text>
+
+      <!-- memory file -->
+      <rect x="400" y="170" width="150" height="40" rx="3" fill="var(--paper)" stroke="var(--mem)" stroke-dasharray="4 3"/>
+      <text x="475" y="188" font-size="11" text-anchor="middle" fill="var(--mem)">edit_memory/edit_memory.md</text>
+      <text x="475" y="202" font-size="10" text-anchor="middle" fill="var(--muted)">current B_j (or none yet → arm "none")</text>
+      <line x1="475" y1="170" x2="475" y2="150" stroke="var(--mem)" marker-end="url(#a2m)"/>
+
+      <!-- child -->
+      <rect x="800" y="130" width="220" height="120" rx="3" fill="var(--paper)" stroke="currentColor"/>
+      <text x="910" y="152" font-size="12" text-anchor="middle" font-weight="600">child round_N</text>
+      <text x="910" y="172" font-size="11" text-anchor="middle" fill="var(--muted)">task_agent/ (edited in place)</text>
+      <text x="910" y="188" font-size="11" text-anchor="middle" fill="var(--muted)">strategy.json ← submit args</text>
+      <text x="910" y="204" font-size="11" text-anchor="middle" fill="var(--muted)">agentic/transcript.jsonl, session.json</text>
+      <text x="910" y="220" font-size="11" text-anchor="middle" fill="var(--muted)">hgm_node.json: memory_arm, memory_version</text>
+      <text x="910" y="236" font-size="11" text-anchor="middle" fill="var(--muted)">then: paired eval → logs/, feedback.json</text>
+      <line x1="730" y1="90" x2="800" y2="170" stroke="var(--mem)" marker-end="url(#a2m)"/>
+      <line x1="730" y1="290" x2="800" y2="210" stroke="currentColor" marker-end="url(#a2)"/>
+      <text x="765" y="120" font-size="10" fill="var(--muted)">submit</text>
+      <text x="765" y="268" font-size="10" fill="var(--muted)">submit</text>
+
+      <text x="20" y="380" font-size="11" fill="var(--muted)">Node fields memory_arm ∈ {with, without, none} and memory_version are written to hgm_node.json and tree_snapshots.jsonl, so arms can be compared post hoc with snapshot_eval.py.</text>
+    </svg>
+    </div>
+    <figcaption><b>Figure 2.</b> The arm changes one file, one procedure step and (under <code>read_scope: parent</code>) the visibility of other nodes; tools, sandbox, budgets, validators and the submit contract are shared.</figcaption>
+  </figure>
+
+  <h2 id="cadence">3 · Cadence: windows, versions, arms</h2>
+  <p>With <code>window_size m = 4</code> and <code>instruction_every n = 2</code> a 1000-eval run (~32 expansions) produces ~8 memory versions and ~4 instruction versions. Nodes 1–4 necessarily run without memory (arm <code>none</code>); from B<sub>1</sub> on, the bandit chooses.</p>
+  <figure>
+    <div class="fig">
+    <svg viewBox="0 0 1040 250" role="img" aria-label="Timeline of 16 expansions showing four windows of four successful nodes each, memory versions B1..B4 written after each window, instruction versions I1 and I2 after windows 2 and 4, and per-node arm: none for nodes 1-4, then with or without chosen by the bandit; a failed edit is shown outside the window count">
+      <defs><marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--mem)"/></marker></defs>
+      <line x1="30" y1="120" x2="1010" y2="120" stroke="currentColor" opacity="0.5"/>
+      <text x="30" y="40" font-size="11" fill="var(--muted)" letter-spacing="1.5">EXPANSIONS (successful edits numbered; ✕ = edit failed, listed but not counted)</text>
+      <!-- nodes -->
+      <g font-size="11" text-anchor="middle">
+        <!-- window 1: none -->
+        <rect x="40" y="100" width="40" height="40" rx="3" fill="var(--paper)" stroke="currentColor"/><text x="60" y="124">1</text><text x="60" y="160" fill="var(--muted)">none</text>
+        <rect x="95" y="100" width="40" height="40" rx="3" fill="var(--paper)" stroke="currentColor"/><text x="115" y="124">2</text><text x="115" y="160" fill="var(--muted)">none</text>
+        <rect x="150" y="100" width="40" height="40" rx="3" fill="var(--paper)" stroke="currentColor"/><text x="170" y="124">3</text><text x="170" y="160" fill="var(--muted)">none</text>
+        <rect x="205" y="100" width="40" height="40" rx="3" fill="var(--paper)" stroke="currentColor"/><text x="225" y="124">4</text><text x="225" y="160" fill="var(--muted)">none</text>
+        <!-- window 2 -->
+        <rect x="290" y="100" width="40" height="40" rx="3" fill="var(--mem-soft)" stroke="var(--mem)"/><text x="310" y="124">5</text><text x="310" y="160" fill="var(--mem)">with</text>
+        <rect x="345" y="100" width="40" height="40" rx="3" fill="var(--paper)" stroke="currentColor"/><text x="365" y="124">6</text><text x="365" y="160" fill="var(--muted)">without</text>
+        <rect x="400" y="100" width="40" height="40" rx="3" fill="var(--mem-soft)" stroke="var(--mem)"/><text x="420" y="124">7</text><text x="420" y="160" fill="var(--mem)">with</text>
+        <rect x="455" y="100" width="40" height="40" rx="3" fill="var(--paper)" stroke="var(--deny)" stroke-dasharray="3 2"/><text x="475" y="124" fill="var(--deny)">✕</text><text x="475" y="160" fill="var(--deny)">failed</text>
+        <rect x="510" y="100" width="40" height="40" rx="3" fill="var(--paper)" stroke="currentColor"/><text x="530" y="124">8</text><text x="530" y="160" fill="var(--muted)">without</text>
+        <!-- window 3 -->
+        <rect x="595" y="100" width="40" height="40" rx="3" fill="var(--mem-soft)" stroke="var(--mem)"/><text x="615" y="124">9</text><text x="615" y="160" fill="var(--mem)">with</text>
+        <rect x="650" y="100" width="40" height="40" rx="3" fill="var(--mem-soft)" stroke="var(--mem)"/><text x="670" y="124">10</text><text x="670" y="160" fill="var(--mem)">with</text>
+        <rect x="705" y="100" width="40" height="40" rx="3" fill="var(--paper)" stroke="currentColor"/><text x="725" y="124">11</text><text x="725" y="160" fill="var(--muted)">without</text>
+        <rect x="760" y="100" width="40" height="40" rx="3" fill="var(--mem-soft)" stroke="var(--mem)"/><text x="780" y="124">12</text><text x="780" y="160" fill="var(--mem)">with</text>
+        <!-- window 4 -->
+        <rect x="845" y="100" width="40" height="40" rx="3" fill="var(--mem-soft)" stroke="var(--mem)"/><text x="865" y="124">13</text><text x="865" y="160" fill="var(--mem)">with</text>
+        <rect x="900" y="100" width="40" height="40" rx="3" fill="var(--mem-soft)" stroke="var(--mem)"/><text x="920" y="124">14</text><text x="920" y="160" fill="var(--mem)">with</text>
+        <text x="975" y="124" fill="var(--muted)">…</text>
+      </g>
+      <!-- window brackets -->
+      <g stroke="var(--mem)" fill="none">
+        <path d="M40,90 L40,82 L245,82 L245,90"/>
+        <path d="M290,90 L290,82 L550,82 L550,90"/>
+        <path d="M595,90 L595,82 L800,82 L800,90"/>
+      </g>
+      <g font-size="11" fill="var(--mem)" text-anchor="middle">
+        <text x="142" y="70">window 1 → curate → B₁</text>
+        <text x="420" y="70">window 2 → B₂ · then I₁ (n = 2)</text>
+        <text x="697" y="70">window 3 → B₃</text>
+      </g>
+      <!-- version arrows into next window -->
+      <g stroke="var(--mem)" fill="none">
+        <path d="M245,120 L268,120 L268,180 L310,180 L310,140" marker-end="url(#a3)"/>
+        <path d="M550,120 L572,120 L572,180 L615,180 L615,140" marker-end="url(#a3)"/>
+        <path d="M800,120 L822,120 L822,180 L865,180 L865,140" marker-end="url(#a3)"/>
+      </g>
+      <g font-size="10" fill="var(--mem)" text-anchor="middle">
+        <text x="268" y="200">B₁ visible</text><text x="572" y="200">B₂ visible</text><text x="822" y="200">B₃ visible</text>
+      </g>
+      <text x="30" y="235" font-size="11" fill="var(--muted)">Nodes 1–4 pool into the "without" arm; the first bandit choice is node 5. Later top-ups of a window node update the arm tallies but the window is not re-curated.</text>
+    </svg>
+    </div>
+    <figcaption><b>Figure 3.</b> Example cadence with m = 4, n = 2. A memory version becomes visible only to expansions after its window closes; the bandit is idle until B<sub>1</sub> exists. A failed edit is recorded with its arm but adds no tallies and does not advance the window.</figcaption>
+  </figure>
+
+  <h2 id="memory">4 · Memory update: window → curator → generator</h2>
+  <p>The curator is an agentic session with the same machinery as the editor (bash in bubblewrap, an editor tool, a submit tool), but a different read/write surface: it may read the m window nodes and their parents, and it may write only inside its own window directory. It reads what it wants — nothing is pre-digested for it.</p>
+  <figure>
+    <div class="fig">
+    <svg viewBox="0 0 1040 420" role="img" aria-label="Memory update pipeline: the m window nodes with their parents and artifacts are bound read-only into the curator's sandbox; the curator session writes curation.md; the generator call takes curation.md, the previous memory and the instruction and writes the next memory version after validation">
+      <defs>
+        <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--mem)"/></marker>
+        <marker id="a4c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+      </defs>
+      <!-- window nodes -->
+      <text x="20" y="34" font-size="11" fill="var(--muted)" letter-spacing="1.5">READ-ONLY EVIDENCE ($NODE_1..$NODE_m, $PARENT_1..$PARENT_m)</text>
+      <g font-size="11">
+        <rect x="20" y="50" width="200" height="118" rx="3" fill="var(--paper)" stroke="currentColor"/>
+        <text x="30" y="70" font-weight="600" font-size="12">round_N (node i)</text>
+        <text x="30" y="88" fill="var(--muted)">task_agent/ — diff vs $PARENT_i</text>
+        <text x="30" y="104" fill="var(--muted)">strategy.json — intent</text>
+        <text x="30" y="120" fill="var(--muted)">agentic/transcript.jsonl — editor process</text>
+        <text x="30" y="136" fill="var(--muted)">feedback.json — failure report, metrics</text>
+        <text x="30" y="152" fill="var(--muted)">logs/case_*.json, trace.jsonl (last batch)</text>
+        <rect x="30" y="60" width="200" height="118" rx="3" fill="none" stroke="currentColor" opacity="0.35"/>
+        <rect x="40" y="70" width="200" height="118" rx="3" fill="none" stroke="currentColor" opacity="0.2"/>
+        <text x="130" y="205" text-anchor="middle" fill="var(--muted)">× m nodes (+ their parents)</text>
+      </g>
+      <!-- previous memory -->
+      <rect x="20" y="240" width="200" height="60" rx="3" fill="var(--paper)" stroke="var(--mem)" stroke-dasharray="4 3"/>
+      <text x="120" y="262" font-size="12" text-anchor="middle" font-weight="600">$MEMORY_DIR (read-only)</text>
+      <text x="120" y="280" font-size="11" text-anchor="middle" fill="var(--muted)">B_j, I_k, earlier curations</text>
+
+      <!-- denied -->
+      <rect x="20" y="320" width="200" height="60" rx="3" fill="var(--deny-soft)" stroke="var(--deny)"/>
+      <text x="120" y="342" font-size="12" text-anchor="middle" font-weight="600" fill="var(--deny)">never readable</text>
+      <text x="120" y="360" font-size="11" text-anchor="middle" fill="var(--deny)">benchmark/, data/, categorizer, meta_agent/</text>
+
+      <!-- curator -->
+      <rect x="300" y="60" width="260" height="240" rx="3" fill="var(--mem-soft)" stroke="var(--mem)"/>
+      <text x="430" y="84" font-size="12" text-anchor="middle" font-weight="600">memory curator (agentic session)</text>
+      <text x="430" y="106" font-size="11" text-anchor="middle" fill="var(--muted)">bash (bwrap, cwd $WORK_DIR) · editor · submit_curation</text>
+      <text x="430" y="130" font-size="11" text-anchor="middle" fill="var(--muted)">reads diffs, transcripts, per-case outcomes</text>
+      <text x="430" y="146" font-size="11" text-anchor="middle" fill="var(--muted)">greps mutable_log / error events in traces</text>
+      <text x="430" y="170" font-size="11" text-anchor="middle" fill="var(--muted)">writes per node: what changed · intent ·</text>
+      <text x="430" y="186" font-size="11" text-anchor="middle" fill="var(--muted)">editor process · what evaluation shows ·</text>
+      <text x="430" y="202" font-size="11" text-anchor="middle" fill="var(--muted)">shortcomings (strategy vs implementation) ·</text>
+      <text x="430" y="218" font-size="11" text-anchor="middle" fill="var(--muted)">usefulness verdict with cited evidence</text>
+      <text x="430" y="242" font-size="11" text-anchor="middle" fill="var(--mem)" font-weight="600">+ gradient section w.r.t. B_j:</text>
+      <text x="430" y="258" font-size="11" text-anchor="middle" fill="var(--mem)">confirmed · contradicted · too coarse · missing</text>
+      <text x="430" y="282" font-size="11" text-anchor="middle" fill="var(--muted)">submit accepted iff curation.md has every node section</text>
+      <line x1="220" y1="110" x2="300" y2="110" stroke="currentColor" marker-end="url(#a4c)"/>
+      <line x1="220" y1="270" x2="300" y2="270" stroke="currentColor" marker-end="url(#a4c)"/>
+
+      <!-- Z -->
+      <rect x="600" y="140" width="130" height="80" rx="3" fill="var(--paper)" stroke="var(--mem)"/>
+      <text x="665" y="164" font-size="12" text-anchor="middle" font-weight="600">Z_j</text>
+      <text x="665" y="182" font-size="11" text-anchor="middle" fill="var(--muted)">window_j/curation.md</text>
+      <text x="665" y="198" font-size="11" text-anchor="middle" fill="var(--muted)">+ agentic/transcript.jsonl</text>
+      <line x1="560" y1="180" x2="600" y2="180" stroke="var(--mem)" marker-end="url(#a4)"/>
+
+      <!-- generator -->
+      <rect x="770" y="100" width="250" height="160" rx="3" fill="var(--mem-soft)" stroke="var(--mem)"/>
+      <text x="895" y="124" font-size="12" text-anchor="middle" font-weight="600">memory generator (one call_llm)</text>
+      <text x="895" y="146" font-size="11" text-anchor="middle" fill="var(--muted)">prompt = fixed core + addendum I_k</text>
+      <text x="895" y="162" font-size="11" text-anchor="middle" fill="var(--muted)">+ B_j (full) + Z_j + node ids/arms</text>
+      <text x="895" y="178" font-size="11" text-anchor="middle" fill="var(--muted)">(no mean scores passed)</text>
+      <text x="895" y="202" font-size="11" text-anchor="middle" fill="var(--muted)">TGD step: minimal change of B_j</text>
+      <text x="895" y="218" font-size="11" text-anchor="middle" fill="var(--muted)">that answers the gradient</text>
+      <text x="895" y="242" font-size="11" text-anchor="middle" fill="var(--muted)">validators → retry once → keep B_j</text>
+      <line x1="730" y1="180" x2="770" y2="180" stroke="var(--mem)" marker-end="url(#a4)"/>
+
+      <!-- output -->
+      <rect x="770" y="300" width="250" height="90" rx="3" fill="var(--paper)" stroke="var(--mem)"/>
+      <text x="895" y="322" font-size="12" text-anchor="middle" font-weight="600">B_{j+1} = edit_memory_v00{j+1}.md</text>
+      <text x="895" y="340" font-size="11" text-anchor="middle" fill="var(--muted)">1 ranked edits · 2 usefulness ·</text>
+      <text x="895" y="356" font-size="11" text-anchor="middle" fill="var(--muted)">3 strategy vs implementation · 4 guidance</text>
+      <text x="895" y="374" font-size="11" text-anchor="middle" fill="var(--muted)">copied to edit_memory.md</text>
+      <line x1="895" y1="260" x2="895" y2="300" stroke="var(--mem)" marker-end="url(#a4)"/>
+
+      <text x="300" y="340" font-size="11" fill="var(--muted)">$WORK_DIR = edit_memory/window_j/ is the only writable path (curation.md, scratch/).</text>
+      <text x="300" y="358" font-size="11" fill="var(--muted)">Validators on B: required sections · ≤ memory_max_chars · regex reject of score predictions</text>
+      <text x="300" y="376" font-size="11" fill="var(--muted)">(\bpredict…, expected score/gain, will raise/reach … digit, ±d.d points).</text>
+    </svg>
+    </div>
+    <figcaption><b>Figure 4.</b> Curation and generation are separate: the curator is an open-ended tool-use session confined to the window's evidence and produces Z (per-node feedback plus a gradient against the current memory); the generator is one constrained call that rewrites B<sub>j</sub> under the instruction I<sub>k</sub>. The memory ranks edits by judged usefulness, never by score, and may not contain predictions.</figcaption>
+  </figure>
+
+  <h2 id="instr">5 · Instruction update as nested TextGrad</h2>
+  <p>Two textual variables are optimized, one inside the other. Inner: the memory B (gradient Z from each window). Outer: the generator's instruction addendum I (gradient Q from how editors used the memory and how task agents fared). In TextGrad terms the curators are the backward pass and the two generator calls are textual-gradient-descent steps; the fixed core of I is the part TextGrad keeps constant.</p>
+  <figure>
+    <div class="fig">
+    <svg viewBox="0 0 1040 430" role="img" aria-label="Nested TextGrad loops: forward path I_k to B_j to with-memory editors to child task agents to evaluations; inner backward pass from window evidence to Z to memory generator to B_{j+1}; outer backward pass from editor transcripts and task-agent trajectories to Q via the instruction curator to the instruction update to I_{k+1}">
+      <defs>
+        <marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+        <marker id="a5m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--mem)"/></marker>
+        <marker id="a5i" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--instr)"/></marker>
+      </defs>
+      <text x="20" y="30" font-size="11" fill="var(--muted)" letter-spacing="1.5">FORWARD (solid, left → right)</text>
+      <!-- forward chain -->
+      <rect x="20" y="60" width="150" height="70" rx="3" fill="var(--instr-soft)" stroke="var(--instr)"/>
+      <text x="95" y="84" font-size="12" text-anchor="middle" font-weight="600">I_k</text>
+      <text x="95" y="102" font-size="11" text-anchor="middle" fill="var(--muted)">fixed core (code)</text>
+      <text x="95" y="118" font-size="11" text-anchor="middle" fill="var(--muted)">+ addendum ≤ 4000 chars</text>
+
+      <rect x="230" y="60" width="150" height="70" rx="3" fill="var(--mem-soft)" stroke="var(--mem)"/>
+      <text x="305" y="84" font-size="12" text-anchor="middle" font-weight="600">B_j</text>
+      <text x="305" y="102" font-size="11" text-anchor="middle" fill="var(--muted)">edit_memory.md</text>
+      <text x="305" y="118" font-size="11" text-anchor="middle" fill="var(--muted)">≤ 20000 chars</text>
+      <line x1="170" y1="95" x2="230" y2="95" stroke="currentColor" marker-end="url(#a5)"/>
+      <text x="200" y="88" font-size="10" text-anchor="middle" fill="var(--muted)">instructs</text>
+
+      <rect x="440" y="60" width="170" height="70" rx="3" fill="var(--paper)" stroke="currentColor"/>
+      <text x="525" y="84" font-size="12" text-anchor="middle" font-weight="600">editors (arm "with")</text>
+      <text x="525" y="102" font-size="11" text-anchor="middle" fill="var(--muted)">τ_meta = agentic/</text>
+      <text x="525" y="118" font-size="11" text-anchor="middle" fill="var(--muted)">transcript.jsonl</text>
+      <line x1="380" y1="95" x2="440" y2="95" stroke="currentColor" marker-end="url(#a5)"/>
+      <text x="410" y="88" font-size="10" text-anchor="middle" fill="var(--muted)">read by</text>
+
+      <rect x="670" y="60" width="170" height="70" rx="3" fill="var(--paper)" stroke="currentColor"/>
+      <text x="755" y="84" font-size="12" text-anchor="middle" font-weight="600">task agents (children)</text>
+      <text x="755" y="102" font-size="11" text-anchor="middle" fill="var(--muted)">τ_task± = logs/case_*.json</text>
+      <text x="755" y="118" font-size="11" text-anchor="middle" fill="var(--muted)">split by passed, mutable_log</text>
+      <line x1="610" y1="95" x2="670" y2="95" stroke="currentColor" marker-end="url(#a5)"/>
+      <text x="640" y="88" font-size="10" text-anchor="middle" fill="var(--muted)">edit</text>
+
+      <rect x="900" y="60" width="120" height="70" rx="3" fill="var(--paper)" stroke="currentColor"/>
+      <text x="960" y="84" font-size="12" text-anchor="middle" font-weight="600">evaluation</text>
+      <text x="960" y="102" font-size="11" text-anchor="middle" fill="var(--muted)">per-case pass/fail,</text>
+      <text x="960" y="118" font-size="11" text-anchor="middle" fill="var(--muted)">failed checks</text>
+      <line x1="840" y1="95" x2="900" y2="95" stroke="currentColor" marker-end="url(#a5)"/>
+
+      <!-- inner backward -->
+      <text x="20" y="180" font-size="11" fill="var(--mem)" letter-spacing="1.5">INNER BACKWARD · every m expansions · variable B</text>
+      <rect x="440" y="200" width="230" height="64" rx="3" fill="var(--mem-soft)" stroke="var(--mem)"/>
+      <text x="555" y="222" font-size="12" text-anchor="middle" font-weight="600">memory curator → Z_j</text>
+      <text x="555" y="240" font-size="11" text-anchor="middle" fill="var(--muted)">∂L/∂B: per-claim confirmed / contradicted /</text>
+      <text x="555" y="255" font-size="11" text-anchor="middle" fill="var(--muted)">too coarse / missing, node ids as evidence</text>
+      <path d="M755,130 L755,232 L670,232" fill="none" stroke="var(--mem)" stroke-dasharray="5 3" marker-end="url(#a5m)"/>
+      <path d="M960,130 L960,250 L670,250" fill="none" stroke="var(--mem)" stroke-dasharray="5 3" marker-end="url(#a5m)"/>
+      <rect x="230" y="200" width="150" height="64" rx="3" fill="var(--mem-soft)" stroke="var(--mem)"/>
+      <text x="305" y="222" font-size="12" text-anchor="middle" font-weight="600">TGD step on B</text>
+      <text x="305" y="240" font-size="11" text-anchor="middle" fill="var(--muted)">generate_memory(Z, B_j, I_k)</text>
+      <text x="305" y="255" font-size="11" text-anchor="middle" fill="var(--muted)">→ B_{j+1}</text>
+      <line x1="440" y1="232" x2="380" y2="232" stroke="var(--mem)" stroke-dasharray="5 3" marker-end="url(#a5m)"/>
+      <line x1="305" y1="200" x2="305" y2="130" stroke="var(--mem)" marker-end="url(#a5m)"/>
+      <text x="330" y="168" font-size="10" fill="var(--mem)">update</text>
+
+      <!-- outer backward -->
+      <text x="20" y="310" font-size="11" fill="var(--instr)" letter-spacing="1.5">OUTER BACKWARD · every n memory versions · variable I</text>
+      <rect x="440" y="330" width="400" height="64" rx="3" fill="var(--instr-soft)" stroke="var(--instr)"/>
+      <text x="640" y="352" font-size="12" text-anchor="middle" font-weight="600">instruction curator → Q_k (agentic, reads τ_meta, τ_task±, B_j, I_k)</text>
+      <text x="640" y="370" font-size="11" text-anchor="middle" fill="var(--muted)">∂L/∂I: memory usage by editors · effect on task agents · missing information ·</text>
+      <text x="640" y="385" font-size="11" text-anchor="middle" fill="var(--muted)">representation issues · per-bullet keep / change / drop of the addendum</text>
+      <path d="M525,130 L525,150 L420,150 L420,362 L440,362" fill="none" stroke="var(--instr)" stroke-dasharray="5 3" marker-end="url(#a5i)"/>
+      <path d="M800,130 L800,150 L860,150 L860,362 L840,362" fill="none" stroke="var(--instr)" stroke-dasharray="5 3" marker-end="url(#a5i)"/>
+      <rect x="20" y="330" width="150" height="64" rx="3" fill="var(--instr-soft)" stroke="var(--instr)"/>
+      <text x="95" y="352" font-size="12" text-anchor="middle" font-weight="600">TGD step on I</text>
+      <text x="95" y="370" font-size="11" text-anchor="middle" fill="var(--muted)">update_instruction(Q, I_k)</text>
+      <text x="95" y="385" font-size="11" text-anchor="middle" fill="var(--muted)">addendum only → I_{k+1}</text>
+      <path d="M440,362 L300,362 L170,362" fill="none" stroke="var(--instr)" stroke-dasharray="5 3" marker-end="url(#a5i)"/>
+      <line x1="95" y1="330" x2="95" y2="130" stroke="var(--instr)" marker-end="url(#a5i)"/>
+      <text x="120" y="230" font-size="10" fill="var(--instr)">update</text>
+      <text x="20" y="420" font-size="11" fill="var(--muted)">Momentum: each optimizer call also sees the previous gradients (earlier curation.md / q.md). Batching: Z spans m nodes, Q spans the n windows since the last I update.</text>
+    </svg>
+    </div>
+    <figcaption><b>Figure 5.</b> Nested TextGrad. Solid arrows are the forward pass every expansion; dashed arrows are the backward passes at their cadence. Q answers the notes' three questions — missing information, whether edits are utilised by the task agent, whether a better representation helps — and the update touches only the addendum.</figcaption>
+  </figure>
+  <div class="note instr"><b>Optional guard (not in v1):</b> use the bandit's with-memory success rate over the window after I<sub>k+1</sub> as a validation signal and roll back to I<sub>k</sub> if it drops. This is score-based, but at the manager level, so it does not put predictions into the memory.</div>
+
+  <h2 id="bandit">6 · Bandit posterior per arm</h2>
+  <p>Each arm's posterior is built from the same success/failure mass HGM already keeps per node, pooled over every node that was generated under that arm — no paired comparison, no reward shaping. The <code>without</code> arm pools every node expanded without the memory, including the ones from before B<sub>1</sub> existed.</p>
+  <figure>
+    <div class="fig">
+    <svg viewBox="0 0 1040 230" role="img" aria-label="Bandit posterior per arm: each expanded node's n_success and n_failure mass is pooled into its arm; with-arm pools nodes expanded with the memory file, without-arm pools every node expanded without it including pre-memory nodes; Thompson sampling draws theta from Beta(S+1, F+1) per arm and picks the argmax at the next expansion">
+      <defs><marker id="a6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+      <rect x="20" y="40" width="220" height="120" rx="3" fill="var(--paper)" stroke="currentColor"/>
+      <text x="130" y="62" font-size="12" text-anchor="middle" font-weight="600">every evaluated case of node N</text>
+      <text x="130" y="86" font-size="11" text-anchor="middle" fill="var(--muted)">score s ∈ [0,1]  (HGMNode.record)</text>
+      <text x="130" y="102" font-size="11" text-anchor="middle" fill="var(--muted)">n_success += s</text>
+      <text x="130" y="118" font-size="11" text-anchor="middle" fill="var(--muted)">n_failure += 1 − s</text>
+      <text x="130" y="142" font-size="11" text-anchor="middle" fill="var(--muted)">unchanged HGM bookkeeping</text>
+
+      <rect x="300" y="40" width="240" height="120" rx="3" fill="var(--paper)" stroke="currentColor"/>
+      <text x="420" y="62" font-size="12" text-anchor="middle" font-weight="600">pool by the node's arm</text>
+      <text x="420" y="86" font-size="11" text-anchor="middle" fill="var(--mem)">with: nodes expanded with $EDIT_MEMORY_FILE</text>
+      <text x="420" y="102" font-size="11" text-anchor="middle" fill="var(--muted)">without: all other expanded nodes</text>
+      <text x="420" y="118" font-size="11" text-anchor="middle" fill="var(--muted)">(incl. arm "none" before B₁; root excluded)</text>
+      <text x="420" y="142" font-size="11" text-anchor="middle" fill="var(--muted)">S_a = Σ n_success,  F_a = Σ n_failure  (S_a + F_a = cases)</text>
+      <line x1="240" y1="100" x2="300" y2="100" stroke="currentColor" marker-end="url(#a6)"/>
+
+      <rect x="600" y="40" width="200" height="120" rx="3" fill="var(--paper)" stroke="currentColor"/>
+      <text x="700" y="62" font-size="12" text-anchor="middle" font-weight="600">recomputed at each EXPAND</text>
+      <text x="700" y="86" font-size="11" text-anchor="middle" fill="var(--muted)">from the live tree, so bandit</text>
+      <text x="700" y="102" font-size="11" text-anchor="middle" fill="var(--muted)">top-ups of old nodes count</text>
+      <text x="700" y="126" font-size="11" text-anchor="middle" fill="var(--muted)">edit-failed nodes: no mass</text>
+      <text x="700" y="142" font-size="11" text-anchor="middle" fill="var(--muted)">(arm still recorded)</text>
+      <line x1="540" y1="100" x2="600" y2="100" stroke="currentColor" marker-end="url(#a6)"/>
+
+      <rect x="860" y="40" width="160" height="120" rx="3" fill="var(--mem-soft)" stroke="var(--mem)"/>
+      <text x="940" y="62" font-size="12" text-anchor="middle" font-weight="600">Thompson choice</text>
+      <text x="940" y="86" font-size="11" text-anchor="middle" fill="var(--muted)">min 2 pulls of "with"</text>
+      <text x="940" y="102" font-size="11" text-anchor="middle" fill="var(--muted)">once B₁ exists, then</text>
+      <text x="940" y="126" font-size="11" text-anchor="middle" fill="var(--muted)">θ_a ~ Beta(S_a+1, F_a+1)</text>
+      <text x="940" y="142" font-size="11" text-anchor="middle" fill="var(--muted)">arm = argmax θ_a  (E[θ_a] = S/(S+F))</text>
+      <line x1="800" y1="100" x2="860" y2="100" stroke="currentColor" marker-end="url(#a6)"/>
+      <text x="20" y="200" font-size="11" fill="var(--muted)">Same estimator as HGM's node selection (Beta over pooled utility mass), applied to the two arms instead of to nodes. Seeded RNG; draw count persisted in state.json.</text>
+    </svg>
+    </div>
+    <figcaption><b>Figure 6.</b> Per-arm Thompson sampling over pooled HGM tallies. The prior is <code>beta_prior</code> (1.0) on both arms; <code>always</code> / <code>never</code> exist for ablations (<code>never</code> = the layer still writes memories nobody reads).</figcaption>
+  </figure>
+
+  <h2 id="vis">7 · Who can read what</h2>
+  <p>The sandbox binds exactly the policy's read roots, so the table below is enforced for both the editor tool (in-process) and bash (bubblewrap). The one new mechanism is a file-level allow (<code>read_files</code>) checked before the deny list, so the with-memory arm sees one file inside an otherwise masked directory.</p>
+  <div class="tbl">
+  <table>
+    <thead><tr><th>Path</th><th>Editor · without</th><th>Editor · with</th><th>Memory curator</th><th>Instruction curator</th></tr></thead>
+    <tbody>
+      <tr><td class="k">$NODE_DIR/task_agent/*</td><td><span class="pill ok">write</span></td><td><span class="pill ok">write</span></td><td><span class="pill no">no</span></td><td><span class="pill no">no</span></td></tr>
+      <tr><td class="k">$PARENT_DIR/ (whole round dir)</td><td><span class="pill ok">read</span></td><td><span class="pill ok">read</span></td><td><span class="pill ok">read ($PARENT_i)</span></td><td><span class="pill ok">read</span></td></tr>
+      <tr><td class="k">other round_NNN/ (run scope)</td><td><span class="pill ok">read</span></td><td><span class="pill ok">read</span></td><td><span class="pill ok">window nodes only</span></td><td><span class="pill ok">with-arm nodes since last I</span></td></tr>
+      <tr><td class="k">other round_NNN/ (parent scope)</td><td><span class="pill no">no</span></td><td><span class="pill mem">read (forced run scope)</span></td><td>—</td><td>—</td></tr>
+      <tr><td class="k">edit_memory/edit_memory.md</td><td><span class="pill no">masked</span></td><td><span class="pill mem">read as $EDIT_MEMORY_FILE</span></td><td><span class="pill ok">read</span></td><td><span class="pill ok">read</span></td></tr>
+      <tr><td class="k">edit_memory/ (rest: versions, windows, instruction)</td><td><span class="pill no">masked</span></td><td><span class="pill no">masked</span></td><td><span class="pill ok">read</span></td><td><span class="pill ok">read</span></td></tr>
+      <tr><td class="k">edit_memory/window_j/ · instruction_update_k/</td><td><span class="pill no">no</span></td><td><span class="pill no">no</span></td><td><span class="pill ok">write (own $WORK_DIR)</span></td><td><span class="pill ok">write (own $WORK_DIR)</span></td></tr>
+      <tr><td class="k">platform_core/, projects/&lt;p&gt;/tools, db_schema.md</td><td><span class="pill ok">read</span></td><td><span class="pill ok">read</span></td><td><span class="pill ok">read</span></td><td><span class="pill ok">read</span></td></tr>
+      <tr><td class="k">benchmark/, data/, *_error_categorizer.py, meta_agent/</td><td><span class="pill no">never</span></td><td><span class="pill no">never</span></td><td><span class="pill no">never</span></td><td><span class="pill no">never</span></td></tr>
+      <tr><td class="k">network, model API</td><td><span class="pill no">never</span></td><td><span class="pill no">never</span></td><td><span class="pill no">never</span></td><td><span class="pill no">never</span></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note warn"><b>Why masking matters:</b> under <code>read_scope: run</code> (the setting of the finished runs) the whole run dir is readable, so without a <code>--tmpfs</code> over <code>edit_memory/</code> the "without" arm could simply <code>cat $RUN_DIR/edit_memory/edit_memory.md</code> and the bandit would be comparing two with-memory arms.</div>
+
+  <h2 id="io">8 · Inputs and outputs per component</h2>
+  <div class="tbl">
+  <table>
+    <thead><tr><th>Component</th><th>Kind</th><th>Reads</th><th>Writes</th><th>Cadence · cost</th></tr></thead>
+    <tbody>
+      <tr><td>Agentic editor (existing)</td><td>tool-use session</td><td>parent round dir, own workspace, platform/tools, (+ $EDIT_MEMORY_FILE)</td><td class="k">round_N/task_agent, agentic/, strategy.json (via gatherer)</td><td>every expansion · ~$0.5–1</td></tr>
+      <tr><td>Memory curator</td><td>tool-use session</td><td>m window nodes + parents (code, diffs, transcripts, feedback, cases, traces), $MEMORY_DIR</td><td class="k">window_j/curation.md, agentic/</td><td>every m successful expansions · ~$0.5–1</td></tr>
+      <tr><td>Memory generator</td><td>one call_llm</td><td>Z_j, B_j, I_k (core + addendum), node ids/arms</td><td class="k">edit_memory_v00{j+1}.md → edit_memory.md, memory_call.json</td><td>after each curation · ~$0.05–0.2</td></tr>
+      <tr><td>Instruction curator</td><td>tool-use session</td><td>with-arm nodes since last update (transcripts = τ_meta, cases split by passed = τ_task±), B_j, I_k, window curations</td><td class="k">instruction_update_k/q.md, agentic/</td><td>every n memory versions · ~$0.5–1</td></tr>
+      <tr><td>Instruction update</td><td>one call_llm</td><td>Q_k, I_k, previous q.md (momentum)</td><td class="k">instruction_v00{k+1}.md → instruction.md, update_call.json</td><td>after each Q · ~$0.05</td></tr>
+      <tr><td>Bandit (in EditMemoryLayer)</td><td>pure function</td><td>tree (arms, case results, parents)</td><td class="k">hgm_node.json fields, state.json tallies</td><td>every expansion · free</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2 id="layout">9 · Run-dir layout and config</h2>
+  <div class="grid2">
+    <pre><code>runs/&lt;exp&gt;/
+├── config.snapshot.yaml
+├── round_000/ … round_NNN/           unchanged, plus in hgm_node.json:
+│                                      memory_arm, memory_version
+└── edit_memory/
+    ├── state.json                    j, k, per-node arm/version,
+    │                                 pulls per arm, RNG draws
+    ├── edit_memory.md                current B_j  ($EDIT_MEMORY_FILE)
+    ├── edit_memory_v001.md …
+    ├── instruction.md                current addendum I_k
+    ├── instruction_v000.md …         v000 = empty addendum
+    ├── window_001/
+    │   ├── window.json               node ids, parents, arms, failed
+    │   ├── curation.md               Z_1
+    │   ├── agentic/                  transcript.jsonl, session.json
+    │   └── memory_call.json
+    └── instruction_update_001/
+        ├── q.md                      Q_1
+        ├── agentic/
+        └── update_call.json</code></pre>
+    <pre><code>edit_memory:                  # absent → today's behaviour
+  type: "agentic"
+  config:
+    window_size: 4            # m successful expansions
+    instruction_every: 2      # n memory versions per I update
+    selection: "bandit"       # bandit | always | never
+    arm_min_pulls: 2
+    beta_prior: 1.0
+    seed: 42
+    model: "deepseek/deepseek-v4-pro-0813"
+    reasoning_effort: "low"
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OpenRouter_API_KEY"
+    llm_timeout_s: 600
+    curator:
+      max_llm_calls: 60
+      timeout_s: 2400
+      bash_timeout_s: 120
+      sandbox: "auto"
+      max_attempts: 2
+    memory_max_chars: 20000
+    instruction_addendum_max_chars: 4000
+
+manager.config.expand_eval_size must be &gt; 0
+(the curator needs per-case evidence per node).</code></pre>
+  </div>
+
+  <h2 id="eval">10 · What to evaluate in this design</h2>
+  <ol class="check">
+    <li><b>Arm isolation.</b> The with arm differs by one file, one procedure step and full-run visibility; the without arm stays byte-identical to the finished run. Should the memory's guidance also enter the system prompt?</li>
+    <li><b>Window semantics.</b> Non-overlapping windows of m successful nodes; a window closes on the m-th paired evaluation regardless of how the scheduler interleaved top-ups. Alternative: close only when every member has ≥ k evals.</li>
+    <li><b>What the curator is told to look at.</b> The legend names all artifacts; the instruction asks for per-node sections plus a gradient against B<sub>j</sub>. Is the "shortcomings: strategy vs implementation" split enough structure, or should the curator also produce the ranking?</li>
+    <li><b>Ranking basis.</b> The generator ranks by judged usefulness from Z; mean scores are shown to the curator as context only and never to the generator. Acceptable, or should even the curator be blind to means?</li>
+    <li><b>Bandit posterior.</b> Pooled HGM tallies per arm (same estimator as node selection); pre-B<sub>1</sub> nodes count for <code>without</code>. Note the posterior compares the arms' descendants as populations, so parent quality is not factored out — accepted by design.</li>
+    <li><b>Instruction scope.</b> I<sub>k</sub> only instructs the memory generator. Should the memory curator also read the addendum (so it curates what the generator will need)? Plan says yes, read-only.</li>
+    <li><b>TextGrad discipline.</b> Gradient sections in Z and Q, minimal-change optimizer steps, momentum from previous gradients. Rollback of I via the bandit signal is left out of v1.</li>
+    <li><b>Cost and wall clock.</b> ~8 curator sessions + ~4 instruction sessions per 1000-eval run, each comparable to an editor session; all run synchronously inside the loop.</li>
+    <li><b>Read scope.</b> The with-memory arm always gets the whole run (it must be able to open the nodes the memory cites); the configured <code>read_scope</code> governs only the without arm. Under <code>parent</code> scope the arms therefore also differ in cross-node visibility — acceptable, since the memory is what makes other nodes worth reading.</li>
+  </ol>
+</div>

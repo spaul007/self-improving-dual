@@ -38,7 +38,7 @@ import json
 import random
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from ..agent_editor import AgentEditor, fallback_strategy
 from ..evaluator import Evaluator, load_cases
@@ -148,10 +148,23 @@ class HGMManager:
         score_target: float | None,
         train_case_ids: Optional[list[str]] = None,
         eval_case_ids: Optional[list[str]] = None,
+        edit_memory: Any = None,
     ) -> EvolutionOutcome:
         self._benchmark_dir = benchmark_dir
         self._experiment_dir = experiment_dir
         self._eval_case_ids = eval_case_ids
+        # Optional edit-memory layer (meta_agent/edit_memory): chooses the
+        # with/without-memory arm before every expansion, observes the same
+        # events as the snapshotter, and writes the memory the with-arm
+        # editors read. ``None`` changes nothing.
+        self._memory = edit_memory
+        if self._memory is not None:
+            if self.expand_eval_size <= 0:
+                raise ValueError(
+                    "edit_memory requires manager.config.expand_eval_size > 0: the "
+                    "memory curator needs per-case evidence for every node in a window"
+                )
+            self._memory.setup(experiment_dir)
         self._tree = HGMTree(
             beta_prior=self.beta_prior,
             clade_pseudo_count=self.clade_pseudo_count,
@@ -194,8 +207,8 @@ class HGMManager:
             # eval_budget is tiny relative to the paired expansion cost).
             if self.eval_budget - self._budget_spent < self._min_budget_to_expand():
                 break
-            self._expand(self._tree.argmax_expand(1.0, expandable), editor, gatherer, evaluator)
-            self._snapshot("expand")
+            nid = self._expand(self._tree.argmax_expand(1.0, expandable), editor, gatherer, evaluator)
+            self._snapshot("expand", node_id=nid)
 
         # Scheduled EXPAND/EVALUATE loop. The while-stop keys off total spend
         # (``_budget_spent``); the widening schedule keys off
@@ -222,14 +235,14 @@ class HGMManager:
                 self._tree.schedule_favors_expand(self.alpha, self._node_evals_spent)
                 and can_grow
             ):
-                self._expand(self._tree.argmax_expand(tau, expandable), editor, gatherer, evaluator)
-                self._snapshot("expand")
+                nid = self._expand(self._tree.argmax_expand(tau, expandable), editor, gatherer, evaluator)
+                self._snapshot("expand", node_id=nid)
             elif evaluable:
                 node_id = self._tree.argmax_evaluate(tau, evaluable)
                 spent = self._evaluate(node_id, evaluator, gatherer)
                 self._budget_spent += spent
                 self._node_evals_spent += spent
-                self._snapshot("evaluate")
+                self._snapshot("evaluate", node_id=node_id)
                 if (
                     score_target is not None
                     and self._tree[node_id].mean_utility >= score_target
@@ -237,8 +250,8 @@ class HGMManager:
                     break
             elif can_grow:
                 # Nothing left to evaluate, but the tree can still widen.
-                self._expand(self._tree.argmax_expand(tau, expandable), editor, gatherer, evaluator)
-                self._snapshot("expand")
+                nid = self._expand(self._tree.argmax_expand(tau, expandable), editor, gatherer, evaluator)
+                self._snapshot("expand", node_id=nid)
             else:
                 break
 
@@ -263,12 +276,19 @@ class HGMManager:
         (out_dir / "logs").mkdir(parents=True, exist_ok=True)
 
         context = self._render_expand_context(parent)
+        # Edit-memory arm for this expansion: ("with", path) exposes the
+        # current memory file to the editor; ("without"/"none", None) is the
+        # plain session with byte-identical prompts.
+        arm, memory_version, memory_path = "none", None, None
+        if self._memory is not None:
+            arm, memory_version, memory_path = self._memory.choose_arm(self._tree)
         edit_result = editor.apply(
             self._feedback.get(parent_id), parent.round_dir, out_dir,
-            context=context,
+            context=context, memory_path=memory_path,
         )
         strategy = edit_result.strategy or fallback_strategy()
-        node = HGMNode(node_id=node_id, parent_id=parent_id, round_dir=out_dir)
+        node = HGMNode(node_id=node_id, parent_id=parent_id, round_dir=out_dir,
+                       memory_arm=arm, memory_version=memory_version)
 
         if not edit_result.success:
             node.edit_failed = True
@@ -297,7 +317,7 @@ class HGMManager:
             )
             self._budget_spent += spent
             self._node_evals_spent += spent
-            self._snapshot("expand_eval")
+            self._snapshot("expand_eval", node_id=node_id)
         return node_id
 
     def _evaluate(
@@ -439,12 +459,17 @@ class HGMManager:
         ]
         return max(scored, key=lambda kv: kv[1]) if scored else None
 
-    def _snapshot(self, event: str) -> None:
-        """Append a full-tree snapshot keyed by the current eval budget. A
-        no-op unless ``snapshot_tree`` is enabled. Records every node (incl.
-        the seed root and edit-failed placeholders) plus a pointer to the
-        current best-by-mean node, so an analyst can recover and re-evaluate
-        the best agent at any budget level (see snapshot_eval.py)."""
+    def _snapshot(self, event: str, *, node_id: Optional[int] = None) -> None:
+        """Notify the edit-memory layer of ``event`` (``seed`` / ``expand`` /
+        ``expand_eval`` / ``evaluate`` / ``finalize``, with the node it
+        concerns) and append a full-tree snapshot keyed by the current eval
+        budget. The snapshot is a no-op unless ``snapshot_tree`` is enabled.
+        It records every node (incl. the seed root and edit-failed
+        placeholders) plus a pointer to the current best-by-mean node, so an
+        analyst can recover and re-evaluate the best agent at any budget
+        level (see snapshot_eval.py)."""
+        if self._memory is not None:
+            self._memory.on_event(event, self._tree, node_id=node_id)
         if self._snapshotter is None or not self._snapshotter.enabled:
             return
         nodes = [
@@ -458,6 +483,8 @@ class HGMManager:
                 n_success=n.n_success,
                 n_failure=n.n_failure,
                 cmp=self._tree.cmp(nid),
+                memory_arm=n.memory_arm,
+                memory_version=n.memory_version,
             )
             for nid, n in sorted(self._tree.nodes.items())
         ]
@@ -913,6 +940,8 @@ class HGMManager:
                     "cmp": self._tree.cmp(node.node_id),
                     "utility_measures": node.utility_measures,
                     "evaluated_case_ids": sorted(node.evaluated_case_ids),
+                    "memory_arm": node.memory_arm,
+                    "memory_version": node.memory_version,
                 },
                 indent=2,
             ),

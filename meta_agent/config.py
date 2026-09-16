@@ -168,6 +168,12 @@ class FrameworkConfig(BaseModel):
     editor: ComponentSpec
     gatherer: ComponentSpec
     validators: list[ComponentSpec]
+    # Optional edit-memory layer (meta_agent/edit_memory): every m successful
+    # expansions an agentic curator reviews the newest nodes and a generator
+    # writes the run's edit memory; a bandit decides per expansion whether the
+    # editor sees it. Omit (or null) to disable — no files written, prompts
+    # byte-identical to a run without it.
+    edit_memory: Optional[ComponentSpec] = None
     plugins: list[str] = Field(default_factory=list)
 
     task_agent: TaskAgentSpec = Field(default_factory=TaskAgentSpec)
@@ -210,6 +216,7 @@ class AssembledFramework:
     runs_root: Path
     train_case_ids: Optional[list[str]] = None
     eval_case_ids: Optional[list[str]] = None
+    edit_memory: Any = None
 
 
 def _ensure_builtins_loaded() -> None:
@@ -219,6 +226,7 @@ def _ensure_builtins_loaded() -> None:
     importlib.import_module("meta_agent.evaluator")
     importlib.import_module("meta_agent.feedback_gatherer")
     importlib.import_module("meta_agent.agent_editor_agentic")
+    importlib.import_module("meta_agent.edit_memory")
     importlib.import_module("meta_agent.managers")  # imports submodules
 
 
@@ -335,6 +343,13 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         editor_injections["scorer_source"] = _read_scorer_source(benchmark_dir)
     editor_obj = _build_with_injection(cfg.editor, "editor", editor_injections)
 
+    edit_memory_obj: Any = None
+    if cfg.edit_memory is not None:
+        edit_memory_obj = _build_with_injection(
+            cfg.edit_memory, "edit_memory",
+            {"llm_caller": call_llm, "project_root": project_root, "repo_root": REPO_ROOT},
+        )
+
     for line in meta_base_url_warnings(cfg):
         print(line, flush=True)
 
@@ -373,12 +388,13 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         runs_root=runs_root,
         train_case_ids=train_ids,
         eval_case_ids=eval_ids,
+        edit_memory=edit_memory_obj,
     )
 
 
 def meta_base_url_warnings(cfg: FrameworkConfig) -> list[str]:
-    """One warning per meta component (currently just the editor) that names
-    its own ``model`` but no ``base_url`` while the task agent has one.
+    """One warning per meta component (editor / edit_memory) that names its
+    own ``model`` but no ``base_url`` while the task agent has one.
     ``runtime_env.apply_task_agent_env`` exports the task agent's
     ``LLM_BASE_URL`` for the evaluator's children, and ``call_llm`` falls back
     to it when ``base_url`` is unset — so such a component silently sends its
@@ -389,7 +405,7 @@ def meta_base_url_warnings(cfg: FrameworkConfig) -> list[str]:
     if not task_url:
         return []
     out: list[str] = []
-    for name, spec in (("editor", cfg.editor),):
+    for name, spec in (("editor", cfg.editor), ("edit_memory", cfg.edit_memory)):
         if spec is None:
             continue
         conf = spec.config or {}

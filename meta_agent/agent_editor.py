@@ -189,11 +189,13 @@ class AgentEditor:
         out_dir: Path,
         *,
         context: Optional[str] = None,
+        memory_path: Optional[Path] = None,
     ) -> EditResult:
         """Produce one self-improvement of the agent in ``base_dir`` into
         ``out_dir/task_agent``. ``context`` is optional manager-supplied
-        steering text (lineage, scores). Returns ``EditResult``;
-        ``.strategy`` carries the editor's emitted summary."""
+        steering text (lineage, scores); ``memory_path`` is the run's edit
+        memory file when this expansion is on the with-memory arm. Returns
+        ``EditResult``; ``.strategy`` carries the editor's emitted summary."""
         raise NotImplementedError("use a registered editor (editor.type: agentic)")
 
     # ------------------------------------------------------------------ #

@@ -11,7 +11,7 @@ Each round folder a manager produces must contain:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from ..agent_editor import AgentEditor
 from ..evaluator import Evaluator
@@ -30,6 +30,9 @@ class EvolutionManager(Protocol):
         experiment_dir: Path,
         max_rounds: int,
         score_target: float | None,
+        train_case_ids: list[str] | None = None,
+        eval_case_ids: list[str] | None = None,
+        edit_memory: Any = None,
     ) -> EvolutionOutcome: ...
 
 

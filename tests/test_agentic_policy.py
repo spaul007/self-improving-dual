@@ -262,6 +262,116 @@ class TestResolveAndDescribe(PolicyBase):
 
 
 
+class TestEditMemoryVisibility(PolicyBase):
+    """The run's edit_memory/ is denied to every editor; the with-memory arm
+    gets exactly one file back as $EDIT_MEMORY_FILE (both read scopes)."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.mem_dir = self.run / "edit_memory"
+        (self.mem_dir / "window_001").mkdir(parents=True)
+        self.mem_file = self.mem_dir / "edit_memory_v001.md"
+        self.mem_file.write_text("# memory\n")
+        (self.mem_dir / "edit_memory.md").write_text("# memory\n")
+        (self.mem_dir / "instruction.md").write_text("")
+        (self.mem_dir / "window_001" / "curation.md").write_text("Z")
+
+    def _pol(self, scope, with_file):
+        return build_policy(out_dir=self.out, base_dir=self.base, repo_root=self.repo,
+                            project_root=self.proj, read_scope=scope, memory_dir=self.mem_dir,
+                            memory_file=self.mem_file if with_file else None)
+
+    def test_without_arm_cannot_see_the_memory_dir(self) -> None:
+        for scope in ("run", "parent"):
+            pol = self._pol(scope, False)
+            for p in (self.mem_file, self.mem_dir / "edit_memory.md",
+                      self.mem_dir / "window_001" / "curation.md", self.mem_dir):
+                self.assertFalse(pol.can_read(self.r(p)), f"{scope} {p}")
+            self.assertNotIn("EDIT_MEMORY_FILE", pol.roots())
+            self.assertNotIn("EDIT_MEMORY", pol.describe())
+            self.assertNotIn("memory", pol.describe())
+            # The masked dir never shows up in a listing of the run root.
+            if scope == "run":
+                self.assertNotIn("edit_memory", pol.list_dir(self.run, depth=1))
+
+    def test_with_arm_sees_exactly_one_file(self) -> None:
+        for scope in ("run", "parent"):
+            pol = self._pol(scope, True)
+            self.assertTrue(pol.can_read(self.r(self.mem_file)), scope)
+            for p in (self.mem_dir / "edit_memory.md", self.mem_dir / "instruction.md",
+                      self.mem_dir / "window_001" / "curation.md", self.mem_dir):
+                self.assertFalse(pol.can_read(self.r(p)), f"{scope} {p}")
+            self.assertEqual(pol.roots()["EDIT_MEMORY_FILE"], self.r(self.mem_file))
+            self.assertEqual(pol.root_vars()[-1], "EDIT_MEMORY_FILE")
+            self.assertEqual(pol.resolve("$EDIT_MEMORY_FILE"), self.r(self.mem_file))
+            self.assertEqual(pol.var_path(self.r(self.mem_file)), "$EDIT_MEMORY_FILE")
+            text = pol.describe()
+            self.assertIn("  EDIT_MEMORY_FILE  the edit memory of this run (see below)", text)
+            self.assertIn("accumulated edit memory of previous edits in this run", text)
+            self.assertIn("$EDIT_MEMORY_FILE", text)
+            self.assertNotIn(str(self.r(self.mem_file)), text)
+            self.assertFalse(pol.can_write(self.r(self.mem_file)))
+
+    def test_memory_file_requires_memory_dir(self) -> None:
+        with self.assertRaises(ValueError):
+            build_policy(out_dir=self.out, base_dir=self.base, repo_root=self.repo,
+                         project_root=self.proj, memory_file=self.mem_file)
+
+    def test_sandbox_masks_the_dir_and_binds_the_file_back(self) -> None:
+        from meta_agent.agentic.sandbox import bwrap_argv, sandbox_env
+        without = bwrap_argv(self._pol("run", False), command="true", prefixes=[])
+        i = without.index("--tmpfs", without.index(str(self.r(self.run))))
+        self.assertEqual(without[i + 1], str(self.r(self.mem_dir)))
+        self.assertNotIn(str(self.r(self.mem_file)), without)
+        with_ = bwrap_argv(self._pol("run", True), command="true", prefixes=[])
+        t = with_.index("--tmpfs", with_.index(str(self.r(self.run))))
+        self.assertEqual(with_[t + 1], str(self.r(self.mem_dir)))
+        b = with_.index(str(self.r(self.mem_file)))
+        self.assertGreater(b, t)                       # bound back AFTER the mask
+        self.assertEqual(with_[b - 1], "--ro-bind-try")
+        self.assertEqual(sandbox_env(self._pol("run", True), path="/bin")["EDIT_MEMORY_FILE"],
+                         str(self.r(self.mem_file)))
+        self.assertNotIn("EDIT_MEMORY_FILE", sandbox_env(self._pol("run", False), path="/bin"))
+        # Under parent scope the run root is not bound, so nothing to mask.
+        par = bwrap_argv(self._pol("parent", True), command="true", prefixes=[])
+        self.assertNotIn(str(self.r(self.mem_dir)), par)      # nothing to mask
+        self.assertIn(str(self.r(self.mem_file)), par)
+
+
+class TestNamedRoots(PolicyBase):
+    """Curator-style policies: roots are whatever the caller names."""
+
+    def test_named_roots_replace_the_editor_roots(self) -> None:
+        from meta_agent.agentic.policy import PathPolicy
+        work = self.run / "edit_memory" / "window_001"
+        work.mkdir(parents=True)
+        pol = PathPolicy(
+            out_dir=self.r(work), base_dir=self.r(self.base), task_agent=self.r(work),
+            scratch=self.r(work), write_files=(), write_dirs=(self.r(work),),
+            read_roots=(self.r(self.base), self.r(self.run / "round_000"), self.r(work)),
+            deny_roots=(self.r(self.proj / "benchmark"),), run_root=self.r(self.run),
+            repo_root=self.r(self.repo), project_root=self.r(self.proj), project_name="travel",
+            named_roots=(("WORK_DIR", self.r(work)), ("NODE_1", self.r(self.base)),
+                         ("NODE_2", self.r(self.run / "round_000")), ("REPO_DIR", self.r(self.repo))),
+        )
+        self.assertEqual(list(pol.roots()), ["WORK_DIR", "NODE_1", "NODE_2", "REPO_DIR"])
+        self.assertEqual(pol.root_vars(), ("WORK_DIR", "NODE_1", "NODE_2", "REPO_DIR"))
+        self.assertEqual(pol.resolve("$NODE_2/strategy.json"), self.r(self.run / "round_000" / "strategy.json"))
+        self.assertEqual(pol.resolve("${NODE_1}/feedback.json"), self.r(self.base / "feedback.json"))
+        self.assertEqual(pol.resolve("notes.md"), self.r(work) / "notes.md")     # relative → WORK_DIR
+        self.assertEqual(pol.var_path(self.r(self.base) / "x"), "$NODE_1/x")
+        self.assertTrue(pol.can_write(self.r(work) / "curation.md"))
+        self.assertTrue(pol.can_write(self.r(work) / "scratch" / "a.txt"))
+        self.assertFalse(pol.can_write(self.r(self.base) / "feedback.json"))
+        self.assertTrue(pol.can_read(self.r(self.run / "round_000" / "strategy.json")))
+        self.assertFalse(pol.can_read(self.r(self.out / "task_agent" / "workflow.py")))
+        with self.assertRaises(ValueError):
+            pol.describe()
+        with self.assertRaises(ValueError) as cm:
+            pol.resolve("$RUN_DIR/x")
+        self.assertIn("$WORK_DIR, $NODE_1, $NODE_2, $REPO_DIR", str(cm.exception))
+
+
 class TestParentReadScope(PolicyBase):
     def setUp(self) -> None:
         super().setUp()

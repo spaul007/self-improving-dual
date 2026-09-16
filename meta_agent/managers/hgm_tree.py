@@ -55,6 +55,11 @@ class HGMNode:
     # a node id for a complete run dir but is neither expandable nor
     # evaluable (its task_agent is just the parent's code reset).
     edit_failed: bool = False
+    # Edit-memory bookkeeping: which arm produced this expansion ("with" —
+    # the editor read the run's edit memory; "without"; "none" — no memory
+    # existed yet / no layer configured) and which memory version it saw.
+    memory_arm: str = "none"
+    memory_version: Optional[int] = None
 
     @property
     def n_evals(self) -> int:

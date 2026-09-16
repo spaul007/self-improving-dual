@@ -45,6 +45,10 @@ class NodeSnapshot:
     # Clade metaproductivity, when the manager exposes a clade aggregate
     # (HGM family). ``None`` for managers without one (e.g. hill climbing).
     cmp: Optional[float] = None
+    # Edit-memory arm bookkeeping (HGM + edit_memory layer); defaults keep
+    # snapshots from runs without the layer readable.
+    memory_arm: str = "none"
+    memory_version: Optional[int] = None
 
 
 class TreeSnapshotWriter:

@@ -187,7 +187,7 @@ it in-process, the sandbox mirrors it as binds):
 | writable | `round_NNN/task_agent/{workflow.py,tool_wrapper.py,tools_schema.json}`, `task_agent/mutable_tools/*.py` (new files allowed), `round_NNN/agentic/scratch/` (the agent's own throwaway scripts; never validated) |
 | read-only (`read_scope: run`) | the whole run directory — every `round_NNN/` (`hgm_node.json`, `strategy.json`, `feedback.json`, `eval_result.json`, `logs/`, `agentic/`, `task_agent/`) and run-level files such as `tree_snapshots.jsonl` — plus `platform_core/`, `projects/<p>/tools/`, `projects/<p>/db_schema.md` |
 | read-only (`read_scope: parent`) | `$PARENT_DIR/` and `$NODE_DIR/` only, plus the same `platform_core/` and project tool/schema paths |
-| never | `projects/<p>/benchmark/` (scorer, `_eval/`, cases.jsonl), `projects/<p>/data/`, the categorizer, `meta_agent/`, other runs. `eval_visibility` is ignored by this editor. |
+| never | `projects/<p>/benchmark/` (scorer, `_eval/`, cases.jsonl), `projects/<p>/data/`, the categorizer, `meta_agent/`, other runs, and the run's `edit_memory/` directory (masked with a tmpfs; only the with-memory arm gets one file back, see "Edit memory"). `eval_visibility` is ignored by this editor. |
 
 Because bwrap binds are live views, files the framework writes to the bound
 directories later (new rounds under `run` scope) are visible without any
@@ -253,6 +253,88 @@ unchanged (32 nodes / 63 batches) but makes 32 of the batches mandatory child
 evaluations, so every editor session is measured; the bandit keeps the other
 31 batches. The agentic configs enable it; set it to 0 for the reference's
 fully decoupled behaviour.
+
+## Edit memory (optional)
+
+`edit_memory: {type: agentic}` adds a learned memory of *what edits were
+tried and what the evidence says about them* to the HGM loop, written by
+agentic curators and read by the editor on a bandit-chosen fraction of
+expansions. Absent, nothing changes (prompts are pinned byte for byte by
+`tests/test_agentic_golden.py`).
+
+```
+C_{i+1} <- Expand(C_i, L_i, B_j)  or  Expand(C_i, L_i)     bandit over the two arms
+Z       <- Curation(last m nodes and their logs)          agentic curator
+B_{j+1} <- Generation(Z, B_j, I_k)                        one LLM call
+Q       <- Curation(tau_meta, tau_task+/-, B_j, I_k)      agentic curator
+I_{k+1} <- InstructionUpdate(Q, I_k)                      one LLM call
+```
+
+- **Cadence.** Every `window_size` (m) successful, paired-evaluated
+  expansions the **memory curator** — an agentic session with the same
+  bash/editor tools as the editor, confined to the window's nodes, their
+  parents and `edit_memory/` — reads diffs, editor transcripts, per-case
+  outcomes and traces itself and writes `window_NNN/curation.md` (Z):
+  per node *what changed / intent / editor process / what the evaluation
+  shows / shortcomings (strategy vs implementation) / usefulness verdict*,
+  cross-node patterns, and a gradient against the current memory. One
+  call then rewrites the memory minimally: `edit_memory_vNNN.md` with
+  *ranked edits / usefulness / strategy vs implementation / guidance*,
+  validated for structure, size and the absence of any score prediction
+  (regex; one retry, then the previous memory is kept). Nothing is
+  pre-digested for the curators; node mean scores appear as context only
+  and are never passed to the generator.
+- **Arms.** Before the first memory every expansion is arm `none`. After
+  it, a Thompson bandit picks `with` or `without` per expansion from the
+  two arms' pooled HGM tallies (`Beta(Σ n_success + prior, Σ n_failure +
+  prior)` over every node generated under the arm; pre-memory nodes count
+  for `without`; edit-failed nodes add no mass), after `arm_min_pulls`
+  forced pulls of `with`. `selection: always | never` are ablations
+  (`never` = the memory is written and nobody reads it). The arm and
+  memory version are recorded in `hgm_node.json` and the tree snapshots.
+- **What the with arm sees.** Exactly one extra file, `$EDIT_MEMORY_FILE`
+  (the versioned memory), one extra procedure step, and — because the
+  memory cites node ids — the **whole run readable** regardless of
+  `read_scope`; the configured scope governs the without arm only. The
+  `edit_memory/` directory itself is masked for both arms.
+- **Instruction.** Every `instruction_every` (n) memory versions, if any
+  node was expanded with the memory since the last update, the
+  **instruction curator** audits those nodes (did the editor read and use
+  the memory — τ_meta; did the guided mechanisms fire and help at task-agent
+  runtime — τ_task±; is the representation serving the editor) and writes
+  `instruction_update_NNN/q.md`; one call then revises the generator's
+  addendum (`instruction_vNNN.md`, size-capped, never the fixed core).
+  This is a nested TextGrad: Z and Q are textual gradients, the two calls
+  are minimal-change optimizer steps.
+- **Requires** `manager.config.expand_eval_size > 0` (every window node
+  needs per-case evidence). Run dir: `edit_memory/{state.json,
+  edit_memory.md, edit_memory_vNNN.md, instruction.md, instruction_vNNN.md,
+  window_NNN/, instruction_update_NNN/}`.
+
+```yaml
+edit_memory:
+  type: "agentic"
+  config:
+    window_size: 4              # m successful expansions per memory version
+    instruction_every: 2        # n memory versions per instruction update
+    selection: "bandit"         # bandit | always | never
+    arm_min_pulls: 2
+    beta_prior: 1.0
+    seed: 42
+    model: "deepseek/deepseek-v4-pro-0813"
+    reasoning_effort: "low"
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OpenRouter_API_KEY"
+    llm_timeout_s: 600
+    curator: { max_llm_calls: 60, timeout_s: 2400, bash_timeout_s: 120, sandbox: "auto", max_attempts: 2 }
+    memory_max_chars: 20000
+    instruction_addendum_max_chars: 4000
+```
+
+`configs/hgm_travel_1000_dsv4pro_agentic_editmem.yaml` is the no-editmem
+1000-eval config plus this block; `configs/hgm_travel_smoke_agentic_editmem.yaml`
+exercises a memory, a with-arm expansion and an instruction update in one
+smoke run. The design page `EDIT_MEMORY_ARCHITECTURE.html` has the diagrams.
 
 ## Standalone evaluation
 
@@ -337,8 +419,10 @@ When set:
 
 ```bash
 PYTHONPATH=. python3 -m unittest tests.test_smoke
-# agentic editor (policy, tools + bwrap confinement, scripted end-to-end sessions)
-PYTHONPATH=. python3 -m unittest tests.test_agentic_policy tests.test_agentic_tools tests.test_agentic_editor
+# agentic editor (policy, tools + bwrap confinement, scripted end-to-end sessions, golden prompts)
+PYTHONPATH=. python3 -m unittest tests.test_agentic_policy tests.test_agentic_tools tests.test_agentic_editor tests.test_agentic_golden
+# edit-memory layer (bandit, cadence, curators, validators; scripted LLM)
+PYTHONPATH=. python3 -m unittest tests.test_edit_memory_layer tests.test_edit_memory_curator tests.test_edit_memory_generator
 ```
 
 Smoke tests do not hit OpenAI — they exercise validators, the subprocess

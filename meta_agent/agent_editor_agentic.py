@@ -24,7 +24,14 @@ from typing import Callable, Iterable, Optional, Union
 
 from . import verbose_log
 from .agent_editor import AgentEditor, Validator
-from .agentic.policy import READ_SCOPES, REPO_ROOT, build_policy
+from .agentic.policy import (
+    MEMORY_DIR_NAME,
+    READ_SCOPE_RUN,
+    READ_SCOPES,
+    REPO_ROOT,
+    build_policy,
+    find_run_root,
+)
 from .agentic.sandbox import Sandbox
 from .agentic.session import (
     SESSION_NAME,
@@ -33,6 +40,7 @@ from .agentic.session import (
     SessionConfig,
     Transcript,
     agentic_system_prompt,
+    editor_submit_spec,
     render_instruction,
 )
 from .agentic.tools import (
@@ -125,8 +133,10 @@ class AgenticEditor(AgentEditor):
         out_dir: Path,
         *,
         context: Optional[str] = None,
+        memory_path: Optional[Path] = None,
     ) -> EditResult:
         base_dir, out_dir = Path(base_dir), Path(out_dir)
+        memory_path = Path(memory_path) if memory_path else None
         self._copy_workspace(base_dir, out_dir)
         (out_dir / "task_agent" / "mutable_tools").mkdir(exist_ok=True)
         agentic_dir = out_dir / "agentic"
@@ -134,12 +144,24 @@ class AgenticEditor(AgentEditor):
             shutil.rmtree(agentic_dir)
         (agentic_dir / "scratch").mkdir(parents=True)
 
+        # The run's edit_memory/ (if any) is always masked; on the with-memory
+        # arm the one memory file comes back as $EDIT_MEMORY_FILE and the whole
+        # run is readable regardless of read_scope, so the editor can open the
+        # code of every node the memory cites. The configured scope therefore
+        # governs the without-memory arm only.
+        run_root = find_run_root(out_dir)
+        memory_dir = (run_root / MEMORY_DIR_NAME) if run_root is not None else None
+        if memory_path is not None and memory_dir is None:
+            memory_dir = memory_path.parent
+        read_scope = READ_SCOPE_RUN if memory_path is not None else self.read_scope
         policy = build_policy(
             out_dir=out_dir, base_dir=base_dir, repo_root=REPO_ROOT,
             project_root=self.project_root,
             project_name=(self.project_root.name if self.project_root
                           else os.environ.get("META_AGENT_PROJECT", "")),
-            read_scope=self.read_scope,
+            read_scope=read_scope,
+            memory_dir=memory_dir if (memory_dir and memory_dir.exists()) or memory_path else None,
+            memory_file=memory_path,
         )
         sandbox = Sandbox(policy, mode=self.sandbox, bash_timeout_s=self.bash_timeout_s)
         # Decide the confinement up front: mode="bwrap" fails fast here when
@@ -165,12 +187,14 @@ class AgenticEditor(AgentEditor):
         )
         session = AgenticSession(
             self.llm, toolset,
-            run_validators=lambda: self._run_validators(out_dir, base_dir),
-            changed_files=lambda: self._changed_files(out_dir, base_dir),
+            submit=editor_submit_spec(
+                run_validators=lambda: self._run_validators(out_dir, base_dir),
+                changed_files=lambda: self._changed_files(out_dir, base_dir),
+            ),
             cfg=cfg,
             transcript=Transcript(agentic_dir / TRANSCRIPT_NAME),
         )
-        system_prompt = agentic_system_prompt(self.read_scope)
+        system_prompt = agentic_system_prompt(read_scope)
         instruction = render_instruction(
             policy, max_llm_calls=self.max_llm_calls, timeout_s=self.timeout_s,
             max_attempts=self.max_attempts,
@@ -184,7 +208,8 @@ class AgenticEditor(AgentEditor):
 
         summary = result.to_dict()
         summary["sandbox_mode"] = sandbox_mode
-        summary["read_scope"] = self.read_scope
+        summary["read_scope"] = read_scope
+        summary["memory_path"] = str(memory_path) if memory_path else None
         summary["roots"] = {k: str(v) for k, v in policy.roots().items()}
         (agentic_dir / SESSION_NAME).write_text(
             json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"

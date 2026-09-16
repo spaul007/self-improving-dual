@@ -12,6 +12,12 @@ model instead of resetting the workspace.
 Artifacts under ``<out_dir>/agentic/``: ``transcript.jsonl`` (one JSON event
 per LLM call / tool call / validation, appended and flushed as they happen so
 a crashed session is still readable) and ``session.json`` (summary).
+
+The loop itself is generic: what "submit" means — the tool schema, how a
+submission is validated, what happens when the budget runs out without one,
+and the reminder texts — is a ``SubmitSpec``. ``editor_submit_spec`` is the
+editor's (edits on disk, validators, ``EvolutionStrategy`` from the summary);
+the edit-memory curators supply their own.
 """
 from __future__ import annotations
 
@@ -58,6 +64,105 @@ WRAP_UP_MESSAGE = (
     "The session budget is exhausted ({reason}). Call submit_self_improvement "
     "now with a summary of what you changed. Do not call other tools."
 )
+
+
+@dataclass
+class SessionMessages:
+    """The four reminder texts the loop injects as user turns. ``halfway``
+    and ``final_stretch`` are ``str.format``-ed with ``used``/``total``
+    (and ``left``); ``wrap_up`` with ``reason``."""
+    nudge: str = NUDGE_MESSAGE
+    halfway: str = HALFWAY_MESSAGE
+    final_stretch: str = FINAL_STRETCH_MESSAGE
+    wrap_up: str = WRAP_UP_MESSAGE
+
+
+@dataclass
+class SubmitSpec:
+    """What ending a session means for one kind of agent.
+
+    ``handle(session, args)`` runs on every call of the submit tool and
+    returns ``(output_for_the_model, accepted, exhausted)``; it may set
+    ``session.strategy`` (the editor does). ``fallback(session, reason)``
+    runs when the budget is gone without an accepted submission (after one
+    submit-only wrap-up call) and returns ``(success, errors)``.
+    ``progress()`` gates the early/halfway reminders (they fire only while
+    nothing has been produced yet); ``changed_files()`` feeds the result.
+    """
+    tool: dict[str, Any]
+    name: str
+    handle: Callable[["AgenticSession", Any], tuple[str, bool, bool]]
+    fallback: Callable[["AgenticSession", str], tuple[bool, list[str]]]
+    progress: Callable[[], bool]
+    changed_files: Callable[[], list[str]]
+    messages: SessionMessages = field(default_factory=SessionMessages)
+
+
+def editor_submit_spec(
+    run_validators: Callable[[], list[str]],
+    changed_files: Callable[[], list[str]],
+) -> SubmitSpec:
+    """The agentic editor's contract: edits are already on disk; a submit is
+    accepted iff something changed and the validators pass; the summary
+    becomes the node's ``EvolutionStrategy``."""
+
+    def _strategy(changed: list[str], args: dict, *, goal: Optional[str] = None,
+                  proposed: Optional[str] = None) -> EvolutionStrategy:
+        return EvolutionStrategy(
+            target_files=_coerce_target_files(
+                [p for p in changed if p in _ALLOWED_TARGET_FILES]
+            ),
+            optimization_goal=(goal if goal is not None
+                               else _coerce_str(args.get("optimization_goal"))),
+            proposed_changes=(proposed if proposed is not None
+                              else _coerce_str(args.get("proposed_changes"))),
+            rationale=_coerce_str(args.get("rationale")) if goal is None else "",
+        )
+
+    def handle(session: "AgenticSession", args: Any) -> tuple[str, bool, bool]:
+        session.validation_rounds += 1
+        k, n = session.validation_rounds, session.cfg.max_attempts
+        args = args if isinstance(args, dict) else {}
+        changed = changed_files()
+        if not changed:
+            errors = ["no changes detected — the mutable files are identical to "
+                      "the parent's; make an edit before submitting"]
+        else:
+            errors = run_validators()
+        session.transcript.write("validation", round=k, changed_files=changed, errors=errors)
+        if errors:
+            session.last_errors = errors
+            exhausted = k >= n
+            bullets = "\n".join(f"  - {e}" for e in errors)
+            tail = ("\nNo attempts left; the session ends." if exhausted else
+                    "\nThe workspace is kept as-is. Fix these and call "
+                    "submit_self_improvement again.")
+            return f"Validation failed (attempt {k}/{n}):\n{bullets}{tail}", False, exhausted
+        session.strategy = _strategy(changed, args)
+        return "Submission accepted.", True, False
+
+    def fallback(session: "AgenticSession", reason: str) -> tuple[bool, list[str]]:
+        # No summary submitted: accept the edit only if it is non-empty and
+        # validates, with a placeholder strategy.
+        changed = changed_files()
+        errors = run_validators() if changed else ["no changes made"]
+        if changed and not errors:
+            session.strategy = _strategy(
+                changed, {},
+                goal=f"(agentic editor: no summary submitted; ended by {reason})",
+                proposed=session.last_text[:500],
+            )
+            return True, []
+        return False, errors
+
+    def progress() -> bool:
+        try:
+            return bool(changed_files())
+        except Exception:  # noqa: BLE001
+            return False
+
+    return SubmitSpec(tool=SUBMIT_TOOL, name=SUBMIT_TOOL_NAME, handle=handle,
+                      fallback=fallback, progress=progress, changed_files=changed_files)
 
 # Scope-dependent sentences of the system prompt. "run" is the legacy text,
 # byte-for-byte; "parent" never mentions the run directory or a RUN_DIR root.
@@ -142,6 +247,14 @@ STEP_PARENT = (
     "the failing logs/case_*.json it names. Your edits should be motivated by "
     "these failures."
 )
+STEP_MEMORY = (
+    "Read $EDIT_MEMORY_FILE — the edit memory built from previous edits in "
+    "this run: ranked edits, why they helped or not, and open shortcomings. "
+    "Use it as guidance: build on what worked, fix the shortcomings it names, "
+    "avoid repeating what did not work, and diversify when the top strategies "
+    "are exhausted. The node ids it cites are $RUN_DIR/round_NNN/ — open their "
+    "task_agent/ code and results to see what was actually done."
+)
 STEP_VIEW = (
     "View workflow.py (and tool_wrapper.py / tools_schema.json as needed); "
     "check the immutable tools' source and db_schema.md for any tool you touch."
@@ -165,8 +278,12 @@ def render_instruction(
     Paths are ``$VAR`` forms only — no experiment path, no inlined source,
     no feedback digest. The policy's ``read_scope`` decides whether the
     message names the run directory ("run") or only the parent node
-    ("parent")."""
-    steps = [STEP_PARENT, STEP_VIEW, STEP_EDIT, STEP_SUBMIT]
+    ("parent"); a policy with a ``memory_file`` (with-memory arm) adds the
+    memory row to the map and the read-memory step."""
+    steps = [STEP_PARENT]
+    if policy.memory_file is not None:
+        steps.append(STEP_MEMORY)
+    steps += [STEP_VIEW, STEP_EDIT, STEP_SUBMIT]
     procedure = "\n".join(f"  {i}. {text}" for i, text in enumerate(steps, 1))
     evidence = _EVIDENCE_SOURCE[policy.read_scope]
     parts = [
@@ -299,15 +416,14 @@ class AgenticSession:
         llm: Callable[..., Any],
         toolset: ToolSet,
         *,
-        run_validators: Callable[[], list[str]],
-        changed_files: Callable[[], list[str]],
+        submit: SubmitSpec,
         cfg: SessionConfig,
         transcript: Transcript,
     ) -> None:
         self.llm = llm
         self.toolset = toolset
-        self.run_validators = run_validators
-        self.changed_files = changed_files
+        self.submit = submit
+        self.changed_files = submit.changed_files
         self.cfg = cfg
         self.transcript = transcript
         # Mutable session state
@@ -332,7 +448,7 @@ class AgenticSession:
             {"role": "system", "content": system},
             {"role": "user", "content": instruction},
         ]
-        tools_all = self.toolset.infos() + [SUBMIT_TOOL]
+        tools_all = self.toolset.infos() + [self.submit.tool]
         nudged = False
         end_reason = "max_llm_calls"
 
@@ -350,7 +466,7 @@ class AgenticSession:
             if not tool_calls:
                 if not nudged:
                     nudged = True
-                    self.messages.append({"role": "user", "content": NUDGE_MESSAGE})
+                    self.messages.append({"role": "user", "content": self.submit.messages.nudge})
                     self.transcript.write("nudge", i=i)
                     continue
                 end_reason = "no_tool_calls"
@@ -374,20 +490,15 @@ class AgenticSession:
         at wrap-up that it never edited."""
         total = self.cfg.max_llm_calls
         early, half, final = budget_thresholds(total)
-        if used in (early, half) and used != final and not self._changed_since_start():
-            msg = HALFWAY_MESSAGE.format(used=used, total=total)
+        if used in (early, half) and used != final and not self.submit.progress():
+            msg = self.submit.messages.halfway.format(used=used, total=total)
         elif used == final:
-            msg = FINAL_STRETCH_MESSAGE.format(left=total - used, used=used, total=total)
+            msg = self.submit.messages.final_stretch.format(
+                left=total - used, used=used, total=total)
         else:
             return
         self.messages.append({"role": "user", "content": msg})
         self.transcript.write("budget_reminder", used=used, total=total)
-
-    def _changed_since_start(self) -> bool:
-        try:
-            return bool(self.changed_files())
-        except Exception:  # noqa: BLE001
-            return False
 
     def _process_tool_calls(self, tool_calls: list, i: int) -> tuple[bool, bool]:
         submitted = exhausted = False
@@ -397,8 +508,8 @@ class AgenticSession:
             t0 = time.time()
             if submitted:
                 output = "Error: submission already accepted; call ignored"
-            elif name == SUBMIT_TOOL_NAME:
-                output, accepted, exhausted = self._handle_submit(args)
+            elif name == self.submit.name:
+                output, accepted, exhausted = self.submit.handle(self, args)
                 submitted = accepted
             else:
                 output = self.toolset.call(name, args)
@@ -483,40 +594,6 @@ class AgenticSession:
             })
 
     # ------------------------------------------------------------------ #
-    # Submission
-    # ------------------------------------------------------------------ #
-
-    def _handle_submit(self, args: Any) -> tuple[str, bool, bool]:
-        """Returns ``(output, accepted, exhausted)``."""
-        self.validation_rounds += 1
-        k, n = self.validation_rounds, self.cfg.max_attempts
-        args = args if isinstance(args, dict) else {}
-        changed = self.changed_files()
-        if not changed:
-            errors = ["no changes detected — the mutable files are identical to "
-                      "the parent's; make an edit before submitting"]
-        else:
-            errors = self.run_validators()
-        self.transcript.write("validation", round=k, changed_files=changed, errors=errors)
-        if errors:
-            self.last_errors = errors
-            exhausted = k >= n
-            bullets = "\n".join(f"  - {e}" for e in errors)
-            tail = ("\nNo attempts left; the session ends." if exhausted else
-                    "\nThe workspace is kept as-is. Fix these and call "
-                    "submit_self_improvement again.")
-            return f"Validation failed (attempt {k}/{n}):\n{bullets}{tail}", False, exhausted
-        self.strategy = EvolutionStrategy(
-            target_files=_coerce_target_files(
-                [p for p in changed if p in _ALLOWED_TARGET_FILES]
-            ),
-            optimization_goal=_coerce_str(args.get("optimization_goal")),
-            proposed_changes=_coerce_str(args.get("proposed_changes")),
-            rationale=_coerce_str(args.get("rationale")),
-        )
-        return "Submission accepted.", True, False
-
-    # ------------------------------------------------------------------ #
     # Termination
     # ------------------------------------------------------------------ #
 
@@ -540,42 +617,31 @@ class AgenticSession:
         that, accept the edit only if it is non-empty and validates."""
         if self.validation_rounds < self.cfg.max_attempts:
             self.messages.append(
-                {"role": "user", "content": WRAP_UP_MESSAGE.format(reason=reason)}
+                {"role": "user", "content": self.submit.messages.wrap_up.format(reason=reason)}
             )
             self.transcript.write("wrap_up", reason=reason)
-            response = self._call(self.messages, [SUBMIT_TOOL])
+            response = self._call(self.messages, [self.submit.tool])
             if response is not None:
                 tool_calls = list(getattr(response, "tool_calls", None) or [])
                 self._echo(response, tool_calls)
                 for tc in tool_calls:
-                    if getattr(tc, "name", None) != SUBMIT_TOOL_NAME:
+                    if getattr(tc, "name", None) != self.submit.name:
                         continue
-                    output, accepted, _ = self._handle_submit(getattr(tc, "arguments", None))
+                    output, accepted, _ = self.submit.handle(self, getattr(tc, "arguments", None))
                     self.messages.append({
                         "type": "function_call_output",
                         "call_id": getattr(tc, "id", None), "output": output,
                     })
                     self.transcript.write("tool_call", i=self.n_llm_calls - 1,
                                           call_id=getattr(tc, "id", None),
-                                          name=SUBMIT_TOOL_NAME,
+                                          name=self.submit.name,
                                           input=getattr(tc, "arguments", None),
                                           result=output)
                     if accepted:
                         return self._result(True, [], f"submitted_after_{reason}")
                     break
-        changed = self.changed_files()
-        errors = self.run_validators() if changed else ["no changes made"]
-        if changed and not errors:
-            self.strategy = EvolutionStrategy(
-                target_files=_coerce_target_files(
-                    [p for p in changed if p in _ALLOWED_TARGET_FILES]
-                ),
-                optimization_goal=(
-                    f"(agentic editor: no summary submitted; ended by {reason})"
-                ),
-                proposed_changes=self.last_text[:500],
-                rationale="",
-            )
+        success, errors = self.submit.fallback(self, reason)
+        if success:
             return self._result(True, [], reason)
         return self._result(
             False,

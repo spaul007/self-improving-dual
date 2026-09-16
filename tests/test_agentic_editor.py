@@ -232,6 +232,63 @@ class TestHappyPath(EditorBase):
         self.assertEqual(s["read_scope"], "parent")
         self.assertEqual(set(s["roots"]), {"NODE_DIR", "PARENT_DIR", "REPO_DIR"})
 
+    def test_with_memory_arm_gets_the_file_and_the_whole_run(self) -> None:
+        """memory_path: one file bound back as $EDIT_MEMORY_FILE, the read
+        scope forced to "run" (cited nodes must be openable), the memory dir
+        itself masked, and the memory step in the procedure."""
+        mem_dir = self.run / "edit_memory"
+        mem_dir.mkdir()
+        mem = mem_dir / "edit_memory_v002.md"
+        mem.write_text("# ranked edits\n1. node 0 did X\n")
+        (mem_dir / "instruction.md").write_text("ADDENDUM-SECRET")
+        sibling = self.run / "round_000"
+        _agent(sibling, WF)
+        (sibling / "strategy.json").write_text('{"optimization_goal": "SIBLING-GOAL"}')
+        ed, llm = self.editor([
+            _Resp(tool_calls=[_Call("c1", "editor", {"command": "view", "path": "$EDIT_MEMORY_FILE"})]),
+            _Resp(tool_calls=[_Call("c2", "editor", {"command": "view", "path": "$RUN_DIR/round_000/strategy.json"})]),
+            _Resp(tool_calls=[_Call("c3", "editor", {"command": "view", "path": "$RUN_DIR/edit_memory/instruction.md"})]),
+            _Resp(tool_calls=[self.replace("c4", "x = 1", "x = 3"), _submit()]),
+        ], read_scope="parent")                       # config says parent ...
+        self.assertTrue(ed.apply(None, self.base, self.out, memory_path=mem).success)
+        system = llm.calls[0]["messages"][0]["content"]
+        instr = llm.calls[0]["messages"][1]["content"]
+        self.assertIn("the roots RUN_DIR, NODE_DIR, PARENT_DIR and REPO_DIR", system)   # ... but the arm forces run
+        self.assertIn("  EDIT_MEMORY_FILE  the edit memory of this run (see below)", instr)
+        self.assertIn("accumulated edit memory of previous edits in this run", instr)
+        self.assertIn("2. Read $EDIT_MEMORY_FILE", instr)
+        self.assertIn("$RUN_DIR/round_NNN/ — open their", instr)
+        self.assertIn("3. View workflow.py", instr)
+        self.assertIn("5. Run validate", instr)
+        self.assertNotIn(str(mem), instr)
+        self.assertNotIn("edit_memory/", instr)
+        outs = [e for e in self.transcript() if e["kind"] == "tool_call"]
+        self.assertIn("node 0 did X", outs[0]["result"])
+        self.assertIn("SIBLING-GOAL", outs[1]["result"])
+        self.assertIn("not readable", outs[2]["result"])
+        self.assertNotIn("ADDENDUM-SECRET", outs[2]["result"])
+        s = self.session()
+        self.assertEqual(s["read_scope"], "run")
+        self.assertEqual(s["memory_path"], str(mem))
+        self.assertEqual(s["roots"]["EDIT_MEMORY_FILE"], str(mem.resolve()))
+        self.assertIn("RUN_DIR", s["roots"])
+
+    def test_without_memory_arm_cannot_see_the_memory_dir(self) -> None:
+        mem_dir = self.run / "edit_memory"
+        mem_dir.mkdir()
+        (mem_dir / "edit_memory.md").write_text("MEMORY-SECRET")
+        ed, llm = self.editor([
+            _Resp(tool_calls=[_Call("c1", "editor", {"command": "view", "path": "$RUN_DIR/edit_memory/edit_memory.md"})]),
+            _Resp(tool_calls=[self.replace("c2", "x = 1", "x = 3"), _submit()]),
+        ])
+        self.assertTrue(ed.apply(None, self.base, self.out).success)
+        instr = llm.calls[0]["messages"][1]["content"]
+        self.assertNotIn("memory", instr.lower())
+        outs = [e for e in self.transcript() if e["kind"] == "tool_call"]
+        self.assertIn("not readable", outs[0]["result"])
+        self.assertNotIn("MEMORY-SECRET", outs[0]["result"])
+        self.assertIsNone(self.session()["memory_path"])
+
     def test_run_read_scope_is_the_default_and_bad_values_raise(self) -> None:
         ed, _ = self.editor([])
         self.assertEqual(ed.read_scope, "run")
@@ -576,6 +633,22 @@ class TestConcurrencyAndWiring(EditorBase):
             self.assertFalse(fw.editor.include_manager_context)
             self.assertEqual(fw.editor.read_scope, "run")
             self.assertEqual(len(fw.train_case_ids), 60)
+
+    def test_editmem_pair_differs_only_in_the_edit_memory_block(self) -> None:
+        from meta_agent.config import REPO_ROOT, load
+        for a_name, b_name in (("hgm_travel_1000_dsv4pro_agentic_editmem", "hgm_travel_1000_dsv4pro_agentic_no_editmem"),
+                               ("hgm_travel_smoke_agentic_editmem", "hgm_travel_smoke_agentic")):
+            a = load(REPO_ROOT / "configs" / f"{a_name}.yaml")
+            b = load(REPO_ROOT / "configs" / f"{b_name}.yaml")
+            self.assertIsNotNone(a.edit_memory, a_name)
+            self.assertIsNone(b.edit_memory, b_name)
+            self.assertEqual(a.edit_memory.type, "agentic")
+            self.assertEqual(a.edit_memory.config["selection"], "bandit")
+            self.assertGreater(a.manager.config["expand_eval_size"], 0)
+            da, db = a.model_dump(), b.model_dump()
+            for d in (da, db):
+                d.pop("edit_memory"), d.pop("experiment_name")
+            self.assertEqual(da, db, a_name)
 
     def test_1000_run_config_matches_the_finished_run(self) -> None:
         from meta_agent.config import REPO_ROOT, load

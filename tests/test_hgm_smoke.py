@@ -154,11 +154,13 @@ class _StubEditor:
     def __init__(self, fail_call: int | None = None) -> None:
         self.calls = 0
         self.fail_call = fail_call
+        self.memory_paths: list = []
 
-    def apply(self, feedback, base_dir, out_dir, *, context=None):
+    def apply(self, feedback, base_dir, out_dir, *, context=None, memory_path=None):
         from meta_agent.models import EditResult, EvolutionStrategy
 
         self.calls += 1
+        self.memory_paths.append(memory_path)
         src = Path(base_dir) / "task_agent"
         dst = Path(out_dir) / "task_agent"
         if dst.exists():
