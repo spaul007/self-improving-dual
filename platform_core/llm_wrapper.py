@@ -154,6 +154,21 @@ def _env_default_timeout_s() -> float:
     return val if val > 0 else DEFAULT_API_TIMEOUT_S
 
 
+def _env_default_extra_body() -> Optional[dict[str, Any]]:
+    """Request-body extras from ``LLM_EXTRA_BODY`` (a JSON object), e.g. an
+    OpenRouter provider pin for the task agent. Set child-only by
+    ``SubprocessEvaluator._child_env`` from ``task_agent.extra_body``. Unset
+    or unparseable means none."""
+    raw = os.environ.get("LLM_EXTRA_BODY")
+    if not raw:
+        return None
+    try:
+        val = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    return val if isinstance(val, dict) and val else None
+
+
 def _env_default_max_output_tokens() -> Optional[int]:
     """Output-token cap from ``LLM_MAX_OUTPUT_TOKENS``. Unset, unparseable
     or non-positive all mean "no cap" (``None``), preserving the
@@ -344,6 +359,7 @@ def call_llm(
     max_output_tokens: Optional[int] = DEFAULT_MAX_OUTPUT_TOKENS,
     api_key_env: Optional[str] = None,
     timeout_s: Optional[float] = None,
+    extra_body: Optional[dict[str, Any]] = None,
     **kwargs: Any,
 ) -> LLMResponse:
     """Make one Responses-API round-trip and return a normalised response.
@@ -358,6 +374,13 @@ def call_llm(
 
     ``timeout_s`` is the per-request client timeout for this call; omitted,
     it falls back to ``LLM_TIMEOUT_S`` / the module default.
+
+    ``extra_body`` is merged verbatim into the request body — provider-
+    specific routing such as OpenRouter's
+    ``{"provider": {"order": ["Baidu"], "allow_fallbacks": false}}`` that
+    pins a model to one upstream provider. Falls back to the
+    ``LLM_EXTRA_BODY`` env var (JSON; exported per evaluator child from
+    ``task_agent.extra_body``), else omitted.
 
     ``model``, ``reasoning_effort``, and ``base_url`` fall back to the
     ``LLM_MODEL`` / ``LLM_REASONING_EFFORT`` / ``LLM_BASE_URL`` environment
@@ -398,6 +421,7 @@ def call_llm(
         max_output_tokens if max_output_tokens is not None
         else _env_default_max_output_tokens()
     )
+    extra_body = extra_body if extra_body else _env_default_extra_body()
 
     # The temperature actually sent, or None when omitted (see docstring
     # for the resolution rules). Computed up front so the llm_call trace
@@ -454,6 +478,7 @@ def call_llm(
             "temperature": resolved_temperature,
             "tool_names": [t["name"] for t in norm_tools],
             "num_messages": len(messages),
+            **({"extra_body": extra_body} if extra_body else {}),
         },
     )
     if os.environ.get("META_AGENT_VERBOSE") == "1":
@@ -499,6 +524,8 @@ def call_llm(
     # GLM, Qwen, gpt-oss) accept reasoning + temperature together.
     if resolved_temperature is not None:
         request["temperature"] = resolved_temperature
+    if extra_body:
+        request["extra_body"] = dict(extra_body)
 
     started = time.time()
     last_err: Optional[Exception] = None

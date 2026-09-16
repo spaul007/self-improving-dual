@@ -607,6 +607,12 @@ class TestConcurrencyAndWiring(EditorBase):
         self.assertEqual(kw["base_url"], "https://openrouter.ai/api/v1")
         self.assertEqual(kw["reasoning_effort"], "low")
         self.assertNotIn("temperature", kw)
+        self.assertNotIn("extra_body", kw)
+        pin = {"provider": {"order": ["Baidu"], "allow_fallbacks": False}}
+        ed3, llm3 = self.editor([_Resp(tool_calls=[self.replace("c1", "x = 1", "x = 3"), _submit()])],
+                                extra_body=pin)
+        self.assertTrue(ed3.apply(None, self.base, self.out).success)
+        self.assertEqual(llm3.calls[0]["extra_body"], pin)
         # Default editor: neither key is sent, so stubs/other providers see
         # exactly the historical kwargs.
         ed2, llm2 = self.editor([_Resp(tool_calls=[self.replace("c1", "x = 1", "x = 3"), _submit()])])

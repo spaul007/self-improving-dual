@@ -73,6 +73,12 @@ task_agent:
   # near 14k; 64k leaves ample room for agents that retry or write more.
   max_output_tokens: 65536
   base_url: "https://openrouter.ai/api/v1"
+  # Pinned to one upstream provider (Baidu, fp8): every task-agent call in the
+  # run is served by the same weights/quantisation, no silent fallback.
+  extra_body:
+    provider:
+      order: ["Baidu"]
+      allow_fallbacks: false
 
 # (manager/editor are required by the config schema but unused by evaluate.py / snapshot_eval.py)
 manager:
@@ -111,6 +117,7 @@ editor:
     reasoning_effort: "none"
     base_url: "https://openrouter.ai/api/v1"
     max_attempts: 3
+    extra_body: {provider: {order: ["Baidu"], allow_fallbacks: false}}   # same provider pin as the run configs
 
 env:
   META_AGENT_STRIP_REASONING: "1"

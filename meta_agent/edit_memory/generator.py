@@ -116,18 +116,20 @@ class LLMSpec:
 
     def __init__(self, *, model: Optional[str], reasoning_effort: Optional[str],
                  base_url: Optional[str], api_key_env: Optional[str],
-                 llm_timeout_s: Optional[float]) -> None:
+                 llm_timeout_s: Optional[float],
+                 extra_body: Optional[dict[str, Any]] = None) -> None:
         self.model = model
         self.reasoning_effort = reasoning_effort
         self.base_url = base_url
         self.api_key_env = api_key_env
         self.llm_timeout_s = llm_timeout_s
+        self.extra_body = dict(extra_body) if extra_body else None
 
     def kwargs_plain(self) -> dict[str, Any]:
         """The raw fields (for a SessionConfig)."""
         return {"model": self.model, "reasoning_effort": self.reasoning_effort,
                 "base_url": self.base_url, "api_key_env": self.api_key_env,
-                "llm_timeout_s": self.llm_timeout_s}
+                "llm_timeout_s": self.llm_timeout_s, "extra_body": self.extra_body}
 
     def kwargs(self) -> dict[str, Any]:
         """``call_llm`` kwargs for a single (non-session) call."""
@@ -144,6 +146,8 @@ class LLMSpec:
             kw["api_key_env"] = self.api_key_env
         if self.llm_timeout_s:
             kw["timeout_s"] = self.llm_timeout_s
+        if self.extra_body:
+            kw["extra_body"] = self.extra_body
         return kw
 
 

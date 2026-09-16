@@ -103,7 +103,8 @@ class CuratorBase(unittest.TestCase):
             cfg=CuratorConfig(sandbox="none", max_llm_calls=cfg.pop("max_llm_calls", 8),
                               timeout_s=60, max_attempts=2),
             llm_kwargs={"model": "m", "reasoning_effort": "low", "base_url": None,
-                        "api_key_env": "K", "llm_timeout_s": 30},
+                        "api_key_env": "K", "llm_timeout_s": 30,
+                        "extra_body": {"provider": {"order": ["Baidu"]}}},
         )
         return res, llm
 
@@ -148,6 +149,7 @@ class TestSession(CuratorBase):
         self.assertNotIn(str(self.exp), instr)
         self.assertEqual(first["messages"][0]["content"], P.MEMORY_CURATOR_SYSTEM)
         self.assertEqual((first["model"], first["api_key_env"], first["timeout_s"]), ("m", "K", 30))
+        self.assertEqual(first["extra_body"], {"provider": {"order": ["Baidu"]}})
         outs = [e for e in map(json.loads, (self.work / "agentic" / "transcript.jsonl").read_text().splitlines())
                 if e["kind"] == "tool_call"]
         self.assertIn("-    return None", outs[0]["result"])

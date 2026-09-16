@@ -284,6 +284,33 @@ class TaskAgentTemperatureTests(unittest.TestCase):
             env = ev_none._child_env(Path(tmp) / "trace.jsonl")
         self.assertNotIn("LLM_MAX_OUTPUT_TOKENS", env)
 
+    def test_task_agent_extra_body_is_child_env_only(self) -> None:
+        """task_agent.extra_body (e.g. an OpenRouter provider pin) reaches the
+        case subprocesses as LLM_EXTRA_BODY JSON and never the parent env;
+        build_components threads it from the YAML."""
+        import json
+        import tempfile
+
+        from meta_agent.evaluator import SubprocessEvaluator
+
+        pin = {"provider": {"order": ["Baidu"], "allow_fallbacks": False}}
+        ev = SubprocessEvaluator(task_agent_extra_body=pin)
+        with tempfile.TemporaryDirectory() as tmp:
+            env = ev._child_env(Path(tmp) / "trace.jsonl")
+        self.assertEqual(json.loads(env["LLM_EXTRA_BODY"]), pin)
+        self.assertNotIn("LLM_EXTRA_BODY", os.environ)
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertNotIn("LLM_EXTRA_BODY", SubprocessEvaluator()._child_env(Path(tmp) / "trace.jsonl"))
+        cfg = cfg_mod.TaskAgentSpec(model="deepseek/deepseek-v4-pro-0813", reasoning_effort="none",
+                                    base_url="https://openrouter.ai/api/v1", extra_body=pin)
+        self.assertEqual(cfg.extra_body, pin)
+        cfg = type("C", (), {"task_agent": cfg})()
+        cfg_mod._ensure_builtins_loaded()
+        ev2 = cfg_mod._build_with_injection(
+            cfg_mod.ComponentSpec(type="subprocess", config={}), "evaluator",
+            {"scorer": None, "task_agent_extra_body": cfg.task_agent.extra_body})
+        self.assertEqual(ev2.task_agent_extra_body, pin)
+
     def test_injection_threads_max_output_tokens_into_evaluator(self) -> None:
         cfg_mod._ensure_builtins_loaded()
         spec = cfg_mod.ComponentSpec(type="subprocess", config={})

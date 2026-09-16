@@ -540,6 +540,27 @@ class ApiKeyEnvAndTimeoutTests(BaseUrlPlumbingTests):
             os.environ.pop("OpenRouter_API_KEY", None)
         self.assertEqual(_FakeOpenAI.instances[-1].init_kwargs["api_key"], "sk-or-test")
 
+    def test_extra_body_is_forwarded_verbatim(self) -> None:
+        from platform_core import llm_wrapper
+        pin = {"provider": {"order": ["Baidu"], "allow_fallbacks": False}}
+        llm_wrapper.call_llm([{"role": "user", "content": "hi"}], extra_body=pin)
+        self.assertEqual(_FakeOpenAI.instances[-1].sink["create_kwargs"]["extra_body"], pin)
+        llm_wrapper.call_llm([{"role": "user", "content": "hi"}])
+        self.assertNotIn("extra_body", _FakeOpenAI.instances[-1].sink["create_kwargs"])
+        # Env fallback (the evaluator sets it child-only for the task agent);
+        # an explicit argument wins; junk is ignored.
+        os.environ["LLM_EXTRA_BODY"] = json.dumps(pin)
+        try:
+            llm_wrapper.call_llm([{"role": "user", "content": "hi"}])
+            self.assertEqual(_FakeOpenAI.instances[-1].sink["create_kwargs"]["extra_body"], pin)
+            llm_wrapper.call_llm([{"role": "user", "content": "hi"}], extra_body={"x": 1})
+            self.assertEqual(_FakeOpenAI.instances[-1].sink["create_kwargs"]["extra_body"], {"x": 1})
+            os.environ["LLM_EXTRA_BODY"] = "not json"
+            llm_wrapper.call_llm([{"role": "user", "content": "hi"}])
+            self.assertNotIn("extra_body", _FakeOpenAI.instances[-1].sink["create_kwargs"])
+        finally:
+            os.environ.pop("LLM_EXTRA_BODY", None)
+
     def test_default_key_unchanged_without_api_key_env(self) -> None:
         from platform_core import llm_wrapper
         llm_wrapper.call_llm([{"role": "user", "content": "hi"}])

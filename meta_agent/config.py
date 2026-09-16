@@ -97,6 +97,10 @@ class TaskAgentSpec(LLMSpec):
     temperature: Optional[float] = 0.2
     timeout_s: Optional[float] = None
     max_output_tokens: Optional[int] = None
+    # Merged into every task-agent request body (child env only, as
+    # LLM_EXTRA_BODY JSON): e.g. OpenRouter's provider pin
+    # {"provider": {"order": ["Baidu"], "allow_fallbacks": false}}.
+    extra_body: Optional[dict[str, Any]] = None
 
 
 class SplitSpec(BaseModel):
@@ -296,6 +300,7 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
             # (much longer) budgets.
             "task_agent_timeout_s": cfg.task_agent.timeout_s,
             "task_agent_max_output_tokens": cfg.task_agent.max_output_tokens,
+            "task_agent_extra_body": cfg.task_agent.extra_body,
         },
     )
 

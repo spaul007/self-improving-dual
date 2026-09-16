@@ -367,6 +367,7 @@ class SessionConfig:
     base_url: Optional[str] = None
     api_key_env: Optional[str] = None      # take the key from this env var
     llm_timeout_s: Optional[float] = None  # per-request client timeout
+    extra_body: Optional[dict[str, Any]] = None  # e.g. OpenRouter provider pin
 
 
 @dataclass
@@ -546,6 +547,8 @@ class AgenticSession:
             kw["api_key_env"] = self.cfg.api_key_env
         if self.cfg.llm_timeout_s:
             kw["timeout_s"] = self.cfg.llm_timeout_s
+        if self.cfg.extra_body:
+            kw["extra_body"] = self.cfg.extra_body
         i = self.n_llm_calls
         self.transcript.write("llm_call", i=i, n_messages=len(messages),
                               tools=[t["name"] for t in tools])

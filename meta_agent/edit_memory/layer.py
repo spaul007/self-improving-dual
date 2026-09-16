@@ -66,6 +66,7 @@ class EditMemoryLayer:
         base_url: Optional[str] = None,
         api_key_env: Optional[str] = None,
         llm_timeout_s: Optional[float] = None,
+        extra_body: Optional[dict[str, Any]] = None,
         curator: Optional[dict[str, Any]] = None,
         memory_max_chars: int = 20000,
         instruction_addendum_max_chars: int = 4000,
@@ -86,7 +87,8 @@ class EditMemoryLayer:
         self.beta_prior = float(beta_prior)
         self.seed = int(seed)
         self.spec = G.LLMSpec(model=model, reasoning_effort=reasoning_effort, base_url=base_url,
-                              api_key_env=api_key_env, llm_timeout_s=llm_timeout_s)
+                              api_key_env=api_key_env, llm_timeout_s=llm_timeout_s,
+                              extra_body=extra_body)
         self.curator_cfg = CuratorConfig(**(curator or {}))
         self.memory_max_chars = int(memory_max_chars)
         self.instruction_addendum_max_chars = int(instruction_addendum_max_chars)

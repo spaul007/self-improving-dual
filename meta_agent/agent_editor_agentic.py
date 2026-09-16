@@ -20,7 +20,7 @@ import json
 import os
 import shutil
 from pathlib import Path
-from typing import Callable, Iterable, Optional, Union
+from typing import Any, Callable, Iterable, Optional, Union
 
 from . import verbose_log
 from .agent_editor import AgentEditor, Validator
@@ -91,6 +91,10 @@ class AgenticEditor(AgentEditor):
         include_manager_context: bool = False,
         api_key_env: Optional[str] = None,
         llm_timeout_s: Optional[float] = None,
+        # Merged into every request body of this editor's calls, e.g.
+        # OpenRouter's provider pin {"provider": {"order": ["Baidu"],
+        # "allow_fallbacks": false}}.
+        extra_body: Optional[dict[str, Any]] = None,
         # How much of the run the meta-agent may read (bash + editor tool):
         # "run" — the whole run directory, every node's code and evidence;
         # "parent" — only $PARENT_DIR and its own $NODE_DIR (no $RUN_DIR root).
@@ -121,6 +125,7 @@ class AgenticEditor(AgentEditor):
         # one stalled call cannot eat the whole session budget.
         self.api_key_env = api_key_env or None
         self.llm_timeout_s = float(llm_timeout_s) if llm_timeout_s else None
+        self.extra_body = dict(extra_body) if extra_body else None
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -183,7 +188,7 @@ class AgenticEditor(AgentEditor):
             transcript_result_chars=self.transcript_result_chars,
             model=self.model, reasoning_effort=self.reasoning_effort,
             base_url=self.base_url, api_key_env=self.api_key_env,
-            llm_timeout_s=self.llm_timeout_s,
+            llm_timeout_s=self.llm_timeout_s, extra_body=self.extra_body,
         )
         session = AgenticSession(
             self.llm, toolset,

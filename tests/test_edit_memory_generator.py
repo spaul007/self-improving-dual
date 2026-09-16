@@ -97,7 +97,8 @@ class TestCalls(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.tmp = Path(self._tmp.name)
         self.spec = G.LLMSpec(model="m", reasoning_effort="low", base_url="http://x",
-                              api_key_env="K", llm_timeout_s=60)
+                              api_key_env="K", llm_timeout_s=60,
+                              extra_body={"provider": {"order": ["Baidu"], "allow_fallbacks": False}})
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
@@ -114,6 +115,7 @@ class TestCalls(unittest.TestCase):
         self.assertEqual((kw["model"], kw["reasoning_effort"], kw["base_url"], kw["api_key_env"], kw["timeout_s"]),
                          ("m", "low", "http://x", "K", 60))
         self.assertNotIn("temperature", kw)
+        self.assertEqual(kw["extra_body"], {"provider": {"order": ["Baidu"], "allow_fallbacks": False}})
         self.assertIn("previous draft was rejected", llm.calls[1]["messages"][1]["content"])
         self.assertIn("## 2. Usefulness", llm.calls[1]["messages"][1]["content"])
         sys_msg = llm.calls[0]["messages"][0]["content"]

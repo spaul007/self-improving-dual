@@ -86,6 +86,13 @@ editor:
     reasoning_effort: "low"
     base_url: "https://openrouter.ai/api/v1"
     api_key_env: "OpenRouter_API_KEY"
+    # Pinned to one upstream provider (Baidu, fp8 — the cheapest deepseek-v4-pro-0813
+    # endpoint on OpenRouter, 2026-09-16) so every call in the run is served by the
+    # same weights/quantisation; no silent fallback to another provider.
+    extra_body:
+      provider:
+        order: ["Baidu"]
+        allow_fallbacks: false
     llm_timeout_s: 600
     max_attempts: 3          # submission / validation rounds
     max_llm_calls: 25        # tool-loop iterations (whole history re-sent each call)

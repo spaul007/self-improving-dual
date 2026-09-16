@@ -10,6 +10,8 @@ Each benchmark case spawns a fresh Python child running
         when configured — see ``task_agent_temperature``)
     env LLM_MAX_OUTPUT_TOKENS = task-agent per-call output cap (child env
         only, when configured — see ``task_agent_max_output_tokens``)
+    env LLM_EXTRA_BODY = JSON merged into every task-agent request body
+        (child env only, when configured — see ``task_agent_extra_body``)
     stdin    = JSON Task (description, case_id, context)
 
 The runner imports ``workflow.run_task``, calls it with the Task, and
@@ -93,6 +95,7 @@ class SubprocessEvaluator:
         task_agent_temperature: float | None = None,
         task_agent_timeout_s: float | None = None,
         task_agent_max_output_tokens: int | None = None,
+        task_agent_extra_body: dict | None = None,
     ) -> None:
         self.wall_time_s = float(wall_time_s_per_case)
         self.memory_bytes = int(memory_mb) * 1024 * 1024
@@ -138,6 +141,10 @@ class SubprocessEvaluator:
             if task_agent_max_output_tokens is not None
             else None
         )
+        # Request-body extras for the task agent's calls only (exported as
+        # LLM_EXTRA_BODY JSON on the child env), e.g. an OpenRouter provider
+        # pin so every case is served by the same upstream provider.
+        self.task_agent_extra_body = dict(task_agent_extra_body) if task_agent_extra_body else None
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -254,6 +261,8 @@ class SubprocessEvaluator:
             env["LLM_TIMEOUT_S"] = str(self.task_agent_timeout_s)
         if self.task_agent_max_output_tokens is not None:
             env["LLM_MAX_OUTPUT_TOKENS"] = str(self.task_agent_max_output_tokens)
+        if self.task_agent_extra_body:
+            env["LLM_EXTRA_BODY"] = json.dumps(self.task_agent_extra_body)
         return env
 
     def _preexec(self):

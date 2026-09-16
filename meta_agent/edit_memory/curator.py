@@ -142,7 +142,7 @@ def run_curator(
         transcript_result_chars=cfg.transcript_result_chars,
         model=llm_kwargs.get("model"), reasoning_effort=llm_kwargs.get("reasoning_effort"),
         base_url=llm_kwargs.get("base_url"), api_key_env=llm_kwargs.get("api_key_env"),
-        llm_timeout_s=llm_kwargs.get("llm_timeout_s"),
+        llm_timeout_s=llm_kwargs.get("llm_timeout_s"), extra_body=llm_kwargs.get("extra_body"),
     )
     session = AgenticSession(llm, toolset, submit=submit, cfg=session_cfg,
                              transcript=Transcript(agentic_dir / TRANSCRIPT_NAME))
