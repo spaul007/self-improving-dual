@@ -201,21 +201,24 @@ class HGMManager:
             ]
 
         # Root: copy the seed and PRE-EVALUATE it on the full train set
-        # (free — not charged to eval_budget), so it qualifies as an
-        # expansion parent. Then `init_expansions` unconditional EXPANDs;
-        # only evaluated, positive-mean nodes are expandable, so these all
-        # branch off the freshly pre-evaluated root.
+        # (free — not charged to eval_budget). Then `init_expansions`
+        # unconditional EXPANDs, ALL from the root (node 0). In the
+        # reference (decoupled) HGM this falls out of the expandable filter
+        # — fresh children are unevaluated — but with expand_eval_size > 0
+        # a child is evaluated immediately and could win the clade bandit
+        # for the next init expansion (it did, in the 2026-09-13 run), so
+        # the root is now named explicitly (user decision 2026-09-16).
         self._run_seed(seed_dir, evaluator, gatherer)
         self._snapshot("seed")
+        root_id = 0
         for _ in range(self.init_expansions):
-            expandable = self._expandable()
-            if not expandable or self._tree.n_real_nodes() > max_rounds:
+            if root_id not in self._expandable() or self._tree.n_real_nodes() > max_rounds:
                 break
             # Same affordability guard as the main loop (matters when
             # eval_budget is tiny relative to the paired expansion cost).
             if self.eval_budget - self._budget_spent < self._min_budget_to_expand():
                 break
-            nid = self._expand(self._tree.argmax_expand(1.0, expandable), editor, gatherer, evaluator)
+            nid = self._expand(root_id, editor, gatherer, evaluator)
             self._snapshot("expand", node_id=nid)
 
         # Scheduled EXPAND/EVALUATE loop. The while-stop keys off total spend

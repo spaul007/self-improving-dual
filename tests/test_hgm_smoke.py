@@ -266,6 +266,22 @@ class HGMEvolveTests(unittest.TestCase):
         )
         return manager, outcome
 
+    def test_init_expansions_all_branch_from_the_seed(self) -> None:
+        """With paired evaluation a fresh child is expandable right away and
+        could win the clade bandit; the init expansions must still all come
+        from node 0, and only the regular loop branches elsewhere."""
+        for k in (2, 3):
+            exp = self.tmp / f"exp_init{k}"
+            exp.mkdir()
+            manager, _ = self._run(init_expansions=k, expand_eval_size=4, eval_budget=40,
+                                   experiment_dir=exp)
+            nodes = sorted(manager._tree.nodes.values(), key=lambda n: n.node_id)
+            self.assertEqual([n.parent_id for n in nodes[1:k + 1]], [0] * k)
+            # Each init child was paired-evaluated (and so was expandable).
+            self.assertTrue(all(n.n_evals == 4 or n.n_evals > 4 for n in nodes[1:k + 1]))
+            # The regular loop did branch off non-root parents afterwards.
+            self.assertTrue(any(n.parent_id not in (None, 0) for n in nodes[k + 1:]))
+
     def test_dead_editor_aborts_after_consecutive_failures(self) -> None:
         """An editor that never produces an edit must not spin forever:
         failed edits cost no evals and are not real nodes, so nothing else

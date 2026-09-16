@@ -261,7 +261,10 @@ unaffordable. At 1000 evals with `alpha 0.5` this leaves the tree width
 unchanged (32 nodes / 63 batches) but makes 32 of the batches mandatory child
 evaluations, so every editor session is measured; the bandit keeps the other
 31 batches. The agentic configs enable it; set it to 0 for the reference's
-fully decoupled behaviour.
+fully decoupled behaviour. The `init_expansions` always branch from the
+seed root (node 0) — with paired evaluation a fresh child would otherwise
+be expandable immediately and could win the clade bandit for the next
+init expansion; the regular loop's parent choice is unchanged.
 
 ## Edit memory (optional)
 
