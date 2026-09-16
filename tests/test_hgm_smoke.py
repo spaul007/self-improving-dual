@@ -151,9 +151,10 @@ class _StubEditor:
     LLM. Optionally fails a chosen call (1-indexed) to exercise the
     edit-failed path."""
 
-    def __init__(self, fail_call: int | None = None) -> None:
+    def __init__(self, fail_call: int | None = None, fail_from: int | None = None) -> None:
         self.calls = 0
         self.fail_call = fail_call
+        self.fail_from = fail_from          # every call from this one on fails
         self.memory_paths: list = []
 
     def apply(self, feedback, base_dir, out_dir, *, context=None, memory_path=None):
@@ -172,7 +173,8 @@ class _StubEditor:
             proposed_changes="stub",
             rationale="",
         )
-        if self.fail_call is not None and self.calls == self.fail_call:
+        if (self.fail_call is not None and self.calls == self.fail_call) or \
+                (self.fail_from is not None and self.calls >= self.fail_from):
             return EditResult(
                 success=False,
                 errors=["stub editor forced failure"],
@@ -228,9 +230,9 @@ class HGMEvolveTests(unittest.TestCase):
         self.experiment = self.tmp / "exp"
         self.experiment.mkdir()
 
-    def _run(self, *, fail_call=None, eval_budget=40, init_expansions=2,
+    def _run(self, *, fail_call=None, fail_from=None, eval_budget=40, init_expansions=2,
              finalize_top_k=5, seed_round_dir=None, experiment_dir=None,
-             expand_eval_size=0):
+             expand_eval_size=0, max_consecutive_edit_failures=5):
         from meta_agent.feedback_gatherer import DefaultFeedbackGatherer
         from meta_agent.managers.hgm import HGMManager
 
@@ -243,8 +245,9 @@ class HGMEvolveTests(unittest.TestCase):
             finalize_top_k=finalize_top_k,
             seed_round_dir=seed_round_dir,
             expand_eval_size=expand_eval_size,
+            max_consecutive_edit_failures=max_consecutive_edit_failures,
         )
-        editor = _StubEditor(fail_call=fail_call)
+        editor = _StubEditor(fail_call=fail_call, fail_from=fail_from)
         evaluator = _StubEvaluator()
         self.evaluator = evaluator
         # The stub editor does all the "editing" — the HGM manager makes no
@@ -262,6 +265,22 @@ class HGMEvolveTests(unittest.TestCase):
             eval_case_ids=None,
         )
         return manager, outcome
+
+    def test_dead_editor_aborts_after_consecutive_failures(self) -> None:
+        """An editor that never produces an edit must not spin forever:
+        failed edits cost no evals and are not real nodes, so nothing else
+        bounds the loop (495 dead rounds in 20 min on 2026-09-16)."""
+        with self.assertRaises(RuntimeError) as cm:
+            self._run(fail_from=1, max_consecutive_edit_failures=3)
+        self.assertIn("3 consecutive edit failures", str(cm.exception))
+        rounds = sorted(p.name for p in self.experiment.iterdir() if p.name.startswith("round_"))
+        self.assertEqual(rounds, ["round_000", "round_001", "round_002", "round_003"])
+
+    def test_isolated_failures_reset_the_counter(self) -> None:
+        manager, outcome = self._run(fail_call=2, max_consecutive_edit_failures=2)
+        self.assertEqual(manager._budget_spent, 40)
+        self.assertEqual(sum(n.edit_failed for n in manager._tree.nodes.values()), 1)
+        self.assertEqual(manager._consecutive_edit_failures, 0)
 
     def test_evolve_consumes_budget_and_builds_a_valid_tree(self) -> None:
         manager, outcome = self._run()

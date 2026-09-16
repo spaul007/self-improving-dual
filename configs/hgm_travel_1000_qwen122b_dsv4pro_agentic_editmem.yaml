@@ -1,34 +1,27 @@
-experiment_name: "travel_hgm_smoke60_agentic_editmem"
+experiment_name: "hgm_travel_1000_qwen122b_dsv4pro_agentic_editmem"
 
-# End-to-end smoke for the AGENTIC editor (HGM-seed-style bash + editor tool
-# loop, bubblewrap-sandboxed, no docker) on the REAL 60-case train split with a
-# small budget (96 evals ≈ 6 batches, ≤8 rounds) WITH the edit-memory layer
-# (window_size 2, instruction_every 1, so a memory, a with-arm expansion and an
-# instruction update all happen within the run). Checks the artifacts, not
-# the score — in addition to the no-memory smoke's checks:
-#   * edit_memory/window_001/curation.md + agentic/, edit_memory_v001.md with
-#     the four sections and no score prediction, state.json
-#   * a later round_*/hgm_node.json with memory_arm "with" whose
-#     agentic/session.json has memory_path set and read_scope "run"
-#   * edit_memory/instruction_update_001/q.md and instruction_v001.md
-# Base checks:
-#   * every expanded round_*/agentic/ has transcript.jsonl + session.json with
-#     sandbox_mode == "bwrap", end_reason == "submitted", validation_rounds <= 3
-#   * transcript shows reads of the parent's feedback.json / logs/case_*.json,
-#     str_replace edits, a `validate` call, then submit_self_improvement
-#   * with META_AGENT_VERBOSE=1, verbose/editor_agentic_instruction.txt lists
-#     paths only (no inlined source, no feedback digest, no steering context)
-#   * the parent console prints no "[editor:agentic] bwrap unavailable" line
-# The task agent needs the node-5 vLLM endpoint; the editor needs the
-# OpenRouter key (see the editor block). Run:
+# FULL RUN (2026-09-16): edit-memory layer, agentic editor, eval_budget 1000,
+# expansion-paired evaluation (expand_eval_size 16), 60-case train split.
+#   task agent            : Qwen/Qwen3.5-122B-A10B at reasoning medium on the
+#                           local node-5 vLLM (same as the smoke run)
+#   editor + edit memory  : DeepSeek V4 Pro (dated pin deepseek-v4-pro-0813 on
+#                           OpenRouter, OpenRouter_API_KEY via api_key_env)
+#   scorer conversion     : node-5 Qwen (TRAVEL_CONVERT_*)
+# Derived from hgm_travel_1000_dsv4pro_agentic_editmem.yaml by swapping the
+# task agent, dropping the run-wide LLM_API_KEY_ENV (the task agent stays on
+# the local endpoint) and the dsv4pro seed_round_dir (fresh 60-case seed
+# pre-eval on Qwen). Everything else — schedule, editor budgets, edit-memory
+# cadence (window 4, instruction every 2, bandit over the arms) — unchanged.
+# Launch:
 #   source /groups/AIC-MV/sudipta.paul/code/random/api.sh
-#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_smoke_agentic_editmem.yaml
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_1000_qwen122b_dsv4pro_agentic_editmem.yaml
 project: "travel"
 
 eval_visibility: "blackbox"   # ignored by the agentic editor: scorer never exposed
+verbose: true                 # META_AGENT_VERBOSE=1: full prompts + message history per session
 
 loop:
-  max_rounds: 8
+  max_rounds: 1000
   score_target: 0.99
 
 task_agent:
@@ -39,8 +32,8 @@ task_agent:
 manager:
   type: "hgm"
   config:
-    eval_budget: 96
-    init_expansions: 2
+    eval_budget: 1000
+    init_expansions: 3
     alpha: 0.5
     epsilon: 0.25
     beta_prior: 1.0
@@ -54,8 +47,10 @@ manager:
     # batches mandatory child evaluations (31 bandit-chosen instead of 63).
     expand_eval_size: 16
     max_consecutive_edit_failures: 5   # abort when the editor is dead (2026-09-16: 495 failed rounds on an exhausted key)
-    finalize_top_k: 2
-    snapshot_tree: false
+    finalize_top_k: 3        # top-3 finalists topped up to the full 60-case train split before the final pick
+    # Fresh 60-case seed pre-eval on the Qwen task agent (no seed_round_dir).
+    full_eval_top_k: 0
+    snapshot_tree: true
     seed: 42
 
 evaluator:
@@ -71,22 +66,10 @@ gatherer:
   config:
     error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
 
-# The agentic editor: one tool-use session per expansion. The model reads the
-# parent node's evidence from disk itself; the manager's steering context and
-# the feedback digest are NOT put in the prompt (include_manager_context: false).
-# META-MODEL: DeepSeek V4 Pro on OpenRouter (dated pin deepseek-v4-pro-0813,
-# $0.66/M in, $1.98/M out — the slug the 2026-09-10 travel evals used). Only
-# the agentic editor goes to OpenRouter; the task agent stays on the local
-# node-5 Qwen. api_key_env makes the editor read the OpenRouter
-# key from its own env var, so the launch is just:
-#   source /groups/AIC-MV/sudipta.paul/code/random/api.sh   # exports OpenRouter_API_KEY (+ OPENAI_API_KEY)
-#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_smoke_agentic_editmem.yaml
-# reasoning_effort "low": at "medium" this model's per-turn reasoning drifted to
-# 33k tokens / 444 s in long tool loops (see eval_travel_or_dsv4pro_0813_noreason.yaml);
-# a 25-40 turn editing session is exactly that shape. llm_timeout_s caps one
-# request so a stalled OpenRouter call cannot eat the session budget.
-# Cost: the Qwen dry run re-sent ~530k input tokens over 26 calls ⇒ ≈$0.4 per
-# expansion at this budget.
+# Agentic editor on DeepSeek V4 Pro. reasoning "low" (medium drifts in long
+# tool loops); llm_timeout_s caps one request so a stall cannot eat the
+# session. The prompt is paths + budget only (include_manager_context false):
+# the agent reads the parent's evidence from disk itself.
 editor:
   type: "agentic"
   config:
@@ -95,27 +78,33 @@ editor:
     base_url: "https://openrouter.ai/api/v1"
     api_key_env: "OpenRouter_API_KEY"
     llm_timeout_s: 600
-    max_attempts: 3          # submission / validation rounds
-    max_llm_calls: 25        # tool-loop iterations (whole history re-sent each call)
-    timeout_s: 1200          # wall-clock per session; stops at 90%
+    max_attempts: 3
+    max_llm_calls: 150
+    timeout_s: 5400
     bash_timeout_s: 120
     max_tool_output_chars: 20000
     max_view_chars: 40000
-    sandbox: "auto"          # bwrap when usable, else cwd-only with a warning
+    sandbox: "auto"
     include_manager_context: false
     # How much of the run the meta-agent may read (bash + editor tool):
-    #   "run"    — every node of the run
+    #   "run"    — every node of the run (the setting of the finished runs)
     #   "parent" — only $PARENT_DIR and its own $NODE_DIR; no $RUN_DIR root
     read_scope: "run"
 
 env:
+  # No run-wide LLM_API_KEY_ENV: the task agent is on the local node-5 vLLM;
+  # the editor and the edit-memory layer name api_key_env themselves.
+  LLM_TIMEOUT_S: "1200"                   # task-agent per-request cap (< wall_time_s_per_case)
   META_AGENT_STRIP_REASONING: "1"
-  META_AGENT_VERBOSE: "1"
   TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-122B-A10B"
   TRAVEL_CONVERT_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+  # Fallback if node-5 is down — conversion on OpenRouter instead (adds
+  # conversion tokens to the OpenRouter bill):
+  # TRAVEL_CONVERT_MODEL: "qwen/qwen3.5-122b-a10b"
+  # TRAVEL_CONVERT_BASE_URL: "https://openrouter.ai/api/v1"
 
 split:
-  train_ids_path: "configs/travel_train_ids.json"   # the full 60-case set
+  train_ids_path: "configs/travel_train_ids.json"   # the 60 predetermined cases
 
 validators:
   - type: "syntax"
@@ -141,8 +130,8 @@ validators:
 edit_memory:
   type: "agentic"
   config:
-    window_size: 2
-    instruction_every: 1
+    window_size: 4
+    instruction_every: 2
     selection: "bandit"           # bandit | always | never (never = shadow: memory written, nobody reads it)
     arm_min_pulls: 2
     beta_prior: 1.0
@@ -153,8 +142,8 @@ edit_memory:
     api_key_env: "OpenRouter_API_KEY"
     llm_timeout_s: 600
     curator:
-      max_llm_calls: 25
-      timeout_s: 1200
+      max_llm_calls: 60
+      timeout_s: 2400
       bash_timeout_s: 120
       max_tool_output_chars: 20000
       max_view_chars: 40000

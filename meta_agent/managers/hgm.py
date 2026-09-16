@@ -75,6 +75,7 @@ class HGMManager:
         seed: int = 42,
         seed_round_dir: Optional[str] = None,
         expand_eval_size: int = 0,
+        max_consecutive_edit_failures: int = 5,
     ) -> None:
         self.eval_budget = eval_budget
         # Expansion-paired evaluation: > 0 evaluates every freshly expanded
@@ -85,6 +86,12 @@ class HGMManager:
         # never. The main loop refuses to expand when the remaining budget
         # cannot fund the paired batch.
         self.expand_eval_size = max(0, int(expand_eval_size))
+        # A failed edit costs no evaluations and is not a "real" node, so a
+        # dead editor (provider outage, exhausted key, broken sandbox) would
+        # otherwise let the loop spawn edit-failed rounds forever (495 of
+        # them in 20 min on 2026-09-16). Abort after this many in a row;
+        # 0 disables the guard.
+        self.max_consecutive_edit_failures = max(0, int(max_consecutive_edit_failures))
         # Reuse a previous run's round_000 (its task_agent copy, logs and
         # eval_result.json) instead of re-running the free-but-not-cheap
         # full-train seed pre-eval. Relative paths resolve against the cwd
@@ -177,6 +184,7 @@ class HGMManager:
         # expansion-paired batches). This drives the widening schedule;
         # ``_budget_spent`` caps total spend.
         self._node_evals_spent = 0
+        self._consecutive_edit_failures = 0
         self._task_rng = random.Random(self.seed)
         self._snapshotter = TreeSnapshotWriter(
             experiment_dir, enabled=self.snapshot_tree
@@ -301,8 +309,19 @@ class HGMManager:
                 f"({edit_result.errors[0][:80] if edit_result.errors else '?'})",
                 flush=True,
             )
+            self._consecutive_edit_failures += 1
+            limit = self.max_consecutive_edit_failures
+            if limit and self._consecutive_edit_failures >= limit:
+                self._snapshot("expand", node_id=node_id)
+                raise RuntimeError(
+                    f"{limit} consecutive edit failures (last: node {node_id}: "
+                    f"{edit_result.errors[0][:200] if edit_result.errors else '?'}); "
+                    "the editor is not producing edits — check the provider / key "
+                    "/ sandbox and restart (manager.config.max_consecutive_edit_failures)"
+                )
             return node_id
 
+        self._consecutive_edit_failures = 0
         self._tree.add(node)
         # A fresh child starts unevaluated; compile a zero-eval feedback so
         # the round folder is complete. _evaluate() rewrites it later.
