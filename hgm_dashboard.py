@@ -59,7 +59,7 @@ if not experiments:
 # experiment_dir = default_dir
 
 exp_names = [p.name for p in experiments]
-_REQUESTED = "20260904_215716_travel_mas_refactored_full_scale_block_tagged_no_summarizer_X100Y180"
+_REQUESTED = "20260914_001136_travel_mas_refactored_gemma_full_scale_block_tagged_X100Y180"
 _default_index = exp_names.index(_REQUESTED) if _REQUESTED in exp_names else 0
 selected_name = st.sidebar.selectbox("Experiment (newest first)", exp_names, index=_default_index)
 experiment_dir = runs_root / selected_name
@@ -228,7 +228,10 @@ for r in rounds:
     # rather than "hasn't been evaluated yet".
     display_mean = r.mean_utility if r.n_evals > 0 else None
     mu_str = f"{display_mean:.3f}" if display_mean is not None else "in-progress"
+    block = (r.strategy or {}).get("block")
     label = f"node {r.node_id}\\nmean={mu_str}"
+    if block:
+        label += f"\\nblock={block}"
     if r.node_id in diffs_by_node:
         _, added, removed = diffs_by_node[r.node_id]
         label += f"\\n+{added}/-{removed}"
