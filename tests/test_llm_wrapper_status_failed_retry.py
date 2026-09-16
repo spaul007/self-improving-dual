@@ -194,5 +194,52 @@ class StatusFailedRetryTests(unittest.TestCase):
         self.assertEqual(flaky.calls, 1)
 
 
+class ExceptionProviderNameTests(unittest.TestCase):
+    """_exception_provider_name: best-effort extraction of the upstream
+    provider (e.g. "CoreWeave") from a thrown API exception's error body
+    -- added 2026-09-16 after discovering OpenRouter's Responses API
+    (which call_llm always uses) never exposes provider identity on a
+    SUCCESSFUL response, only in an error's own metadata."""
+
+    def test_extracts_from_dict_body_metadata(self) -> None:
+        from platform_core.llm_wrapper import _exception_provider_name
+
+        exc = Exception("Error code: 429")
+        exc.body = {
+            "message": "Provider returned error",
+            "code": 429,
+            "metadata": {"provider_name": "CoreWeave", "raw": "..."},
+        }
+        self.assertEqual(_exception_provider_name(exc), "CoreWeave")
+
+    def test_extracts_from_nested_error_metadata(self) -> None:
+        from platform_core.llm_wrapper import _exception_provider_name
+
+        exc = Exception("Error code: 429")
+        exc.body = {"error": {"metadata": {"provider_name": "DeepInfra"}}}
+        self.assertEqual(_exception_provider_name(exc), "DeepInfra")
+
+    def test_falls_back_to_string_regex_when_no_body(self) -> None:
+        from platform_core.llm_wrapper import _exception_provider_name
+
+        exc = Exception(
+            "RateLimitError(\"Error code: 429 - {'error': {'metadata': "
+            "{'provider_name': 'Venice'}}}\")"
+        )
+        self.assertEqual(_exception_provider_name(exc), "Venice")
+
+    def test_returns_none_when_absent(self) -> None:
+        from platform_core.llm_wrapper import _exception_provider_name
+
+        self.assertIsNone(_exception_provider_name(Exception("connection reset")))
+
+    def test_returns_none_for_non_dict_body(self) -> None:
+        from platform_core.llm_wrapper import _exception_provider_name
+
+        exc = Exception("boom")
+        exc.body = "not a dict"
+        self.assertIsNone(_exception_provider_name(exc))
+
+
 if __name__ == "__main__":
     unittest.main()

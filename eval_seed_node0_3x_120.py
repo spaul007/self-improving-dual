@@ -107,6 +107,7 @@ for i in range(1, N_REPEATS + 1):
         f"passed={result.passed} failed={result.failed} crashed={result.crashed} "
         f"elapsed={elapsed:.0f}s | calls={fh['n_llm_calls']} "
         f"status_failed_retries={fh['n_status_failed_retries']} "
+        f"exception_retries={fh.get('n_exception_retries', 0)} "
         f"terminal_failures={fh['n_terminal_failed_responses']} "
         f"failure_rate={rate:.2f}% error_codes={fh['error_codes']}",
         flush=True,
@@ -117,13 +118,22 @@ for i in range(1, N_REPEATS + 1):
 
 mean_score = sum(pass_scores) / len(pass_scores)
 total_calls = sum(fh["n_llm_calls"] for fh in pass_failure_health)
+total_responses = sum(fh["n_llm_responses"] for fh in pass_failure_health)
 total_retries = sum(fh["n_status_failed_retries"] for fh in pass_failure_health)
+total_exception_retries = sum(fh.get("n_exception_retries", 0) for fh in pass_failure_health)
 total_terminal = sum(fh["n_terminal_failed_responses"] for fh in pass_failure_health)
 all_error_codes: dict[str, int] = {}
 for fh in pass_failure_health:
     for code, n in fh["error_codes"].items():
         all_error_codes[code] = all_error_codes.get(code, 0) + n
-overall_rate = 100.0 * (total_retries + total_terminal) / total_calls if total_calls else None
+# Matches meta_agent.llm_failure_health.incidence_rate_pct's formula exactly
+# (status-failed + exception retries + terminal failures, over responses --
+# not over total_calls, and NOT omitting exception retries as this script's
+# earlier version did -- see that function's 2026-09-16 fix note).
+overall_rate = (
+    100.0 * (total_retries + total_exception_retries + total_terminal) / total_responses
+    if total_responses else None
+)
 
 (OUT_ROOT / "summary.json").write_text(
     json.dumps(
@@ -137,7 +147,9 @@ overall_rate = 100.0 * (total_retries + total_terminal) / total_calls if total_c
             "pass_composite_scores": pass_scores,
             "mean_of_pass_composite_scores": mean_score,
             "total_llm_calls": total_calls,
+            "total_llm_responses": total_responses,
             "total_status_failed_retries": total_retries,
+            "total_exception_retries": total_exception_retries,
             "total_terminal_failures": total_terminal,
             "incidence_rate_pct": overall_rate,
             "error_codes": all_error_codes,
@@ -151,6 +163,7 @@ print(f"per-pass composite scores: {pass_scores}")
 print(f"mean of the {N_REPEATS} pass composite scores: {mean_score:.4f}")
 print(f"total LLM calls across all passes: {total_calls}")
 print(f"total status=failed retries: {total_retries}")
+print(f"total exception retries: {total_exception_retries}")
 print(f"total terminal failures: {total_terminal}")
 print(f"incidence rate: {overall_rate:.2f}%" if overall_rate is not None else "n/a")
 print(f"error codes: {all_error_codes}")

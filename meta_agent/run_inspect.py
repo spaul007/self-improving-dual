@@ -508,7 +508,9 @@ def extract_diagnostics(rounds: list[RoundInfo], *, is_active: bool) -> list[Ale
                     "error", r.node_id,
                     f"LLM call failure rate {rate:.1f}% exceeds "
                     f"{DEFAULT_INCIDENCE_THRESHOLD_PCT:.1f}% "
-                    f"({health.get('n_terminal_failed_responses', 0)} terminal "
+                    f"({health.get('n_status_failed_retries', 0)} status-failed retries, "
+                    f"{health.get('n_exception_retries', 0)} exception retries, "
+                    f"{health.get('n_terminal_failed_responses', 0)} terminal "
                     f"failure(s) / {health.get('n_llm_responses', 0)} responses) "
                     "-- see this round's llm_failure_health.json",
                 )

@@ -716,7 +716,8 @@ class HGMManager:
             print(
                 f"⚠️  node {node.node_id}: LLM call failure rate "
                 f"{rate:.1f}% exceeds {self.llm_call_failure_threshold_pct:.1f}% "
-                f"threshold ({health['n_status_failed_retries']} retries, "
+                f"threshold ({health['n_status_failed_retries']} status-failed retries, "
+                f"{health.get('n_exception_retries', 0)} exception retries, "
                 f"{health['n_terminal_failed_responses']} terminal failures / "
                 f"{health['n_llm_responses']} responses) -- see {trace_path}",
                 flush=True,

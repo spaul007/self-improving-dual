@@ -254,6 +254,42 @@ def _response_error_info(response: Any) -> tuple[Optional[str], Optional[str]]:
     return getattr(error, "code", None), getattr(error, "message", None)
 
 
+def _exception_provider_name(exc: Exception) -> Optional[str]:
+    """Best-effort extraction of the upstream provider name (e.g.
+    "CoreWeave", "DeepInfra") from a thrown API exception's error body.
+
+    OpenRouter's Responses API (the endpoint call_llm always uses) never
+    includes a provider field on a SUCCESSFUL response -- confirmed live
+    (2026-09-16) against the raw HTTP JSON body, not just the SDK's typed
+    object; this is a real gap in what's currently observable, distinct
+    from the Chat Completions endpoint (which does include one). But an
+    ERROR response's body -- surfaced here whenever a raised exception is
+    retried -- does carry it under error.metadata.provider_name, e.g. the
+    429 rate_limit_exceeded storms this session traced to a saturated
+    CoreWeave shared pool. Returns None when absent (a non-OpenRouter
+    endpoint, a shape this doesn't recognize, or a genuinely
+    provider-less error) rather than raising -- this is diagnostic
+    best-effort, never allowed to break the actual retry it's attached
+    to."""
+    body = getattr(exc, "body", None)
+    if isinstance(body, dict):
+        metadata = body.get("metadata")
+        if not isinstance(metadata, dict):
+            metadata = (body.get("error") or {}).get("metadata") if isinstance(body.get("error"), dict) else None
+        if isinstance(metadata, dict):
+            name = metadata.get("provider_name")
+            if name:
+                return str(name)
+    # Fallback: some exception shapes only carry the error as the
+    # stringified exception message (e.g. the ``repr(exc)`` this module
+    # already logs elsewhere) rather than a parsed .body dict -- a cheap
+    # regex over that string still recovers the same field.
+    import re
+
+    match = re.search(r"provider_name['\"]?\s*[:=]\s*['\"]([^'\"]+)", str(exc))
+    return match.group(1) if match else None
+
+
 def _extract_output(response: Any) -> tuple[Optional[str], list[ToolCall]]:
     text_parts: list[str] = []
     reasoning_parts: list[str] = []
@@ -471,6 +507,12 @@ def call_llm(
                     "attempt": attempt + 1,
                     "max_retries": DEFAULT_API_MAX_RETRIES,
                     "error": repr(exc)[:500],
+                    # Best-effort -- see _exception_provider_name's own
+                    # docstring for why this is only ever populated on an
+                    # ERROR (never a successful response, which OpenRouter's
+                    # Responses API doesn't expose provider identity for
+                    # at all -- confirmed live 2026-09-16).
+                    "provider_name": _exception_provider_name(exc),
                 },
             )
             time.sleep(DEFAULT_API_BACKOFF_S)
