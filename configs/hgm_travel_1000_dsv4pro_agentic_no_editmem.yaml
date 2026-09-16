@@ -78,6 +78,7 @@ manager:
     # 1000 evals this keeps 32 nodes / 63 batches but makes 32 of the
     # batches mandatory child evaluations (31 bandit-chosen instead of 63).
     expand_eval_size: 16
+    max_consecutive_edit_failures: 5   # abort when the editor is dead (2026-09-16: 495 failed rounds on an exhausted key)
     finalize_top_k: 3        # top-3 finalists topped up to the full 60-case train split before the final pick
     # Reuse the 60-case seed pre-eval of the finished 2026-09-12 run of this
     # arm instead of paying for it again; the seed code must be unchanged.
