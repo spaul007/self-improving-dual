@@ -123,6 +123,7 @@ editor:
     extra_body: {provider: {order: ["StreamLake", "Alibaba", "Baidu"], allow_fallbacks: false}}   # same provider pin as the run configs
 
 env:
+  LLM_API_KEY_ENV: "OpenRouter_API_KEY"   # task-agent subprocesses: OpenRouter key, not OPENAI_API_KEY
   META_AGENT_STRIP_REASONING: "1"
   # STALL GUARD. llm_wrapper's DEFAULT_API_TIMEOUT_S is 3600 (llm_wrapper.py:77),
   # sized for slow meta-agent editor calls. When it equals or exceeds
