@@ -312,15 +312,19 @@ I_{k+1} <- InstructionUpdate(Q, I_k)                      one LLM call
   memory cites node ids — the **whole run readable** regardless of
   `read_scope`; the configured scope governs the without arm only. The
   `edit_memory/` directory itself is masked for both arms.
-- **Instruction.** Every `instruction_every` (n) memory versions, if any
+- **Instruction.** Every `instruction_every` (n) memory versions — checked
+  when a window closes, *before* that window's memory is generated — if any
   node was expanded with the memory since the last update, the
   **instruction curator** audits those nodes (did the editor read and use
   the memory — τ_meta; did the guided mechanisms fire and help at task-agent
   runtime — τ_task±; is the representation serving the editor) and writes
   `instruction_update_NNN/q.md`; one call then revises the generator's
-  addendum (`instruction_vNNN.md`, size-capped, never the fixed core).
-  This is a nested TextGrad: Z and Q are textual gradients, the two calls
-  are minimal-change optimizer steps.
+  addendum (`instruction_vNNN.md`, size-capped, never the fixed core), and
+  the window's memory is generated under the revised addendum. With
+  `instruction_every: 1`: window 1 → B₁ (no audit possible yet); window 2 →
+  audit of the nodes that used B₁ → I₁ → B₂ under I₁; and so on. This is a
+  nested TextGrad: Z and Q are textual gradients, the two calls are
+  minimal-change optimizer steps.
 - **Requires** `manager.config.expand_eval_size > 0` (every window node
   needs per-case evidence). Run dir: `edit_memory/{state.json,
   edit_memory.md, edit_memory_vNNN.md, instruction.md, instruction_vNNN.md,

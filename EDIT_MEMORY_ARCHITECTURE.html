@@ -201,7 +201,7 @@
       <text x="675" y="16" font-size="10" text-anchor="middle" fill="var(--mem)">$EDIT_MEMORY_FILE, only on the with-memory arm</text>
     </svg>
     </div>
-    <figcaption><b>Figure 1.</b> The manager's regime is untouched; the memory layer consumes the same events as the tree snapshotter and returns one file to EXPAND. Every m successful expansions the layer curates the last m nodes (agentic session), generates B<sub>j+1</sub> from (Z, B<sub>j</sub>, I<sub>k</sub>) in one call, and every n such versions refreshes the generator instruction I<sub>k</sub>.</figcaption>
+    <figcaption><b>Figure 1.</b> The manager's regime is untouched; the memory layer consumes the same events as the tree snapshotter and returns one file to EXPAND. Every m successful expansions the layer curates the last m nodes (agentic session); every n memory versions it first audits the nodes that used the memory and revises the generator instruction I<sub>k</sub>; then it generates B<sub>j+1</sub> from (Z, B<sub>j</sub>, I<sub>k</sub>) in one call — under the instruction just revised.</figcaption>
   </figure>
 
   <h2 id="expand">2 · One expansion: the two arms</h2>
@@ -329,7 +329,7 @@
       <text x="30" y="235" font-size="11" fill="var(--muted)">Nodes 1–4 pool into the "without" arm; the first bandit choice is node 5. Later top-ups of a window node update the arm tallies but the window is not re-curated.</text>
     </svg>
     </div>
-    <figcaption><b>Figure 3.</b> Example cadence with m = 4, n = 2. A memory version becomes visible only to expansions after its window closes; the bandit is idle until B<sub>1</sub> exists. A failed edit is recorded with its arm but adds no tallies and does not advance the window.</figcaption>
+    <figcaption><b>Figure 3.</b> Example cadence with m = 4, n = 2. A memory version becomes visible only to expansions after its window closes; the bandit is idle until B<sub>1</sub> exists. When an instruction update is due it runs <i>before</i> that window's memory is generated (audit the with-memory nodes → I<sub>k+1</sub> → B<sub>j+1</sub> under I<sub>k+1</sub>). A failed edit is recorded with its arm but adds no tallies and does not advance the window.</figcaption>
   </figure>
 
   <h2 id="memory">4 · Memory update: window → curator → generator</h2>
@@ -493,7 +493,7 @@
       <text x="20" y="420" font-size="11" fill="var(--muted)">Momentum: each optimizer call also sees the previous gradients (earlier curation.md / q.md). Batching: Z spans m nodes, Q spans the n windows since the last I update.</text>
     </svg>
     </div>
-    <figcaption><b>Figure 5.</b> Nested TextGrad. Solid arrows are the forward pass every expansion; dashed arrows are the backward passes at their cadence. Q answers the notes' three questions — missing information, whether edits are utilised by the task agent, whether a better representation helps — and the update touches only the addendum.</figcaption>
+    <figcaption><b>Figure 5.</b> Nested TextGrad. Solid arrows are the forward pass every expansion; dashed arrows are the backward passes at their cadence. Q answers the notes' three questions — missing information, whether edits are utilised by the task agent, whether a better representation helps — and the update touches only the addendum. Order at a window close: curate → (audit → update I) → generate B, so the new memory is written under the instruction learned from the previous memory's use.</figcaption>
   </figure>
   <div class="note instr"><b>Optional guard (not in v1):</b> use the bandit's with-memory success rate over the window after I<sub>k+1</sub> as a validation signal and roll back to I<sub>k</sub> if it drops. This is score-based, but at the manager level, so it does not put predictions into the memory.</div>
 

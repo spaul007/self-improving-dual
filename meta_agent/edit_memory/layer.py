@@ -7,9 +7,10 @@ Hooks (called by ``HGMManager``):
   expansion — Thompson sampling over the two arms' pooled tallies;
 * ``on_event(event, tree, node_id=...)`` next to every tree snapshot:
   ``expand_eval`` of a successful child advances the window; when the
-  window holds ``window_size`` nodes the memory curator runs, then the
-  generator writes the next memory version; every ``instruction_every``
-  memory versions the instruction curator + updater run.
+  window holds ``window_size`` nodes the memory curator runs, then — every
+  ``instruction_every`` memory versions — the instruction curator + updater
+  revise the addendum, and finally the generator writes the next memory
+  version under the (possibly just revised) instruction.
 
 Everything is written under ``<experiment_dir>/edit_memory/`` (see the
 package docstring for the layout); ``state.json`` is the audit trail.
@@ -279,7 +280,15 @@ class EditMemoryLayer:
             return
         curation = result.output_path.read_text(encoding="utf-8")
 
-        # 2. memory generator (one call)
+        # 2. instruction update BEFORE the generation it should govern: every
+        # ``instruction_every`` memory versions, audit the nodes expanded with
+        # the memory since the last update and revise the addendum, so that
+        # B_{j+1} is generated under the instruction learned from B_j's use.
+        # (Never fires at the first window: no memory version exists yet.)
+        if self.versions_since_instruction >= self.instruction_every:
+            self._update_instruction(tree)
+
+        # 3. memory generator (one call), under the current addendum
         new_memory = G.generate_memory(
             self.llm, self.spec, previous_memory=self._memory_text(), curation=curation,
             addendum=self._addendum(),
@@ -301,10 +310,6 @@ class EditMemoryLayer:
         print(f"[edit_memory] window {j}: wrote {memory_version_name(self.memory_version)} "
               f"({len(new_memory)} chars)", flush=True)
         self._save_state("memory_written", window=j, memory_version=self.memory_version)
-
-        # 3. instruction update every n memory versions
-        if self.versions_since_instruction >= self.instruction_every:
-            self._update_instruction(tree)
 
     # ------------------------------------------------------------------ #
     # Instruction update

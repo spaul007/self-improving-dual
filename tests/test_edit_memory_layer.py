@@ -11,7 +11,6 @@ import unittest
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from meta_agent.edit_memory import generator as G
 from meta_agent.edit_memory import prompts as P
 from meta_agent.edit_memory.layer import (
     ARM_NONE,
@@ -278,54 +277,74 @@ class TestCadence(LayerBase):
         self.assertEqual(lay.instruction_version, 0)
         self.assertEqual(lay.versions_since_instruction, 1)
 
-    def test_instruction_update_every_n_and_only_with_with_nodes(self) -> None:
-        lay = self.layer(window_size=1, instruction_every=2)
+    def test_instruction_update_runs_before_the_generation_it_governs(self) -> None:
+        """window 1 -> v1 (no audit possible yet); window 2 -> audit the
+        with-arm nodes of window 2 -> I1 -> v2 generated UNDER I1; window 3
+        -> I2 -> v3 under I2 (instruction_every 1)."""
+        lay = self.layer(window_size=2, instruction_every=1)
         tree = self._tree()
-        # Window 1 → B1 (no with-nodes yet).
-        self._child(tree, 1)
-        lay.on_event("expand", tree, node_id=1)
-        lay.on_event("expand_eval", tree, node_id=1)
-        self.assertEqual(lay.memory_version, 1)
-        # Window 2 → B2 → n reached, but nobody used the memory → skipped.
-        self._child(tree, 2, arm="without", version=1)
-        lay.on_event("expand", tree, node_id=2)
-        lay.on_event("expand_eval", tree, node_id=2)
-        self.assertEqual(lay.memory_version, 2)
-        self.assertEqual(lay.instruction_version, 0)
-        self.assertIn("instruction_skipped", [e["event"] for e in lay.events])
-        self.assertEqual(lay.versions_since_instruction, 0)
-        # Two more windows with a with-arm node → update runs.
-        self._child(tree, 3, arm="with", version=2)
-        lay.on_event("expand", tree, node_id=3)
-        lay.on_event("expand_eval", tree, node_id=3)
-        self._child(tree, 4, arm="without", version=3)
-        lay.on_event("expand", tree, node_id=4)
-        lay.on_event("expand_eval", tree, node_id=4)
-        self.assertEqual(lay.memory_version, 4)
-        self.assertEqual(lay.instruction_version, 1)
+        gen_calls = lambda: [c for c in lay.llm.calls if not c.get("tools")
+                             and c["messages"][0]["content"].startswith(P.CORE_SENTINEL)]
+        # Window 1: two pre-memory nodes.
+        for nid in (1, 2):
+            self._child(tree, nid)
+            lay.on_event("expand", tree, node_id=nid); lay.on_event("expand_eval", tree, node_id=nid)
+        self.assertEqual((lay.memory_version, lay.instruction_version), (1, 0))
+        self.assertNotIn("instruction_skipped", [e["event"] for e in lay.events])   # gate never opened
+        self.assertNotIn("ADDENDUM", gen_calls()[0]["messages"][0]["content"])
+        # Window 2: one with-arm node, one without.
+        self._child(tree, 3, arm="with", version=1)
+        lay.on_event("expand", tree, node_id=3); lay.on_event("expand_eval", tree, node_id=3)
+        self._child(tree, 4, arm="without", version=1)
+        lay.on_event("expand", tree, node_id=4); lay.on_event("expand_eval", tree, node_id=4)
+        self.assertEqual((lay.memory_version, lay.instruction_version), (2, 1))
+        events = [e["event"] for e in lay.events]
+        mem_writes = [i for i, e in enumerate(events) if e == "memory_written"]
+        self.assertLess(mem_writes[0], events.index("instruction_written"))   # v1 first
+        self.assertLess(events.index("instruction_written"), mem_writes[1])   # then I1, then v2
         u = lay.dir / "instruction_update_001"
-        self.assertTrue((u / P.Q_FILE).exists())
-        self.assertEqual(json.loads((u / "nodes.json").read_text())[0]["node_id"], 3)
+        self.assertEqual([n["node_id"] for n in json.loads((u / "nodes.json").read_text())], [3])
         self.assertEqual((lay.dir / "instruction.md").read_text(), "- addendum v1: cite failing checks\n")
-        self.assertEqual((lay.dir / "instruction_v001.md").read_text(), "- addendum v1: cite failing checks\n")
+        # v2 was generated under I1 ...
+        self.assertIn("- addendum v1: cite failing checks", gen_calls()[1]["messages"][0]["content"])
+        # ... and the audit ran after the window's curation (it may read it).
+        self.assertTrue((lay.dir / "window_002" / P.CURATION_FILE).exists())
         self.assertEqual(lay.with_nodes_since_instruction, [])
-        # The next generation call carries the addendum.
-        self._child(tree, 5, arm="with", version=4)
-        lay.on_event("expand", tree, node_id=5)
-        lay.on_event("expand_eval", tree, node_id=5)
-        gen_calls = [c for c in lay.llm.calls if not c.get("tools") and
-                     c["messages"][0]["content"].startswith(P.CORE_SENTINEL)]
-        self.assertIn("- addendum v1: cite failing checks", gen_calls[-1]["messages"][0]["content"])
-        # Curator instruction also carried it.
-        cur_calls = [c for c in lay.llm.calls if c.get("tools") and
-                     f"$WORK_DIR/{P.CURATION_FILE}" in c["messages"][1]["content"]]
-        self.assertIn("- addendum v1: cite failing checks", cur_calls[-1]["messages"][1]["content"])
-        # state.json is a full audit trail.
+        # Window 3: audit node 5 (with v2) -> I2 -> v3 under I2.
+        self._child(tree, 5, arm="with", version=2)
+        lay.on_event("expand", tree, node_id=5); lay.on_event("expand_eval", tree, node_id=5)
+        self._child(tree, 6, arm="with", version=2)
+        lay.on_event("expand", tree, node_id=6); lay.on_event("expand_eval", tree, node_id=6)
+        self.assertEqual((lay.memory_version, lay.instruction_version), (3, 2))
+        self.assertIn("- addendum v2: cite failing checks", gen_calls()[2]["messages"][0]["content"])
+        self.assertEqual([n["node_id"] for n in json.loads((lay.dir / "instruction_update_002" / "nodes.json").read_text())], [5, 6])
         st = json.loads((lay.dir / "state.json").read_text())
-        self.assertEqual(st["memory_version"], 5)
-        self.assertEqual(st["instruction_version"], 1)
-        self.assertEqual(st["node_arms"]["3"], ["with", 2])
-        self.assertIn("memory_written", [e["event"] for e in st["events"]])
+        self.assertEqual((st["memory_version"], st["instruction_version"]), (3, 2))
+        self.assertEqual(st["node_arms"]["3"], ["with", 1])
+
+    def test_instruction_update_skipped_when_no_with_arm_nodes(self) -> None:
+        lay = self.layer(window_size=1, instruction_every=1)
+        tree = self._tree()
+        self._child(tree, 1)
+        lay.on_event("expand", tree, node_id=1); lay.on_event("expand_eval", tree, node_id=1)
+        self.assertEqual(lay.memory_version, 1)
+        # Window 2 with a without-arm node only: gate opens, audit skipped, v2 still written.
+        self._child(tree, 2, arm="without", version=1)
+        lay.on_event("expand", tree, node_id=2); lay.on_event("expand_eval", tree, node_id=2)
+        self.assertEqual((lay.memory_version, lay.instruction_version), (2, 0))
+        self.assertIn("instruction_skipped", [e["event"] for e in lay.events])
+        self.assertEqual(lay.versions_since_instruction, 1)
+        # instruction_every 2 (fresh run dir): the gate opens at the third window.
+        self.exp = self.tmp / "exp2"
+        self.exp.mkdir()
+        (self.exp / "config.snapshot.yaml").write_text("")
+        lay2 = self.layer(window_size=1, instruction_every=2)
+        tree2 = self._tree()
+        for nid, arm, v in ((1, "none", None), (2, "with", 1), (3, "with", 2)):
+            self._child(tree2, nid, arm=arm, version=v)
+            lay2.on_event("expand", tree2, node_id=nid); lay2.on_event("expand_eval", tree2, node_id=nid)
+        self.assertEqual((lay2.memory_version, lay2.instruction_version), (3, 1))
+        self.assertEqual([n["node_id"] for n in json.loads((lay2.dir / "instruction_update_001" / "nodes.json").read_text())], [2, 3])
 
     def test_failed_curation_closes_the_window_without_a_memory(self) -> None:
         lay = self.layer(window_size=1)
