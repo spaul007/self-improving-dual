@@ -77,7 +77,7 @@ task_agent:
   max_output_tokens: 65536
   base_url: "https://openrouter.ai/api/v1"
   # Pinned to an ordered allow-list of upstream providers (StreamLake, then
-  # Alibaba, then Baidu); never any provider outside this list.
+  # Alibaba); never any provider outside this list. Baidu dropped 2026-09-17.
   extra_body:
     provider:
       order: ["StreamLake"]           # provider A/B (2026-09-17): this provider ONLY
@@ -120,7 +120,7 @@ editor:
     reasoning_effort: "none"
     base_url: "https://openrouter.ai/api/v1"
     max_attempts: 3
-    extra_body: {provider: {order: ["StreamLake", "Alibaba", "Baidu"], allow_fallbacks: false}}   # same provider pin as the run configs
+    extra_body: {provider: {order: ["StreamLake", "Alibaba"], allow_fallbacks: false}}   # same provider pin as the run configs
 
 env:
   LLM_API_KEY_ENV: "OpenRouter_API_KEY"   # task-agent subprocesses: OpenRouter key, not OPENAI_API_KEY
