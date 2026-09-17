@@ -227,9 +227,11 @@ editor:
 
 **Provider pin.** Every block that names `deepseek/deepseek-v4-pro-0813` on
 OpenRouter — editor, `edit_memory`, and the task agent — carries
-`extra_body: {provider: {order: ["Baidu"], allow_fallbacks: false}}`, so all
-calls of a run are served by one upstream (Baidu, fp8) and never fall back to
-another provider's weights/quantisation. `extra_body` is merged verbatim into
+`extra_body: {provider: {order: ["StreamLake", "Alibaba", "Baidu"], allow_fallbacks: false}}`:
+OpenRouter tries the listed providers in that order and never routes to any
+provider outside the list (a single provider's tokens-per-minute cap took a
+run down on 2026-09-16; the generation record of each call names the
+provider that served it). `extra_body` is merged verbatim into
 the request body: for the meta agents it is a per-call `call_llm` kwarg; for
 the task agent it is exported child-only as `LLM_EXTRA_BODY` (JSON) like the
 other `task_agent` knobs. Keep the pin on any new config that uses this model.

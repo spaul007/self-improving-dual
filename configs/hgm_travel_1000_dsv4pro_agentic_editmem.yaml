@@ -60,11 +60,11 @@ task_agent:
   reasoning_effort: "none"
   base_url: "https://openrouter.ai/api/v1"
   temperature: 0.2
-  # Pinned to one upstream provider (Baidu, fp8): every task-agent call in the
-  # run is served by the same weights/quantisation, no silent fallback.
+  # Pinned to an ordered allow-list of upstream providers (StreamLake, then
+  # Alibaba, then Baidu); never any provider outside this list.
   extra_body:
     provider:
-      order: ["Baidu"]
+      order: ["StreamLake", "Alibaba", "Baidu"]
       allow_fallbacks: false
 
 manager:
@@ -119,12 +119,12 @@ editor:
     reasoning_effort: "low"
     base_url: "https://openrouter.ai/api/v1"
     api_key_env: "OpenRouter_API_KEY"
-    # Pinned to one upstream provider (Baidu, fp8 — the cheapest deepseek-v4-pro-0813
-    # endpoint on OpenRouter, 2026-09-16) so every call in the run is served by the
-    # same weights/quantisation; no silent fallback to another provider.
+    # Pinned to an ordered allow-list of upstream providers (2026-09-17, after
+    # Baidu rate-limited a run): StreamLake, then Alibaba, then Baidu; never any
+    # provider outside this list.
     extra_body:
       provider:
-        order: ["Baidu"]
+        order: ["StreamLake", "Alibaba", "Baidu"]
         allow_fallbacks: false
     llm_timeout_s: 600
     max_attempts: 3
@@ -188,12 +188,12 @@ edit_memory:
     reasoning_effort: "low"
     base_url: "https://openrouter.ai/api/v1"
     api_key_env: "OpenRouter_API_KEY"
-    # Pinned to one upstream provider (Baidu, fp8 — the cheapest deepseek-v4-pro-0813
-    # endpoint on OpenRouter, 2026-09-16) so every call in the run is served by the
-    # same weights/quantisation; no silent fallback to another provider.
+    # Pinned to an ordered allow-list of upstream providers (2026-09-17, after
+    # Baidu rate-limited a run): StreamLake, then Alibaba, then Baidu; never any
+    # provider outside this list.
     extra_body:
       provider:
-        order: ["Baidu"]
+        order: ["StreamLake", "Alibaba", "Baidu"]
         allow_fallbacks: false
     llm_timeout_s: 600
     curator:
