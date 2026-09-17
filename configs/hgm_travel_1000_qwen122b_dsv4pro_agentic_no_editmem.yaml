@@ -1,20 +1,23 @@
-experiment_name: "hgm_travel_1000_qwen122b_dsv4pro_agentic_editmem"
+experiment_name: "hgm_travel_1000_qwen122b_dsv4pro_agentic_no_editmem"
 
-# FULL RUN (2026-09-16): edit-memory layer, agentic editor, eval_budget 1000,
-# expansion-paired evaluation (expand_eval_size 16), 60-case train split.
+# FULL RUN, NO-MEMORY CONTROL (2026-09-16): plain HGM + agentic editor, no
+# edit-memory layer, eval_budget 1000, expansion-paired evaluation
+# (expand_eval_size 16), 60-case train split. read_scope "run": the editor may
+# read every node of the run (code, logs, feedback) — the same visibility the
+# with-memory run's editors have. The benchmark's scorer/cases and the
+# database are neither bound into the sandbox nor readable by the editor tool.
 #   task agent            : Qwen/Qwen3.5-122B-A10B at reasoning medium on the
 #                           local node-5 vLLM (same as the smoke run)
-#   editor + edit memory  : DeepSeek V4 Pro (dated pin deepseek-v4-pro-0813 on
-#                           OpenRouter, OpenRouter_API_KEY via api_key_env)
+#   editor                : DeepSeek V4 Pro (dated pin deepseek-v4-pro-0813 on
+#                           OpenRouter, OpenRouter_API_KEY via api_key_env,
+#                           provider pinned to Baidu)
 #   scorer conversion     : node-5 Qwen (TRAVEL_CONVERT_*)
-# Derived from hgm_travel_1000_dsv4pro_agentic_editmem.yaml by swapping the
-# task agent, dropping the run-wide LLM_API_KEY_ENV (the task agent stays on
-# the local endpoint) and the dsv4pro seed_round_dir (fresh 60-case seed
-# pre-eval on Qwen). Everything else — schedule, editor budgets, edit-memory
-# cadence (window 4, instruction every 2, bandit over the arms) — unchanged.
+# Identical to hgm_travel_1000_qwen122b_dsv4pro_agentic_editmem.yaml except:
+# no edit_memory block, experiment_name (the parent-scope variant is
+# hgm_travel_1000_qwen122b_dsv4pro_agentic_no_editmem_parent.yaml).
 # Launch:
 #   source /groups/AIC-MV/sudipta.paul/code/random/api.sh
-#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_1000_qwen122b_dsv4pro_agentic_editmem.yaml
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_1000_qwen122b_dsv4pro_agentic_no_editmem.yaml
 project: "travel"
 
 eval_visibility: "blackbox"   # ignored by the agentic editor: scorer never exposed
@@ -122,46 +125,3 @@ validators:
   - type: "mutable_tool_routing"
   - type: "immutable_files"
   - type: "load_test"
-
-# EDIT MEMORY (2026-09-16): every window_size successful expansions an agentic
-# curator reviews the newest nodes (diffs, editor transcripts, per-case
-# outcomes) and writes edit_memory/window_NNN/curation.md; one call then
-# writes edit_memory/edit_memory_vNNN.md (ranked edits, usefulness, strategy vs
-# implementation, guidance — never a score prediction). A Thompson bandit over
-# the two arms' pooled HGM tallies decides per expansion whether the editor
-# sees the memory ($EDIT_MEMORY_FILE; that arm always gets the whole run
-# readable so it can open the nodes the memory cites). Every
-# instruction_every memory versions an instruction curator audits the
-# with-memory nodes and one call revises the generator's addendum.
-# Requires manager.config.expand_eval_size > 0.
-edit_memory:
-  type: "agentic"
-  config:
-    window_size: 4
-    instruction_every: 1          # audit + revise the addendum after every memory version (2026-09-17)
-    selection: "bandit"           # bandit | always | never (never = shadow: memory written, nobody reads it)
-    arm_min_pulls: 2
-    beta_prior: 1.0
-    seed: 42
-    model: "deepseek/deepseek-v4-pro-0813"
-    reasoning_effort: "low"
-    base_url: "https://openrouter.ai/api/v1"
-    api_key_env: "OpenRouter_API_KEY"
-    # Pinned to an ordered allow-list of upstream providers (2026-09-17, after
-    # Baidu rate-limited a run): StreamLake, then Alibaba, then Baidu; never any
-    # provider outside this list.
-    extra_body:
-      provider:
-        order: ["StreamLake", "Alibaba", "Baidu"]
-        allow_fallbacks: false
-    llm_timeout_s: 600
-    curator:
-      max_llm_calls: 60
-      timeout_s: 2400
-      bash_timeout_s: 120
-      max_tool_output_chars: 20000
-      max_view_chars: 40000
-      sandbox: "auto"
-      max_attempts: 2
-    memory_max_chars: 20000
-    instruction_addendum_max_chars: 4000
