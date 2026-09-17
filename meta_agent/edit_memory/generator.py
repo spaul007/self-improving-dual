@@ -2,12 +2,14 @@
 
 ``generate_memory``: (Z, B_j, I_k) -> B_{j+1}. ``update_instruction``:
 (Q, I_k) -> I_{k+1} (the addendum only). Each is one ``call_llm`` with a
-validator; one retry with the rejection reasons fed back; on a second
-failure the caller keeps the previous document.
+validator; a failing draft is regenerated once with the check's findings
+quoted back; the FINAL draft is used either way (2026-09-17 policy: never
+throw away generated content — the remaining findings are recorded in the
+call record and the layer's state instead). Only an LLM failure yields no
+document, in which case the caller keeps the previous version.
 
-The validators are the hard constraints in code form: the required
-sections exist, the size cap holds, and — for the memory — no line reads
-like a score prediction.
+The validators report the required sections, the size cap and — for the
+memory — lines that read like a score prediction.
 """
 from __future__ import annotations
 
@@ -93,6 +95,66 @@ def validate_curation(text: str, *, node_ids: list[int]) -> list[str]:
         if heading not in text:
             errors.append(f"missing section heading {heading!r}")
     return errors
+
+
+PLACEHOLDER = "(not provided by the curator)"
+
+
+def salvage_curation(text: str, *, node_ids: list[int]) -> tuple[str, list[str]]:
+    """Make a curation structurally complete without an LLM call: append a
+    ``## Node <id>`` section for every missing node, insert every missing
+    subsection heading (at the end of that node's section), and append the
+    cross-window / gradient sections — each with a placeholder line, so the
+    generator sees explicitly what the curator did not provide. Returns the
+    repaired text and the list of insertions made."""
+    if not text.strip():
+        return text, []
+    lines = text.rstrip("\n").split("\n")
+    inserted: list[str] = []
+
+    def section_span(head: str) -> tuple[int, int]:
+        start = next(i for i, l in enumerate(lines) if l.strip().startswith(head))
+        end = len(lines)
+        for j in range(start + 1, len(lines)):
+            if lines[j].startswith("## "):
+                end = j
+                break
+        return start, end
+
+    for nid in node_ids:
+        head = P.NODE_SECTION_HEADING.format(node_id=nid)
+        if not any(l.strip().startswith(head) for l in lines):
+            lines += ["", head] + [f"### {sub}\n{PLACEHOLDER}" for sub in P.NODE_SUBSECTIONS]
+            inserted.append(head)
+            continue
+        start, end = section_span(head)
+        body = "\n".join(lines[start:end])
+        missing = [sub for sub in P.NODE_SUBSECTIONS
+                   if not re.search(rf"^#{{2,4}}\s+{re.escape(sub)}\b", body, re.M | re.I)]
+        if missing:
+            add = []
+            for sub in missing:
+                add += ["", f"### {sub}", PLACEHOLDER]
+                inserted.append(f"{head} / {sub}")
+            lines[end:end] = add
+    for heading in (P.CURATION_CROSS_HEADING, P.CURATION_GRADIENT_HEADING):
+        if not any(l.strip().startswith(heading) for l in lines):
+            lines += ["", heading, PLACEHOLDER]
+            inserted.append(heading)
+    return "\n".join(lines) + "\n", inserted
+
+
+def salvage_q(text: str) -> tuple[str, list[str]]:
+    """Same for the instruction audit: append any missing Q section."""
+    if not text.strip():
+        return text, []
+    lines = text.rstrip("\n").split("\n")
+    inserted: list[str] = []
+    for heading in P.Q_SECTIONS:
+        if not any(l.strip().startswith(heading) for l in lines):
+            lines += ["", heading, PLACEHOLDER]
+            inserted.append(heading)
+    return "\n".join(lines) + "\n", inserted
 
 
 def validate_q(text: str) -> list[str]:
@@ -186,33 +248,56 @@ def generate_memory(
     max_chars: int,
     record_path: Path,
     verbose_dir: Optional[Path] = None,
-) -> Optional[str]:
-    """B_{j+1}, or ``None`` when both attempts failed validation."""
+) -> tuple[Optional[str], list[str]]:
+    """``(B_{j+1}, remaining_errors)``. The text is ``None`` only when the
+    LLM call itself failed; a draft that still fails the check after the one
+    retry is returned with its findings."""
+    return _generate(
+        llm, spec, kind="memory_call",
+        render=lambda rejection: P.render_memory_generation_messages(
+            previous_memory=previous_memory, curation=curation, addendum=addendum,
+            window_meta=window_meta, max_chars=max_chars, rejection=rejection),
+        validate=lambda text: validate_memory(text, max_chars=max_chars),
+        record_path=record_path, verbose_dir=verbose_dir,
+    )
+
+
+def _generate(
+    llm: Callable[..., Any],
+    spec: LLMSpec,
+    *,
+    kind: str,
+    render: Callable[[Optional[list[str]]], list[dict[str, str]]],
+    validate: Callable[[str], list[str]],
+    record_path: Path,
+    verbose_dir: Optional[Path],
+) -> tuple[Optional[str], list[str]]:
     attempts: list[dict[str, Any]] = []
     rejection: Optional[list[str]] = None
     messages: list = []
+    text, errors = "", ["no draft produced"]
     for attempt in (1, 2):
-        messages = P.render_memory_generation_messages(
-            previous_memory=previous_memory, curation=curation, addendum=addendum,
-            window_meta=window_meta, max_chars=max_chars, rejection=rejection,
-        )
+        messages = render(rejection)
         try:
             text, meta = _one_call(llm, spec, messages)
         except Exception as exc:  # noqa: BLE001 - call_llm already retried
             attempts.append({"attempt": attempt, "error": f"{type(exc).__name__}: {exc}"})
-            _record(record_path, kind="memory_call", messages=messages, attempts=attempts,
+            _record(record_path, kind=kind, messages=messages, attempts=attempts,
                     accepted=False, verbose_dir=verbose_dir)
-            return None
-        errors = validate_memory(text, max_chars=max_chars)
+            return None, [f"LLM call failed: {type(exc).__name__}: {exc}"]
+        errors = validate(text) if text.strip() else ["the document is empty"]
         attempts.append({"attempt": attempt, **meta, "chars": len(text), "errors": errors})
         if not errors:
-            _record(record_path, kind="memory_call", messages=messages + [{"role": "assistant", "content": text}],
-                    attempts=attempts, accepted=True, verbose_dir=verbose_dir)
-            return text + ("\n" if not text.endswith("\n") else "")
+            break
         rejection = errors
-    _record(record_path, kind="memory_call", messages=messages, attempts=attempts,
-            accepted=False, verbose_dir=verbose_dir)
-    return None
+    if not text.strip():
+        _record(record_path, kind=kind, messages=messages, attempts=attempts,
+                accepted=False, verbose_dir=verbose_dir)
+        return None, errors
+    # Accepted either way; ``accepted`` records whether the check passed.
+    _record(record_path, kind=kind, messages=messages + [{"role": "assistant", "content": text}],
+            attempts=attempts, accepted=not errors, verbose_dir=verbose_dir)
+    return text + ("\n" if not text.endswith("\n") else ""), errors
 
 
 def update_instruction(
@@ -225,30 +310,13 @@ def update_instruction(
     max_chars: int,
     record_path: Path,
     verbose_dir: Optional[Path] = None,
-) -> Optional[str]:
-    """I_{k+1} (the addendum), or ``None`` when both attempts failed."""
-    attempts: list[dict[str, Any]] = []
-    rejection: Optional[list[str]] = None
-    messages: list = []
-    for attempt in (1, 2):
-        messages = P.render_instruction_update_messages(
+) -> tuple[Optional[str], list[str]]:
+    """``(I_{k+1}, remaining_errors)`` — same policy as ``generate_memory``."""
+    return _generate(
+        llm, spec, kind="update_call",
+        render=lambda rejection: P.render_instruction_update_messages(
             addendum=addendum, q=q, previous_q=previous_q, max_chars=max_chars,
-            rejection=rejection,
-        )
-        try:
-            text, meta = _one_call(llm, spec, messages)
-        except Exception as exc:  # noqa: BLE001
-            attempts.append({"attempt": attempt, "error": f"{type(exc).__name__}: {exc}"})
-            _record(record_path, kind="update_call", messages=messages, attempts=attempts,
-                    accepted=False, verbose_dir=verbose_dir)
-            return None
-        errors = validate_addendum(text, max_chars=max_chars)
-        attempts.append({"attempt": attempt, **meta, "chars": len(text), "errors": errors})
-        if not errors:
-            _record(record_path, kind="update_call", messages=messages + [{"role": "assistant", "content": text}],
-                    attempts=attempts, accepted=True, verbose_dir=verbose_dir)
-            return text + ("\n" if not text.endswith("\n") else "")
-        rejection = errors
-    _record(record_path, kind="update_call", messages=messages, attempts=attempts,
-            accepted=False, verbose_dir=verbose_dir)
-    return None
+            rejection=rejection),
+        validate=lambda text: validate_addendum(text, max_chars=max_chars),
+        record_path=record_path, verbose_dir=verbose_dir,
+    )

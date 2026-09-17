@@ -362,14 +362,15 @@ class TestCadence(LayerBase):
         self.assertEqual(lay.events[-1]["event"], "window_failed")
         self.assertIsNone(lay.memory_path)
 
-    def test_generation_rejection_keeps_previous_memory(self) -> None:
+    def test_generation_with_findings_is_still_written(self) -> None:
+        """A memory that fails the check after the retry is used anyway; the
+        findings are recorded in state.json and memory_call.json."""
         lay = self.layer(window_size=1)
         tree = self._tree()
         self._child(tree, 1)
         lay.on_event("expand", tree, node_id=1)
         lay.on_event("expand_eval", tree, node_id=1)
         self.assertEqual(lay.memory_version, 1)
-        # Now make the generator emit a prediction twice.
         orig = lay.llm
 
         class Bad(_ScriptedLLM):
@@ -382,12 +383,33 @@ class TestCadence(LayerBase):
         self._child(tree, 2)
         lay.on_event("expand", tree, node_id=2)
         lay.on_event("expand_eval", tree, node_id=2)
-        self.assertEqual(lay.memory_version, 1)
-        self.assertEqual(len(lay.llm.calls), 2)
-        self.assertEqual(lay.events[-1]["event"], "memory_rejected")
+        self.assertEqual(lay.memory_version, 2)
+        self.assertEqual(len(lay.llm.calls), 2)                       # one retry
+        self.assertIn("expected score 0.95", (lay.dir / memory_version_name(2)).read_text())
+        ev = [e for e in lay.events if e["event"] == "memory_written"][-1]
+        self.assertTrue(any("score prediction" in x for x in ev["check_errors"]))
         rec = json.loads((lay.dir / "window_002" / "memory_call.json").read_text())
         self.assertFalse(rec["accepted"])
-        self.assertTrue(any("score prediction" in e for e in rec["attempts"][0]["errors"]))
+
+    def test_llm_failure_keeps_previous_memory(self) -> None:
+        lay = self.layer(window_size=1)
+        tree = self._tree()
+        self._child(tree, 1)
+        lay.on_event("expand", tree, node_id=1)
+        lay.on_event("expand_eval", tree, node_id=1)
+        orig = lay.llm
+
+        class Dead(_ScriptedLLM):
+            def __call__(self, **kw):
+                if not kw.get("tools"):
+                    raise RuntimeError("provider down")
+                return orig(**kw)
+        lay.llm = Dead()
+        self._child(tree, 2)
+        lay.on_event("expand", tree, node_id=2)
+        lay.on_event("expand_eval", tree, node_id=2)
+        self.assertEqual(lay.memory_version, 1)
+        self.assertEqual(lay.events[-1]["event"], "memory_failed")
 
 
 # --------------------------------------------------------------------------- #

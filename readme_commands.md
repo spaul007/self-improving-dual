@@ -21,6 +21,8 @@ PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_1000_dsv4pro_agent
 PYTHONPATH=. META_AGENT_VERBOSE=1 python3 main_loop.py --config configs/hgm_travel_smoke_agentic_editmem.yaml
 # tests
 PYTHONPATH=. python3 -m unittest discover -s tests
+# dashboard (Run / Edit memory / Compare views; base python has streamlit, hgm-dual does not)
+/users/sudipta.paul/miniconda3/bin/python3 -m streamlit run hgm_dashboard.py --server.port 8502 --server.address 0.0.0.0 --server.headless true
 ```
 
 `seed_round_dir` in the 100/1000/tiny configs points at a finished run's

@@ -69,6 +69,30 @@ class TestValidators(unittest.TestCase):
         errs = G.validate_curation(section(3), node_ids=[3])
         self.assertEqual(len(errs), 2)
 
+    def test_salvage_curation_inserts_placeholders(self) -> None:
+        def section(nid, subs):
+            return P.NODE_SECTION_HEADING.format(node_id=nid) + " (round_005)\n" + \
+                "".join(f"### {s}\ntext {nid}\n" for s in subs)
+        doc = section(3, P.NODE_SUBSECTIONS) + section(5, P.NODE_SUBSECTIONS[:2] + P.NODE_SUBSECTIONS[3:]) + \
+            P.CURATION_CROSS_HEADING + "\nx\n"
+        self.assertTrue(G.validate_curation(doc, node_ids=[3, 5, 8]))
+        fixed, inserted = G.salvage_curation(doc, node_ids=[3, 5, 8])
+        self.assertEqual(G.validate_curation(fixed, node_ids=[3, 5, 8]), [])
+        self.assertEqual(inserted, ["## Node 5 / Editor process", "## Node 8", P.CURATION_GRADIENT_HEADING])
+        # The placeholder went into node 5's section, before node 8's, and the original text is intact.
+        i5, i8 = fixed.index("## Node 5"), fixed.index("## Node 8")
+        self.assertIn(f"### Editor process\n{G.PLACEHOLDER}", fixed[i5:i8])
+        self.assertIn("text 3", fixed); self.assertIn("text 5", fixed)
+        self.assertEqual(fixed.count(G.PLACEHOLDER), 1 + len(P.NODE_SUBSECTIONS) + 1)
+        # A complete document is untouched; an empty one is left alone.
+        ok = section(3, P.NODE_SUBSECTIONS) + P.CURATION_CROSS_HEADING + "\nx\n" + P.CURATION_GRADIENT_HEADING + "\ny\n"
+        self.assertEqual(G.salvage_curation(ok, node_ids=[3]), (ok, []))
+        self.assertEqual(G.salvage_curation("  ", node_ids=[3]), ("  ", []))
+        q = P.Q_SECTIONS[0] + "\nx\n"
+        fixed, inserted = G.salvage_q(q)
+        self.assertEqual(G.validate_q(fixed), [])
+        self.assertEqual(inserted, list(P.Q_SECTIONS[1:]))
+
     def test_q_validator(self) -> None:
         doc = "".join(h + "\ntext\n" for h in P.Q_SECTIONS)
         self.assertEqual(G.validate_q(doc), [])
@@ -103,12 +127,12 @@ class TestCalls(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def test_generate_memory_retries_once_then_gives_up(self) -> None:
+    def test_generate_memory_retries_once_then_keeps_the_final_draft(self) -> None:
         llm = _ScriptedLLM([_Resp("## 1. Ranked edits\nonly one section"), _Resp(_memory())])
-        out = G.generate_memory(llm, self.spec, previous_memory="", curation="Z", addendum="- add x",
-                                window_meta={"window_index": 1, "nodes": [{"node_id": 1, "memory_arm": "none"}]},
-                                max_chars=20000, record_path=self.tmp / "memory_call.json")
-        self.assertEqual(out, _memory())
+        out, errs = G.generate_memory(llm, self.spec, previous_memory="", curation="Z", addendum="- add x",
+                                      window_meta={"window_index": 1, "nodes": [{"node_id": 1, "memory_arm": "none"}]},
+                                      max_chars=20000, record_path=self.tmp / "memory_call.json")
+        self.assertEqual((out, errs), (_memory(), []))
         self.assertEqual(len(llm.calls), 2)
         # kwargs threaded; the rejection is fed back on the retry.
         kw = llm.calls[0]
@@ -126,32 +150,49 @@ class TestCalls(unittest.TestCase):
         rec = json.loads((self.tmp / "memory_call.json").read_text())
         self.assertTrue(rec["accepted"])
         self.assertEqual([a["attempt"] for a in rec["attempts"]], [1, 2])
-        # Two rejections → None
-        llm = _ScriptedLLM([_Resp("bad"), _Resp("bad again")])
-        self.assertIsNone(G.generate_memory(llm, self.spec, previous_memory="B", curation="Z", addendum="",
-                                            window_meta={"window_index": 2, "nodes": []}, max_chars=20000,
-                                            record_path=self.tmp / "memory_call.json"))
-        self.assertFalse(json.loads((self.tmp / "memory_call.json").read_text())["accepted"])
+        # Two failing checks → the FINAL draft is still returned, with its findings.
+        llm = _ScriptedLLM([_Resp("bad"), _Resp("bad again\nexpected score 0.9")])
+        out, errs = G.generate_memory(llm, self.spec, previous_memory="B", curation="Z", addendum="",
+                                      window_meta={"window_index": 2, "nodes": []}, max_chars=20000,
+                                      record_path=self.tmp / "memory_call.json")
+        self.assertEqual(out, "bad again\nexpected score 0.9\n")
+        self.assertTrue(any("## 1. Ranked edits" in e for e in errs))
+        self.assertTrue(any("score prediction" in e for e in errs))
+        rec = json.loads((self.tmp / "memory_call.json").read_text())
+        self.assertFalse(rec["accepted"])
+        self.assertEqual(len(rec["attempts"]), 2)
+        # An empty final draft is the one thing that yields no document.
+        llm = _ScriptedLLM([_Resp(""), _Resp("   ")])
+        out, errs = G.generate_memory(llm, self.spec, previous_memory="B", curation="Z", addendum="",
+                                      window_meta={"window_index": 2, "nodes": []}, max_chars=20000,
+                                      record_path=self.tmp / "m2.json")
+        self.assertIsNone(out)
+        self.assertEqual(errs, ["the document is empty"])
 
     def test_update_instruction(self) -> None:
         llm = _ScriptedLLM([_Resp("- cite failing checks\n- keep entries per mechanism")])
-        out = G.update_instruction(llm, self.spec, addendum="", q="Q-REPORT", previous_q=["OLD-Q"],
-                                   max_chars=4000, record_path=self.tmp / "update_call.json")
-        self.assertEqual(out, "- cite failing checks\n- keep entries per mechanism\n")
+        out, errs = G.update_instruction(llm, self.spec, addendum="", q="Q-REPORT", previous_q=["OLD-Q"],
+                                         max_chars=4000, record_path=self.tmp / "update_call.json")
+        self.assertEqual((out, errs), ("- cite failing checks\n- keep entries per mechanism\n", []))
         user = llm.calls[0]["messages"][1]["content"]
         self.assertIn(P.CORE_SENTINEL, user)
         self.assertIn("Q-REPORT", user)
         self.assertIn("OLD-Q", user)
         llm = _ScriptedLLM([_Resp(P.CORE_SENTINEL), _Resp("predict the score")])
-        self.assertIsNone(G.update_instruction(llm, self.spec, addendum="a", q="q", previous_q=[],
-                                               max_chars=4000, record_path=self.tmp / "u.json"))
+        out, errs = G.update_instruction(llm, self.spec, addendum="a", q="q", previous_q=[],
+                                         max_chars=4000, record_path=self.tmp / "u.json")
+        self.assertEqual(out, "predict the score\n")       # final draft kept ...
+        self.assertTrue(any("score prediction" in e for e in errs))   # ... findings reported
+        self.assertIn("previous draft was rejected", llm.calls[1]["messages"][1]["content"])
 
     def test_llm_failure_is_recorded_not_raised(self) -> None:
         def boom(**kw):
             raise RuntimeError("down")
-        self.assertIsNone(G.generate_memory(boom, self.spec, previous_memory="", curation="Z", addendum="",
-                                            window_meta={"window_index": 1, "nodes": []}, max_chars=100,
-                                            record_path=self.tmp / "m.json"))
+        out, errs = G.generate_memory(boom, self.spec, previous_memory="", curation="Z", addendum="",
+                                      window_meta={"window_index": 1, "nodes": []}, max_chars=100,
+                                      record_path=self.tmp / "m.json")
+        self.assertIsNone(out)
+        self.assertIn("RuntimeError", errs[0])
         rec = json.loads((self.tmp / "m.json").read_text())
         self.assertIn("RuntimeError", rec["attempts"][0]["error"])
 

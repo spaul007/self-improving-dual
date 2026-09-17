@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 from .. import verbose_log
 from ..agentic.sandbox import Sandbox
@@ -51,13 +51,31 @@ class CuratorResult:
 
 def curator_submit_spec(
     *, output_path: Path, validate: Callable[[str], list[str]], output_file: str,
+    salvage: Optional[Callable[[str], tuple[str, list[str]]]] = None,
 ) -> tuple[SubmitSpec, dict[str, Any]]:
-    """Accepted iff the output file exists, is non-empty and passes
-    ``validate``. Wrap-up (budget gone, no accepted submit) falls back to
-    accepting a non-empty file even when the structure check fails — a
-    partial curation is better than none; the check errors are kept in the
-    returned ``state`` dict (``summary``, ``fallback_errors``)."""
-    state: dict[str, Any] = {"summary": "", "fallback_errors": []}
+    """The document check on ``submit_curation``. A failing check is quoted
+    back to the model, which may fix the file and submit again — but the
+    document is never rejected (2026-09-17 policy): on the last allowed
+    attempt, and at wrap-up when the budget is gone, a non-empty file is
+    accepted with the remaining findings kept in the returned ``state``
+    dict (``summary``, ``fallback_errors``). Only a missing/empty file
+    fails the session. When ``salvage`` is given it runs on that final
+    acceptance: missing sections/subsections are inserted with a placeholder
+    line (``salvaged`` in the state lists them) so the document is
+    structurally complete and the gaps are explicit."""
+    state: dict[str, Any] = {"summary": "", "fallback_errors": [], "salvaged": []}
+
+    def _accept_final(text: str, errors: list[str]) -> list[str]:
+        """Salvage the on-disk document if the check still fails; returns
+        the findings that remain after salvage."""
+        if errors and salvage is not None:
+            fixed, inserted = salvage(text)
+            if inserted:
+                output_path.write_text(fixed, encoding="utf-8")
+                state["salvaged"] = inserted
+                errors = validate(fixed)
+        state["fallback_errors"] = errors
+        return errors
 
     def _read() -> str:
         try:
@@ -73,21 +91,36 @@ def curator_submit_spec(
         errors = [f"$WORK_DIR/{output_file} does not exist or is empty"] if not text.strip() \
             else validate(text)
         session.transcript.write("validation", round=k, changed_files=changed_files(), errors=errors)
-        if errors:
+        if errors and not text.strip():
             session.last_errors = errors
             exhausted = k >= n
+            return (f"Document check failed (attempt {k}/{n}):\n  - {errors[0]}"
+                    + ("\nNo attempts left; the session ends." if exhausted else
+                       f"\nWrite the document and call {P.SUBMIT_CURATION_NAME} again."),
+                    False, exhausted)
+        if errors and k < n:
+            session.last_errors = errors
             bullets = "\n".join(f"  - {e}" for e in errors)
-            tail = ("\nNo attempts left; the session ends." if exhausted else
-                    f"\nFix the document and call {P.SUBMIT_CURATION_NAME} again.")
-            return f"Document check failed (attempt {k}/{n}):\n{bullets}{tail}", False, exhausted
+            return (f"Document check failed (attempt {k}/{n}):\n{bullets}\n"
+                    f"Fix the document and call {P.SUBMIT_CURATION_NAME} again "
+                    f"(on the last attempt it is accepted as is).", False, False)
+        # Passed, or last attempt: accept; salvage the structure if needed.
+        errors = _accept_final(text, errors)
         state["summary"] = str(args.get("summary") or "")
-        return "Submission accepted.", True, False
+        if state["salvaged"]:
+            msg = ("Submission accepted; these missing parts were inserted as placeholders: "
+                   + ", ".join(state["salvaged"]))
+        elif errors:
+            msg = "Submission accepted (with unresolved check findings recorded)."
+        else:
+            msg = "Submission accepted."
+        return msg, True, False
 
     def fallback(session: AgenticSession, reason: str) -> tuple[bool, list[str]]:
         text = _read()
         if not text.strip():
             return False, [f"no {output_file} written"]
-        state["fallback_errors"] = validate(text)
+        _accept_final(text, validate(text))
         state["summary"] = f"(no summary submitted; ended by {reason})"
         # Accept a non-empty but incomplete document; the caller sees the
         # structure errors in the result and decides.
@@ -117,6 +150,7 @@ def run_curator(
     validate: Callable[[str], list[str]],
     cfg: CuratorConfig,
     llm_kwargs: dict[str, Any],
+    salvage: Optional[Callable[[str], tuple[str, list[str]]]] = None,
 ) -> CuratorResult:
     """One curator session over ``policy`` (built by
     ``policy.build_curator_policy``). ``llm_kwargs`` carries model /
@@ -136,7 +170,8 @@ def run_curator(
         (P.curator_editor_tool_info(max_view_chars=cfg.max_view_chars, output_file=output_file),
          EditorTool(policy, max_view_chars=cfg.max_view_chars)),
     ], submit_name=P.SUBMIT_CURATION_NAME)
-    submit, state = curator_submit_spec(output_path=output_path, validate=validate, output_file=output_file)
+    submit, state = curator_submit_spec(output_path=output_path, validate=validate,
+                                        output_file=output_file, salvage=salvage)
     session_cfg = SessionConfig(
         max_llm_calls=cfg.max_llm_calls, timeout_s=cfg.timeout_s, max_attempts=cfg.max_attempts,
         transcript_result_chars=cfg.transcript_result_chars,
@@ -155,6 +190,7 @@ def run_curator(
     summary["output_file"] = output_file
     summary["summary"] = state["summary"]
     summary["fallback_errors"] = state["fallback_errors"]
+    summary["salvaged"] = state["salvaged"]
     summary["roots"] = {k: str(v) for k, v in policy.roots().items()}
     (agentic_dir / SESSION_NAME).write_text(
         json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")

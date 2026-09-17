@@ -100,6 +100,7 @@ class CuratorBase(unittest.TestCase):
                 timeout_s=60, max_attempts=2),
             output_file=P.CURATION_FILE,
             validate=lambda t: G.validate_curation(t, node_ids=[1, 2]),
+            salvage=lambda t: G.salvage_curation(t, node_ids=[1, 2]),
             cfg=CuratorConfig(sandbox="none", max_llm_calls=cfg.pop("max_llm_calls", 8),
                               timeout_s=60, max_attempts=2),
             llm_kwargs={"model": "m", "reasoning_effort": "low", "base_url": None,
@@ -184,6 +185,35 @@ class TestSession(CuratorBase):
         self.assertEqual(res.end_reason, "max_attempts")
         self.assertIn("does not exist or is empty", llm.calls[1]["messages"][-1]["output"])
 
+    def test_last_attempt_accepts_and_salvages_an_incomplete_document(self) -> None:
+        """Attempt 1 fails the check and is fed back; attempt 2 (the last)
+        still lacks a subsection -> accepted, placeholder inserted, findings
+        cleared by the salvage and the insertion recorded."""
+        partial = _curation([1]).replace("### Editor process\nx\n", "") + \
+            P.NODE_SECTION_HEADING.format(node_id=2) + "\n" + "".join(f"### {s}\nx\n" for s in P.NODE_SUBSECTIONS)
+        res, llm = self.run_memory_curator([
+            _Resp(tool_calls=[_Call("e1", "editor", {"command": "create", "path": "$WORK_DIR/curation.md", "file_text": "# draft\n"})]),
+            _Resp(tool_calls=[_Call("s1", P.SUBMIT_CURATION_NAME, {"summary": "x"})]),
+            _Resp(tool_calls=[_Call("e2", "editor", {"command": "replace_lines", "path": "$WORK_DIR/curation.md",
+                                                     "start_line": 1, "end_line": 1, "new_str": partial})]),
+            _Resp(tool_calls=[_Call("s2", P.SUBMIT_CURATION_NAME, {"summary": "done-ish"})]),
+        ])
+        self.assertTrue(res.success, res.errors)
+        self.assertEqual(res.end_reason, "submitted")
+        fail_out = llm.calls[2]["messages"][-1]["output"]
+        self.assertIn("Document check failed (attempt 1/2)", fail_out)
+        self.assertIn("accepted as is", fail_out)
+        outs = [e for e in map(json.loads, (self.work / "agentic" / "transcript.jsonl").read_text().splitlines())
+                if e["kind"] == "tool_call" and e["name"] == P.SUBMIT_CURATION_NAME]
+        self.assertIn("inserted as placeholders: ## Node 1 / Editor process", outs[-1]["result"])
+        text = res.output_path.read_text()
+        self.assertEqual(G.validate_curation(text, node_ids=[1, 2]), [])
+        self.assertIn(f"### Editor process\n{G.PLACEHOLDER}", text)
+        sess = json.loads((self.work / "agentic" / "session.json").read_text())
+        self.assertEqual(sess["salvaged"], ["## Node 1 / Editor process"])
+        self.assertEqual(sess["fallback_errors"], [])
+        self.assertEqual(res.errors, [])
+
     def test_writes_outside_work_dir_refused(self) -> None:
         res, llm = self.run_memory_curator([
             _Resp(tool_calls=[_Call("e1", "editor", {"command": "create", "path": "$NODE_1/notes.md", "file_text": "x"}),
@@ -209,11 +239,16 @@ class TestSession(CuratorBase):
         ], max_llm_calls=2)
         self.assertTrue(res.success)
         self.assertEqual(res.end_reason, "max_llm_calls")
-        self.assertEqual(res.errors, ["missing section '## Node 2'"])
         self.assertIn(P.SUBMIT_CURATION_NAME, llm.calls[2]["messages"][-1]["content"])
         self.assertEqual([t["name"] for t in llm.calls[2]["tools"]], [P.SUBMIT_CURATION_NAME])
+        # Wrap-up salvages too: node 2's whole section was inserted as placeholders.
+        text = res.output_path.read_text()
+        self.assertEqual(G.validate_curation(text, node_ids=[1, 2]), [])
+        self.assertIn("## Node 2", text)
         sess = json.loads((self.work / "agentic" / "session.json").read_text())
-        self.assertEqual(sess["fallback_errors"], ["missing section '## Node 2'"])
+        self.assertEqual(sess["salvaged"], ["## Node 2"])
+        self.assertEqual(sess["fallback_errors"], [])
+        self.assertEqual(res.errors, [])
 
 
 if __name__ == "__main__":

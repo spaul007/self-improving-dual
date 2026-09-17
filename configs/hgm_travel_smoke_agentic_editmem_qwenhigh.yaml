@@ -174,5 +174,5 @@ edit_memory:
       max_view_chars: 40000
       sandbox: "auto"
       max_attempts: 2
-    memory_max_chars: 20000
-    instruction_addendum_max_chars: 4000
+    memory_max_chars: 40000
+    instruction_addendum_max_chars: 10000

@@ -294,11 +294,21 @@ I_{k+1} <- InstructionUpdate(Q, I_k)                      one LLM call
   shows / shortcomings (strategy vs implementation) / usefulness verdict*,
   cross-node patterns, and a gradient against the current memory. One
   call then rewrites the memory minimally: `edit_memory_vNNN.md` with
-  *ranked edits / usefulness / strategy vs implementation / guidance*,
-  validated for structure, size and the absence of any score prediction
-  (regex; one retry, then the previous memory is kept). Nothing is
-  pre-digested for the curators; node mean scores appear as context only
-  and are never passed to the generator.
+  *ranked edits / usefulness / strategy vs implementation / guidance*.
+  Nothing is pre-digested for the curators; node mean scores appear as
+  context only and are never passed to the generator.
+- **Checks never discard content.** A curator's document is checked on
+  submit (per-node sections, cross-window + gradient sections; the five Q
+  sections for the audit); a failing check is quoted back and the curator
+  may fix and resubmit, but on its last attempt — and at wrap-up — the
+  document is accepted as it is, with any still-missing sections inserted
+  as `(not provided by the curator)` placeholders (`salvaged` in
+  `session.json`). The memory and the addendum are checked for structure,
+  size (`memory_max_chars` 40k, `instruction_addendum_max_chars` 10k) and
+  score-prediction language; a failing draft is regenerated once with the
+  findings quoted back, and the final draft is used either way, findings
+  recorded in `memory_call.json` / `update_call.json` and `state.json`.
+  Only an LLM failure keeps the previous version.
 - **Arms.** Before the first memory every expansion is arm `none`. After
   it, a Thompson bandit picks `with` or `without` per expansion from the
   two arms' pooled HGM tallies (`Beta(Σ n_success + prior, Σ n_failure +
@@ -346,8 +356,8 @@ edit_memory:
     api_key_env: "OpenRouter_API_KEY"
     llm_timeout_s: 600
     curator: { max_llm_calls: 60, timeout_s: 2400, bash_timeout_s: 120, sandbox: "auto", max_attempts: 2 }
-    memory_max_chars: 20000
-    instruction_addendum_max_chars: 4000
+    memory_max_chars: 40000
+    instruction_addendum_max_chars: 10000
 ```
 
 `configs/hgm_travel_1000_dsv4pro_agentic_editmem.yaml` is the no-editmem
@@ -414,6 +424,54 @@ PYTHONPATH=. python3 snapshot_eval.py \
 ```
 
 Per-budget results are written to `runs/<exp>/snapshots/eval_at_budget_<B>.json`.
+
+## Dashboard
+
+`hgm_dashboard.py` is a Streamlit viewer for live or finished runs under
+`runs/`. It needs `streamlit` + `pandas` (listed at the bottom of
+`requirements.txt`; the `hgm-dual` conda env does not have them, the base
+miniconda python does):
+
+```bash
+# from the base miniconda python (has streamlit), or `pip install streamlit pandas` into hgm-dual first
+/users/sudipta.paul/miniconda3/bin/python3 -m streamlit run hgm_dashboard.py \
+    --server.port 8502 --server.address 0.0.0.0 --server.headless true
+```
+
+Three views (sidebar radio; the experiment picker lists every
+`runs/<exp>/` that has a `config.snapshot.yaml` and at least one `round_*/`,
+newest first, defaulting to the newest live one — `runs/eval_*` dirs from
+`evaluate.py` are ignored):
+
+- **Run** — header + budget bar, a diagnostics panel (edit-failed nodes,
+  editor sessions that ended without submitting, per-case errors/timeouts,
+  crashed evals, zero-mean nodes), the search tree (fill = train mean;
+  border = memory arm when the edit-memory layer is on; double border =
+  current best), a nodes table with diff line counts and editor-session
+  stats, and a per-round drill-down: **Strategy**, **Agentic session** (the
+  editor's `agentic/transcript.jsonl` grouped by LLM call — assistant text,
+  every bash/editor/validate/submit call with its result, editor calls shown
+  as diffs, token curve; prompts from `verbose/` when present),
+  **Evaluation** (per-case table with dimension columns, dimension means,
+  hard-constraint and failed-check counts, case inspector), **Diff vs
+  parent** (mutable surface only), **Feedback**.
+- **Edit memory** (only for runs with an `edit_memory/` dir) — layer state
+  and arm pulls, per-arm train-mean summary, event log, memory / instruction
+  version browser with diff-vs-previous, each curation window (nodes,
+  `curation.md`, generator-call attempts, the curator's own transcript) and
+  each instruction update (`q.md`).
+- **Compare** — pick several runs: best-train-mean-vs-budget step curves
+  from `snapshots/tree_snapshots.jsonl` (needs `snapshot_tree: true`), with
+  held-out `eval_at_budget_*.json` points overlaid when present; a summary
+  table; the best node's dimension means side by side.
+
+The data layer is `meta_agent/run_inspect.py` (rounds, diffs, diagnostics,
+snapshots, cross-run summary) and `meta_agent/run_inspect_agentic.py`
+(transcripts, sessions, `edit_memory/`) — pure Python, no Streamlit import,
+reusable from analysis scripts, tested in `tests/test_run_inspect*.py`. The
+dashboard never reads `logs/trace.jsonl` or `feedback.json`'s `log_excerpt`;
+everything else is cached per file mtime, so auto-refresh on a live run only
+re-parses what changed. Times are shown in America/Los_Angeles.
 
 ## Train/eval split (optional)
 

@@ -3,3 +3,7 @@ pyyaml>=6.0
 openai>=1.50
 # Used by projects/shopping/tools/search_products.py for BM25 semantic search.
 rank-bm25>=0.2
+# Dashboard only (hgm_dashboard.py + dashboard/); not needed to run experiments.
+# altair (used for the charts) ships with streamlit.
+streamlit>=1.40
+pandas>=2.0

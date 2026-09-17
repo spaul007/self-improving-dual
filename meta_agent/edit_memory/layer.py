@@ -69,8 +69,8 @@ class EditMemoryLayer:
         llm_timeout_s: Optional[float] = None,
         extra_body: Optional[dict[str, Any]] = None,
         curator: Optional[dict[str, Any]] = None,
-        memory_max_chars: int = 20000,
-        instruction_addendum_max_chars: int = 4000,
+        memory_max_chars: int = 40000,
+        instruction_addendum_max_chars: int = 10000,
         project_root: Optional[Path] = None,
         repo_root: Optional[Path] = None,
     ) -> None:
@@ -267,6 +267,7 @@ class EditMemoryLayer:
                 self.llm, policy=policy, system_prompt=P.MEMORY_CURATOR_SYSTEM,
                 instruction=instruction, output_file=P.CURATION_FILE,
                 validate=lambda text: G.validate_curation(text, node_ids=live_ids),
+                salvage=lambda text: G.salvage_curation(text, node_ids=live_ids),
                 cfg=self.curator_cfg, llm_kwargs=self.spec.kwargs_plain(),
             )
         except Exception as exc:  # noqa: BLE001 - never cost the run a window
@@ -289,7 +290,7 @@ class EditMemoryLayer:
             self._update_instruction(tree)
 
         # 3. memory generator (one call), under the current addendum
-        new_memory = G.generate_memory(
+        new_memory, memory_errors = G.generate_memory(
             self.llm, self.spec, previous_memory=self._memory_text(), curation=curation,
             addendum=self._addendum(),
             window_meta={"window_index": j, "nodes": [
@@ -299,17 +300,23 @@ class EditMemoryLayer:
             verbose_dir=workspace,
         )
         if new_memory is None:
-            print(f"[edit_memory] window {j}: memory generation rejected twice; keeping "
-                  f"v{self.memory_version:03d}", flush=True)
-            self._save_state("memory_rejected", window=j)
+            print(f"[edit_memory] window {j}: memory generation failed ({memory_errors[:1]}); "
+                  f"keeping v{self.memory_version:03d}", flush=True)
+            self._save_state("memory_failed", window=j, errors=memory_errors)
             return
+        if memory_errors:
+            # Never discard generated content: the final draft is used and the
+            # check's remaining findings are recorded here and in state.json.
+            print(f"[edit_memory] window {j}: memory accepted with check findings: "
+                  f"{memory_errors[:2]}", flush=True)
         self.memory_version += 1
         (self.dir / memory_version_name(self.memory_version)).write_text(new_memory, encoding="utf-8")
         shutil.copyfile(self.dir / memory_version_name(self.memory_version), self.dir / MEMORY_FILE)
         self.versions_since_instruction += 1
         print(f"[edit_memory] window {j}: wrote {memory_version_name(self.memory_version)} "
               f"({len(new_memory)} chars)", flush=True)
-        self._save_state("memory_written", window=j, memory_version=self.memory_version)
+        self._save_state("memory_written", window=j, memory_version=self.memory_version,
+                         check_errors=memory_errors)
 
     # ------------------------------------------------------------------ #
     # Instruction update
@@ -346,6 +353,7 @@ class EditMemoryLayer:
             result = run_curator(
                 self.llm, policy=policy, system_prompt=P.INSTRUCTION_CURATOR_SYSTEM,
                 instruction=instruction, output_file=P.Q_FILE, validate=G.validate_q,
+                salvage=G.salvage_q,
                 cfg=self.curator_cfg, llm_kwargs=self.spec.kwargs_plain(),
             )
         except Exception as exc:  # noqa: BLE001
@@ -363,23 +371,26 @@ class EditMemoryLayer:
             pq = self.dir / f"instruction_update_{i:03d}" / P.Q_FILE
             if pq.exists():
                 previous_q.append(pq.read_text(encoding="utf-8"))
-        new_addendum = G.update_instruction(
+        new_addendum, addendum_errors = G.update_instruction(
             self.llm, self.spec, addendum=self._addendum(), q=q, previous_q=previous_q,
             max_chars=self.instruction_addendum_max_chars,
             record_path=workspace / "update_call.json", verbose_dir=workspace,
         )
         if new_addendum is None:
-            print(f"[edit_memory] instruction update {k}: rejected twice; keeping "
+            print(f"[edit_memory] instruction update {k}: failed ({addendum_errors[:1]}); keeping "
                   f"v{self.instruction_version:03d}", flush=True)
-            self._save_state("instruction_rejected", update=k)
+            self._save_state("instruction_failed", update=k, errors=addendum_errors)
             return
+        if addendum_errors:
+            print(f"[edit_memory] instruction update {k}: addendum accepted with check findings: "
+                  f"{addendum_errors[:2]}", flush=True)
         self.instruction_version = k
         (self.dir / instruction_version_name(k)).write_text(new_addendum, encoding="utf-8")
         (self.dir / INSTRUCTION_FILE).write_text(new_addendum, encoding="utf-8")
         self.with_nodes_since_instruction = []
         print(f"[edit_memory] instruction update {k}: wrote {instruction_version_name(k)} "
               f"({len(new_addendum)} chars)", flush=True)
-        self._save_state("instruction_written", update=k)
+        self._save_state("instruction_written", update=k, check_errors=addendum_errors)
 
     # ------------------------------------------------------------------ #
     # State
