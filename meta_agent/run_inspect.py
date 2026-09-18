@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import difflib
 import json
+import math
 import re
 import time
 from dataclasses import dataclass, field
@@ -628,6 +629,91 @@ def arm_utility_summary(rounds: list[RoundInfo]) -> dict[str, dict[str, Any]]:
             e["mean_of_means"] = sum(means) / len(means)
             e["best_mean"] = max(means)
     return out
+
+
+def arm_beta_tallies(rounds: list[RoundInfo]) -> dict[str, dict[str, float]]:
+    """The bandit's pooled per-arm tallies, recomputed from ``hgm_node.json``
+    exactly as ``EditMemoryLayer.arm_tallies`` does: sum of HGM ``n_success``
+    / ``n_failure`` over every node pulled under ``with`` / ``without``. The
+    seed and the pre-memory ``none`` nodes are excluded. Edit-failed nodes
+    (no sidecar mid-run, zero mass at finalize) contribute nothing."""
+    out = {"with": {"S": 0.0, "F": 0.0, "n_nodes": 0},
+           "without": {"S": 0.0, "F": 0.0, "n_nodes": 0}}
+    for r in rounds:
+        if r.is_root or r.hgm_node is None:
+            continue
+        arm = r.memory_arm
+        if arm not in out:
+            continue
+        out[arm]["S"] += float(r.hgm_node.get("n_success") or 0.0)
+        out[arm]["F"] += float(r.hgm_node.get("n_failure") or 0.0)
+        out[arm]["n_nodes"] += 1
+    return out
+
+
+def run_beta_tally(rounds: list[RoundInfo], *, include_root: bool = False) -> dict[str, float]:
+    """Whole-tree pooled tally for one run: ΣS / ΣF of HGM ``n_success`` /
+    ``n_failure`` over every node with an ``hgm_node.json`` (each evaluated
+    case contributes its score to S and 1 − score to F, so S + F is the
+    number of evaluations). The seed root is excluded by default -- it is
+    not produced by the run, and with ``seed_round_dir`` it's the same
+    agent across runs -- but can be included. Edit-failed nodes carry no
+    mass; nodes not yet evaluated contribute nothing but are counted."""
+    S = F = 0.0
+    n_nodes = n_evaluated = 0
+    for r in rounds:
+        if r.hgm_node is None or (r.is_root and not include_root):
+            continue
+        n_nodes += 1
+        if r.n_evals > 0:
+            n_evaluated += 1
+        S += float(r.hgm_node.get("n_success") or 0.0)
+        F += float(r.hgm_node.get("n_failure") or 0.0)
+    return {"S": S, "F": F, "n_nodes": n_nodes, "n_evaluated": n_evaluated, "n_evals": S + F}
+
+
+def beta_pdf_curve(a: float, b: float, *, n_points: int = 400) -> tuple[list[float], list[float]]:
+    """(x, pdf(x)) on (0, 1) for Beta(a, b) via ``math.lgamma`` (no scipy).
+    ``a``/``b`` are >= beta_prior (default 1.0) here, so the density never
+    blows up at the boundaries."""
+    log_norm = math.lgamma(a) + math.lgamma(b) - math.lgamma(a + b)
+    xs = [(i + 0.5) / n_points for i in range(n_points)]
+    ys = [math.exp((a - 1) * math.log(x) + (b - 1) * math.log(1 - x) - log_norm) for x in xs]
+    return xs, ys
+
+
+def beta_summary(a: float, b: float) -> dict[str, float]:
+    """Mean and a central 90% interval, from the same grid as the curve."""
+    xs, ys = beta_pdf_curve(a, b)
+    step = xs[1] - xs[0]
+    cdf, acc = [], 0.0
+    for y in ys:
+        acc += y * step
+        cdf.append(acc)
+    total = cdf[-1] or 1.0
+
+    def q(p: float) -> float:
+        for x, c in zip(xs, cdf):
+            if c / total >= p:
+                return x
+        return xs[-1]
+
+    return {"mean": a / (a + b), "lo90": q(0.05), "hi90": q(0.95)}
+
+
+def prob_beta_greater(a1: float, b1: float, a2: float, b2: float) -> float:
+    """P(X > Y) for X~Beta(a1,b1), Y~Beta(a2,b2) by numeric integration
+    on the shared grid -- the probability the bandit's next Thompson draw
+    picks arm 1."""
+    xs, f1 = beta_pdf_curve(a1, b1)
+    _, f2 = beta_pdf_curve(a2, b2)
+    step = xs[1] - xs[0]
+    cdf2, acc, total = [], 0.0, sum(f2) * step
+    for y in f2:
+        acc += y * step
+        cdf2.append(acc / total if total else 0.0)
+    norm1 = sum(f1) * step or 1.0
+    return sum(f * c for f, c in zip(f1, cdf2)) * step / norm1
 
 
 def _case_details(eval_result: Optional[dict[str, Any]]):

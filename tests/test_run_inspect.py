@@ -229,6 +229,43 @@ class RunInspectTests(unittest.TestCase):
         self.assertEqual(s["none"]["n_edit_failed"], 1)  # node 2
         self.assertIsNone(s["none"]["mean_of_means"])
 
+    def test_arm_beta_tallies_match_layer_semantics(self):
+        # round_001 (with): n_success/n_failure 3/1; round_000 is the seed; round_002 has no sidecar.
+        _wj(self.exp / "round_001" / "hgm_node.json", {"node_id": 1, "parent_id": 0, "n_evals": 4, "mean_utility": 0.75,
+                                                      "n_success": 3.0, "n_failure": 1.0, "memory_arm": "with", "memory_version": 1})
+        _wj(self.exp / "round_004" / "hgm_node.json", {"node_id": 4, "parent_id": 0, "n_evals": 2, "mean_utility": 0.5,
+                                                      "n_success": 1.0, "n_failure": 1.0, "memory_arm": "none"})
+        _wj(self.exp / "round_005" / "hgm_node.json", {"node_id": 5, "parent_id": 0, "n_evals": 2, "mean_utility": 0.0,
+                                                      "n_success": 0.0, "n_failure": 2.0, "memory_arm": "without"})
+        t = ri.arm_beta_tallies(ri.discover_rounds(self.exp))
+        self.assertEqual(t["with"], {"S": 3.0, "F": 1.0, "n_nodes": 1})
+        self.assertEqual(t["without"], {"S": 0.0, "F": 2.0, "n_nodes": 1})  # pre-memory none node excluded
+
+    def test_run_beta_tally(self):
+        _wj(self.exp / "round_000" / "hgm_node.json", {"node_id": 0, "parent_id": None, "n_evals": 2, "mean_utility": 0.5,
+                                                      "n_success": 1.0, "n_failure": 1.0})
+        _wj(self.exp / "round_001" / "hgm_node.json", {"node_id": 1, "parent_id": 0, "n_evals": 4, "mean_utility": 0.75,
+                                                      "n_success": 3.0, "n_failure": 1.0, "memory_arm": "with"})
+        _wj(self.exp / "round_004" / "hgm_node.json", {"node_id": 4, "parent_id": 0, "n_evals": 0, "mean_utility": 0.0,
+                                                      "n_success": 0.0, "n_failure": 0.0, "memory_arm": "none"})
+        rounds = ri.discover_rounds(self.exp)
+        t = ri.run_beta_tally(rounds)
+        self.assertEqual(t, {"S": 3.0, "F": 1.0, "n_nodes": 2, "n_evaluated": 1, "n_evals": 4.0})  # root + failed node 2 excluded
+        t = ri.run_beta_tally(rounds, include_root=True)
+        self.assertEqual((t["S"], t["F"], t["n_nodes"], t["n_evals"]), (4.0, 2.0, 3, 6.0))
+
+    def test_beta_helpers(self):
+        xs, ys = ri.beta_pdf_curve(1.0, 1.0)
+        self.assertEqual(len(xs), 400)
+        self.assertTrue(all(abs(y - 1.0) < 1e-9 for y in ys))  # uniform
+        s = ri.beta_summary(4.0, 2.0)
+        self.assertAlmostEqual(s["mean"], 4 / 6)
+        self.assertLess(s["lo90"], s["mean"])
+        self.assertGreater(s["hi90"], s["mean"])
+        self.assertAlmostEqual(ri.prob_beta_greater(2.0, 2.0, 2.0, 2.0), 0.5, places=2)
+        self.assertGreater(ri.prob_beta_greater(30.0, 10.0, 10.0, 30.0), 0.99)
+        self.assertLess(ri.prob_beta_greater(10.0, 30.0, 30.0, 10.0), 0.01)
+
     def test_experiment_summary_and_eval_at_budget(self):
         s = ri.experiment_summary(self.exp)
         self.assertEqual((s.n_nodes, s.n_edit_failed, s.best_node_id, s.best_mean), (3, 1, 1, 0.70))

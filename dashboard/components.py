@@ -449,6 +449,64 @@ def grouped_dimension_bar(wide: pd.DataFrame, run_names: list[str]) -> None:
     st.altair_chart(chart, width="stretch")
 
 
+def beta_curves_chart(
+    entries: list[dict[str, Any]],
+    *,
+    x_title: str = "success rate θ",
+    height: int = 260,
+    x_domain: Optional[tuple[float, float]] = None,
+) -> None:
+    """Density curves for several Beta posteriors with a dotted line at each
+    mean. ``entries``: ``[{"name", "label", "a", "b", "color"}]`` -- ``name``
+    is the short id used in tooltips, ``label`` the legend text."""
+    rows, means = [], []
+    for e in entries:
+        xs, ys = ri.beta_pdf_curve(e["a"], e["b"])
+        rows += [{"name": e["name"], "label": e["label"], "x": x, "density": y} for x, y in zip(xs, ys)]
+        means.append({"label": e["label"], "mean": e["a"] / (e["a"] + e["b"])})
+    if not rows:
+        st.info("Nothing to plot yet.")
+        return
+    df, mdf = pd.DataFrame(rows), pd.DataFrame(means)
+    order = [e["label"] for e in entries]
+    color = alt.Color("label:N", scale=alt.Scale(domain=order, range=[e["color"] for e in entries]),
+                      legend=alt.Legend(orient="bottom", columns=1, title=None))
+    if x_domain is None:
+        # Zoom to where the mass is: the union of the curves' 0.5%–99.5%
+        # ranges, padded, so sharp posteriors don't become a spike.
+        lo = min(ri.beta_summary(e["a"], e["b"])["lo90"] for e in entries)
+        hi = max(ri.beta_summary(e["a"], e["b"])["hi90"] for e in entries)
+        pad = max(0.05, (hi - lo) * 0.6)
+        x_domain = (max(0.0, lo - pad), min(1.0, hi + pad))
+    curves = (
+        alt.Chart(df)
+        .mark_line(strokeWidth=2, clip=True)
+        .encode(
+            x=alt.X("x:Q", scale=alt.Scale(domain=list(x_domain)), title=x_title),
+            y=alt.Y("density:Q", title="posterior density"),
+            color=color,
+            tooltip=["name:N", alt.Tooltip("x:Q", format=".3f"), alt.Tooltip("density:Q", format=".2f")],
+        )
+    )
+    rules = alt.Chart(mdf).mark_rule(strokeDash=[3, 3], strokeWidth=1.5).encode(x="mean:Q", color=color)
+    st.altair_chart(alt.layer(curves, rules).properties(height=height).interactive(bind_y=False), width="stretch")
+
+
+def arm_beta_chart(tallies: dict[str, dict[str, float]], beta_prior: float) -> None:
+    """The bandit's two posteriors, Beta(S+prior, F+prior) per arm."""
+    entries = []
+    for arm in ("with", "without"):
+        t = tallies.get(arm)
+        if not t:
+            continue
+        entries.append({
+            "name": arm,
+            "label": f"{arm}  (nodes={int(t['n_nodes'])}, S={t['S']:.1f}, F={t['F']:.1f})",
+            "a": t["S"] + beta_prior, "b": t["F"] + beta_prior, "color": ARM_COLOR[arm],
+        })
+    beta_curves_chart(entries, x_title="expansion success rate θ", x_domain=(0.0, 1.0))
+
+
 def arm_bar(summary: dict[str, dict[str, Any]]) -> None:
     rows = [
         {"arm": arm, "mean_of_means": e["mean_of_means"], "n": e["n_evaluated"]}
