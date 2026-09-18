@@ -141,20 +141,20 @@ class TestBandit(LayerBase):
         self.assertEqual(lay.choose_arm(tree), (ARM_NONE, None, None))
         self.assertEqual(lay.pulls, {ARM_WITH: 0, ARM_WITHOUT: 0})
 
-    def test_tallies_pool_by_arm_and_exclude_root_and_failed(self) -> None:
+    def test_tallies_pool_by_arm_and_exclude_root_none_and_failed(self) -> None:
         lay = self.layer()
         tree = _tree_with([
             (0, None, "none", [1.0, 1.0]),          # root — excluded
-            (1, 0, "none", [0.5, 0.5]),             # pre-memory → without
+            (1, 0, "none", [0.5, 0.5]),             # pre-memory — excluded (not a pull)
             (2, 0, "without", [0.25]),
             (3, 1, "with", [0.75, 0.75, 0.75]),
         ])
         failed = HGMNode(node_id=4, parent_id=1, round_dir=Path("/r/4"), memory_arm="with", edit_failed=True)
         tree.add(failed)
         t = lay.arm_tallies(tree)
-        self.assertAlmostEqual(t[ARM_WITHOUT]["S"], 1.25)
-        self.assertAlmostEqual(t[ARM_WITHOUT]["F"], 1.75)
-        self.assertEqual(t[ARM_WITHOUT]["n_nodes"], 2)
+        self.assertAlmostEqual(t[ARM_WITHOUT]["S"], 0.25)
+        self.assertAlmostEqual(t[ARM_WITHOUT]["F"], 0.75)
+        self.assertEqual(t[ARM_WITHOUT]["n_nodes"], 1)
         self.assertAlmostEqual(t[ARM_WITH]["S"], 2.25)
         self.assertAlmostEqual(t[ARM_WITH]["F"], 0.75)
         self.assertEqual(t[ARM_WITH]["n_nodes"], 2)        # the failed node is listed, adds no mass

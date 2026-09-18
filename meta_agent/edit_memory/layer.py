@@ -152,15 +152,18 @@ class EditMemoryLayer:
     # ------------------------------------------------------------------ #
 
     def arm_tallies(self, tree: Any) -> dict[str, dict[str, float]]:
-        """Pooled HGM tallies per arm over every expanded node generated
-        under it (``without`` includes the pre-memory ``none`` nodes; the
-        seed root is not an expansion). Edit-failed nodes carry no mass."""
+        """Pooled HGM tallies per arm over every node expanded under that
+        arm. Only nodes that were actually a pull -- ``with`` or ``without``
+        -- count; the pre-memory ``none`` nodes (expanded before the first
+        window closed, when no memory existed to withhold) and the seed
+        root are excluded, so the posteriors start updating only once the
+        bandit is live. Edit-failed nodes carry no mass."""
         out = {ARM_WITH: {"S": 0.0, "F": 0.0, "n_nodes": 0},
                ARM_WITHOUT: {"S": 0.0, "F": 0.0, "n_nodes": 0}}
         for node in tree.nodes.values():
-            if node.parent_id is None:
+            if node.parent_id is None or node.memory_arm not in out:
                 continue
-            arm = ARM_WITH if node.memory_arm == ARM_WITH else ARM_WITHOUT
+            arm = node.memory_arm
             out[arm]["S"] += float(node.n_success)
             out[arm]["F"] += float(node.n_failure)
             out[arm]["n_nodes"] += 1
