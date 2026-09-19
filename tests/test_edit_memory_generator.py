@@ -12,7 +12,17 @@ from meta_agent.edit_memory import prompts as P
 
 
 def _memory(extra: str = "") -> str:
-    return "\n".join(P.MEMORY_SECTIONS[i] + f"\n- node {i}: something\n" for i in range(4)) + extra
+    return "\n".join(P.MEMORY_SECTIONS[i] + f"\n- retry-on-timeout — nodes {i} (E{i}.1): something\n"
+                     for i in range(4)) + extra
+
+
+def _section(nid, subs=P.NODE_SUBSECTIONS, *, suffix: str = "", text: str = "text") -> str:
+    """A curation node section; the 'Edits' subsection carries one labelled item."""
+    out = P.NODE_SECTION_HEADING.format(node_id=nid) + suffix + "\n"
+    for s in subs:
+        body = f"- E{nid}.1 — {text} {nid}" if s == P.EDITS_SUBSECTION else f"{text} {nid}"
+        out += f"### {s}\n{body}\n"
+    return out
 
 
 class TestValidators(unittest.TestCase):
@@ -22,6 +32,25 @@ class TestValidators(unittest.TestCase):
         self.assertTrue(any("## 2. Usefulness" in e for e in errs))
         self.assertTrue(any("limit" in e for e in G.validate_memory(_memory(), max_chars=50)))
         self.assertEqual(G.validate_memory("   ", max_chars=10), ["the document is empty"])
+
+    def test_memory_ranks_edits_not_nodes(self) -> None:
+        # Node-keyed entries in section 1 are a finding; the same wording in
+        # other sections, or edit-keyed entries that cite nodes, are fine.
+        doc = _memory().replace("- retry-on-timeout — nodes 0 (E0.1): something",
+                                "1. **Node 0** — added retry (helped)\n- node 3: budget check")
+        errs = G.validate_memory(doc, max_chars=20000)
+        self.assertEqual(len(errs), 2)
+        self.assertIn("must rank edits, not nodes", errs[0])
+        self.assertIn("1. **Node 0**", errs[0])
+        ok = _memory("\n- node 9 is the parent of most of these (context)\n")   # lands in section 4
+        self.assertEqual(G.validate_memory(ok, max_chars=20000), [])
+        self.assertEqual(G.validate_memory(
+            _memory().replace("nodes 0 (E0.1)", "nodes 0, 5, 7 (E0.1, E5.2, E7.1)"), max_chars=20000), [])
+        # Task-agent utilization / capability wording is not a score prediction.
+        util = _memory().replace("(E0.1): something",
+                                 "(E0.1): helped; the task agent could not use the hint on 9 of 16 failing cases "
+                                 "— requires a deterministic post-processing step linked to the plan output")
+        self.assertEqual(G.validate_memory(util, max_chars=20000), [])
 
     def test_score_prediction_regex(self) -> None:
         bad = [
@@ -54,9 +83,7 @@ class TestValidators(unittest.TestCase):
         self.assertTrue(G.validate_addendum("- predict the score of each edit", max_chars=4000))
 
     def test_curation_validator(self) -> None:
-        def section(nid, subs=P.NODE_SUBSECTIONS):
-            return P.NODE_SECTION_HEADING.format(node_id=nid) + "\n" + \
-                "".join(f"### {s}\ntext\n" for s in subs)
+        section = _section
         doc = section(3) + section(5) + P.CURATION_CROSS_HEADING + "\nx\n" + \
             P.CURATION_GRADIENT_HEADING + "\ny\n"
         self.assertEqual(G.validate_curation(doc, node_ids=[3, 5]), [])
@@ -68,11 +95,31 @@ class TestValidators(unittest.TestCase):
         self.assertEqual(errs, ["section '## Node 3' lacks subsection 'Usefulness verdict'"])
         errs = G.validate_curation(section(3), node_ids=[3])
         self.assertEqual(len(errs), 2)
+        self.assertIn("Task-agent utilization", P.NODE_SUBSECTIONS)
+
+    def test_curation_edits_must_be_itemised(self) -> None:
+        tail = P.CURATION_CROSS_HEADING + "\nx\n" + P.CURATION_GRADIENT_HEADING + "\ny\n"
+        # Prose instead of items, or items labelled for another node -> one finding for that node.
+        prose = _section(3).replace("- E3.1 — text 3", "The node added a retry and a budget check.")
+        errs = G.validate_curation(prose + tail, node_ids=[3])
+        self.assertEqual(len(errs), 1)
+        self.assertIn("'## Node 3' / 'Edits' has no itemised edit", errs[0])
+        self.assertIn("E3.<k>", errs[0])
+        wrong = _section(3).replace("- E3.1 — text 3", "- E5.1 — text")
+        self.assertEqual(len(G.validate_curation(wrong + tail, node_ids=[3])), 1)
+        # Accepted item forms: "-", "*", "1." lists, bold or code-quoted labels, several items.
+        for item in ("* E3.2 — x", "1. E3.1 — x\n2. E3.2 — y", "- **E3.1** — x", "- `E3.1`: x"):
+            doc = _section(3).replace("- E3.1 — text 3", item) + tail
+            self.assertEqual(G.validate_curation(doc, node_ids=[3]), [], item)
+        # An item further down the subsection counts; one in another subsection does not.
+        later = _section(3).replace("- E3.1 — text 3", "intro line\n\n- E3.1 — x")
+        self.assertEqual(G.validate_curation(later + tail, node_ids=[3]), [])
+        elsewhere = _section(3).replace("- E3.1 — text 3", "none").replace("### Intent\ntext 3", "### Intent\n- E3.1 — x")
+        self.assertEqual(len(G.validate_curation(elsewhere + tail, node_ids=[3])), 1)
 
     def test_salvage_curation_inserts_placeholders(self) -> None:
         def section(nid, subs):
-            return P.NODE_SECTION_HEADING.format(node_id=nid) + " (round_005)\n" + \
-                "".join(f"### {s}\ntext {nid}\n" for s in subs)
+            return _section(nid, subs, suffix=" (round_005)")
         doc = section(3, P.NODE_SUBSECTIONS) + section(5, P.NODE_SUBSECTIONS[:2] + P.NODE_SUBSECTIONS[3:]) + \
             P.CURATION_CROSS_HEADING + "\nx\n"
         self.assertTrue(G.validate_curation(doc, node_ids=[3, 5, 8]))
@@ -84,10 +131,29 @@ class TestValidators(unittest.TestCase):
         self.assertIn(f"### Editor process\n{G.PLACEHOLDER}", fixed[i5:i8])
         self.assertIn("text 3", fixed); self.assertIn("text 5", fixed)
         self.assertEqual(fixed.count(G.PLACEHOLDER), 1 + len(P.NODE_SUBSECTIONS) + 1)
+        # The appended node 8 section carries a placeholder EDIT ITEM under 'Edits'.
+        self.assertIn(f"### Edits\n- E8.1 — {G.PLACEHOLDER}", fixed[i8:])
         # A complete document is untouched; an empty one is left alone.
         ok = section(3, P.NODE_SUBSECTIONS) + P.CURATION_CROSS_HEADING + "\nx\n" + P.CURATION_GRADIENT_HEADING + "\ny\n"
         self.assertEqual(G.salvage_curation(ok, node_ids=[3]), (ok, []))
         self.assertEqual(G.salvage_curation("  ", node_ids=[3]), ("  ", []))
+
+    def test_salvage_curation_adds_missing_edit_item(self) -> None:
+        tail = P.CURATION_CROSS_HEADING + "\nx\n" + P.CURATION_GRADIENT_HEADING + "\ny\n"
+        # 'Edits' present but prose only -> a placeholder item is appended at the
+        # end of that subsection (before '### Intent'); nothing else changes.
+        doc = _section(3).replace("- E3.1 — text 3", "prose about the diff\nmore prose") + _section(5) + tail
+        fixed, inserted = G.salvage_curation(doc, node_ids=[3, 5])
+        self.assertEqual(inserted, ["## Node 3 / Edits item"])
+        self.assertEqual(G.validate_curation(fixed, node_ids=[3, 5]), [])
+        self.assertIn(f"### Edits\nprose about the diff\nmore prose\n- E3.1 — {G.PLACEHOLDER}\n### Intent", fixed)
+        self.assertEqual(fixed.count(G.PLACEHOLDER), 1)
+        # Missing 'Edits' subsection -> inserted with the placeholder item.
+        doc = _section(3, P.NODE_SUBSECTIONS[1:]) + tail
+        fixed, inserted = G.salvage_curation(doc, node_ids=[3])
+        self.assertEqual(inserted, ["## Node 3 / Edits"])
+        self.assertEqual(G.validate_curation(fixed, node_ids=[3]), [])
+        self.assertIn(f"### Edits\n- E3.1 — {G.PLACEHOLDER}", fixed)
         q = P.Q_SECTIONS[0] + "\nx\n"
         fixed, inserted = G.salvage_q(q)
         self.assertEqual(G.validate_q(fixed), [])

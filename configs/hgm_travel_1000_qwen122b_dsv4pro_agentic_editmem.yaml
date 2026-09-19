@@ -127,8 +127,9 @@ validators:
 # EDIT MEMORY (2026-09-16): every window_size successful expansions an agentic
 # curator reviews the newest nodes (diffs, editor transcripts, per-case
 # outcomes) and writes edit_memory/window_NNN/curation.md; one call then
-# writes edit_memory/edit_memory_vNNN.md (ranked edits, usefulness, strategy vs
-# implementation, guidance — never a score prediction). A Thompson bandit over
+# writes edit_memory/edit_memory_vNNN.md (ranked edits — one entry per mechanism,
+# which may recur across nodes — usefulness, strategy vs implementation, guidance;
+# never a score prediction). A Thompson bandit over
 # the two arms' pooled HGM tallies decides per expansion whether the editor
 # sees the memory ($EDIT_MEMORY_FILE; that arm always gets the whole run
 # readable so it can open the nodes the memory cites). Every
@@ -165,5 +166,5 @@ edit_memory:
       max_view_chars: 40000
       sandbox: "auto"
       max_attempts: 2
-    memory_max_chars: 40000
-    instruction_addendum_max_chars: 10000
+    memory_max_chars: 30000
+    instruction_addendum_max_chars: 8000

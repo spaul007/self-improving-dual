@@ -69,8 +69,8 @@ class EditMemoryLayer:
         llm_timeout_s: Optional[float] = None,
         extra_body: Optional[dict[str, Any]] = None,
         curator: Optional[dict[str, Any]] = None,
-        memory_max_chars: int = 40000,
-        instruction_addendum_max_chars: int = 10000,
+        memory_max_chars: int = 30000,
+        instruction_addendum_max_chars: int = 8000,
         project_root: Optional[Path] = None,
         repo_root: Optional[Path] = None,
     ) -> None:

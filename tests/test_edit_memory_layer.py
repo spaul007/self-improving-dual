@@ -49,7 +49,8 @@ def _curation_doc(node_ids) -> str:
     out = ""
     for nid in node_ids:
         out += P.NODE_SECTION_HEADING.format(node_id=nid) + "\n"
-        out += "".join(f"### {s}\nevidence for node {nid}\n" for s in P.NODE_SUBSECTIONS)
+        out += "".join(f"### {s}\n" + (f"- E{nid}.1 — " if s == P.EDITS_SUBSECTION else "")
+                       + f"evidence for node {nid}\n" for s in P.NODE_SUBSECTIONS)
     out += P.CURATION_CROSS_HEADING + "\npatterns\n" + P.CURATION_GRADIENT_HEADING + "\nmissing: x\n"
     return out
 

@@ -249,11 +249,15 @@ STEP_PARENT = (
 )
 STEP_MEMORY = (
     "Read $EDIT_MEMORY_FILE — the edit memory built from previous edits in "
-    "this run: ranked edits, why they helped or not, and open shortcomings. "
-    "Use it as guidance: build on what worked, fix the shortcomings it names, "
-    "avoid repeating what did not work, and diversify when the top strategies "
-    "are exhausted. The node ids it cites are $RUN_DIR/round_NNN/ — open their "
-    "task_agent/ code and results to see what was actually done."
+    "this run: ranked edits (one entry per mechanism, with the nodes it "
+    "appears in), why they helped or not, whether the task agent could use "
+    "them, and open shortcomings. Your edits stay motivated by the parent's "
+    "failing cases (previous step); use the memory as guidance for HOW: reuse "
+    "edits it shows working for a task agent like yours, avoid what it shows "
+    "failing, and check its compatibility notes before adopting an edit from "
+    "another lineage. Do not pick a target only because the memory names it. "
+    "The node ids it cites are $RUN_DIR/round_NNN/ — open their task_agent/ "
+    "code and results to see what was actually done."
 )
 STEP_VIEW = (
     "View workflow.py (and tool_wrapper.py / tools_schema.json as needed); "

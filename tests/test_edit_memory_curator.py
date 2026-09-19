@@ -60,8 +60,9 @@ def _round(exp: Path, nid: int, code: str) -> Path:
 def _curation(ids) -> str:
     out = ""
     for nid in ids:
-        out += P.NODE_SECTION_HEADING.format(node_id=nid) + "\n" + \
-            "".join(f"### {s}\nx\n" for s in P.NODE_SUBSECTIONS)
+        out += P.NODE_SECTION_HEADING.format(node_id=nid) + "\n" + "".join(
+            f"### {s}\n" + (f"- E{nid}.1 — x\n" if s == P.EDITS_SUBSECTION else "x\n")
+            for s in P.NODE_SUBSECTIONS)
     return out + P.CURATION_CROSS_HEADING + "\nx\n" + P.CURATION_GRADIENT_HEADING + "\nx\n"
 
 
@@ -190,7 +191,7 @@ class TestSession(CuratorBase):
         still lacks a subsection -> accepted, placeholder inserted, findings
         cleared by the salvage and the insertion recorded."""
         partial = _curation([1]).replace("### Editor process\nx\n", "") + \
-            P.NODE_SECTION_HEADING.format(node_id=2) + "\n" + "".join(f"### {s}\nx\n" for s in P.NODE_SUBSECTIONS)
+            _curation([2]).split(P.CURATION_CROSS_HEADING)[0]
         res, llm = self.run_memory_curator([
             _Resp(tool_calls=[_Call("e1", "editor", {"command": "create", "path": "$WORK_DIR/curation.md", "file_text": "# draft\n"})]),
             _Resp(tool_calls=[_Call("s1", P.SUBMIT_CURATION_NAME, {"summary": "x"})]),

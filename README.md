@@ -290,11 +290,16 @@ I_{k+1} <- InstructionUpdate(Q, I_k)                      one LLM call
   bash/editor tools as the editor, confined to the window's nodes, their
   parents and `edit_memory/` — reads diffs, editor transcripts, per-case
   outcomes and traces itself and writes `window_NNN/curation.md` (Z):
-  per node *what changed / intent / editor process / what the evaluation
-  shows / shortcomings (strategy vs implementation) / usefulness verdict*,
-  cross-node patterns, and a gradient against the current memory. One
-  call then rewrites the memory minimally: `edit_memory_vNNN.md` with
-  *ranked edits / usefulness / strategy vs implementation / guidance*.
+  per node *edits (itemised, `E<node>.<k>`, one per mechanism) / intent /
+  editor process / what the evaluation shows / task-agent utilization /
+  shortcomings (strategy vs implementation) / usefulness verdict per edit*,
+  same-edit groups and incompatibilities across nodes, and a gradient
+  against the current memory. One call then rewrites the memory minimally:
+  `edit_memory_vNNN.md` with *ranked edits (one entry per mechanism — an
+  edit may recur across nodes — with task-agent utilization and
+  compatibility) / usefulness / strategy vs implementation / guidance (a
+  set of directions, not a work order; the editor starts from its parent's
+  failures)*.
   Nothing is pre-digested for the curators; node mean scores appear as
   context only and are never passed to the generator.
 - **Checks never discard content.** A curator's document is checked on
@@ -304,7 +309,7 @@ I_{k+1} <- InstructionUpdate(Q, I_k)                      one LLM call
   document is accepted as it is, with any still-missing sections inserted
   as `(not provided by the curator)` placeholders (`salvaged` in
   `session.json`). The memory and the addendum are checked for structure,
-  size (`memory_max_chars` 40k, `instruction_addendum_max_chars` 10k) and
+  size (`memory_max_chars` 30k, `instruction_addendum_max_chars` 8k) and
   score-prediction language; a failing draft is regenerated once with the
   findings quoted back, and the final draft is used either way, findings
   recorded in `memory_call.json` / `update_call.json` and `state.json`.
@@ -358,8 +363,8 @@ edit_memory:
     api_key_env: "OpenRouter_API_KEY"
     llm_timeout_s: 600
     curator: { max_llm_calls: 60, timeout_s: 2400, bash_timeout_s: 120, sandbox: "auto", max_attempts: 2 }
-    memory_max_chars: 40000
-    instruction_addendum_max_chars: 10000
+    memory_max_chars: 30000
+    instruction_addendum_max_chars: 8000
 ```
 
 `configs/hgm_travel_1000_dsv4pro_agentic_editmem.yaml` is the no-editmem
