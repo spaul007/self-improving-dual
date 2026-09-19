@@ -12,15 +12,6 @@ from . import components as C
 from . import loaders as L
 
 
-def _short(name: str) -> str:
-    """Run names share a long common middle; keep the timestamp and the
-    trailing variant so labels stay readable in legends/tables."""
-    parts = name.split("_")
-    if len(parts) > 4:
-        return f"{parts[0]}_{parts[1]} …{'_'.join(parts[-2:])}"
-    return name
-
-
 def _default_selection(experiments: list[Path]) -> list[str]:
     names = [p.name for p in experiments]
     # The pair launched together (same yyyymmdd_hhmm prefix) is the natural
@@ -86,8 +77,8 @@ def render(experiments: list[Path]) -> bool:
     tallies = {n: ri.run_beta_tally(L.cached_rounds(by_name[n]), include_root=include_root) for n in selected}
     entries = [
         {
-            "name": _short(n),
-            "label": f"{_short(n)}  (nodes={t['n_nodes']}, evals={t['n_evals']:.0f})",
+            "name": n,
+            "label": f"{n}  (nodes={t['n_nodes']}, evals={t['n_evals']:.0f})",
             "a": t["S"] + 1.0, "b": t["F"] + 1.0, "color": C.SERIES[i],
         }
         for i, (n, t) in enumerate(tallies.items()) if t["n_evals"] > 0
@@ -99,21 +90,21 @@ def render(experiments: list[Path]) -> bool:
         rows = []
         for n, t in tallies.items():
             s = ri.beta_summary(t["S"] + 1.0, t["F"] + 1.0)
-            rows.append({"run": _short(n), "nodes": t["n_nodes"], "evaluated": t["n_evaluated"],
+            rows.append({"run": n, "nodes": t["n_nodes"], "evaluated": t["n_evaluated"],
                          "evals": int(round(t["n_evals"])), "S": round(t["S"], 2), "F": round(t["F"], 2),
                          "post. mean": round(s["mean"], 3), "90% interval": f"{s['lo90']:.3f} – {s['hi90']:.3f}"})
         st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
         if len(tallies) >= 2:
             names_t = list(tallies)
-            mat = pd.DataFrame(index=[_short(n) for n in names_t], columns=[_short(n) for n in names_t], dtype=object)
+            mat = pd.DataFrame(index=[n for n in names_t], columns=[n for n in names_t], dtype=object)
             for a_name in names_t:
                 for b_name in names_t:
                     if a_name == b_name:
-                        mat.loc[_short(a_name), _short(b_name)] = "—"
+                        mat.loc[a_name, b_name] = "—"
                         continue
                     ta, tb = tallies[a_name], tallies[b_name]
                     p = ri.prob_beta_greater(ta["S"] + 1, ta["F"] + 1, tb["S"] + 1, tb["F"] + 1)
-                    mat.loc[_short(a_name), _short(b_name)] = f"{p:.1%}"
+                    mat.loc[a_name, b_name] = f"{p:.1%}"
             st.markdown("**P(row > column)** — probability the row run's θ exceeds the column run's")
             st.dataframe(mat, width="stretch")
 

@@ -20,6 +20,14 @@ from meta_agent import run_inspect_agentic as ra
 # Categorical slots, fixed order (blue, orange, aqua, yellow, magenta, green,
 # violet, red). Compare view maps run k -> SERIES[k].
 SERIES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300", "#4a3aa7", "#e34948"]
+
+
+def _bottom_legend() -> "alt.Legend":
+    """Legend below the chart, one entry per line, with NO label truncation:
+    run names are long and share a prefix, so Vega's default labelLimit
+    (~160px) would cut off exactly the part that distinguishes them."""
+    return alt.Legend(orient="bottom", columns=1, title=None, labelLimit=0, symbolLimit=50)
+
 ARM_COLOR = {"with": SERIES[0], "without": SERIES[1], "none": "#8a8985"}
 NEUTRAL_FILL = "#e2e1dd"
 _SEV_ICON = {"error": "🔴", "warning": "🟡", "info": "🔵"}
@@ -390,7 +398,7 @@ def best_so_far_chart(
         return
     df = pd.DataFrame(rows)
     color = alt.Color("run:N", scale=alt.Scale(domain=names, range=SERIES[: len(names)]),
-                      legend=alt.Legend(orient="bottom", columns=1, title=None))
+                      legend=_bottom_legend())
     line = (
         alt.Chart(df)
         .mark_line(interpolate="step-after", strokeWidth=2)
@@ -441,7 +449,7 @@ def grouped_dimension_bar(wide: pd.DataFrame, run_names: list[str]) -> None:
             x=alt.X("mean:Q", scale=alt.Scale(domain=[0, 1]), title="best node's mean score"),
             yOffset="run:N",
             color=alt.Color("run:N", scale=alt.Scale(domain=run_names, range=SERIES[: len(run_names)]),
-                            legend=alt.Legend(orient="bottom", columns=1, title=None)),
+                            legend=_bottom_legend()),
             tooltip=["run:N", "dimension:N", alt.Tooltip("mean:Q", format=".3f")],
         )
         .properties(height=max(160, 22 * len(wide) * max(1, len(run_names))))
@@ -470,7 +478,7 @@ def beta_curves_chart(
     df, mdf = pd.DataFrame(rows), pd.DataFrame(means)
     order = [e["label"] for e in entries]
     color = alt.Color("label:N", scale=alt.Scale(domain=order, range=[e["color"] for e in entries]),
-                      legend=alt.Legend(orient="bottom", columns=1, title=None))
+                      legend=_bottom_legend())
     if x_domain is None:
         # Zoom to where the mass is: the union of the curves' 0.5%–99.5%
         # ranges, padded, so sharp posteriors don't become a spike.
