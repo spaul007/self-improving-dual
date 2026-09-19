@@ -25,14 +25,22 @@ from meta_agent import runtime_env
 from meta_agent.models import EvolutionOutcome
 
 
-def run(config_path: Path) -> EvolutionOutcome:
+def run(config_path: Path, resume: Optional[Path] = None) -> EvolutionOutcome:
+    """``resume``: an existing experiment dir of an interrupted run. The
+    search continues in place from the rounds on disk (the manager rebuilds
+    its tree from them) under ``config_path``; the run's original
+    ``config.snapshot.yaml`` is kept and the config used for the
+    continuation is written next to it as ``config.resume_NNN.yaml``."""
     cfg = cfg_mod.load(config_path)
 
     runtime_env.apply_all(cfg)
 
     fw = cfg_mod.build_components(cfg)
 
-    experiment_dir = cfg_mod.init_experiment_dir(cfg, config_path, fw.runs_root)
+    if resume is not None:
+        experiment_dir = _prepare_resume(resume, config_path)
+    else:
+        experiment_dir = cfg_mod.init_experiment_dir(cfg, config_path, fw.runs_root)
 
     outcome = fw.manager.evolve(
         editor=fw.editor,
@@ -46,6 +54,7 @@ def run(config_path: Path) -> EvolutionOutcome:
         train_case_ids=fw.train_case_ids,
         eval_case_ids=fw.eval_case_ids,
         edit_memory=fw.edit_memory,
+        resume=resume is not None,
     )
 
     summary_path: Optional[Path] = None
@@ -62,6 +71,28 @@ def run(config_path: Path) -> EvolutionOutcome:
     if summary_path is not None:
         print(f"Run summary: {summary_path}")
     return outcome
+
+
+def _prepare_resume(experiment_dir: Path, config_path: Path) -> Path:
+    """Check that ``experiment_dir`` is a resumable run and record the
+    config the continuation runs under. Refuses a finished run (one with a
+    ``run_summary.md``): the finalize step already picked its best node."""
+    experiment_dir = Path(experiment_dir)
+    if not (experiment_dir / "round_000" / "hgm_node.json").is_file():
+        raise SystemExit(f"--resume: {experiment_dir} has no round_000/hgm_node.json")
+    if (experiment_dir / "run_summary.md").is_file():
+        raise SystemExit(f"--resume: {experiment_dir} already finished (run_summary.md exists)")
+    n = 1
+    while (experiment_dir / f"config.resume_{n:03d}.yaml").exists():
+        n += 1
+    (experiment_dir / f"config.resume_{n:03d}.yaml").write_text(
+        Path(config_path).read_text(encoding="utf-8"), encoding="utf-8")
+    snapshot = experiment_dir / "config.snapshot.yaml"
+    if snapshot.is_file() and snapshot.read_text(encoding="utf-8") != Path(config_path).read_text(encoding="utf-8"):
+        print(f"[resume] note: {config_path} differs from the run's config.snapshot.yaml "
+              f"(continuation recorded as config.resume_{n:03d}.yaml)", flush=True)
+    print(f"[resume] continuing {experiment_dir} (attempt {n})", flush=True)
+    return experiment_dir
 
 
 # ---------------------------------------------------------------------- #
@@ -241,5 +272,8 @@ def _write_run_summary(experiment_dir: Path, outcome: EvolutionOutcome) -> Path:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the meta-agent self-evolution loop.")
     parser.add_argument("--config", type=Path, required=True, help="Path to YAML config")
+    parser.add_argument("--resume", type=Path, default=None, metavar="RUN_DIR",
+                        help="Continue an interrupted run in place from its round_* dirs "
+                             "(the tree, spend and edit-memory state are rebuilt from disk)")
     args = parser.parse_args()
-    run(args.config)
+    run(args.config, resume=args.resume)

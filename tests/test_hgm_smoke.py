@@ -486,6 +486,105 @@ class HGMEvolveTests(unittest.TestCase):
         self.assertNotIn(outcome.best_round, failed_ids)
 
 
+class _CrashingEvaluator(_StubEvaluator):
+    """Raises on the N-th run() call — the process dying mid-batch."""
+
+    def __init__(self, crash_on: int) -> None:
+        super().__init__()
+        self.crash_on = crash_on
+
+    def run(self, round_dir, benchmark_dir, *, case_ids=None):
+        if self.run_calls + 1 == self.crash_on:
+            self.run_calls += 1
+            raise KeyboardInterrupt("simulated kill")
+        return super().run(round_dir, benchmark_dir, case_ids=case_ids)
+
+
+class HGMResumeTests(unittest.TestCase):
+    """``evolve(resume=True)`` rebuilds the tree from the round dirs of an
+    interrupted run and continues to the budget."""
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="hgm_resume_"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.seed = self.tmp / "seed"
+        self.seed.mkdir()
+        (self.seed / "workflow.py").write_text("def run_task(task):\n    return None\n", encoding="utf-8")
+        self.experiment = self.tmp / "exp"
+        self.experiment.mkdir()
+
+    def _manager(self, **kw):
+        from meta_agent.managers.hgm import HGMManager
+        opts = dict(eval_budget=40, init_expansions=2, eval_batch_size=4, alpha=0.6, seed=7,
+                    finalize_top_k=2, expand_eval_size=4, snapshot_tree=True)
+        opts.update(kw)
+        return HGMManager(**opts)
+
+    def _evolve(self, manager, editor, evaluator, *, resume, fail_call=None):
+        from meta_agent.feedback_gatherer import DefaultFeedbackGatherer
+        return manager.evolve(
+            editor=editor, evaluator=evaluator, gatherer=DefaultFeedbackGatherer(),
+            seed_dir=self.seed, benchmark_dir=self.tmp / "bench", experiment_dir=self.experiment,
+            max_rounds=30, score_target=None, train_case_ids=[f"c{i}" for i in range(20)],
+            eval_case_ids=None, resume=resume,
+        )
+
+    def test_resume_continues_an_interrupted_run(self) -> None:
+        # Seed pre-eval = run 1; init children paired = runs 2, 3; crash on run 6
+        # (a batch some rounds in). The editor fails call 2 so an edit-failed
+        # placeholder is on disk too.
+        m1 = self._manager()
+        with self.assertRaises(KeyboardInterrupt):
+            self._evolve(m1, _StubEditor(fail_call=2), _CrashingEvaluator(crash_on=6), resume=False)
+        before = {nid: (n.n_evals, n.parent_id, n.edit_failed) for nid, n in m1._tree.nodes.items()}
+        spent_before = m1._budget_spent
+        self.assertGreater(spent_before, 0)
+        # An incomplete round dir (editor ran, nothing recorded) is on disk too.
+        junk = self.experiment / f"round_{max(before) + 1:03d}"
+        (junk / "logs").mkdir(parents=True)
+
+        m2 = self._manager()
+        outcome = self._evolve(m2, _StubEditor(), _StubEvaluator(), resume=True)
+        # Every node from before is back with its tallies, parent and status ...
+        for nid, (n_evals, parent, failed) in before.items():
+            node = m2._tree[nid]
+            self.assertEqual((node.parent_id, node.edit_failed), (parent, failed), nid)
+            self.assertGreaterEqual(node.n_evals, n_evals, nid)
+            if nid != 0 and not failed:
+                self.assertEqual(node.case_results[:n_evals], m1._tree[nid].case_results)
+        # ... the junk dir is gone and its id was reused ...
+        self.assertTrue(junk.exists() and (junk / "hgm_node.json").is_file())
+        # ... the run finished on budget with a valid pick.
+        self.assertEqual(m2._budget_spent, 40)
+        self.assertGreater(len(m2._tree.nodes), len(before))
+        self.assertFalse(m2._tree[outcome.best_round].edit_failed)
+        snaps = [json.loads(l) for l in (self.experiment / "snapshots" / "tree_snapshots.jsonl").read_text().splitlines()]
+        events = [s["event"] for s in snaps]
+        self.assertIn("resume", events)
+        self.assertEqual(events[-1], "finalize")
+        # The resume snapshot's spend equals the recomputed spend (all non-root evals).
+        rs = snaps[events.index("resume")]
+        self.assertEqual(rs["budget_spent"], sum(n["n_evals"] for n in rs["nodes"] if n["node_id"] != 0 and not n["edit_failed"]))
+        self.assertGreaterEqual(rs["budget_spent"], spent_before)
+
+    def test_resume_runs_the_interrupted_paired_evaluation(self) -> None:
+        # Crash on run 2 = the first child's paired batch: the child exists with
+        # a sidecar (0 evals) and no evaluation.
+        m1 = self._manager()
+        with self.assertRaises(KeyboardInterrupt):
+            self._evolve(m1, _StubEditor(), _CrashingEvaluator(crash_on=2), resume=False)
+        self.assertEqual(m1._tree[1].n_evals, 0)
+        m2 = self._manager()
+        self._evolve(m2, _StubEditor(), _StubEvaluator(), resume=True)
+        self.assertGreaterEqual(m2._tree[1].n_evals, 4)
+        self.assertEqual([n.parent_id for n in m2._tree.nodes.values() if n.node_id in (1, 2)], [0, 0])
+
+    def test_resume_refuses_a_dir_without_a_root(self) -> None:
+        m = self._manager()
+        with self.assertRaises(FileNotFoundError):
+            self._evolve(m, _StubEditor(), _StubEvaluator(), resume=True)
+
+
 # --------------------------------------------------------------------------- #
 # Config wiring
 # --------------------------------------------------------------------------- #

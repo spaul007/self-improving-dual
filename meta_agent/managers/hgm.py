@@ -156,7 +156,13 @@ class HGMManager:
         train_case_ids: Optional[list[str]] = None,
         eval_case_ids: Optional[list[str]] = None,
         edit_memory: Any = None,
+        resume: bool = False,
     ) -> EvolutionOutcome:
+        """Run the search. With ``resume`` the tree is rebuilt from the
+        ``round_*`` dirs already in ``experiment_dir`` (``hgm_node.json`` +
+        ``feedback.json`` per round; see ``_restore_tree``) and the loop
+        continues from the recorded spend instead of re-running the seed
+        pre-eval and the init expansions."""
         self._benchmark_dir = benchmark_dir
         self._experiment_dir = experiment_dir
         self._eval_case_ids = eval_case_ids
@@ -208,10 +214,16 @@ class HGMManager:
         # a child is evaluated immediately and could win the clade bandit
         # for the next init expansion (it did, in the 2026-09-13 run), so
         # the root is now named explicitly (user decision 2026-09-16).
-        self._run_seed(seed_dir, evaluator, gatherer)
-        self._snapshot("seed")
         root_id = 0
-        for _ in range(self.init_expansions):
+        if resume:
+            self._restore_tree(experiment_dir, evaluator, gatherer)
+            self._snapshot("resume")
+            init_left = max(0, self.init_expansions - len(self._tree[root_id].children))
+        else:
+            self._run_seed(seed_dir, evaluator, gatherer)
+            self._snapshot("seed")
+            init_left = self.init_expansions
+        for _ in range(init_left):
             if root_id not in self._expandable() or self._tree.n_real_nodes() > max_rounds:
                 break
             # Same affordability guard as the main loop (matters when
@@ -490,7 +502,9 @@ class HGMManager:
         placeholders) plus a pointer to the current best-by-mean node, so an
         analyst can recover and re-evaluate the best agent at any budget
         level (see snapshot_eval.py)."""
-        if self._memory is not None:
+        # "resume" is delivered to the layer by _restore_tree itself (before
+        # the interrupted paired evaluations run); here it is snapshot-only.
+        if self._memory is not None and event != "resume":
             self._memory.on_event(event, self._tree, node_id=node_id)
         if self._snapshotter is None or not self._snapshotter.enabled:
             return
@@ -885,6 +899,142 @@ class HGMManager:
             failed=result.failed, per_case=kept, wall_time_s=result.wall_time_s,
             crashed=result.crashed,
         )
+
+    # ------------------------------------------------------------------ #
+    # Resume
+    # ------------------------------------------------------------------ #
+
+    def _restore_tree(
+        self, experiment_dir: Path, evaluator: Evaluator, gatherer: FeedbackGatherer
+    ) -> None:
+        """Rebuild the tree from the ``round_*`` dirs of an interrupted run.
+
+        Per round dir, in id order:
+
+        * ``hgm_node.json`` present -> a real node: tallies from the sidecar,
+          the cumulative per-case results and the feedback from
+          ``feedback.json`` (rewritten after every batch by
+          ``_refresh_node_feedback``, so it is the authoritative cumulative
+          record; ``eval_result.json`` alone only holds the last batch).
+        * no sidecar but a ``feedback.json`` with ``edit_errors`` -> an
+          edit-failed placeholder (its parent is ``base_round``; its arm comes
+          from the edit-memory state when a layer is configured).
+        * neither -> the round the interruption hit, before it became a node:
+          the dir is removed and its id reused.
+
+        Spend is recomputed as the evaluations of every non-root real node
+        (the root's pre-eval is free; ``_budget_spent`` and
+        ``_node_evals_spent`` are always incremented together). A real node
+        whose paired evaluation was cut short (0 evals with
+        ``expand_eval_size`` > 0) is evaluated now so the paired invariant
+        holds. The RNGs are re-seeded from the recomputed spend, so the
+        continuation is deterministic but not the sequence the uninterrupted
+        run would have drawn."""
+        round_dirs = sorted(
+            (p for p in experiment_dir.glob("round_*") if p.is_dir()
+             and p.name[6:].isdigit()),
+            key=lambda p: int(p.name[6:]),
+        )
+        if not round_dirs or int(round_dirs[0].name[6:]) != 0 \
+                or not (round_dirs[0] / "hgm_node.json").is_file():
+            raise FileNotFoundError(
+                f"cannot resume: {experiment_dir} has no round_000/hgm_node.json"
+            )
+        arms: dict[int, tuple[str, Optional[int]]] = {}
+        if self._memory is not None:
+            arms = dict(getattr(self._memory, "node_arms", {}) or {})
+        restored: list[int] = []
+        failed: list[int] = []
+        dropped: list[str] = []
+        unpaired: list[int] = []
+        for rd in round_dirs:
+            nid = int(rd.name[6:])
+            sidecar = rd / "hgm_node.json"
+            feedback_path = rd / "feedback.json"
+            feedback: Optional[AgentFeedback] = None
+            if feedback_path.is_file():
+                try:
+                    feedback = AgentFeedback.model_validate_json(
+                        feedback_path.read_text(encoding="utf-8"))
+                except Exception:  # noqa: BLE001 — a half-written file counts as absent
+                    feedback = None
+            if sidecar.is_file():
+                side = json.loads(sidecar.read_text(encoding="utf-8"))
+                parent_id = side.get("parent_id")
+                node = HGMNode(
+                    node_id=nid, parent_id=parent_id, round_dir=rd,
+                    memory_arm=side.get("memory_arm") or "none",
+                    memory_version=side.get("memory_version"),
+                )
+                cases: list[CaseResult] = []
+                if feedback is not None:
+                    cases = list(feedback.eval_result.per_case)
+                # feedback.json is written right before the sidecar and both
+                # describe the same batches, so the case lists agree. If they
+                # do not (a crash between the two writes), keep only the
+                # cases the sidecar knows about; a case the sidecar has but
+                # the feedback lacks is lost (no per-case record to rebuild).
+                known = set(side.get("evaluated_case_ids") or [])
+                cases = [c for c in cases if c.case_id in known]
+                for case in cases:
+                    node.record(case)
+                self._tree.add(node)
+                if feedback is not None:
+                    self._feedback[nid] = feedback
+                elif nid == 0:
+                    raise FileNotFoundError(f"cannot resume: {rd}/feedback.json missing or unreadable")
+                else:
+                    strategy = fallback_strategy()
+                    self._feedback[nid] = gatherer.compile(
+                        nid, parent_id or 0, strategy, self._build_eval_result(node), rd)
+                restored.append(nid)
+                if nid != 0 and node.n_evals == 0 and self.expand_eval_size > 0:
+                    unpaired.append(nid)
+            elif feedback is not None and feedback.edit_errors:
+                parent_id = feedback.base_round
+                arm, version = arms.get(nid, ("none", None))
+                node = HGMNode(node_id=nid, parent_id=parent_id, round_dir=rd,
+                               memory_arm=arm, memory_version=version, edit_failed=True)
+                self._tree.add(node)
+                self._feedback[nid] = feedback
+                failed.append(nid)
+            else:
+                shutil.rmtree(rd, ignore_errors=True)
+                dropped.append(rd.name)
+        self._next_id = max(self._tree.nodes) + 1
+        spent = sum(n.n_evals for nid, n in self._tree.nodes.items()
+                    if nid != 0 and not n.edit_failed)
+        self._budget_spent = spent
+        self._node_evals_spent = spent
+        # Trailing edit failures count toward the dead-editor guard.
+        streak = 0
+        for nid in sorted(self._tree.nodes, reverse=True):
+            if nid == 0 or not self._tree[nid].edit_failed:
+                break
+            streak += 1
+        self._consecutive_edit_failures = streak
+        # Fresh, spend-dependent seeds: the interrupted RNG streams cannot be
+        # replayed (the draw counts were never recorded).
+        self._task_rng = random.Random(self.seed + 7_919 * (spent + 1))
+        self._tree._rng = random.Random(self.seed + 104_729 * (spent + 1))
+        print(
+            f"RESUME {experiment_dir.name}: {len(restored)} node(s) restored "
+            f"({len(failed)} edit-failed), spend {spent}/{self.eval_budget}, "
+            f"next node id {self._next_id}"
+            + (f"; removed incomplete round dir(s) {dropped}" if dropped else "")
+            + (f"; edit-failure streak {streak}" if streak else ""),
+            flush=True,
+        )
+        if self._memory is not None:
+            # Let the layer drop bookkeeping for removed rounds and close a
+            # window that was full when the run died.
+            self._memory.on_event("resume", self._tree)
+        for nid in unpaired:
+            print(f"node {nid}: paired evaluation was interrupted — running it now", flush=True)
+            spent_now = self._evaluate(nid, evaluator, gatherer, batch_size=self.expand_eval_size)
+            self._budget_spent += spent_now
+            self._node_evals_spent += spent_now
+            self._snapshot("expand_eval", node_id=nid)
 
     def _refresh_node_feedback(
         self, node: HGMNode, gatherer: FeedbackGatherer

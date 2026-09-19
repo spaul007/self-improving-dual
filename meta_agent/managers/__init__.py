@@ -33,6 +33,7 @@ class EvolutionManager(Protocol):
         train_case_ids: list[str] | None = None,
         eval_case_ids: list[str] | None = None,
         edit_memory: Any = None,
+        resume: bool = False,
     ) -> EvolutionOutcome: ...
 
 

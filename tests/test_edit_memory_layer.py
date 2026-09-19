@@ -476,6 +476,65 @@ class TestHGMIntegration(unittest.TestCase):
         self.assertEqual(st["events"][-1]["event"], "finalize")
         self.assertEqual(sum(st["pulls"].values()), len([a for a in arms if a != "none"]))
 
+    def test_resume_reconciles_state_and_closes_a_full_window(self) -> None:
+        """Kill the run right after the second window filled (state.json has
+        the full window, no curation yet) and while a third editor call had
+        started (pull counted, no node). Resume: the stale pull is dropped,
+        the window is curated once, the memory advances, the run finishes."""
+        from tests.test_hgm_smoke import _StubEditor, _StubEvaluator
+        from meta_agent.feedback_gatherer import DefaultFeedbackGatherer
+        from meta_agent.managers.hgm import HGMManager
+
+        common = dict(repo_root=self.tmp / "repo", window_size=2, instruction_every=5, selection="bandit",
+                      arm_min_pulls=1, seed=3, curator={"sandbox": "none", "max_llm_calls": 6, "timeout_s": 60})
+
+        def manager():
+            return HGMManager(eval_budget=40, init_expansions=2, eval_batch_size=4, alpha=0.6,
+                              seed=7, finalize_top_k=0, expand_eval_size=4, snapshot_tree=True)
+
+        def evolve(m, lay, ev, resume):
+            return m.evolve(editor=_StubEditor(), evaluator=ev, gatherer=DefaultFeedbackGatherer(),
+                            seed_dir=self.seed, benchmark_dir=self.tmp / "bench", experiment_dir=self.exp,
+                            max_rounds=30, score_target=None, train_case_ids=[f"c{i}" for i in range(20)],
+                            eval_case_ids=None, edit_memory=lay, resume=resume)
+
+        # Once the first memory exists, the next window close dies (the
+        # window_add state was saved just before; the curation never ran).
+        orig_close = EditMemoryLayer._close_window
+        def close_and_arm(self_, tree):
+            if self_.memory_version >= 1:
+                raise KeyboardInterrupt("simulated kill at window 2 close")
+            return orig_close(self_, tree)
+        lay1 = EditMemoryLayer(_ScriptedLLM(), **common)
+        EditMemoryLayer._close_window = close_and_arm
+        try:
+            with self.assertRaises(KeyboardInterrupt):
+                evolve(manager(), lay1, _StubEvaluator(), resume=False)
+        finally:
+            EditMemoryLayer._close_window = orig_close
+        st = json.loads((self.exp / "edit_memory" / "state.json").read_text())
+        self.assertEqual(st["memory_version"], 1)
+        self.assertEqual(len(st["window"]), 2)                    # full, never curated
+        # Simulate the pull that was counted for an edit that never became a node.
+        st["pulls"]["with"] += 1
+        (self.exp / "edit_memory" / "state.json").write_text(json.dumps(st))
+        stale = self.exp / "edit_memory" / "window_002"
+        stale.mkdir(); (stale / "curation.md").write_text("half")
+
+        lay2 = EditMemoryLayer(_ScriptedLLM(), **common)
+        m2 = manager()
+        evolve(m2, lay2, _StubEvaluator(), resume=True)
+        st2 = json.loads((lay2.dir / "state.json").read_text())
+        events = [e["event"] for e in st2["events"]]
+        self.assertIn("resume", events)
+        self.assertGreaterEqual(lay2.memory_version, 2)           # window 2 was curated on resume
+        self.assertTrue((lay2.dir / "window_002.interrupted" / "curation.md").is_file())
+        self.assertTrue((lay2.dir / "window_002" / "curation.md").is_file())
+        # Pulls agree with the arms actually recorded on nodes.
+        arms = [n.memory_arm for n in m2._tree.nodes.values() if n.parent_id is not None]
+        self.assertEqual(sum(st2["pulls"].values()), sum(a != "none" for a in arms))
+        self.assertEqual(events[-1], "finalize")
+
     def test_layer_requires_paired_evaluation(self) -> None:
         with self.assertRaises(ValueError):
             self._run(expand_eval_size=0)

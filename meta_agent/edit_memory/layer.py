@@ -202,6 +202,9 @@ class EditMemoryLayer:
     def on_event(self, event: str, tree: Any, *, node_id: Optional[int] = None) -> None:
         if self.dir is None:
             raise RuntimeError("EditMemoryLayer.setup(experiment_dir) was not called")
+        if event == "resume":
+            self._resume(tree)
+            return
         if event in ("expand", "expand_eval") and node_id is not None:
             node = tree[node_id]
             self.node_arms[node_id] = (node.memory_arm, node.memory_version)
@@ -220,6 +223,41 @@ class EditMemoryLayer:
             return
         if event == "finalize":
             self._save_state("finalize")
+
+    def _resume(self, tree: Any) -> None:
+        """Reconcile the loaded ``state.json`` with the restored tree: drop
+        bookkeeping for rounds the manager removed as incomplete, recount
+        the pulls from the surviving arms (``choose_arm`` increments a pull
+        before the node exists, so a run killed mid-edit saved one pull too
+        many), and close a window that was already full when the run died
+        (its ``window_add`` was saved, the curation never finished)."""
+        alive = set(tree.nodes)
+        self.node_arms = {k: v for k, v in self.node_arms.items() if k in alive}
+        self.window = [n for n in self.window if n in alive]
+        self.window_failed = [n for n in self.window_failed if n in alive]
+        self.with_nodes_since_instruction = [n for n in self.with_nodes_since_instruction if n in alive]
+        self.pulls = {ARM_WITH: sum(1 for a, _ in self.node_arms.values() if a == ARM_WITH),
+                      ARM_WITHOUT: sum(1 for a, _ in self.node_arms.values() if a == ARM_WITHOUT)}
+        self._save_state("resume", memory_version=self.memory_version,
+                         window=list(self.window), pulls=dict(self.pulls))
+        print(f"[edit_memory] resumed: memory v{self.memory_version}, instruction "
+              f"v{self.instruction_version}, open window {self.window}, pulls {self.pulls}", flush=True)
+        if len(self.window) >= self.window_size:
+            # The interrupted attempt may have left a partial workspace
+            # behind (curation half-written, transcript open); keep it for
+            # inspection under a different name and start the window afresh.
+            assert self.dir is not None
+            for stem in (f"window_{self.window_index + 1:03d}",
+                         f"instruction_update_{self.instruction_version + 1:03d}"):
+                stale = self.dir / stem
+                if stale.exists():
+                    k, target = 1, self.dir / f"{stem}.interrupted"
+                    while target.exists():
+                        k += 1
+                        target = self.dir / f"{stem}.interrupted{k}"
+                    stale.rename(target)
+                    print(f"[edit_memory] moved partial {stem} -> {target.name}", flush=True)
+            self._close_window(tree)
 
     # ------------------------------------------------------------------ #
     # Window → curation → memory

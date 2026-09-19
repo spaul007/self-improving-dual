@@ -80,6 +80,27 @@ runs/20260504_153012_math_default/
 └── ...
 ```
 
+### Resuming an interrupted run
+
+```bash
+PYTHONPATH=. python3 main_loop.py --config configs/<same>.yaml --resume runs/<timestamp>_<experiment_name>
+```
+
+The HGM manager rebuilds its tree from the `round_*` dirs on disk
+(`hgm_node.json` for the tallies, `feedback.json` for the cumulative
+per-case results; a `feedback.json` with `edit_errors` and no sidecar is an
+edit-failed placeholder), recomputes the spend as the evaluations of every
+non-root node, removes a round dir the interruption left without either
+file (its id is reused), runs a paired evaluation that was cut short, and
+continues the loop in place — same run dir, same `edit_memory/` state
+(`state.json` is reloaded; a window that was full when the run died is
+curated first, its partial workspace kept as `window_NNN.interrupted`).
+The seed pre-eval and the init expansions are not repeated. The config used
+for the continuation is recorded as `config.resume_NNN.yaml`; a finished run
+(one with `run_summary.md`) is refused. The RNG streams are re-seeded from
+the recomputed spend, so a resumed run is deterministic but not the sequence
+the uninterrupted run would have drawn.
+
 ## Optimization manager
 
 The `manager` chosen in the YAML decides the search regime. One ships:
