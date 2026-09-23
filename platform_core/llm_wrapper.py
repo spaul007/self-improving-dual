@@ -109,6 +109,22 @@ def _env_default_max_output_tokens() -> Optional[int]:
     return int(val)
 
 
+def _env_default_enable_thinking() -> Optional[bool]:
+    """Qwen3-hybrid-model thinking toggle, forwarded as
+    ``extra_body.chat_template_kwargs.enable_thinking`` (the standard vLLM
+    mechanism for these models -- distinct from ``reasoning_effort``, which
+    still runs SOME reasoning even at its lowest setting; this fully
+    disables it). Defaults to None (omit the field entirely, today's exact
+    behavior) until a caller or the LLM_ENABLE_THINKING env var
+    ("true"/"false") opts in. Non-Qwen3-hybrid endpoints simply ignore an
+    unrecognized chat_template_kwargs field, same safety property as
+    LLM_PROVIDER_PREFERENCE above."""
+    val = os.environ.get("LLM_ENABLE_THINKING")
+    if not val:
+        return None
+    return val.strip().lower() in ("1", "true", "yes")
+
+
 def _env_default_provider() -> Optional[dict[str, Any]]:
     """OpenRouter-specific provider-routing preference (``order``/``ignore``/
     ``quantizations``/``allow_fallbacks``, forwarded verbatim as the
@@ -374,6 +390,7 @@ def call_llm(
     base_url: Optional[str] = None,
     max_output_tokens: Optional[int] = DEFAULT_MAX_OUTPUT_TOKENS,
     provider: Optional[dict[str, Any]] = None,
+    enable_thinking: Optional[bool] = None,
     **kwargs: Any,
 ) -> LLMResponse:
     """Make one Responses-API round-trip and return a normalised response.
@@ -406,6 +423,7 @@ def call_llm(
         else _env_default_max_output_tokens()
     )
     resolved_provider = provider if provider is not None else _env_default_provider()
+    resolved_enable_thinking = enable_thinking if enable_thinking is not None else _env_default_enable_thinking()
 
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -473,12 +491,21 @@ def call_llm(
         request["reasoning"] = {"effort": resolved_effort}
     else:
         request["temperature"] = resolved_temperature
+    extra_body: dict[str, Any] = {}
     if resolved_provider:
         # OpenRouter-specific extension, not part of the OpenAI Responses
         # API schema -- forwarded via extra_body, which the SDK passes
         # through verbatim in the JSON body. Any other OpenAI-compatible
         # endpoint (local vLLM, etc.) simply ignores an unrecognized field.
-        request["extra_body"] = {"provider": resolved_provider}
+        extra_body["provider"] = resolved_provider
+    if resolved_enable_thinking is not None:
+        # vLLM/Qwen3-hybrid chat-template extension -- see
+        # _env_default_enable_thinking()'s docstring. Ignored by any
+        # endpoint that doesn't recognize it, same safety property as
+        # the provider field above.
+        extra_body["chat_template_kwargs"] = {"enable_thinking": resolved_enable_thinking}
+    if extra_body:
+        request["extra_body"] = extra_body
 
     started = time.time()
     last_err: Optional[Exception] = None
