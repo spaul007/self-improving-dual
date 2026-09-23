@@ -169,6 +169,15 @@ class HGMManager:
         # works for task agents that bring their own LLM client. False
         # (default): every case is recorded exactly as before.
         exclude_flagged_cases: bool = False,
+        # Opt-in companion to exclude_flagged_cases: also treat a case with a
+        # top-level ``CaseResult.error`` (evaluator-level failure -- per-case
+        # timeout, child exit code, unparseable output, ``ok:false``
+        # envelope, scorer exception; the scorer never produced a verdict)
+        # as an excluded infrastructure failure. Only appropriate when the
+        # project's entry point is frozen (``mutable_exclude``) and cannot
+        # raise, so such a failure can never be the edited agent's fault.
+        # False (default): recorded exactly as before.
+        exclude_crashed_cases: bool = False,
         # Always-on (independent of exclude_llm_call_failures above):
         # print a loud warning, and flag it in llm_failure_health.json,
         # whenever a round's LLM-call failure incidence rate
@@ -307,6 +316,7 @@ class HGMManager:
         self.block_reward_metric = block_reward_metric
         self.exclude_llm_call_failures = exclude_llm_call_failures
         self.exclude_flagged_cases = exclude_flagged_cases
+        self.exclude_crashed_cases = exclude_crashed_cases
         self.llm_call_failure_threshold_pct = llm_call_failure_threshold_pct
         self.block_initial_ranking = block_initial_ranking
         self.block_initial_rank_strength = block_initial_rank_strength
@@ -744,7 +754,10 @@ class HGMManager:
             if case.case_id in excluded:
                 n_excluded += 1
                 continue
-            if self.exclude_flagged_cases and (case.details or {}).get("excluded"):
+            if (
+                (self.exclude_flagged_cases and (case.details or {}).get("excluded"))
+                or (self.exclude_crashed_cases and case.error)
+            ):
                 n_flagged += 1
                 node.record_excluded(case)
                 continue
@@ -758,7 +771,8 @@ class HGMManager:
         if n_flagged:
             print(
                 f"node {node.node_id}: excluded {n_flagged} case(s) from reward "
-                f"(scorer-flagged infrastructure failure: details.excluded)",
+                f"(infrastructure failure: scorer-flagged details.excluded "
+                f"or evaluator-level crash)",
                 flush=True,
             )
 

@@ -79,5 +79,23 @@ class ExcludeFlaggedTests(unittest.TestCase):
             self.assertEqual(m._fully_evaluated_ids(), set())
 
 
+class ExcludeCrashedTests(unittest.TestCase):
+    def _crash(self, cid):
+        return CaseResult(case_id=cid, passed=False, score=0.0, error="timeout after 60s")
+
+    def test_default_off_records_crash_as_zero(self) -> None:
+        with TemporaryDirectory() as d:
+            node = HGMNode(0, None, Path(d))
+            HGMManager(exclude_flagged_cases=True)._record_batch(node, _batch(_case("a", 1.0), self._crash("b")))
+        self.assertEqual((node.n_evals, node.n_excluded), (2, 0))
+
+    def test_on_crash_is_attempted_without_utility(self) -> None:
+        with TemporaryDirectory() as d:
+            node = HGMNode(0, None, Path(d))
+            HGMManager(exclude_crashed_cases=True)._record_batch(node, _batch(_case("a", 1.0), self._crash("b")))
+        self.assertEqual((node.n_evals, node.n_excluded, node.n_attempted), (1, 1, 2))
+        self.assertEqual(node.mean_utility, 1.0)
+
+
 if __name__ == "__main__":
     unittest.main()
