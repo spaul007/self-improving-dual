@@ -1,0 +1,101 @@
+# Full 120-case evaluation of the travel SEED agent on Qwen/Qwen3.8-27B,
+# served at gpu-aic-mv-02-st-p5-node-6:8001, with THINKING OFF.
+#
+#   PYTHONPATH=. python3 evaluate.py \
+#       --config configs/eval_travel_qwen38_27b_node6_nothink.yaml \
+#       --agent projects/travel/seed
+#
+# Thinking off (2026-09-23): omitting reasoning_effort does NOT disable
+# thinking on this server — a probe with no `reasoning` field still came back
+# with reasoning_tokens=61 and a `reasoning` output item. The only switch that
+# removes it is the chat template's own flag, passed verbatim in the request
+# body by platform_core/llm_wrapper.py (`request["extra_body"]`):
+#
+#     extra_body: {chat_template_kwargs: {enable_thinking: false}}
+#
+# Same probe with that flag: reasoning_tokens=0, output items ['message'] only.
+# The evaluator exports it to every case subprocess as LLM_EXTRA_BODY
+# (meta_agent/evaluator.py), so the task agent AND the scorer's plan->JSON
+# conversion (TRAVEL_CONVERT_*, same base_url) both run thinking-free.
+# reasoning_effort is therefore left unset: with thinking off it has nothing
+# to act on, and setting it would re-add a `reasoning` field to the request.
+
+experiment_name: "eval_travel_qwen38_27b_node6_nothink"
+project: "travel"
+
+loop:
+  max_rounds: 1
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.8-27B"
+  base_url: "http://gpu-aic-mv-02-st-p5-node-6:8001/v1"
+  temperature: 0.2
+  # Thinking off keeps answers short; the cap only bounds a degenerate loop.
+  max_output_tokens: 16384
+  extra_body:
+    chat_template_kwargs:
+      enable_thinking: false
+
+# (manager/editor are required by the schema but unused by evaluate.py)
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 1000
+    init_expansions: 3
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 16
+    finalize_top_k: 3
+    snapshot_tree: true
+    seed: 42
+
+evaluator:
+  type: "subprocess"
+  config:
+    # No thinking => a case is a short tool loop, not a 75k-token generation;
+    # 1800s is the standard per-case ceiling used by the optimization runs.
+    wall_time_s_per_case: 1800
+    memory_mb: 2048
+    parallelism: 16
+    scorer: "travel_default"
+
+gatherer:
+  type: "default"
+  config: {}
+
+editor:
+  type: "agentic"
+  config:
+    model: "Qwen/Qwen3.8-27B"
+    max_attempts: 3
+
+env:
+  # Local models misread echoed `reasoning` items as a wrap-up signal; with
+  # thinking off there are none, but the flag is harmless and kept for parity
+  # with the other eval configs.
+  META_AGENT_STRIP_REASONING: "1"
+  LLM_TIMEOUT_S: "1200"
+  # Scorer's plan->JSON conversion on the same server (base_url comes from
+  # task_agent.base_url via LLM_BASE_URL, see meta_agent/runtime_env.py).
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.8-27B"
+  # RLIMIT_AS = memory_mb (2 GB) per case; OpenBLAS's per-core thread buffers
+  # alone exceed that on a many-core node.
+  OPENBLAS_NUM_THREADS: "1"
+  OMP_NUM_THREADS: "1"
+
+split:
+  seed: 42
+  train_size: 60
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"
