@@ -1084,6 +1084,17 @@ class BlockSuggester:
                 else:
                     output = f"ERROR: unknown tool {call.name!r}."
 
+                # Observability: which evidence did the diagnosis actually read?
+                # Without this record, "the suggester grounded itself in real
+                # per-case logs" is unverifiable from any artifact (only the
+                # prompt and the final text were persisted).
+                a = args if isinstance(args, dict) else {}
+                self._record_tool_call(out_dir, {
+                    "turn": turn, "tool": call.name, "path": a.get("path"),
+                    "pattern": a.get("pattern"), "out_chars": len(output or ""),
+                    "error": (output or "").startswith("ERROR"),
+                })
+
                 history.append({
                     "type": "function_call_output",
                     "call_id": call_id,
@@ -1160,6 +1171,16 @@ class BlockSuggester:
             f"ERROR: unrecognized path {path!r} -- paths must be exactly "
             "'eval_result.json' or start with 'harness/' or 'logs/'."
         )
+
+    @staticmethod
+    def _record_tool_call(out_dir: Path, row: dict[str, Any]) -> None:
+        """Append one agentic read_file/grep call to
+        ``<child round>/block_suggestion_tools.jsonl``. Never raises."""
+        try:
+            with open(Path(out_dir) / "block_suggestion_tools.jsonl", "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row) + "\n")
+        except OSError:
+            pass
 
     def _agentic_read_file(
         self, sources: dict[str, str], round_dir: Path, args: dict[str, Any]
