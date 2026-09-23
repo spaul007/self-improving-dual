@@ -339,8 +339,16 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         evaluator_spec, "evaluator", {"scorer": scorer_obj}
     )
 
+    # Lazy import: keeps the YAML loader free of an OpenAI import for
+    # tests that don't build components. Needed here (earlier than the
+    # other meta-agent roles below) because the gatherer's own optional
+    # error-bucket-prevalence analysis (see error_bucket_analyzer.py,
+    # gated by gatherer.config.error_bucket_analysis) needs the same
+    # llm_caller every other meta-agent role gets.
+    from platform_core.llm_wrapper import call_llm
+
     gatherer_obj = _build_with_injection(
-        cfg.gatherer, "gatherer", {"scorer": scorer_obj}
+        cfg.gatherer, "gatherer", {"scorer": scorer_obj, "llm_caller": call_llm}
     )
     validators_obj = [
         _build_with_injection(
@@ -359,10 +367,6 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         )
         for v in cfg.validators
     ]
-
-    # Lazy import: keeps the YAML loader free of an OpenAI import for
-    # tests that don't build components.
-    from platform_core.llm_wrapper import call_llm
 
     # Static project context for the editor. tools_source + db_schema are
     # shown in both modes; scorer_source only in whitebox. None of these

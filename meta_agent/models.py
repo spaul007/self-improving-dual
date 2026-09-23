@@ -94,6 +94,27 @@ class AgentFeedback(BaseModel):
     # Default ``{}`` when disabled or no failures. See meta_agent/failure_report.py.
     failure_report: dict[str, Any] = Field(default_factory=dict)
 
+    # LLM-classified breakdown of WHY each failing case failed, against the
+    # fixed, project-agnostic capability-failure taxonomy in strategies.md
+    # (tool_omission, wrong_tool_or_arg, constraint_misreading,
+    # wrong_tool_calling_order, long_horizon_state_loss,
+    # apply_info_incorrectly, tool_calling_budget_exceeded, other). Built by
+    # ``DefaultFeedbackGatherer`` via ``meta_agent/error_bucket_analyzer.py``
+    # (gated by its own ``error_bucket_analysis`` config flag -- see that
+    # gatherer's docstring). Shape: {"n_total_cases", "n_failing_cases",
+    # "n_checked_cases" (<= n_failing_cases when error_bucket_max_cases
+    # capped classification), "n_deterministic_budget_exceeded",
+    # "n_llm_classified", "buckets": [{"bucket", "description", "instances",
+    # "distinct_cases", "pct_of_checked_cases" (of n_checked_cases, NOT
+    # n_failing_cases -- see error_bucket_analyzer.py::aggregate's own
+    # comment for why), "examples": [{"case_id", "evidence"}]}, ...]}.
+    # Default ``{}`` when disabled, no failures, or the classification call
+    # itself failed (never blocks a round). Rendered into both
+    # block_suggester.py's and agent_editor.py's prompts via
+    # ``error_bucket_analyzer.render_error_bucket_prevalence_for_prompt``, so
+    # every block suggester and the editor see the same breakdown.
+    error_bucket_prevalence: dict[str, Any] = Field(default_factory=dict)
+
 
 class EditResult(BaseModel):
     success: bool

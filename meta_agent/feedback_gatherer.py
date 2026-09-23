@@ -31,9 +31,9 @@ import importlib
 import json
 import re
 from pathlib import Path
-from typing import Any, Optional, Protocol
+from typing import Any, Callable, Optional, Protocol
 
-from . import verbose_log
+from . import error_bucket_analyzer, verbose_log
 from .failure_report import FailureReportConfig, build_failure_report
 from .models import AgentFeedback, EvaluationResult, EvolutionStrategy
 from .registry import register
@@ -137,9 +137,40 @@ class DefaultFeedbackGatherer:
         plan_char_cap: int = 1000,
         failure_char_cap: int = 500,
         pass_threshold: float = 1.0,
+        # LLM-classified error-bucket prevalence (generic; see
+        # meta_agent/error_bucket_analyzer.py) — an ON/OFF switch, config
+        # variable per the caller's YAML (gatherer.config.error_bucket_analysis),
+        # since it costs real LLM calls every round unlike everything else
+        # this class computes. Injected with the same llm_caller as
+        # FailureSummarizer/BehaviorSummarizer/AgentEditor (see config.py).
+        # Defaults to the SAME backbone those other meta-agent roles use
+        # (model/base_url/reasoning_effort left None -> call_llm's own
+        # LLM_MODEL/LLM_BASE_URL/LLM_REASONING_EFFORT env-var fallback) —
+        # per the tool's own docstring, this is meant to be "the meta-agent
+        # LLM itself," not a separate model choice, unless overridden here.
+        llm_caller: Optional[Callable[..., Any]] = None,
+        error_bucket_analysis: bool = True,
+        error_bucket_model: Optional[str] = None,
+        error_bucket_base_url: Optional[str] = None,
+        error_bucket_reasoning_effort: Optional[str] = None,
+        # Cost control: worst-scoring-first cap on how many failing cases
+        # get an LLM classification call each round — unlike the
+        # standalone CLI tool (no cap by default), this runs every round
+        # of a potentially long HGM search, so an unbounded default here
+        # would scale badly. None disables the cap (every failing case,
+        # matching the CLI's own default) for a caller who wants that.
+        error_bucket_max_cases: Optional[int] = 15,
+        error_bucket_batch_size: int = 4,
     ) -> None:
         self.log_tail = log_tail
         self.exception_limit = exception_limit
+        self.llm_caller = llm_caller
+        self.error_bucket_analysis = error_bucket_analysis and llm_caller is not None
+        self.error_bucket_model = error_bucket_model
+        self.error_bucket_base_url = error_bucket_base_url
+        self.error_bucket_reasoning_effort = error_bucket_reasoning_effort
+        self.error_bucket_max_cases = error_bucket_max_cases
+        self.error_bucket_batch_size = error_bucket_batch_size
         # The scorer instance — used to source project-specific roll-ups
         # via its optional ``aggregate(per_case, trace_events)`` method.
         # Injected by ``meta_agent.config.build_components`` when the
@@ -232,6 +263,7 @@ class DefaultFeedbackGatherer:
         tool_error_rate = self._tool_error_rate(tool_usage, tool_errors)
         project_metrics = self._project_metrics(eval_result, events)
         failure_report = self._failure_report(eval_result)
+        error_bucket_prevalence = self._error_bucket_prevalence(eval_result, events, round_dir)
 
         feedback = AgentFeedback(
             round_number=round_number,
@@ -245,6 +277,7 @@ class DefaultFeedbackGatherer:
             log_excerpt=log_excerpt,
             project_metrics=project_metrics,
             failure_report=failure_report,
+            error_bucket_prevalence=error_bucket_prevalence,
             trace_n_cases=len(trace_case_ids),
         )
         persist_round_artifacts(round_dir, feedback)
@@ -322,6 +355,47 @@ class DefaultFeedbackGatherer:
         return build_failure_report(
             eval_result.per_case, categories, cfg=self._fr_cfg
         )
+
+    def _error_bucket_prevalence(
+        self,
+        eval_result: EvaluationResult,
+        events: list[dict[str, Any]],
+        round_dir: Path,
+    ) -> dict[str, Any]:
+        """LLM-classified breakdown of WHY each failing case failed,
+        against the fixed taxonomy in strategies.md/error_bucket_analyzer.py
+        -- see AgentFeedback.error_bucket_prevalence's own docstring for
+        the exact shape. Gated by ``self.error_bucket_analysis`` (a config
+        variable, off automatically when no ``llm_caller`` was injected --
+        see this class's own __init__). Never raises: any failure here
+        (a bad LLM call, a malformed response) degrades to ``{}`` with a
+        printed warning, exactly like ``_failure_report`` above -- an
+        eval round must never be lost to this being unavailable."""
+        if not self.error_bucket_analysis:
+            return {}
+        cases = [c.model_dump() for c in eval_result.per_case]
+        if not cases:
+            return {}
+        try:
+            return error_bucket_analyzer.analyze_cases(
+                cases,
+                events,
+                llm_caller=self.llm_caller,
+                model=self.error_bucket_model,
+                base_url=self.error_bucket_base_url,
+                reasoning_effort=self.error_bucket_reasoning_effort,
+                batch_size=self.error_bucket_batch_size,
+                max_cases=self.error_bucket_max_cases,
+                artifacts_dir=round_dir / "error_bucket_analysis",
+                source_label=str(round_dir),
+            )
+        except Exception as exc:  # noqa: BLE001
+            print(
+                f"[gatherer] warning: error_bucket_analysis raised {exc!r}; "
+                "error_bucket_prevalence left empty for this round",
+                flush=True,
+            )
+            return {}
 
     # ------------------------------------------------------------------ #
     # Internals

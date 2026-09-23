@@ -62,6 +62,25 @@ class Evaluator(Protocol):
     ) -> EvaluationResult: ...
 
 
+# A crash traceback opens with the entry point and closes with the actual
+# exception line; a plain head cut keeps only the call frames. Keep both ends.
+_TRACEBACK_HEAD_CHARS = 300
+_TRACEBACK_TAIL_CHARS = 1700
+_CLIP_MARKER = "\n[... middle of traceback omitted ...]\n"
+
+
+def clip_head_tail(
+    text: str,
+    head: int = _TRACEBACK_HEAD_CHARS,
+    tail: int = _TRACEBACK_TAIL_CHARS,
+) -> str:
+    """First ``head`` + last ``tail`` chars of ``text`` with a marker between.
+    Idempotent: its own output (head + marker + tail long) is returned as is."""
+    if len(text) <= head + len(_CLIP_MARKER) + tail:
+        return text
+    return text[:head] + _CLIP_MARKER + text[-tail:]
+
+
 def _platform_core_parent() -> Path:
     """Return the directory whose presence on PYTHONPATH makes
     `import platform_core.*` resolvable."""
@@ -332,7 +351,7 @@ class SubprocessEvaluator:
                     case_id=case_id,
                     passed=False,
                     score=0.0,
-                    error=str(payload.get("error", "unknown error"))[:1000],
+                    error=clip_head_tail(str(payload.get("error", "unknown error"))),
                 ),
                 False,
                 logs_dir,

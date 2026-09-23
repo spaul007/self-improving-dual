@@ -23,6 +23,7 @@ from typing import Any, Callable, Iterable, Optional, Protocol
 
 from . import source_context, verbose_log
 from .editor_validators import MUTABLE_DIRS, MUTABLE_FILES, is_excluded
+from .error_bucket_analyzer import render_error_bucket_prevalence_for_prompt
 from .failure_report import render_failure_report
 from .feedback_gatherer import render_metrics
 from .models import AgentFeedback, EditResult, EvolutionStrategy
@@ -463,6 +464,8 @@ class AgentEditor:
                 "say so explicitly: what you changed instead and why. "
                 "Silently doing something else is not acceptable; an "
                 "honest \"I deviated from the suggestion because X\" is.\n\n"
+                '  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone\'s actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md\'s "Reading the error-bucket prevalence table" section for how to infer the tier from the table\'s shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.'
+                "\n\n"
                 "Call `submit_self_improvement` with a one-line optimization_goal, "
                 "a proposed_changes summary, a rationale, and the `files` payload. "
                 "Each file is the FULL replacement content — do not produce diffs. "
@@ -532,6 +535,8 @@ class AgentEditor:
                 "say so explicitly: what you changed instead and why. "
                 "Silently doing something else is not acceptable; an "
                 "honest \"I deviated from the suggestion because X\" is.\n\n"
+                '  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone\'s actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md\'s "Reading the error-bucket prevalence table" section for how to infer the tier from the table\'s shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.'
+                "\n\n"
                 "Call `submit_self_improvement` with a one-line optimization_goal, "
                 "a proposed_changes summary, a rationale, and the `files` payload. "
                 "Each file is the FULL replacement content — do not produce diffs. "
@@ -792,7 +797,9 @@ class AgentEditor:
                 "different mechanism, or scope beyond what it proposed — "
                 "say so explicitly: what you changed instead and why. "
                 "Silently doing something else is not acceptable; an "
-                "honest \"I deviated from the suggestion because X\" is.\n"
+                "honest \"I deviated from the suggestion because X\" is.\n\n"
+            '  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone\'s actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md\'s "Reading the error-bucket prevalence table" section for how to infer the tier from the table\'s shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.'
+            "\n"
             )
         return (
             "You are the self-improvement module of a self-evolving agent. "
@@ -855,7 +862,9 @@ class AgentEditor:
             "different mechanism, or scope beyond what it proposed — "
             "say so explicitly: what you changed instead and why. "
             "Silently doing something else is not acceptable; an "
-            "honest \"I deviated from the suggestion because X\" is.\n"
+            "honest \"I deviated from the suggestion because X\" is.\n\n"
+            '  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone\'s actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md\'s "Reading the error-bucket prevalence table" section for how to infer the tier from the table\'s shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.'
+            "\n"
         )
 
     _AGENTIC_CLOSING = (
@@ -1266,6 +1275,15 @@ class AgentEditor:
         report = render_failure_report(feedback.failure_report)
         if report:
             rendered += "\n" + report
+        # Same "never trimmed regardless of has_suggestion" policy as
+        # failure_report above -- block_suggester.py's own feedback digest
+        # shows the identical section (see its _format_feedback_digest), so
+        # both the editor and every block suggester see the same breakdown.
+        bucket_section = render_error_bucket_prevalence_for_prompt(
+            feedback.error_bucket_prevalence
+        )
+        if bucket_section:
+            rendered += "\n" + bucket_section
         return rendered
 
     def _write_edits(

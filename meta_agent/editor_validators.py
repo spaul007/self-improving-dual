@@ -29,6 +29,7 @@ import yaml
 from pyflakes import checker as pyflakes_checker
 from pyflakes import messages as pyflakes_messages
 
+from .evaluator import clip_head_tail
 from .registry import register
 
 MUTABLE_FILES = {"workflow.py", "tool_wrapper.py", "tools_schema.json"}
@@ -481,7 +482,7 @@ class ImmutableFilesValidator:
         return errors
 
 
-_BACKBONE_FIELDS = {"model", "base_url", "temperature", "max_output_tokens", "reasoning_effort"}
+_BACKBONE_FIELDS = {"model", "base_url", "temperature", "max_output_tokens", "reasoning_effort", "enable_thinking"}
 
 
 @register("validator", "llm_backbone_config")
@@ -766,7 +767,7 @@ class SmokeTestValidator:
             return [
                 f"smoke_test: agent crashed on case {case_id} (a real code "
                 f"exception, not a low score -- this must be fixed): "
-                f"{case.error[:1000]}"
+                f"{clip_head_tail(case.error)}"
             ]
         return []
 

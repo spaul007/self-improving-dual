@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from . import source_context
+from .error_bucket_analyzer import render_error_bucket_prevalence_for_prompt
 from .feedback_gatherer import render_metrics
 from .models import AgentFeedback
 from .registry import register
@@ -48,8 +49,20 @@ _SYSTEM_PREAMBLE = (
     "its immutable tool implementations and database schema, and a "
     "feedback digest from the most recent evaluation of the agent you are "
     "diagnosing (score, tool error rates, project metrics, runtime "
-    "exceptions, and -- when available -- an LLM-synthesized cross-case "
-    "failure summary).\n\n"
+    "exceptions, an LLM-synthesized cross-case failure summary, and -- "
+    "when available -- an error-bucket prevalence table classifying WHY "
+    "each failing case failed against a fixed taxonomy).\n\n"
+    "When that error-bucket table is present, use it before proposing a "
+    "fix: which bucket(s) dominate is itself evidence of this backbone's "
+    "actual capability tier (low/medium/high), not just a pointer to "
+    "which case to cite -- see strategies.md's \"Reading the error-bucket "
+    "prevalence table\" section below for exactly how to infer the tier "
+    "from the table's shape, and its per-(bucket, tier) strategy table "
+    "for what KIND of fix that combination calls for (a code-level fix "
+    "vs. a prompt/instruction change vs. a lightweight verifier). Let "
+    "that combination guide how aggressively you intervene and how much "
+    "hand-holding your implementation needs -- it still must stay scoped "
+    "to the block described below.\n\n"
     "Ground every claim in what you are actually shown. Before you assert "
     "a root cause (e.g. \"stage X never checks Y\", \"the prompt for role Z "
     "doesn't mention W\"), re-read the specific function, prompt string, or "
@@ -451,7 +464,13 @@ _BLOCK_BODIES: dict[str, str] = {
         "an existing function's own control flow, or a decision branch "
         "with an explicit pass/fail return -- and what happens on "
         "failure (block the result entirely, patch/correct it, or just "
-        "flag/log it for now). WHERE: name the specific stage or "
+        "flag/log it for now). Blocking entirely is the weakest of those "
+        "-- it turns whatever partial credit the output would have "
+        "earned into zero, which can make the score WORSE than having no "
+        "check at all. Default to patching the specific problem or "
+        "giving the stage a retry to fix it itself; only propose an "
+        "unconditional block when you can say why neither is feasible "
+        "for this specific failure. WHERE: name the specific stage or "
         "function, and the precise point within it -- e.g. \"immediately "
         "after run_sightseeing_stage returns its AgentMessage, before "
         "that message is handed to Accounting\" -- not just \"in the "
@@ -893,6 +912,12 @@ class BlockSuggester:
                 lines.append("runtime_exceptions:")
                 for exc in feedback.runtime_exceptions[:3]:
                     lines.append(f"  - {exc[:200]}")
+            bucket_section = render_error_bucket_prevalence_for_prompt(
+                feedback.error_bucket_prevalence
+            )
+            if bucket_section:
+                lines.append("")
+                lines.append(bucket_section)
         if failure_summary:
             lines.append("\n## Cross-case failure summary (LLM-synthesized)")
             lines.append(failure_summary)
