@@ -32,7 +32,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import source_context
+from . import log_access, source_context
 from .error_bucket_analyzer import render_error_bucket_prevalence_for_prompt
 from .feedback_gatherer import render_metrics
 from .models import AgentFeedback
@@ -1227,34 +1227,8 @@ class BlockSuggester:
     def _resolve_alias_path(
         self, path: str, *, sources: dict[str, str], round_dir: Path
     ) -> tuple[Optional[str], Any]:
-        """Resolve an alias-rooted path to either ``("harness", text)``
-        (served straight from the already-read ``sources`` dict, no disk
-        access) or ``("file", Path)`` (a real path under ``round_dir``,
-        still unresolved/unchecked-for-existence). Returns ``(None, error)``
-        when ``path`` doesn't match any known alias or a 'logs/' path
-        would escape its own root."""
-        path = (path or "").strip().lstrip("/")
-        if path == "eval_result.json":
-            return "file", round_dir / "eval_result.json"
-        if path.startswith("harness/"):
-            rel = path[len("harness/"):]
-            if rel not in sources:
-                return None, (
-                    f"ERROR: {path!r} not found -- available harness "
-                    f"files: {', '.join(sorted(sources)) or '(none)'}"
-                )
-            return "harness", sources[rel]
-        if path.startswith("logs/"):
-            rel = path[len("logs/"):]
-            logs_root = (round_dir / "logs").resolve()
-            target = (round_dir / "logs" / rel).resolve()
-            if target != logs_root and logs_root not in target.parents:
-                return None, f"ERROR: {path!r} escapes the logs/ root."
-            return "file", target
-        return None, (
-            f"ERROR: unrecognized path {path!r} -- paths must be exactly "
-            "'eval_result.json' or start with 'harness/' or 'logs/'."
-        )
+        """Alias resolution -- shared with the editor (meta_agent/log_access.py)."""
+        return log_access.resolve(path, sources=sources, round_dir=round_dir)
 
     @staticmethod
     def _record_tool_call(out_dir: Path, row: dict[str, Any]) -> None:
@@ -1269,85 +1243,9 @@ class BlockSuggester:
     def _agentic_read_file(
         self, sources: dict[str, str], round_dir: Path, args: dict[str, Any]
     ) -> str:
-        raw_path = args.get("path") or ""
-        kind, payload = self._resolve_alias_path(
-            raw_path, sources=sources, round_dir=round_dir
-        )
-        if kind is None:
-            return payload
-        if kind == "harness":
-            text = payload
-        else:
-            fpath = payload
-            if not fpath.exists() or not fpath.is_file():
-                return f"(file not found: {raw_path})"
-            try:
-                text = fpath.read_text(encoding="utf-8", errors="replace")
-            except OSError as exc:
-                return f"ERROR reading {raw_path}: {exc!r}"
-        lines = text.splitlines()
-        offset = max(0, int(args.get("offset") or 0))
-        limit = args.get("limit")
-        limit = int(limit) if limit else 200
-        chunk_lines = lines[offset:offset + limit]
-        chunk = "\n".join(f"L{offset + i}: {line}" for i, line in enumerate(chunk_lines))
-        remaining = len(lines) - (offset + limit)
-        if remaining > 0:
-            chunk += (
-                f"\n\n[... {remaining} more lines -- call read_file again "
-                f"with offset={offset + limit} ...]"
-            )
-        return chunk if chunk else "(empty file or offset past end)"
+        return log_access.read_file(sources, round_dir, args)
 
     def _agentic_grep(
         self, sources: dict[str, str], round_dir: Path, args: dict[str, Any]
     ) -> str:
-        raw_path = args.get("path") or ""
-        kind, payload = self._resolve_alias_path(
-            raw_path, sources=sources, round_dir=round_dir
-        )
-        if kind is None:
-            return payload
-        pattern = args.get("pattern") or ""
-        try:
-            rx = re.compile(pattern)
-        except re.error as exc:
-            return f"ERROR: invalid regex {pattern!r}: {exc!r}"
-        try:
-            max_matches = int(args.get("max_matches") or 12)
-        except (TypeError, ValueError):
-            max_matches = 12
-
-        matches: list[str] = []
-        if kind == "harness":
-            line_iter = enumerate(payload.splitlines())
-        else:
-            fpath = payload
-            if not fpath.exists() or not fpath.is_file():
-                return f"(file not found: {raw_path})"
-            try:
-                line_iter = enumerate(
-                    fpath.read_text(encoding="utf-8", errors="replace").splitlines()
-                )
-            except OSError as exc:
-                return f"ERROR reading {raw_path}: {exc!r}"
-
-        # Window CENTERED on the match, not the line's start -- a line can
-        # be thousands of chars long (e.g. a JSON string value holding an
-        # entire multi-day itinerary on one physical "line"), and the
-        # match can land far from its beginning. Confirmed live this
-        # session: returning only a line's first N chars made a real match
-        # deep in such a line undiscoverable.
-        for i, line in line_iter:
-            m = rx.search(line)
-            if not m:
-                continue
-            start = max(0, m.start() - 150)
-            end = min(len(line), m.end() + 350)
-            prefix = "..." if start > 0 else ""
-            suffix = "..." if end < len(line) else ""
-            snippet = f"{prefix}{line[start:end].strip()}{suffix}"
-            matches.append(f"L{i} (char {m.start()}): {snippet}")
-            if len(matches) >= max_matches:
-                break
-        return "\n".join(matches) if matches else "(no matches)"
+        return log_access.grep(sources, round_dir, args)
