@@ -199,6 +199,55 @@ _AGENTIC_TOOLS: list[dict[str, Any]] = [
     AGENTIC_SUBMIT_SUMMARY_TOOL,
 ]
 
+# Opt-in (``agentic_edit_file=True``): exact string replacement inside one
+# file. For large files (e.g. a 58 KB module) a whole-file ``write_file``
+# cannot fit a thinking model's output budget, and a huge JSON string
+# argument is exactly where malformed-JSON failures come from; a targeted
+# replacement keeps each call small.
+AGENTIC_EDIT_FILE_TOOL: dict[str, Any] = {
+    "name": "edit_file",
+    "description": (
+        "Replace an exact string in ONE file. `old_string` must match the "
+        "file's current content exactly (including indentation) and be "
+        "unique unless `replace_all` is true. Prefer this over write_file "
+        "for changes to large files."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "old_string": {"type": "string"},
+            "new_string": {"type": "string"},
+            "replace_all": {"type": "boolean"},
+        },
+        "required": ["path", "old_string", "new_string"],
+    },
+}
+
+
+def apply_string_edit(
+    text: str, old: str, new: str, replace_all: bool = False
+) -> tuple[Optional[str], str]:
+    """Pure helper behind ``edit_file``: returns ``(new_text, message)``;
+    ``new_text`` is None when the edit is refused (no match, ambiguous
+    match, or a no-op)."""
+    if not old:
+        return None, "ERROR: old_string must be non-empty."
+    if old == new:
+        return None, "ERROR: old_string and new_string are identical (no-op)."
+    n = text.count(old)
+    if n == 0:
+        return None, (
+            "ERROR: old_string not found in the file -- read_file it again and "
+            "copy the exact text (including whitespace)."
+        )
+    if n > 1 and not replace_all:
+        return None, (
+            f"ERROR: old_string matches {n} places -- add surrounding context "
+            "to make it unique, or pass replace_all=true."
+        )
+    return text.replace(old, new), f"replaced {n if replace_all else 1} occurrence(s)"
+
 _AGENTIC_TURN_BUDGET_GOAL = "(editor exceeded agentic turn budget without submitting a summary)"
 _AGENTIC_MALFORMED_SUMMARY_GOAL = "(summary call had malformed JSON; edits below were still applied)"
 _AGENTIC_LLM_CALL_FAILED_GOAL_PREFIX = "(editor's LLM call failed mid-conversation"
@@ -245,6 +294,14 @@ class AgentEditor:
         # generous relative to what real trials needed (typically 3-6 turns
         # even for a genuine 4-file fix, confirmed live this session).
         agentic_max_turns: int = 20,
+        # Opt-in: also offer the agentic ``edit_file`` (exact string
+        # replacement) tool. False (default) = today's exact tool set.
+        agentic_edit_file: bool = False,
+        # Opt-in: glob patterns (relative to the agent dir) of files that are
+        # READABLE through the agentic ``read_file`` tool but never writable
+        # -- e.g. frozen modules (listed in mutable_exclude) whose APIs the
+        # editable code calls. None (default): no change.
+        readonly_reference: Optional[list[str]] = None,
     ) -> None:
         self.llm = llm_caller
         self.validators = list(validators)
@@ -259,6 +316,8 @@ class AgentEditor:
         self.max_output_tokens = max_output_tokens
         self.agentic_editing = agentic_editing
         self.agentic_max_turns = agentic_max_turns
+        self.agentic_edit_file = agentic_edit_file
+        self.readonly_reference = list(readonly_reference or [])
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -876,6 +935,18 @@ class AgentEditor:
         "a proposed_changes summary, and a rationale to finish."
     )
 
+    def _readonly_reference_paths(self, agent_dir: Path) -> list[str]:
+        """Existing files matching ``readonly_reference`` globs, relative to
+        ``agent_dir`` (sorted; never includes an editable path)."""
+        out: set[str] = set()
+        for pattern in self.readonly_reference:
+            for f in agent_dir.glob(pattern):
+                if f.is_file() and "__pycache__" not in f.parts:
+                    rel = f.relative_to(agent_dir).as_posix()
+                    if not self._is_path_allowed(rel):
+                        out.add(rel)
+        return sorted(out)
+
     def _self_improve_agentic(
         self,
         *,
@@ -900,6 +971,12 @@ class AgentEditor:
         available_paths = sorted(self._read_mutable_sources(agent_dir).keys())
 
         system = self._diagnosis_rules() + self._AGENTIC_CLOSING
+        if self.agentic_edit_file:
+            system += (
+                "\n\nYou also have `edit_file` (exact string replacement inside "
+                "one file). Prefer it over `write_file` for changes to large "
+                "files: copy `old_string` verbatim from `read_file` output."
+            )
 
         user_parts: list[str] = []
         if context:
@@ -916,6 +993,15 @@ class AgentEditor:
             "Use `read_file` to see any of these before editing it -- their "
             "content isn't shown here.\n"
         )
+        readonly_paths = self._readonly_reference_paths(agent_dir)
+        if readonly_paths:
+            ro_listing = "\n".join(f"  - {p}" for p in readonly_paths)
+            user_parts.append(
+                "## Read-only reference files (frozen -- read, never edit)\n"
+                f"{ro_listing}\n\n"
+                "These define APIs the editable code calls. You may `read_file` "
+                "them; any write/edit to them is refused.\n"
+            )
         if prior_errors:
             joined = "\n".join(f"  - {e}" for e in prior_errors)
             user_parts.append(
@@ -941,7 +1027,10 @@ class AgentEditor:
         for turn in range(self.agentic_max_turns):
             llm_kwargs: dict[str, Any] = {
                 "messages": history,
-                "tools": _AGENTIC_TOOLS,
+                "tools": (
+                    _AGENTIC_TOOLS + [AGENTIC_EDIT_FILE_TOOL]
+                    if self.agentic_edit_file else _AGENTIC_TOOLS
+                ),
             }
             if self.model:
                 llm_kwargs["model"] = self.model
@@ -1046,7 +1135,10 @@ class AgentEditor:
                         )
                     elif call.name == "read_file":
                         path = (args.get("path") or "").lstrip("/")
-                        if not self._is_path_allowed(path):
+                        if not (
+                            self._is_path_allowed(path)
+                            or path in readonly_paths
+                        ):
                             output = (
                                 f"ERROR: {path!r} is not readable/editable "
                                 "here -- see the '## Files you may "
@@ -1104,6 +1196,27 @@ class AgentEditor:
                                 target.write_text(content, encoding="utf-8")
                                 written[path] = content
                                 output = f"written {path} ({len(content)} chars)"
+                    elif call.name == "edit_file" and self.agentic_edit_file:
+                        path = (args.get("path") or "").lstrip("/")
+                        target = agent_dir / path
+                        if not path or not self._is_path_allowed(path):
+                            output = (
+                                f"ERROR: forbidden edit path {path!r} -- allowed "
+                                f"paths are: {', '.join(available_paths) or '(none)'}"
+                            )
+                        elif not target.is_file():
+                            output = f"ERROR: {path!r} is not an existing file."
+                        else:
+                            new_text, output = apply_string_edit(
+                                target.read_text(encoding="utf-8"),
+                                _coerce_str(args.get("old_string")),
+                                _coerce_str(args.get("new_string")),
+                                bool(args.get("replace_all")),
+                            )
+                            if new_text is not None:
+                                target.write_text(new_text, encoding="utf-8")
+                                written[path] = new_text
+                                output = f"{output} in {path}"
                     elif call.name == "run_code_validators":
                         errors = self._run_validators(out_dir, base_dir)
                         output = (

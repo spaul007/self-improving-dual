@@ -659,6 +659,12 @@ class BlockSuggester:
         # every other block; only substituted when block ==
         # "llm_backbone_selection".
         backbone_catalog: Optional[list[dict[str, str]]] = None,
+        # Opt-in (agentic_access only): glob patterns, relative to the agent
+        # dir, of FROZEN files (e.g. in mutable_exclude) that the suggester
+        # may also read via read_file/grep under 'harness/<rel>' -- so a
+        # diagnosis of editable code can see the APIs it calls. They are
+        # listed as frozen. None (default): no change.
+        readonly_reference: Optional[list[str]] = None,
     ) -> None:
         self.llm = llm_caller
         self.model = model
@@ -673,6 +679,8 @@ class BlockSuggester:
         self.agentic_access = agentic_access
         self.agentic_max_turns = agentic_max_turns
         self.backbone_catalog = backbone_catalog or _DEFAULT_BACKBONE_CATALOG
+        self.readonly_reference = list(readonly_reference or [])
+        self._frozen_paths: list[str] = []
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -723,6 +731,10 @@ class BlockSuggester:
             return None
 
         if self.agentic_access:
+            frozen = self._read_readonly_reference(agent_dir, sources)
+            if frozen:
+                sources = {**sources, **frozen}
+            self._frozen_paths = sorted(frozen)
             return self._suggest_agentic(
                 block=block,
                 agent_dir=agent_dir,
@@ -977,7 +989,11 @@ class BlockSuggester:
             db_schema=self.db_schema,
             scorer_source=self.scorer_source,
         )
-        listing = "\n".join(f"  - harness/{p}" for p in sorted(sources)) or "  (none)"
+        frozen_paths = set(self._frozen_paths)
+        listing = "\n".join(
+            f"  - harness/{p}" + ("  (FROZEN: reference only, not editable)" if p in frozen_paths else "")
+            for p in sorted(sources)
+        ) or "  (none)"
         user_parts.append(
             "## Files you may read (via read_file/grep)\n"
             f"{listing}\n\n"
@@ -1093,6 +1109,25 @@ class BlockSuggester:
             flush=True,
         )
         return text
+
+    def _read_readonly_reference(
+        self, agent_dir: Path, sources: dict[str, str]
+    ) -> dict[str, str]:
+        """Text of files matching ``readonly_reference`` globs that are not
+        already editable sources (so they can be labelled FROZEN)."""
+        out: dict[str, str] = {}
+        for pattern in self.readonly_reference:
+            for f in Path(agent_dir).glob(pattern):
+                if not f.is_file() or "__pycache__" in f.parts:
+                    continue
+                rel = f.relative_to(agent_dir).as_posix()
+                if rel in sources:
+                    continue
+                try:
+                    out[rel] = f.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError):
+                    continue
+        return out
 
     def _resolve_alias_path(
         self, path: str, *, sources: dict[str, str], round_dir: Path

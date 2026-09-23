@@ -62,6 +62,12 @@ class HGMNode:
     # a node id for a complete run dir but is neither expandable nor
     # evaluable (its task_agent is just the parent's code reset).
     edit_failed: bool = False
+    # Cases evaluated but flagged as INFRASTRUCTURE failures by the scorer
+    # (``details["excluded"]``, see HGMManager ``exclude_flagged_cases``):
+    # attempted -- so never resampled and they count toward "fully
+    # evaluated" -- but carry no utility, so an infra crash is never read as
+    # a model zero.
+    n_excluded: int = 0
 
     @property
     def n_evals(self) -> int:
@@ -83,6 +89,23 @@ class HGMNode:
         self.evaluated_case_ids[case.case_id] = (
             self.evaluated_case_ids.get(case.case_id, 0) + 1
         )
+
+    def record_excluded(self, case: CaseResult) -> None:
+        """Mark one (agent, task) evaluation as ATTEMPTED without folding any
+        utility: it stays in ``case_results`` (feedback still shows it) and in
+        ``evaluated_case_ids`` (not resampled), but touches neither the Beta
+        tallies nor ``utility_measures``."""
+        self.n_excluded += 1
+        self.case_results.append(case)
+        self.evaluated_case_ids[case.case_id] = (
+            self.evaluated_case_ids.get(case.case_id, 0) + 1
+        )
+
+    @property
+    def n_attempted(self) -> int:
+        """Evaluations attempted, excluded ones included (== n_evals when
+        nothing was excluded)."""
+        return sum(self.evaluated_case_ids.values())
 
 
 class HGMTree:
