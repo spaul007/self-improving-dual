@@ -251,5 +251,34 @@ class BlockSuggesterAgenticModeTests(unittest.TestCase):
         self.assertIsNone(result)
 
 
+
+class ToolCallRecordTests(BlockSuggesterAgenticModeTests):
+    """Every agentic read_file/grep call is persisted to the child round's
+    block_suggestion_tools.jsonl, so 'which evidence did the diagnosis read'
+    is checkable from artifacts."""
+
+    def test_tool_calls_are_recorded(self) -> None:
+        turns = []
+
+        def fake_llm(**kwargs):
+            turns.append(1)
+            if len(turns) == 1:
+                return SimpleNamespace(content="", tool_calls=[
+                    _call("read_file", {"path": "logs/trace.jsonl"}, "r1"),
+                    _call("grep", {"pattern": "run_task", "path": "harness/workflow.py"}, "g1"),
+                    _call("read_file", {"path": "nowhere/x"}, "r2"),
+                ])
+            return SimpleNamespace(content="final suggestion", tool_calls=[])
+
+        self.assertEqual(self._suggest(fake_llm), "final suggestion")
+        rows = [__import__("json").loads(l) for l in
+                (self.out_dir / "block_suggestion_tools.jsonl").read_text().splitlines()]
+        self.assertEqual([(r["tool"], r["path"]) for r in rows],
+                         [("read_file", "logs/trace.jsonl"), ("grep", "harness/workflow.py"),
+                          ("read_file", "nowhere/x")])
+        self.assertEqual([r["error"] for r in rows], [False, False, True])
+        self.assertGreater(rows[0]["out_chars"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()
