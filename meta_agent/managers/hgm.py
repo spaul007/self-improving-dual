@@ -131,6 +131,11 @@ class HGMManager:
         # Validated as a subset of _BLOCK_BODIES below, matching the
         # block_selection_strategy validation's fail-fast convention.
         active_blocks: Optional[list[str]] = None,
+        # {block: [path prefixes under task_agent/]} -- an EXPAND whose sampled
+        # block has an entry may only WRITE under those paths (AgentEditor
+        # edit_scope; enforced, not a hint). E.g. {"skills": ["skills/"]}.
+        # None (default): no block restricts edits -- unchanged behaviour.
+        block_edit_scopes: Optional[dict[str, list[str]]] = None,
         # Reward signal the "adaptive" strategy's BlockBandit uses to score
         # each block. "fractional_score" (default -- zero change for every
         # existing config) sums each qualifying node's own accumulated
@@ -294,6 +299,22 @@ class HGMManager:
                     f"-- must be a subset of {sorted(_BLOCK_BODIES)}"
                 )
         self.active_blocks = active_blocks
+        if block_edit_scopes:
+            from ..block_suggester import _BLOCK_BODIES
+
+            unknown = sorted(set(block_edit_scopes) - set(_BLOCK_BODIES))
+            if unknown:
+                raise ValueError(f"block_edit_scopes names unknown block(s) {unknown}")
+            if active_blocks is not None:
+                inactive = sorted(set(block_edit_scopes) - set(active_blocks))
+                if inactive:
+                    raise ValueError(
+                        f"block_edit_scopes names block(s) not in active_blocks: {inactive}"
+                    )
+            for b, prefixes in block_edit_scopes.items():
+                if not prefixes or not all(isinstance(x, str) and x.strip() for x in prefixes):
+                    raise ValueError(f"block_edit_scopes[{b!r}] must be a non-empty list of paths")
+        self.block_edit_scopes = dict(block_edit_scopes or {})
         self.block_reward_metric = block_reward_metric
         self.exclude_llm_call_failures = exclude_llm_call_failures
         self.llm_call_failure_threshold_pct = llm_call_failure_threshold_pct
@@ -654,6 +675,7 @@ class HGMManager:
         edit_result = editor.apply(
             self._feedback.get(parent_id), parent.round_dir, out_dir,
             context=context, has_suggestion=self._last_suggestion_produced,
+            **self._edit_scope_kwargs(block),
         )
         strategy = edit_result.strategy or fallback_strategy()
         strategy.block = block
@@ -858,9 +880,9 @@ class HGMManager:
             if self.active_blocks is not None:
                 candidates = sorted(self.active_blocks)
             else:
-                from ..block_suggester import _BLOCK_BODIES
+                from ..block_suggester import default_blocks
 
-                candidates = sorted(_BLOCK_BODIES)
+                candidates = default_blocks()
             return self._block_rng.choice(candidates)
         if self.block_selection_strategy == "adaptive":
             adaptive = self._block_bandit.select(self._tree, self._feedback)
@@ -1629,6 +1651,12 @@ class HGMManager:
             f"n={node.n_evals} (free, not charged to budget)",
             flush=True,
         )
+
+    def _edit_scope_kwargs(self, block: Optional[str]) -> dict:
+        """``{"edit_scope": [...]}`` for a scoped block, else ``{}`` (so editors
+        without the parameter keep working for every unscoped EXPAND)."""
+        scope = self.block_edit_scopes.get(block) if block else None
+        return {"edit_scope": list(scope)} if scope else {}
 
     def _run_failure_summarizer(self, node: HGMNode) -> None:
         """Fire the failure summarizer (if configured) on a node's current

@@ -480,6 +480,43 @@ _BLOCK_BODIES: dict[str, str] = {
         "(the specific stage/function and point within it). Concrete "
         "enough to implement, described in prose, not code."
     ),
+    "skills": (
+        "## Block: skills\n\n"
+        "Scope: the agent's SKILL LIBRARY -- short, reusable procedure "
+        "documents the agent's roles/stages load on demand (each role or stage "
+        "sees an index of skills tagged for it and reads a skill's full text "
+        "when its situation matches). Where skills live, how the index is "
+        "formatted and how they are loaded is project-specific and described "
+        "in the strategies below. This EXPAND may ONLY write inside the skill "
+        "library (enforced: writes elsewhere are refused); every other file is "
+        "read-only context.\n\n"
+        "A skill is procedural know-how, not a rule restatement: WHEN it "
+        "applies (a concrete trigger a role can recognise), WHAT to do step "
+        "by step, and HOW to check it was done. One skill = one procedure. "
+        "Valid changes: ADD a skill for a diagnosed, recurring failure; "
+        "REFINE a skill whose trigger or steps did not prevent the failure it "
+        "targets; SPLIT an overloaded skill; RETIRE (delete) a skill that is "
+        "never loaded or that the evidence shows is misleading; RETAG which "
+        "roles/stages see it. Always keep the index in sync with the files: "
+        "an index entry with no file, or a file with no index entry, is a "
+        "broken skill.\n\n"
+        "Ground every change in evidence: cite the failing cases and whether "
+        "the relevant skill was loaded in them (skill-load counts are in the "
+        "role/stage statistics and traces). A skill that exists but was not "
+        "loaded when it mattered needs a clearer trigger or index line, not "
+        "more text. Keep each skill short -- the index is shown to every "
+        "tagged role on every run, so its lines cost context everywhere.\n\n"
+        "DO NOT propose changes to role prompts, workflow, tools or checks "
+        "(those are the other blocks); if the real fix is there, say so and "
+        "propose the closest skill-library change instead.\n\n"
+        "Output a short markdown suggestion with:\n"
+        "  - **Target**: the skill(s) to add/refine/split/retire/retag, and "
+        "the roles/stages they apply to.\n"
+        "  - **Diagnosis**: the recurring failure, the cases showing it, and "
+        "whether an existing skill was loaded there (cite what you read).\n"
+        "  - **Proposed change**: the trigger, the steps and the check for "
+        "each skill, plus the exact index line(s) -- in prose, concise."
+    ),
     "mixed": (
         "## Block: mixed\n\n"
         "Scope: the ENTIRE harness -- every role's own prompt/logic "
@@ -603,6 +640,17 @@ _BLOCK_BODIES: dict[str, str] = {
         "unchanged is the correct way to say \"no-op\" here."
     ),
 }
+
+# Blocks a config must name in ``active_blocks`` to use -- excluded from every
+# default block set (BlockBandit, the non_adaptive strategy) so adding one here
+# never changes the behaviour of configs that leave active_blocks unset. "skills"
+# only makes sense for a seed that actually has a skill library.
+OPT_IN_BLOCKS = frozenset({"skills"})
+
+
+def default_blocks() -> list[str]:
+    """The block set used when a config does not set ``active_blocks``."""
+    return sorted(b for b in _BLOCK_BODIES if b not in OPT_IN_BLOCKS)
 
 
 @register("block_suggester", "default")

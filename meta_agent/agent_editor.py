@@ -279,6 +279,12 @@ class AgentEditor:
         # HillClimbingManager never pass this at all, since neither path
         # ever computes a suggestion.
         has_suggestion: bool = False,
+        # Path prefixes (relative to task_agent/) this EXPAND may write, e.g.
+        # ["skills/"] for the ``skills`` block (hgm.py block_edit_scopes).
+        # None (default): unchanged -- any editable path. Enforced three ways:
+        # write/edit tools refuse out-of-scope paths, the prompt states the
+        # scope, and the finished diff is re-checked before validators run.
+        edit_scope: Optional[list[str]] = None,
     ) -> EditResult:
         """Produce one self-improvement of the agent in ``base_dir``.
 
@@ -299,6 +305,22 @@ class AgentEditor:
         Returns ``EditResult``; ``.strategy`` carries the editor's emitted
         summary (the last attempt's, on failure).
         """
+        self._edit_scope = list(edit_scope) if edit_scope else None
+        try:
+            return self._apply(feedback, base_dir, out_dir, context=context,
+                               has_suggestion=has_suggestion)
+        finally:
+            self._edit_scope = None
+
+    def _apply(
+        self,
+        feedback: Optional[AgentFeedback],
+        base_dir: Path,
+        out_dir: Path,
+        *,
+        context: Optional[str],
+        has_suggestion: bool,
+    ) -> EditResult:
         self._copy_workspace(base_dir, out_dir)
 
         attempt_errors: list[str] = []
@@ -340,7 +362,9 @@ class AgentEditor:
                 attempt_errors = write_errors
                 continue
 
-            errors = self._run_validators(out_dir, base_dir)
+            errors = self._scope_violations(out_dir, base_dir) + self._run_validators(
+                out_dir, base_dir
+            )
             if not errors:
                 return EditResult(
                     success=True, edited_files=written, strategy=strategy
@@ -547,6 +571,7 @@ class AgentEditor:
             )
         user_parts.extend(self._format_project_context())
         user_parts.append(self._format_current_sources(current))
+        user_parts.extend(self._format_edit_scope())
         if prior_errors:
             joined = "\n".join(f"  - {e}" for e in prior_errors)
             user_parts.append(
@@ -916,6 +941,7 @@ class AgentEditor:
             "Use `read_file` to see any of these before editing it -- their "
             "content isn't shown here.\n"
         )
+        user_parts.extend(self._format_edit_scope())
         if prior_errors:
             joined = "\n".join(f"  - {e}" for e in prior_errors)
             user_parts.append(
@@ -1092,6 +1118,8 @@ class AgentEditor:
                                 f"ERROR: forbidden edit path {path!r} -- allowed "
                                 f"paths are: {', '.join(available_paths) or '(none)'}"
                             )
+                        elif not self._in_scope(path):
+                            output = self._scope_refusal(path)
                         else:
                             target = agent_dir / path
                             if target.is_dir():
@@ -1288,6 +1316,9 @@ class AgentEditor:
             if not path or content is None:
                 errors.append(f"malformed edit entry: {entry!r}")
                 continue
+            if self._is_path_allowed(path) and not self._in_scope(path):
+                errors.append(self._scope_refusal(path))
+                continue
             if not self._is_path_allowed(path):
                 if self.mutable_exclude is not None:
                     errors.append(
@@ -1305,6 +1336,65 @@ class AgentEditor:
             target.write_text(content, encoding="utf-8")
             written.append(path)
         return written, errors
+
+    _edit_scope: Optional[list[str]] = None
+
+    def _in_scope(self, rel_path: str) -> bool:
+        """True when no edit scope is active, or ``rel_path`` falls under one of its
+        prefixes (a prefix ending in '/' is a directory; otherwise an exact file)."""
+        if not self._edit_scope:
+            return True
+        rel = Path(rel_path).as_posix().lstrip("/")
+        for p in self._edit_scope:
+            if p.endswith("/"):
+                if rel.startswith(p):
+                    return True
+            elif rel == p:
+                return True
+        return False
+
+    def _scope_refusal(self, rel_path: str) -> str:
+        return (
+            f"ERROR: {rel_path!r} is outside this EXPAND's edit scope "
+            f"({', '.join(self._edit_scope or [])}). This block may only change "
+            "files under those paths -- make the change there, or leave it for "
+            "another block."
+        )
+
+    def _format_edit_scope(self) -> list[str]:
+        if not self._edit_scope:
+            return []
+        return [
+            "## Edit scope for this EXPAND (enforced)\n"
+            + "\n".join(f"  - {p}" for p in self._edit_scope)
+            + "\n\nYou may READ any file, but writes/edits outside these paths are "
+            "refused and a change set touching anything else fails validation.\n"
+        ]
+
+    def _scope_violations(self, out_dir: Path, base_dir: Path) -> list[str]:
+        """Files the attempt created/changed/deleted outside the active scope."""
+        if not self._edit_scope:
+            return []
+        new_root, old_root = out_dir / "task_agent", base_dir / "task_agent"
+
+        def files(root: Path) -> dict[str, Path]:
+            if not root.exists():
+                return {}
+            return {
+                p.relative_to(root).as_posix(): p
+                for p in root.rglob("*")
+                if p.is_file() and not (set(p.relative_to(root).parts) & self._ALWAYS_IGNORE_DIRS)
+            }
+
+        new, old = files(new_root), files(old_root)
+        changed = [
+            r for r in sorted(set(new) | set(old))
+            if r not in new or r not in old or new[r].read_bytes() != old[r].read_bytes()
+        ]
+        return [
+            f"edit scope violation: {r} changed outside {', '.join(self._edit_scope)}"
+            for r in changed if not self._in_scope(r)
+        ]
 
     def _is_path_allowed(self, rel_path: str) -> bool:
         parts = Path(rel_path).parts

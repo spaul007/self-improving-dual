@@ -105,9 +105,9 @@ class BlockBandit:
             # Canonical block-name source, same convention as the
             # "non_adaptive" strategy in hgm.py::_select_block -- never a
             # second hardcoded list that could drift out of sync.
-            from .block_suggester import _BLOCK_BODIES
+            from .block_suggester import default_blocks
 
-            blocks = sorted(_BLOCK_BODIES)
+            blocks = default_blocks()
         self.blocks: tuple[str, ...] = tuple(blocks)
         self.beta_prior = beta_prior
         self.tau = tau

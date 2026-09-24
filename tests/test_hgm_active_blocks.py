@@ -22,7 +22,9 @@ class ActiveBlocksTests(unittest.TestCase):
     def test_default_manager_has_all_block_bodies_as_candidates(self) -> None:
         m = HGMManager()
         self.assertIsNone(m.active_blocks)
-        self.assertEqual(set(m._block_bandit.blocks), set(_BLOCK_BODIES))
+        from meta_agent.block_suggester import OPT_IN_BLOCKS
+        self.assertEqual(set(m._block_bandit.blocks), set(_BLOCK_BODIES) - OPT_IN_BLOCKS)
+        self.assertNotIn("skills", m._block_bandit.blocks)
 
     def test_active_blocks_restricts_bandit_candidate_set(self) -> None:
         restricted = sorted(set(_BLOCK_BODIES) - {"llm_backbone_selection"})
