@@ -164,10 +164,11 @@ class TestBandit(LayerBase):
         lay = self.layer(arm_min_pulls=1)
         lay.memory_version = 1
         (lay.dir / memory_version_name(1)).write_text("M")
-        # Forced pulls first: with (0 pulls) then without (0 pulls).
+        # Warm-up first: one pull of each arm, in the shuffled plan's order.
         tree = _tree_with([(0, None, "none", [0.5])])
-        self.assertEqual(lay.choose_arm(tree)[0], ARM_WITH)
-        self.assertEqual(lay.choose_arm(tree)[0], ARM_WITHOUT)
+        warm = [lay.choose_arm(tree)[0], lay.choose_arm(tree)[0]]
+        self.assertEqual(sorted(warm), [ARM_WITH, ARM_WITHOUT])
+        self.assertEqual(warm, list(lay.forced_plan))
         # Lopsided tallies: with-arm nodes score ~0.9, without ~0.1.
         tree = _tree_with([(0, None, "none", [0.5])] +
                           [(i, 0, "with", [0.9] * 20) for i in range(1, 4)] +
@@ -184,6 +185,49 @@ class TestBandit(LayerBase):
         picks = [lay.choose_arm(tree)[0] for _ in range(30)]
         self.assertGreater(picks.count(ARM_WITHOUT), 27)
         self.assertIsNone(lay.choose_arm(tree)[2] if picks[-1] == ARM_WITHOUT else None)
+
+
+    def test_warm_up_is_shuffled_but_balanced_and_deterministic(self) -> None:
+        """arm_min_pulls pulls of EACH arm before Thompson, in a shuffled
+        order (2026-09-24): the old rule ran every `with` pull first, tying
+        that arm's warm-up to the thinnest memory version."""
+        orders = []
+        for seed in (3, 7, 11, 42):
+            lay = self.layer(arm_min_pulls=4, seed=seed)
+            lay.memory_version = 1
+            (lay.dir / memory_version_name(1)).write_text("M")
+            tree = _tree_with([(0, None, "none", [0.5])])
+            picks = [lay.choose_arm(tree)[0] for _ in range(8)]
+            self.assertEqual(picks.count(ARM_WITH), 4, seed)      # balanced ...
+            self.assertEqual(picks.count(ARM_WITHOUT), 4, seed)
+            self.assertEqual(picks, list(lay.forced_plan), seed)  # ... and it IS the plan
+            self.assertEqual(lay.rng_draws, 0, seed)              # Thompson stream untouched
+            orders.append(tuple(picks))
+            # Same seed -> same plan; the 9th pull is Thompson's.
+            self.assertEqual(self.layer(arm_min_pulls=4, seed=seed).forced_plan, tuple(picks))
+        self.assertNotEqual(orders[0], (ARM_WITH,) * 4 + (ARM_WITHOUT,) * 4)
+        self.assertGreater(len(set(orders)), 1)                   # seeds differ
+
+    def test_warm_up_plan_survives_a_resume_mid_block(self) -> None:
+        """After a resume the pulls are recounted from the tree, and the plan
+        is consumed by position — so the remaining warm-up is unchanged."""
+        lay = self.layer(arm_min_pulls=3, seed=5)
+        lay.memory_version = 1
+        (lay.dir / memory_version_name(1)).write_text("M")
+        tree = _tree_with([(0, None, "none", [0.5])])
+        first = [lay.choose_arm(tree)[0] for _ in range(2)]
+        # Rebuild the layer (same seed) and replay the pulls as recorded nodes.
+        lay2 = self.layer(arm_min_pulls=3, seed=5)
+        lay2.memory_version = 1
+        lay2.node_arms = {i + 1: (a, 1) for i, a in enumerate(first)}
+        lay2._resume(_tree_with([(0, None, "none", [0.5])] +
+                                [(i + 1, 0, a, [0.5]) for i, a in enumerate(first)]))
+        self.assertEqual(lay2.pulls[ARM_WITH] + lay2.pulls[ARM_WITHOUT], 2)
+        rest = [lay2.choose_arm(tree)[0] for _ in range(4)]
+        # The resumed layer picks up at position 2 of the same plan; the 7th
+        # pull (index 6) is past the warm-up and comes from Thompson.
+        self.assertEqual((first + rest)[:6], list(lay.forced_plan))
+        self.assertEqual(lay2.forced_plan, lay.forced_plan)
 
     def test_always_and_never(self) -> None:
         tree = _tree_with([(0, None, "none", [0.5])])

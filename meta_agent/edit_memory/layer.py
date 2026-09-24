@@ -113,6 +113,16 @@ class EditMemoryLayer:
         self.rng = random.Random(self.seed)
         self.rng_draws = 0
         self.events: list[dict[str, Any]] = []
+        # Warm-up order: ``arm_min_pulls`` pulls of each arm, shuffled once
+        # (deterministically from ``seed``, on a private RNG so the Thompson
+        # stream is untouched). Consumed by position — index = pulls so far —
+        # so it survives a resume, where the pulls are recounted from the tree.
+        self.forced_plan: tuple[str, ...] = self._build_forced_plan()
+
+    def _build_forced_plan(self) -> tuple[str, ...]:
+        plan = [ARM_WITH] * self.arm_min_pulls + [ARM_WITHOUT] * self.arm_min_pulls
+        random.Random(self.seed * 7_919 + 13).shuffle(plan)
+        return tuple(plan)
 
     # ------------------------------------------------------------------ #
     # Setup / files
@@ -178,12 +188,17 @@ class EditMemoryLayer:
         if self.selection == "never":
             self.pulls[ARM_WITHOUT] += 1
             return ARM_WITHOUT, self.memory_version, None
+        forced = self.forced_plan
+        n_forced = self.pulls[ARM_WITH] + self.pulls[ARM_WITHOUT]
         if self.selection == "always":
             arm = ARM_WITH
-        elif self.pulls[ARM_WITH] < self.arm_min_pulls:
-            arm = ARM_WITH
-        elif self.pulls[ARM_WITHOUT] < self.arm_min_pulls:
-            arm = ARM_WITHOUT
+        elif n_forced < len(forced):
+            # Warm-up: each arm gets exactly ``arm_min_pulls`` pulls before
+            # Thompson takes over, in a SHUFFLED order (2026-09-24). The old
+            # rule ran all the `with` pulls first, which tied the with-arm's
+            # warm-up to the thinnest memory version and the without-arm's to
+            # a later one; interleaving them removes that confound.
+            arm = forced[n_forced]
         else:
             tallies = self.arm_tallies(tree)
             theta = {}
@@ -449,6 +464,7 @@ class EditMemoryLayer:
             "node_arms": {str(k): list(v) for k, v in self.node_arms.items()},
             "pulls": dict(self.pulls),
             "rng_draws": self.rng_draws,
+            "forced_plan": list(self.forced_plan),
             "config": {
                 "window_size": self.window_size, "instruction_every": self.instruction_every,
                 "selection": self.selection, "arm_min_pulls": self.arm_min_pulls,

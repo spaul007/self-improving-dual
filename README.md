@@ -341,8 +341,11 @@ I_{k+1} <- InstructionUpdate(Q, I_k)                      one LLM call
   prior)` over every node generated under the arm; the pre-memory `none`
   nodes are **not** counted for either arm, so the posteriors only start
   moving once the first window has closed and real pulls exist;
-  edit-failed nodes add no mass), after `arm_min_pulls` forced pulls of
-  each arm. `selection: always | never` are ablations
+  edit-failed nodes add no mass), after a warm-up of `arm_min_pulls` forced
+  pulls of each arm in a **shuffled order** (seeded from `seed`, recorded as
+  `forced_plan` in `state.json`; before 2026-09-24 the warm-up ran all the
+  `with` pulls first, which tied that arm to the thinnest memory version).
+  `selection: always | never` are ablations
   (`never` = the memory is written and nobody reads it). The arm and
   memory version are recorded in `hgm_node.json` and the tree snapshots.
 - **What the with arm sees.** Exactly one extra file, `$EDIT_MEMORY_FILE`
