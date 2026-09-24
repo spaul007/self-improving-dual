@@ -786,6 +786,7 @@ class BlockSuggester:
         system = (
             _SYSTEM_PREAMBLE + "\n\n" + self._block_body(block)
             + self._render_strategies(block)
+            + self._render_skills()
             + self._render_curriculum_focus(curriculum_directive)
             + _SYSTEM_CLOSING
         )
@@ -851,6 +852,15 @@ class BlockSuggester:
         return _BLOCK_BODIES[block].replace(
             "{{BACKBONE_CATALOG}}", _render_backbone_catalog(self.backbone_catalog)
         )
+
+    # Set by meta_agent.config.build_components when `skills: {enabled: true}`; None
+    # (default) leaves every prompt byte-identical.
+    skills_guide: Optional[str] = None
+
+    def _render_skills(self) -> str:
+        if not self.skills_guide:
+            return ""
+        return "\n\n## Skill library\n\n" + self.skills_guide
 
     def _render_strategies(self, block: str) -> str:
         """"General" + this block's section from ``self.strategies_path``,
@@ -1016,6 +1026,7 @@ class BlockSuggester:
         system = (
             _SYSTEM_PREAMBLE + "\n\n" + self._block_body(block)
             + self._render_strategies(block)
+            + self._render_skills()
             + self._render_curriculum_focus(curriculum_directive)
             + _SYSTEM_CLOSING_AGENTIC
         )

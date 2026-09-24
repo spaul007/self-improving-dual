@@ -14,6 +14,7 @@ import os
 import re
 
 from agents.llm_backbone import get_backbone_config
+from agents.skills import with_inline_skills
 from platform_core.llm_wrapper import call_llm
 from tool_wrapper import ToolWrapper
 
@@ -110,6 +111,8 @@ def run_tool_stage(
     left null there falls back to the LLM_* env-var default exactly as
     before this parameter existed."""
     backbone = get_backbone_config(agent_name)
+    # Evolvable skills tagged for this stage (agents/skills.py); a no-op with no library.
+    system_prompt = with_inline_skills(system_prompt, agent_name)
     messages: list = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content},
@@ -142,6 +145,7 @@ def run_tool_stage(
 
 def run_notool_stage(system_prompt: str, user_content: str, agent_name: str) -> str:
     backbone = get_backbone_config(agent_name)
+    system_prompt = with_inline_skills(system_prompt, agent_name)
     response = call_llm(messages=[
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content},

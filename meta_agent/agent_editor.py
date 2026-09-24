@@ -561,6 +561,7 @@ class AgentEditor:
                 "Each file is the FULL replacement content — do not produce diffs. "
                 "Omit files you do not change."
             )
+        system += self._skills_section()
 
         user_parts: list[str] = []
         if context:
@@ -924,7 +925,7 @@ class AgentEditor:
         agent_dir = out_dir / "task_agent"
         available_paths = sorted(self._read_mutable_sources(agent_dir).keys())
 
-        system = self._diagnosis_rules() + self._AGENTIC_CLOSING
+        system = self._diagnosis_rules() + self._AGENTIC_CLOSING + self._skills_section()
 
         user_parts: list[str] = []
         if context:
@@ -1338,6 +1339,12 @@ class AgentEditor:
         return written, errors
 
     _edit_scope: Optional[list[str]] = None
+    # Set by meta_agent.config.build_components when `skills: {enabled: true}`; None
+    # (default) leaves every prompt byte-identical.
+    skills_guide: Optional[str] = None
+
+    def _skills_section(self) -> str:
+        return f"\n\n{self.skills_guide}" if self.skills_guide else ""
 
     def _in_scope(self, rel_path: str) -> bool:
         """True when no edit scope is active, or ``rel_path`` falls under one of its

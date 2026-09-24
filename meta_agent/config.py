@@ -111,6 +111,27 @@ class SplitSpec(BaseModel):
     train_ids_path: Optional[str] = None
 
 
+class SkillsSpec(BaseModel):
+    """Opt-in evolvable skill library for the task agent (off by default).
+
+    When ``enabled``:
+      * the opt-in ``skills`` evolution block joins ``active_blocks`` (it is an error to
+        name that block while skills are disabled) with an enforced edit scope of ``dir``;
+      * the root agent starts with an EMPTY library: ``<dir>/INDEX.md`` holding only a
+        format header (any skill files the seed ships are removed);
+      * the editor and the block suggester are told, in their system prompts, that the
+        library exists and may be evolved (the project's ``skills_guide.md`` explains how
+        the agent loads skills).
+    When disabled nothing changes: prompts, blocks and seeds are byte-identical.
+
+    ``dir`` / ``guide`` default to the project's ``skills_guide.md`` front-matter
+    (``dir:``, ``tag_key:``, ``tag_values:``) and ``projects/<project>/skills_guide.md``.
+    """
+    enabled: bool = False
+    dir: Optional[str] = None
+    guide: Optional[str] = None
+
+
 class FrameworkConfig(BaseModel):
     """A run is defined by a ``project`` plus the framework-component blocks.
 
@@ -165,6 +186,8 @@ class FrameworkConfig(BaseModel):
     plugins: list[str] = Field(default_factory=list)
 
     task_agent: TaskAgentSpec = Field(default_factory=TaskAgentSpec)
+    # Evolvable skill library (see SkillsSpec). Default: disabled.
+    skills: SkillsSpec = Field(default_factory=SkillsSpec)
     env: dict[str, str] = Field(default_factory=dict)
     split: Optional[SplitSpec] = None
 
@@ -405,7 +428,21 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
             {"llm_caller": call_llm, **editor_injections},
         )
 
-    manager_obj = registry.get("manager", cfg.manager.type)(**cfg.manager.config)
+    skills = resolve_skills(cfg)
+    manager_config = apply_skills_to_manager_config(dict(cfg.manager.config), skills)
+    manager_cls = registry.get("manager", cfg.manager.type)
+    if skills is not None and "active_blocks" not in inspect.signature(manager_cls).parameters:
+        raise ValueError(
+            f"skills.enabled requires a block-based manager (hgm*); "
+            f"{cfg.manager.type!r} has no active_blocks"
+        )
+    manager_obj = manager_cls(**manager_config)
+    if skills is not None:
+        manager_obj.skills_library = {"dir": skills.dir, "index_header": skills.index_header}
+        if hasattr(editor_obj, "skills_guide"):
+            editor_obj.skills_guide = skills.prompt_text
+        if block_suggester_obj is not None and hasattr(block_suggester_obj, "skills_guide"):
+            block_suggester_obj.skills_guide = skills.prompt_text
 
     train_ids: Optional[list[str]] = None
     eval_ids: Optional[list[str]] = None
@@ -444,6 +481,100 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         train_case_ids=train_ids,
         eval_case_ids=eval_ids,
     )
+
+
+@dataclass
+class ResolvedSkills:
+    dir: str             # library dir inside task_agent/, always ending in "/"
+    tag_key: str         # e.g. "stages" / "roles"
+    tag_values: list[str]
+    index_header: str    # the content of an EMPTY INDEX.md
+    prompt_text: str     # shown to the editor and the block suggester
+
+
+def _parse_front_matter(text: str) -> tuple[dict[str, str], str]:
+    """``---\nkey: value\n---\nbody`` -> (fields, body); no front-matter -> ({}, text)."""
+    lines = text.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}, text
+    fields: dict[str, str] = {}
+    for i, line in enumerate(lines[1:], start=1):
+        if line.strip() == "---":
+            return fields, "\n".join(lines[i + 1:]).strip()
+        if ":" in line:
+            k, v = line.split(":", 1)
+            fields[k.strip()] = v.strip().strip('"').strip("'")
+    return {}, text
+
+
+def resolve_skills(cfg: "FrameworkConfig") -> Optional[ResolvedSkills]:
+    """None when skills are disabled; otherwise the library dir, INDEX header and the
+    meta-agent prompt text, from ``cfg.skills`` + the project's skills guide."""
+    spec = cfg.skills
+    if not spec.enabled:
+        return None
+    guide_path = Path(spec.guide) if spec.guide else REPO_ROOT / "projects" / cfg.project / "skills_guide.md"
+    if not guide_path.is_absolute():
+        guide_path = REPO_ROOT / guide_path
+    if not guide_path.is_file():
+        raise FileNotFoundError(
+            f"skills.enabled but no skills guide at {guide_path} -- the project must document "
+            "how its agent loads skills (see SkillsSpec)"
+        )
+    fields, body = _parse_front_matter(guide_path.read_text(encoding="utf-8"))
+    lib_dir = (spec.dir or fields.get("dir") or "skills/").strip().lstrip("/")
+    if not lib_dir.endswith("/"):
+        lib_dir += "/"
+    from .editor_validators import is_excluded
+
+    if cfg.mutable_exclude and is_excluded(lib_dir + "INDEX.md", cfg.mutable_exclude):
+        raise ValueError(f"skills.dir {lib_dir!r} is excluded by mutable_exclude -- it must be editable")
+    tag_key = fields.get("tag_key") or "tags"
+    tag_values = [v.strip() for v in (fields.get("tag_values") or "").split(",") if v.strip()]
+    valid = f"Valid {tag_key}: {', '.join(tag_values)}. " if tag_values else ""
+    index_header = (
+        "# Skill index\n\n"
+        f"One line per skill: `- <name> | {tag_key}: <value>[, <value>...] | <when to use it>`.\n"
+        f"{valid}Every line needs a matching `<name>.md` file in this directory.\n"
+        "The library starts empty; skills are added and refined by evolution.\n"
+    )
+    prompt_text = (
+        "SKILL LIBRARY (evolvable). This agent has a skill library at "
+        f"`{lib_dir}` -- short, reusable procedures its {tag_key or 'components'} read. "
+        "It started EMPTY and is part of what you may evolve: you may create a skill for a "
+        "diagnosed, recurring failure, refine or split one that did not prevent its failure, "
+        "retag it, or retire one that does not help -- alone or together with any other change. "
+        f"Every skill is a `{lib_dir}<name>.md` file plus exactly one line in "
+        f"`{lib_dir}INDEX.md` (format: `- <name> | {tag_key}: <value>[, ...] | <when to use it>`"
+        + (f"; valid {tag_key}: {', '.join(tag_values)}" if tag_values else "")
+        + "). A skill states WHEN it applies, the STEPS, and a CHECK. Keep skills short: "
+        "they cost context on every run.\n\n" + body
+    ).strip()
+    return ResolvedSkills(lib_dir, tag_key, tag_values, index_header, prompt_text)
+
+
+def apply_skills_to_manager_config(
+    manager_config: dict[str, Any], skills: Optional[ResolvedSkills]
+) -> dict[str, Any]:
+    """Gate the opt-in ``skills`` block on ``skills.enabled``: an error to name it while
+    disabled; when enabled it joins ``active_blocks`` and gets an edit scope of the library."""
+    active = manager_config.get("active_blocks")
+    scopes = dict(manager_config.get("block_edit_scopes") or {})
+    if skills is None:
+        if (active and "skills" in active) or "skills" in scopes:
+            raise ValueError(
+                "the 'skills' block is only available with `skills: {enabled: true}` in the config"
+            )
+        return manager_config
+    from .block_suggester import default_blocks
+
+    active = list(active) if active is not None else default_blocks()
+    if "skills" not in active:
+        active.append("skills")
+    scopes.setdefault("skills", [skills.dir])
+    manager_config["active_blocks"] = active
+    manager_config["block_edit_scopes"] = scopes
+    return manager_config
 
 
 def _build_with_injection(

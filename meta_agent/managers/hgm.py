@@ -1620,6 +1620,7 @@ class HGMManager:
             shutil.rmtree(agent_dst)
         agent_dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(seed_dir, agent_dst)
+        self._seed_empty_skill_library(agent_dst)
         (out_dir / "logs").mkdir(exist_ok=True)
 
         node = HGMNode(node_id=0, parent_id=None, round_dir=out_dir)
@@ -1651,6 +1652,29 @@ class HGMManager:
             f"n={node.n_evals} (free, not charged to budget)",
             flush=True,
         )
+
+    # Set by meta_agent.config.build_components when `skills: {enabled: true}`:
+    # {"dir": "<lib dir>/", "index_header": "<empty INDEX.md>"}. None: no library.
+    skills_library: Optional[dict] = None
+
+    def _seed_empty_skill_library(self, agent_dir: Path) -> None:
+        """Start the root with an EMPTY skill library: ``<dir>/INDEX.md`` holding only the
+        format header. Any skill files the seed ships are removed (logged), so evolution
+        -- not the seed -- is the only source of skills."""
+        if not self.skills_library:
+            return
+        lib = agent_dir / self.skills_library["dir"]
+        removed = []
+        if lib.exists():
+            for f in sorted(lib.rglob("*")):
+                if f.is_file():
+                    removed.append(f.relative_to(agent_dir).as_posix())
+                    f.unlink()
+        lib.mkdir(parents=True, exist_ok=True)
+        (lib / "INDEX.md").write_text(self.skills_library["index_header"], encoding="utf-8")
+        note = f", removed {len(removed)} seed skill file(s): {removed}" if removed else ""
+        print(f"node 0: skill library initialised EMPTY at {self.skills_library['dir']}{note}",
+              flush=True)
 
     def _edit_scope_kwargs(self, block: Optional[str]) -> dict:
         """``{"edit_scope": [...]}`` for a scoped block, else ``{}`` (so editors
