@@ -93,10 +93,13 @@ class BlockBanditTests(unittest.TestCase):
         self.assertEqual(result.posteriors["collaboration_workflow"].n_evals, 0)
 
     def test_default_blocks_come_from_block_suggester(self) -> None:
-        from meta_agent.block_suggester import _BLOCK_BODIES
+        from meta_agent.block_suggester import OPT_IN_BLOCKS, _BLOCK_BODIES
 
         bandit = BlockBandit(rng=random.Random(0))
-        self.assertEqual(bandit.blocks, tuple(sorted(_BLOCK_BODIES)))
+        # Every block except the opt-in ones (e.g. "skills"), which a config
+        # must name in active_blocks explicitly.
+        self.assertEqual(bandit.blocks, tuple(sorted(set(_BLOCK_BODIES) - OPT_IN_BLOCKS)))
+        self.assertNotIn("skills", bandit.blocks)
 
     def test_higher_reward_block_is_picked_far_more_often(self) -> None:
         # individual_subagent: consistently strong (0.9 across 4 nodes x 5
@@ -340,12 +343,12 @@ class HGMManagerBlockInitialRankingWiringTests(unittest.TestCase):
         # test_default_blocks_come_from_block_suggester), not a fixed
         # literal 4 -- keeps this test correct automatically as blocks are
         # added/renamed there (e.g. "mixed").
-        from meta_agent.block_suggester import _BLOCK_BODIES
+        from meta_agent.block_suggester import OPT_IN_BLOCKS, _BLOCK_BODIES
 
         ranking = [
             "foundation_capability", "individual_subagent",
             "verifiers", "collaboration_workflow",
-        ] + sorted(set(_BLOCK_BODIES) - {
+        ] + sorted(set(_BLOCK_BODIES) - OPT_IN_BLOCKS - {
             "foundation_capability", "individual_subagent",
             "verifiers", "collaboration_workflow",
         })
