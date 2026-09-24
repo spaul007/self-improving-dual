@@ -269,7 +269,8 @@ AGENTIC_GREP_TOOL: dict[str, Any] = {
 _AGENTIC_LOG_EVIDENCE = (
     "\n\nEVALUATION EVIDENCE. You can read the parent agent's real evaluation "
     "results, not just the summary above: `read_file`/`grep` on 'logs/<rel>' and "
-    "'eval_result.json'. If 'logs/DOSSIERS.md' exists, start there -- it ranks the "
+    "'eval_result.json' (read_file('logs/') lists the case files). If "
+    "'logs/DOSSIERS.md' exists, start there -- it ranks the "
     "failing cases and points at each case's 'dossier.md' (outcome, requirement "
     "coverage, key excerpts, contrast with other agents' runs of the same task); "
     "then open the specific transcript, patch or exec-log lines a dossier cites. "
@@ -1041,9 +1042,25 @@ class AgentEditor:
         return tools
 
     @staticmethod
+    def _logs_listing(base_dir: Path, cap: int = 40) -> str:
+        """Top-level names under the parent's logs/, so the editor can open a case log
+        without guessing its name (EXP-034: it never found one)."""
+        try:
+            # Directories and index files first: they must survive the cap.
+            names = sorted((e.name + ("/" if e.is_dir() else "")
+                            for e in (base_dir / "logs").iterdir()),
+                           key=lambda n: (not (n.endswith("/") or n.endswith(".md")), n))
+        except OSError:
+            return ""
+        if not names:
+            return ""
+        more = f" ... (+{len(names) - cap} more)" if len(names) > cap else ""
+        return "  logs/ contains: " + ", ".join(names[:cap]) + more + "\n"
+
+    @staticmethod
     def _is_log_path(path: Any) -> bool:
         p = str(path or "").strip().lstrip("/")
-        return p == "eval_result.json" or p.startswith("logs/")
+        return p in ("eval_result.json", "logs") or p.startswith("logs/")
 
     def _agentic_grep(
         self, agent_dir: Path, base_dir: Path, args: dict[str, Any], readonly_paths: list[str]
@@ -1153,7 +1170,9 @@ class AgentEditor:
                 "## Evaluation evidence you can read (parent agent)\n"
                 + "\n".join(f"  - {p}" for p in ev)
                 + "\n  - logs/<rel> -- any file under the parent's logs/ "
-                "(per-case JSON, logs/scratch/<case>/<run>/...)\n"
+                "(per-case JSON, logs/scratch/<case>/<run>/...); "
+                "read_file('logs/') or any logs/ subdirectory lists its files\n"
+                + self._logs_listing(base_dir)
             )
         user_parts.extend(self._format_edit_scope())
         if prior_errors:

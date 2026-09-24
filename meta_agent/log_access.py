@@ -39,8 +39,8 @@ def resolve(
                 f"files: {', '.join(sorted(sources)) or '(none)'}"
             )
         return "harness", sources[rel]
-    if path.startswith("logs/"):
-        rel = path[len("logs/"):]
+    if path == "logs" or path.startswith("logs/"):
+        rel = path[len("logs/"):] if path.startswith("logs/") else ""
         logs_root = (round_dir / "logs").resolve()
         target = (round_dir / "logs" / rel).resolve()
         if target != logs_root and logs_root not in target.parents:

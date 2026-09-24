@@ -116,3 +116,37 @@ class EditorLogAccessTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BareLogsDirTest(unittest.TestCase):
+    """read_file('logs') / ('logs/') must LIST the parent's logs, not report not-found.
+
+    EXP-034: the travel editor called read_file('logs') twice, got '(file not found: logs)',
+    and never discovered a single case log name.
+    """
+
+    def test_bare_logs_lists_directory(self):
+        from meta_agent import log_access
+        from meta_agent.agent_editor import AgentEditor
+        with tempfile.TemporaryDirectory() as d:
+            rd = Path(d)
+            (rd / "logs").mkdir()
+            (rd / "logs" / "case_7.json").write_text("{}")
+            for p in ("logs", "logs/", "/logs"):
+                self.assertTrue(AgentEditor._is_log_path(p), p)
+                out = log_access.read_file({}, rd, {"path": p})
+                self.assertIn("case_7.json", out, p)
+            self.assertIn("escapes", log_access.read_file({}, rd, {"path": "logs/../eval_result.json"}))
+
+    def test_logs_listing_in_prompt_helper(self):
+        from meta_agent.agent_editor import AgentEditor
+        with tempfile.TemporaryDirectory() as d:
+            rd = Path(d)
+            self.assertEqual(AgentEditor._logs_listing(rd), "")
+            (rd / "logs" / "scratch").mkdir(parents=True)
+            for i in range(45):
+                (rd / "logs" / f"case_{i:02d}.json").write_text("{}")
+            out = AgentEditor._logs_listing(rd)
+            self.assertIn("case_00.json", out)
+            self.assertIn("scratch/", out)
+            self.assertIn("(+6 more)", out)
