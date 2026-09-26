@@ -192,6 +192,66 @@ class ScorerConstraintTests(unittest.TestCase):
             if prev_key is not None:
                 os.environ["OPENAI_API_KEY"] = prev_key
 
+    def test_conversion_client_has_a_timeout_and_the_loop_a_ceiling(self) -> None:
+        """A hung conversion request must fail and be retried, and the retry
+        loop must give up — on 2026-09-25 a run sat 4 h inside this call with
+        no timeout, stalling the whole optimization loop (the per-case wall
+        clock no longer applies: the case subprocess has already exited)."""
+        mod = _load_scorer_module()
+        self.assertGreater(mod.CONVERT_TIMEOUT_S, 0)
+        self.assertGreater(mod.CONVERT_TOTAL_TIMEOUT_S, mod.CONVERT_TIMEOUT_S)
+
+        seen = {}
+
+        class _FakeCompletions:
+            def create(self, **kw):
+                seen["calls"] = seen.get("calls", 0) + 1
+                raise TimeoutError("request timed out")
+
+        class _FakeClient:
+            def __init__(self, **kw):
+                seen["client_kwargs"] = kw
+                self.chat = type("C", (), {"completions": _FakeCompletions()})()
+
+        import os, sys, types
+        fake = types.ModuleType("openai")
+        fake.OpenAI = _FakeClient
+        prev = sys.modules.get("openai")
+        sys.modules["openai"] = fake
+        prev_env = {k: os.environ.get(k) for k in ("TRAVEL_CONVERT_BASE_URL", "OPENAI_API_KEY")}
+        os.environ["TRAVEL_CONVERT_BASE_URL"] = "http://127.0.0.1:1/v1"   # never dialled: client is faked
+        os.environ["OPENAI_API_KEY"] = "EMPTY"
+        prev_total, prev_sleep = mod.CONVERT_TOTAL_TIMEOUT_S, mod.time.sleep
+        mod.time.sleep = lambda s: None          # keep the test instant
+        try:
+            # (a) every attempt times out -> the loop ends with the error, it
+            # never blocks; the client carries the timeout and does not retry.
+            parsed, err = mod._convert_plan_to_json("a plan", retries=3)
+            self.assertIsNone(parsed)
+            self.assertIn("request timed out", err)
+            self.assertEqual(seen["calls"], 3)
+            # (b) the wall-clock ceiling stops the loop even with 31 retries left.
+            seen["calls"] = 0
+            mod.CONVERT_TOTAL_TIMEOUT_S = 0.0
+            parsed, err = mod._convert_plan_to_json("a plan", retries=31)
+            self.assertEqual(seen["calls"], 0)
+        finally:
+            mod.CONVERT_TOTAL_TIMEOUT_S, mod.time.sleep = prev_total, prev_sleep
+            for k, v in prev_env.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+            if prev is not None:
+                sys.modules["openai"] = prev
+            else:
+                sys.modules.pop("openai", None)
+        self.assertIsNone(parsed)
+        self.assertIn("gave up", err)
+        # The client carries an explicit timeout and does not retry itself.
+        self.assertEqual(seen["client_kwargs"].get("timeout"), mod.CONVERT_TIMEOUT_S)
+        self.assertEqual(seen["client_kwargs"].get("max_retries"), 0)
+
 
 class TravelScorerAggregateTests(unittest.TestCase):
     """``TravelCompositeScorer`` owns both per-case ``score()`` and

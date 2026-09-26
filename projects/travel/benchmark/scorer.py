@@ -57,6 +57,14 @@ CONVERT_MODEL = "gpt-5-2025-08-07"
 # giving 31 attempts. Match that so transient JSON-parse failures don't drop
 # cases to score=0 on the first miss.
 DEFAULT_RETRIES = 31
+# Per-request timeout for the conversion call, and a ceiling on the whole
+# retry loop. Without an explicit timeout the SDK can block forever on a
+# half-open connection: on 2026-09-25 a run sat 4 h in this call with one
+# ESTABLISHED socket to the conversion server and no case subprocess left,
+# stalling the whole optimization loop (the per-case wall clock does not
+# apply — the case subprocess has already exited by then).
+CONVERT_TIMEOUT_S = float(os.environ.get("TRAVEL_CONVERT_TIMEOUT_S") or 180)
+CONVERT_TOTAL_TIMEOUT_S = float(os.environ.get("TRAVEL_CONVERT_TOTAL_TIMEOUT_S") or 900)
 JSON_BLOCK_RE = re.compile(r"<JSON>(.*?)</JSON>", re.DOTALL | re.IGNORECASE)
 
 
@@ -112,14 +120,26 @@ def _convert_plan_to_json(plan_text: str, *, retries: int = DEFAULT_RETRIES) -> 
         else:
             return None, "OPENAI_API_KEY not set"
 
-    client = OpenAI(api_key=api_key, base_url=base_url) if base_url else OpenAI()
+    # timeout: a hung request must fail and be retried, never block the run.
+    # max_retries=0: the loop below is the single source of retry truth.
+    client = (
+        OpenAI(api_key=api_key, base_url=base_url, timeout=CONVERT_TIMEOUT_S, max_retries=0)
+        if base_url
+        else OpenAI(timeout=CONVERT_TIMEOUT_S, max_retries=0)
+    )
     messages = [
         {"role": "system", "content": FORMAT_CONVERT_PROMPT_EN},
         {"role": "user", "content": plan_text},
     ]
 
     last_err: Optional[str] = None
+    started = time.time()
     for attempt in range(retries):
+        if time.time() - started >= CONVERT_TOTAL_TIMEOUT_S:
+            return None, (
+                f"plan conversion gave up after {CONVERT_TOTAL_TIMEOUT_S:.0f}s "
+                f"({attempt} attempt(s)); last error: {last_err}"
+            )
         try:
             # gpt-5-2025-08-07 is a reasoning model — do not pass max_tokens.
             resp = client.chat.completions.create(
