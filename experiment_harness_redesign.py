@@ -37,7 +37,7 @@ import sys
 import time
 import urllib.request
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import yaml
 
@@ -436,7 +436,12 @@ def python_problems(code: str, ws: Path) -> list[str]:
         tree = ast.parse(code)
     except SyntaxError as e:
         return [f"SyntaxError: {e}"]
-    ws_mods = {p.stem for p in ws.glob("*.py")} | {p.name for p in ws.iterdir() if p.is_dir() and (p / "__init__.py").exists()}
+    # A workspace subdirectory counts as an importable module whether or not it has an __init__.py -- Python 3's
+    # implicit namespace packages make e.g. `agents/` (no __init__.py in travel_mas_refactored) importable in the
+    # REAL harness run just the same as an explicit package; requiring __init__.py here was an unintended gap that
+    # blocked testing the model's own workspace code (agents.*) in run_python for no actual security reason -- the
+    # real access boundary (no benchmark/scorer/adapter, no os/sys/subprocess) is enforced separately below.
+    ws_mods = {p.stem for p in ws.glob("*.py")} | {p.name for p in ws.iterdir() if p.is_dir() and any(p.glob("*.py"))}
     allowed = RUN_ALLOWED_IMPORTS | ws_mods | {"train_data"}
     probs: list[str] = []
     for node in ast.walk(tree):
@@ -463,10 +468,18 @@ def python_problems(code: str, ws: Path) -> list[str]:
 # --------------------------------------------------------------------------- #
 
 class Vfs:
-    """corpus files (read-only) + the live workspace (`workspace/<rel>`). Nothing else exists."""
+    """corpus files (read-only) + the live workspace (`workspace/<rel>`). Nothing else exists,
+    UNLESS the caller opts into white-box mode (see the whitebox_* params) -- an experiment-only
+    escape hatch that additionally exposes the real grader source and its reference database,
+    normally strictly off-limits. Off by default (all three whitebox_* params None): every
+    existing call site is completely unaffected."""
 
-    def __init__(self, corpus: Path, ws: Path):
+    def __init__(self, corpus: Path, ws: Path, *, whitebox_scorer_dir: Optional[Path] = None,
+                 whitebox_database_dir: Optional[Path] = None, whitebox_case_ids: Optional[list[str]] = None):
         self.corpus, self.ws = corpus, ws
+        self.whitebox_scorer_dir = whitebox_scorer_dir
+        self.whitebox_database_dir = whitebox_database_dir
+        self.whitebox_case_ids = whitebox_case_ids
         self.cases = {p.stem: json.loads(p.read_text()) for p in sorted((corpus / "cases").glob("*.json"))}
         self.files: dict[str, Path] = {}
         self.refresh()
@@ -482,6 +495,22 @@ class Vfs:
         for p in sorted(self.ws.rglob("*")):
             if p.is_file() and "__pycache__" not in p.parts and p.suffix in (".py", ".yaml", ".json", ".md", ".txt"):
                 f["workspace/" + p.relative_to(self.ws).as_posix()] = p
+        # White-box escape hatch (see class docstring) -- the real grader source (scorer.py +
+        # benchmark/_eval/*.py) and, scoped to exactly this run's own case set (never the full
+        # database), the same per-case reference CSVs (hours/prices/coordinates) the grader
+        # itself cross-checks against. Both no-ops unless explicitly configured.
+        if self.whitebox_scorer_dir is not None and self.whitebox_scorer_dir.exists():
+            for p in sorted(self.whitebox_scorer_dir.rglob("*.py")):
+                if "__pycache__" not in p.parts:
+                    f["scorer_source/" + p.relative_to(self.whitebox_scorer_dir).as_posix()] = p
+        if self.whitebox_database_dir is not None and self.whitebox_case_ids:
+            for cid in self.whitebox_case_ids:
+                case_dir = self.whitebox_database_dir / f"id_{cid}"
+                if not case_dir.exists():
+                    continue
+                for p in sorted(case_dir.rglob("*")):
+                    if p.is_file():
+                        f[f"database/id_{cid}/" + p.relative_to(case_dir).as_posix()] = p
         self.files = f
 
     def resolve(self, path: str) -> Path:
@@ -491,7 +520,8 @@ class Vfs:
         if f"{key}.json" in self.files:
             return self.files[f"{key}.json"]
         raise FileNotFoundError(f"no such file {path!r}. Readable: corpus/index.json, corpus/digest.md, corpus/cases/<case_id>.json, "
-                                "corpus/trace.jsonl, semantics/*.json, workspace/<file>")
+                                "corpus/trace.jsonl, semantics/*.json, workspace/<file>"
+                                + (", scorer_source/*, database/id_<case>/*" if self.whitebox_scorer_dir else ""))
 
 
 def tool_list_cases(v: Vfs, a: dict) -> str:
@@ -610,6 +640,27 @@ TOOLS = [
         "case_ids outside the TRAIN split are rejected without consuming a call."),
      "input_schema": {"type": "object", "properties": {"case_ids": {"type": "array", "items": {"type": "string"},
                       "description": "optional: specific TRAIN case ids to evaluate instead of all 60"}}}},
+    {"name": "restore_best_checkpoint", "description": (
+        "Revert your CURRENT workspace files to whichever full-60-case evaluate_variant call scored best so far, discarding "
+        "any changes you've made since. A checkpoint is saved automatically -- with no action needed from you -- every time you "
+        "call evaluate_variant with no case_ids (a full-60 call, the only kind directly comparable to the real accept/reject gate); "
+        "a case_ids-limited call is never checkpointed since it isn't measuring the same thing. Use this if you've been iterating, "
+        "things have gotten WORSE than an earlier point rather than better, and you want to cut your losses and go back to your "
+        "best confirmed result rather than keep digging from a weaker state."),
+     "input_schema": {"type": "object", "properties": {}}},
+    {"name": "save_checkpoint", "description": (
+        "Manually save your CURRENT workspace files as your one checkpoint -- for when you're fairly confident in the current "
+        "state from run_python testing or a small case_ids-limited evaluate_variant sample, before you've spent a full-60 call "
+        "to confirm it. There is only ONE manual checkpoint slot: calling this again OVERWRITES whatever you saved before, it "
+        "does not keep a history. This has no score attached (unlike the automatic full-60 checkpoints restore_best_checkpoint "
+        "uses) -- it's just a safety net so you can get back to a state you liked if a later change makes things worse."),
+     "input_schema": {"type": "object", "properties": {"note": {"type": "string",
+                      "description": "optional: a short note on why this state is worth saving, shown back to you if you restore it"}}}},
+    {"name": "restore_checkpoint", "description": (
+        "Restore the ONE workspace state you last saved with save_checkpoint, discarding anything written since. Distinct from "
+        "restore_best_checkpoint, which restores the best-SCORED automatic full-60 evaluate_variant checkpoint instead -- use "
+        "this one to get back your own manually-saved state, not the harness's own best-measured one."),
+     "input_schema": {"type": "object", "properties": {}}},
     {"name": "submit_variant", "description": "Finish: the current workspace is your final variant.",
      "input_schema": {"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"]}},
 ]
@@ -685,7 +736,8 @@ WORKFLOW
 # --------------------------------------------------------------------------- #
 
 class Session:
-    def __init__(self, out: Path, fw: Any, args: argparse.Namespace, info: dict):
+    def __init__(self, out: Path, fw: Any, args: argparse.Namespace, info: dict,
+                 checkpoint_metric: Optional[Callable[[dict], Optional[float]]] = None):
         self.out, self.fw, self.args, self.info = out, fw, args, info
         self.dir = out / "work"
         self.orig, self.ws, self.corpus = self.dir / "orig", self.dir / "workspace", out / "corpus"
@@ -693,6 +745,27 @@ class Session:
         self.eval_log: list[dict] = []
         self.route_violations: list[str] = []
         self.py_calls = 0
+        # checkpoint_metric(recs) -> score to rank checkpoints by (e.g. the staged runner's own
+        # unit_score against the stage's targeted unit, matching what the real accept/reject gate
+        # uses); None (the default, for the plain non-staged redesign flow) falls back to composite.
+        # A checkpoint is only ever recorded from a FULL 60-case evaluate_variant call (case_ids=None)
+        # -- a partial/case_ids-limited call isn't comparable to the gate's own full-60 measurement,
+        # so it's never eligible to become "the best checkpoint so far".
+        self.checkpoint_metric = checkpoint_metric
+        self.checkpoints: list[dict] = []
+        # A SEPARATE, single-slot, agent-controlled checkpoint -- unlike self.checkpoints (automatic,
+        # one per full-60 evaluate_variant call, ranked by real score), this one holds at most ONE
+        # snapshot at a time: calling save_checkpoint again overwrites whatever was saved before. It
+        # carries no score (it's meant for "I'm fairly confident based on run_python / a small sample,
+        # before I've spent a full-60 call to confirm it") and is restored by restore_checkpoint, a
+        # distinct tool from restore_best_checkpoint.
+        self.manual_checkpoint: Optional[dict] = None
+        # White-box evaluator-access experiment (see Vfs's own docstring) -- all None (the
+        # default) means completely normal blackbox behavior. Set by the caller (e.g.
+        # experiment_harness_staged.py's --whitebox-evaluator flag) BEFORE develop() is called.
+        self.whitebox_scorer_dir: Optional[Path] = None
+        self.whitebox_database_dir: Optional[Path] = None
+        self.whitebox_case_ids: Optional[list[str]] = None
 
     def setup(self, start_workspace: Optional[Path] = None) -> None:
         """orig = the pristine seed (edit-policy reference); workspace = the seed, or an existing workspace to continue from."""
@@ -845,10 +918,12 @@ class Session:
         by = {str(c.case_id): c for c in res.per_case}
         lines, comp, base = [], [], []
         n_noplan = 0
+        recs: dict[str, dict] = {}
         for cid in ids:
             cr = by.get(cid)
             d = (cr.details if cr else None) or {}
             rec = compact(d, cr.score if cr else 0.0)
+            recs[cid] = rec
             comp.append(rec["score"])
             base.append(self.info["inloop_pass1"].get(cid, 0.0))
             if rec["no_plan"]:
@@ -867,11 +942,58 @@ class Session:
         head = (f"evaluation call {self.rounds_used}/{self.args.eval_rounds} on {len(ids)} train cases: mean composite {statistics.fmean(comp):.3f} "
                 f"(baseline pass 1 on the same cases {statistics.fmean(base):.3f}); no-plan cases {n_noplan}/{len(ids)}")
         self.eval_log.append({"call": self.rounds_used, "composite": statistics.fmean(comp), "baseline_pass1": statistics.fmean(base), "no_plan": n_noplan})
-        return head + "\n" + "\n".join(lines)
+        checkpoint_note = ""
+        if not case_ids:  # only a full-60 call is comparable to the real gate's own measurement
+            metric_score = self.checkpoint_metric(recs) if self.checkpoint_metric else statistics.fmean(comp)
+            if metric_score is not None:
+                snap = self.dir / f"checkpoint_{self.rounds_used}"
+                shutil.rmtree(snap, ignore_errors=True)
+                shutil.copytree(self.ws, snap, ignore=shutil.ignore_patterns("__pycache__"))
+                self.checkpoints.append({"call": self.rounds_used, "score": metric_score, "path": snap})
+                is_best = metric_score >= max(c["score"] for c in self.checkpoints)
+                checkpoint_note = (f"\n[checkpoint saved: score {metric_score:.4f} on this full-60 call"
+                                   f"{' -- new best so far' if is_best else ' -- NOT the best so far, see restore_best_checkpoint'}]")
+        return head + "\n" + "\n".join(lines) + checkpoint_note
+
+    def restore_best_checkpoint(self) -> str:
+        if not self.checkpoints:
+            return ("no checkpoint recorded yet -- a checkpoint is only saved on a full-60-case evaluate_variant call "
+                    "(case_ids=None), which none of your calls so far have been.")
+        best = max(self.checkpoints, key=lambda c: c["score"])
+        shutil.rmtree(self.ws, ignore_errors=True)
+        shutil.copytree(best["path"], self.ws, ignore=shutil.ignore_patterns("__pycache__"))
+        history = ", ".join(f"call {c['call']}={c['score']:.4f}" for c in self.checkpoints)
+        return (f"restored workspace to the checkpoint from evaluate_variant call {best['call']} (score {best['score']:.4f}), "
+                f"discarding whatever you had written since. All recorded checkpoints: {history}.")
+
+    def save_checkpoint(self, note: str = "") -> str:
+        """Manually snapshot the CURRENT workspace into the ONE agent-controlled checkpoint slot.
+        Calling this again OVERWRITES whatever was saved before -- there is only ever one manual
+        checkpoint at a time, separate from the automatic, scored ones in self.checkpoints."""
+        snap = self.dir / "manual_checkpoint"
+        shutil.rmtree(snap, ignore_errors=True)
+        shutil.copytree(self.ws, snap, ignore=shutil.ignore_patterns("__pycache__"))
+        had_previous = self.manual_checkpoint is not None
+        self.manual_checkpoint = {"path": snap, "note": note}
+        return (f"saved the current workspace as your one manual checkpoint"
+                f"{' (replacing the previous one)' if had_previous else ''}"
+                f"{f', note: {note!r}' if note else ''}. It has no score attached -- call evaluate_variant "
+                f"if you want to confirm this is actually good before relying on it.")
+
+    def restore_checkpoint(self) -> str:
+        """Restore the ONE manually-saved checkpoint (see save_checkpoint) -- distinct from
+        restore_best_checkpoint, which restores the best-SCORED automatic full-60 checkpoint."""
+        if self.manual_checkpoint is None:
+            return "no manual checkpoint saved yet -- call save_checkpoint first."
+        shutil.rmtree(self.ws, ignore_errors=True)
+        shutil.copytree(self.manual_checkpoint["path"], self.ws, ignore=shutil.ignore_patterns("__pycache__"))
+        note = self.manual_checkpoint.get("note")
+        return f"restored your manually-saved checkpoint{f' (note: {note!r})' if note else ''}, discarding whatever you had written since."
 
     def develop(self, system_prompt: Optional[str] = None, user_message: Optional[str] = None) -> dict:
         args = self.args
-        v = Vfs(self.corpus, self.ws)
+        v = Vfs(self.corpus, self.ws, whitebox_scorer_dir=self.whitebox_scorer_dir,
+                whitebox_database_dir=self.whitebox_database_dir, whitebox_case_ids=self.whitebox_case_ids)
         transcript = (self.dir / "transcript.jsonl").open("a", encoding="utf-8")
         system = (system_prompt or SYSTEM_PROMPT).format(eval_rounds=args.eval_rounds, max_turns=args.max_turns)
         user = user_message or ("Redesign the harness per the design rules. Start by reading corpus/digest.md, several train cases (show_case) and the agent source in "
@@ -919,20 +1041,36 @@ class Session:
                 break
             calls = getattr(resp, "tool_calls", None) or []
             usage = getattr(getattr(resp, "raw", None), "usage", None)
+            in_details = getattr(usage, "input_tokens_details", None) if usage else None
             reasoning_tok = getattr(getattr(usage, "output_tokens_details", None), "reasoning_tokens", None) if usage else None
+            # input_tokens, cached/cache-write sub-token counts (usage.input_tokens_details --
+            # OpenRouter's own Responses-API usage shape, confirmed live: NOT top-level
+            # cache_read_input_tokens/cache_creation_input_tokens, an Anthropic-Messages-API-only
+            # naming that doesn't exist here), and OpenRouter's own reported per-call `cost` (in
+            # USD, confirmed present on both Claude and DeepSeek calls via this same Responses-API
+            # path -- exact billed cost, not a per-token-rate estimate) all added so an external
+            # meta-agent's own per-turn cost is reconstructable from transcript.jsonl alone;
+            # nothing upstream of this depended on _meta_call_info's exact key set, so this is
+            # purely additive.
             transcript.write(json.dumps({"turn": turn, "tool": "_meta_call_info", "args": "",
                                          "output": json.dumps({"stop_reason": getattr(resp, "stop_reason", None),
                                                                "has_content": bool(getattr(resp, "content", None)),
                                                                "n_tool_calls": len(calls), "reasoning_tokens": reasoning_tok,
-                                                               "output_tokens": getattr(usage, "output_tokens", None) if usage else None})}) + "\n")
+                                                               "input_tokens": getattr(usage, "input_tokens", None) if usage else None,
+                                                               "output_tokens": getattr(usage, "output_tokens", None) if usage else None,
+                                                               "cached_tokens": getattr(in_details, "cached_tokens", None) if in_details else None,
+                                                               "cache_write_tokens": getattr(in_details, "cache_write_tokens", None) if in_details else None,
+                                                               "cost_usd": getattr(usage, "cost", None) if usage else None})}) + "\n")
             if getattr(resp, "content", None):
-                transcript.write(json.dumps({"turn": turn, "tool": "_assistant_text", "args": "", "output": resp.content[:2500]}) + "\n")
+                # Full text, untruncated -- disk is cheap, and this is the only record of what the model actually
+                # reasoned; a cut-off transcript looks like a real ending but is just where the cap happened to land.
+                transcript.write(json.dumps({"turn": turn, "tool": "_assistant_text", "args": "", "output": resp.content}) + "\n")
             transcript.flush()
             if not calls:
                 content = getattr(resp, "content", None) or ""
                 if _MALFORMED_TOOLCALL_RE.search(content):
                     malformed_nudges += 1
-                    transcript.write(json.dumps({"turn": turn, "tool": "_malformed_tool_call_detected", "args": "", "output": content[:1500]}) + "\n")
+                    transcript.write(json.dumps({"turn": turn, "tool": "_malformed_tool_call_detected", "args": "", "output": content}) + "\n")
                     transcript.flush()
                     if malformed_nudges > 4:
                         log(f"too many malformed pseudo-tool-call attempts ({malformed_nudges}); ending session")
@@ -968,6 +1106,12 @@ class Session:
                         out_txt = self.run_python(str(a.get("code", "")), int(a.get("timeout_s") or 120))
                     elif call.name == "evaluate_variant":
                         out_txt = self.evaluate_variant(a.get("case_ids"))
+                    elif call.name == "restore_best_checkpoint":
+                        out_txt = self.restore_best_checkpoint()
+                    elif call.name == "save_checkpoint":
+                        out_txt = self.save_checkpoint(str(a.get("note", "")))
+                    elif call.name == "restore_checkpoint":
+                        out_txt = self.restore_checkpoint()
                     elif call.name == "submit_variant":
                         if self.rounds_used == 0 and turn < args.max_turns - 1:
                             out_txt = "NOT submitted: you have not called evaluate_variant yet. Call it first, fix what it shows, then submit."
@@ -980,7 +1124,10 @@ class Session:
                     out_txt = f"tool error: {exc!r}"
                 out_txt = _trim(out_txt)
                 history.append({"type": "function_call_output", "call_id": cid, "output": out_txt})
-                transcript.write(json.dumps({"turn": turn, "tool": call.name, "args": str(a)[:500], "output": out_txt[:2500]}) + "\n")
+                # args/output logged in full (out_txt is already capped at TOOL_OUTPUT_CAP -- that's the same text
+                # the model saw, not an extra logging-only cut); disk is cheap and a truncated transcript is
+                # actively misleading when debugging what the meta-agent actually did.
+                transcript.write(json.dumps({"turn": turn, "tool": call.name, "args": str(a), "output": out_txt}) + "\n")
                 transcript.flush()
             if submitted:
                 break

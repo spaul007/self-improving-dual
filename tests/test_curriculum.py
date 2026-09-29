@@ -126,6 +126,17 @@ class AdvancementTests(unittest.TestCase):
         self.assertEqual(c._rounds_on_current, 0)
         self.assertEqual(c._resolved, ["a"])
 
+    def test_check_counts_kwarg_is_ignored_identical_to_omitting_it(self) -> None:
+        # check-mode's advance_if_ready must behave identically whether or
+        # not the manager's granularity-agnostic call site passes
+        # check_counts -- it's unit-mode-only, ignored here.
+        c_a = Curriculum([("a", 10), ("b", 5)], resolution_threshold=0.15, patience=5)
+        c_b = Curriculum([("a", 10), ("b", 5)], resolution_threshold=0.15, patience=5)
+        reason_a = c_a.advance_if_ready(failure_rate=0.10)
+        reason_b = c_b.advance_if_ready(failure_rate=0.10, check_counts={"a": 999})
+        self.assertEqual(reason_a, reason_b)
+        self.assertEqual(c_a.current_goal, c_b.current_goal)
+
     def test_no_advance_above_threshold_and_under_patience(self) -> None:
         c = Curriculum([("a", 10)], resolution_threshold=0.15, patience=5)
         c.record_expand()

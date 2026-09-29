@@ -23,6 +23,16 @@ class EvolutionStrategy(BaseModel):
     # bookkeeping for block-level reward attribution in a later stage.
     # None for the seed round or any manager that doesn't select blocks.
     block: Optional[str] = None
+    # Which implementation-strategy axis this EXPAND targeted (llm_heavy /
+    # mixed / harness_heavy) -- see implementation_strategy.py and
+    # HGMManager._select_implementation_strategy. Orthogonal to `block`
+    # above (block = which surface to edit, this = how much of the fix
+    # should be prompt/LLM work vs. deterministic code). Stamped by the
+    # MANAGER, same convention as `block`. None when this axis isn't
+    # configured for this manager (implementation_strategy_selection_strategy
+    # is None, the default) -- zero behavior change for every existing
+    # config/run.
+    implementation_strategy: Optional[str] = None
 
 
 class TraceEvent(BaseModel):

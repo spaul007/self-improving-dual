@@ -48,6 +48,7 @@ def run(config_path: Path) -> EvolutionOutcome:
         summarizer=fw.summarizer,
         failure_summarizer=fw.failure_summarizer,
         block_suggester=fw.block_suggester,
+        unit_selector=fw.unit_selector,
     )
 
     summary_path: Optional[Path] = None

@@ -146,7 +146,8 @@ class BlockBandit:
         return self._rng.betavariate(a, b)
 
     def select(
-        self, tree: "HGMTree", feedback: dict[int, "AgentFeedback"]
+        self, tree: "HGMTree", feedback: dict[int, "AgentFeedback"],
+        *, exclude: Optional[set[str]] = None,
     ) -> AdaptiveStrategy:
         tallies: dict[str, tuple[float, float, int]] = {
             b: (0.0, 0.0, 0) for b in self.blocks
@@ -207,7 +208,11 @@ class BlockBandit:
 
         # argmax over sampled values; ties broken by self.blocks order (the
         # order max() encounters them in) for determinism given a fixed seed.
-        chosen = max(self.blocks, key=lambda b: posteriors[b].sampled_value)
+        # Posteriors above are computed over the FULL self.blocks regardless of `exclude`, so an excluded block's
+        # historical reward tally is preserved for future non-excluded rounds -- `exclude` only narrows the argmax
+        # candidate set for THIS call, it never mutates self.blocks or drops accumulated evidence.
+        candidates = [b for b in self.blocks if not exclude or b not in exclude]
+        chosen = max(candidates, key=lambda b: posteriors[b].sampled_value)
         return AdaptiveStrategy(
             block=chosen, beta_prior=self.beta_prior, posteriors=posteriors
         )

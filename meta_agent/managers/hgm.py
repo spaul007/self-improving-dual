@@ -43,6 +43,10 @@ from typing import Optional
 from ..agent_editor import AgentEditor, fallback_strategy
 from ..block_bandit import AdaptiveStrategy, BlockBandit
 from ..curriculum import Curriculum, _combined_check_counts, infer_curriculum
+from ..implementation_strategy_bandit import (
+    AdaptiveImplementationStrategy,
+    ImplementationStrategyBandit,
+)
 from ..evaluator import Evaluator, load_cases
 from ..feedback_gatherer import FeedbackGatherer, persist_round_artifacts, render_metrics
 from ..llm_failure_health import (
@@ -251,6 +255,27 @@ class HGMManager:
         # block_suggester.py's strategies_path (a nice-to-have, never a
         # reason to fail).
         curriculum_harness_error_descriptions_path: Optional[str] = None,
+        # Curriculum GRANULARITY: "check" (default -- zero behavior change for every existing
+        # curriculum_enabled config) is today's exact mechanical ordered-check-list Curriculum. "unit" groups
+        # related failing checks into named "units" (a project-supplied mapping -- see curriculum_units_path
+        # below) and re-selects which unit to focus on via an LLM call (meta_agent/unit_selector.py) reasoning
+        # about root-cause commonality/fix-difficulty/expected-gain, rather than walking a fixed list -- see
+        # meta_agent/unit_curriculum.py::UnitCurriculum. No effect when curriculum_enabled is False. HGM's
+        # reward mechanism (composite score via HGMNode.record/lcb_select) is UNCHANGED by this -- only the
+        # goal TEXT steering an EXPAND changes.
+        curriculum_granularity: str = "check",
+        # Required when curriculum_granularity="unit" (validated at construction -- fails fast, unlike the
+        # decorative description-path knobs below, since this is the PRIMARY input unit-mode needs to exist at
+        # all, not a nice-to-have). Path to a project's units.json (see e.g.
+        # projects/travel_mas_refactored/adapter/units.json) -- a flat JSON object mapping a unit name to a
+        # list of check-label PREFIXES, loaded via meta_agent/unit_curriculum.py::load_units_map. None
+        # (default) with curriculum_granularity="check" (the default) is a complete no-op.
+        curriculum_units_path: Optional[str] = None,
+        # Max times unit-mode's UnitCurriculum will re-target the SAME unit (across resolved-then-reopened or
+        # patience-exhausted-then-reopened cycles) before excluding it from future candidates -- the unit-mode
+        # analogue of experiment_harness_staged.py's --max-attempts-per-unit. No effect in "check" mode (a
+        # check is never revisited once resolved/exhausted there).
+        curriculum_unit_max_attempts: int = 2,
         # Opt-in initial preference order for the "adaptive" block
         # bandit's Thompson sampling, most-preferred block first (e.g.
         # ["foundation_capability", "individual_subagent", "verifiers",
@@ -266,6 +291,35 @@ class HGMManager:
         # Prior-success-count gap between adjacent ranks in
         # block_initial_ranking. Only meaningful when that's set.
         block_initial_rank_strength: float = 2.0,
+        # Which implementation-strategy axis (llm_heavy/mixed/harness_heavy
+        # -- see meta_agent/implementation_strategy.py) _select_implementation_
+        # strategy targets for every EXPAND. Orthogonal to block above: block
+        # says WHICH surface to edit, this says HOW MUCH of the fix should be
+        # prompt/LLM work vs. deterministic code -- both apply to the same
+        # EXPAND together. None (default -- zero behavior change for every
+        # existing config): the axis is entirely off, no steering text is
+        # added, EvolutionStrategy.implementation_strategy stays None.
+        # Deliberately NOT symmetric with block_selection_strategy's
+        # always-on "collaboration" default -- any non-None default here
+        # would silently add new steering text to every existing config.
+        # "llm_heavy"/"mixed"/"harness_heavy" are fixed constants (always
+        # return that value); "non_adaptive" samples uniformly at random
+        # (seeded via self._implementation_strategy_rng); "adaptive"
+        # Thompson-samples via an ImplementationStrategyBandit (see
+        # meta_agent/implementation_strategy_bandit.py), the exact same
+        # Beta-Bernoulli mechanism as the block bandit, applied to this axis.
+        implementation_strategy_selection_strategy: Optional[str] = None,
+        # Reward signal the "adaptive" strategy's bandit uses -- identical
+        # semantics/defaults to block_reward_metric above.
+        implementation_strategy_reward_metric: str = "fractional_score",
+        # Opt-in initial preference order for the "adaptive" implementation-
+        # strategy bandit's Thompson sampling -- identical mechanism to
+        # block_initial_ranking above, just on this axis's 3 values.
+        implementation_strategy_initial_ranking: Optional[list[str]] = None,
+        # Prior-success-count gap between adjacent ranks in
+        # implementation_strategy_initial_ranking. Only meaningful when
+        # that's set.
+        implementation_strategy_initial_rank_strength: float = 2.0,
     ) -> None:
         self.eval_budget = eval_budget
         self.init_expansions = init_expansions
@@ -299,6 +353,23 @@ class HGMManager:
         self.llm_call_failure_threshold_pct = llm_call_failure_threshold_pct
         self.block_initial_ranking = block_initial_ranking
         self.block_initial_rank_strength = block_initial_rank_strength
+        allowed_implementation_strategy_selection_strategies = {
+            "llm_heavy", "mixed", "harness_heavy", "non_adaptive", "adaptive",
+        }
+        if (
+            implementation_strategy_selection_strategy is not None
+            and implementation_strategy_selection_strategy
+            not in allowed_implementation_strategy_selection_strategies
+        ):
+            raise ValueError(
+                "implementation_strategy_selection_strategy must be None or one of "
+                f"{sorted(allowed_implementation_strategy_selection_strategies)}, got "
+                f"{implementation_strategy_selection_strategy!r}"
+            )
+        self.implementation_strategy_selection_strategy = implementation_strategy_selection_strategy
+        self.implementation_strategy_reward_metric = implementation_strategy_reward_metric
+        self.implementation_strategy_initial_ranking = implementation_strategy_initial_ranking
+        self.implementation_strategy_initial_rank_strength = implementation_strategy_initial_rank_strength
         if not (0.0 <= curriculum_resolution_threshold <= 1.0):
             raise ValueError(
                 "curriculum_resolution_threshold must be in [0.0, 1.0], got "
@@ -327,6 +398,18 @@ class HGMManager:
         self.curriculum_harness_error_descriptions_path = (
             curriculum_harness_error_descriptions_path
         )
+        if curriculum_granularity not in ("check", "unit"):
+            raise ValueError(
+                f"curriculum_granularity must be 'check' or 'unit', got {curriculum_granularity!r}"
+            )
+        if curriculum_granularity == "unit" and not curriculum_units_path:
+            raise ValueError(
+                "curriculum_units_path is required when curriculum_granularity='unit' -- it is the primary "
+                "input unit-mode needs to build its unit->check-prefix mapping from"
+            )
+        self.curriculum_granularity = curriculum_granularity
+        self.curriculum_units_path = curriculum_units_path
+        self.curriculum_unit_max_attempts = curriculum_unit_max_attempts
         # τ scheduler: off by default, matching the reference's committed
         # config.yaml (`cool_down: false`). When on, τ = (B/b)**beta.
         self.cool_down = cool_down
@@ -390,6 +473,19 @@ class HGMManager:
         # so _expand can persist it to adaptive_strategy.json without
         # _select_block's return type changing from plain str.
         self._last_block_selection: Optional[AdaptiveStrategy] = None
+        # Same convention as _block_rng/_block_bandit/_last_block_selection
+        # above, on the implementation_strategy axis. Kept as its own RNG
+        # (not shared with _block_rng or _task_rng) so comparing
+        # implementation_strategy_selection_strategy values doesn't also
+        # perturb block selection or task sampling.
+        self._implementation_strategy_rng: random.Random = random.Random(seed)
+        self._implementation_strategy_bandit: ImplementationStrategyBandit = ImplementationStrategyBandit(
+            beta_prior=beta_prior, rng=self._implementation_strategy_rng,
+            reward_metric=implementation_strategy_reward_metric,
+            initial_ranking=implementation_strategy_initial_ranking,
+            initial_rank_strength=implementation_strategy_initial_rank_strength,
+        )
+        self._last_implementation_strategy_selection: Optional[AdaptiveImplementationStrategy] = None
         # Whether _render_expand_context's most recent call actually
         # produced a block-scoped suggestion (see block_suggester.py) --
         # same "most-recent-result-of-a-helper-call" pattern as
@@ -419,10 +515,20 @@ class HGMManager:
         # block" line, ``EvolutionStrategy.block`` stays set but unsupported
         # by any suggestion text.
         self._block_suggester: Any = None
-        # Opt-in curriculum state (see meta_agent/curriculum.py) -- built
-        # once right after the seed's pre-evaluation in evolve(), None for
-        # the whole run when curriculum_enabled is False (or the seed had
-        # no failing checks to build a curriculum from).
+        # Optional unit-selector for curriculum_granularity="unit" (see
+        # meta_agent/unit_selector.py) -- an LLM-based unit-choosing
+        # component analogous to _block_suggester above. None (the
+        # default, and always in "check" mode) makes UnitCurriculum fall
+        # back to its own mechanical "most failures" heuristic.
+        self._unit_selector: Any = None
+        # Opt-in curriculum state (see meta_agent/curriculum.py /
+        # meta_agent/unit_curriculum.py) -- built once right after the
+        # seed's pre-evaluation in evolve(), None for the whole run when
+        # curriculum_enabled is False (or the seed had no failing checks
+        # to build a curriculum from). Either a Curriculum (check-mode) or
+        # a UnitCurriculum (unit-mode), per curriculum_granularity -- both
+        # implement the identical duck-typed surface this manager calls
+        # against, so nothing else here branches on which one it is.
         self._curriculum: Optional[Curriculum] = None
         # Time-series tree snapshotter (a no-op unless snapshot_tree is on);
         # (re)created at the top of evolve() once experiment_dir is known.
@@ -447,6 +553,7 @@ class HGMManager:
         summarizer: Any = None,
         failure_summarizer: Any = None,
         block_suggester: Any = None,
+        unit_selector: Any = None,
     ) -> EvolutionOutcome:
         self._benchmark_dir = benchmark_dir
         self._experiment_dir = experiment_dir
@@ -454,6 +561,7 @@ class HGMManager:
         self._summarizer = summarizer
         self._failure_summarizer = failure_summarizer
         self._block_suggester = block_suggester
+        self._unit_selector = unit_selector
         self._tree = HGMTree(
             beta_prior=self.beta_prior,
             clade_pseudo_count=self.clade_pseudo_count,
@@ -480,6 +588,17 @@ class HGMManager:
             blocks=sorted(self.active_blocks) if self.active_blocks is not None else None,
         )
         self._last_block_selection = None
+        self._implementation_strategy_rng = random.Random(self.seed)
+        # Rebuild against the freshly-seeded RNG above -- same reason as
+        # _block_bandit's own rebuild just above (holds its rng by
+        # reference).
+        self._implementation_strategy_bandit = ImplementationStrategyBandit(
+            beta_prior=self.beta_prior, rng=self._implementation_strategy_rng,
+            reward_metric=self.implementation_strategy_reward_metric,
+            initial_ranking=self.implementation_strategy_initial_ranking,
+            initial_rank_strength=self.implementation_strategy_initial_rank_strength,
+        )
+        self._last_implementation_strategy_selection = None
         self._last_suggestion_produced = False
         self._curriculum = None
         self._snapshotter = TreeSnapshotWriter(
@@ -548,7 +667,23 @@ class HGMManager:
         # only evaluated, positive-mean nodes are expandable, so these all
         # branch off the freshly pre-evaluated root.
         self._run_seed(seed_dir, evaluator, gatherer)
-        if self.curriculum_enabled:
+        if self.curriculum_enabled and self.curriculum_granularity == "unit":
+            from ..unit_curriculum import UnitCurriculum, load_units_map
+
+            units = load_units_map(self.curriculum_units_path)  # raises on a bad/missing file -- fail fast
+            seed_fb = self._feedback.get(0)
+            seed_metrics = (seed_fb.project_metrics if seed_fb is not None else None) or {}
+            seed_check_counts = _combined_check_counts(seed_metrics)
+            if any(seed_check_counts.values()):
+                self._curriculum = UnitCurriculum(
+                    seed_check_counts, units=units, max_attempts=self.curriculum_unit_max_attempts,
+                    resolution_threshold=self.curriculum_resolution_threshold,
+                    patience=self.curriculum_patience,
+                    check_descriptions=self._load_curriculum_check_descriptions(),
+                    unit_selector=self._unit_selector,
+                )
+            # else: nothing failing at seed time -- curriculum stays None, identical to curriculum_enabled=False.
+        elif self.curriculum_enabled:
             top_checks = self._curriculum_seed_goals(self._feedback.get(0))
             if top_checks:
                 self._curriculum = Curriculum(
@@ -636,7 +771,19 @@ class HGMManager:
         out_dir = self._experiment_dir / f"round_{node_id:03d}"
         (out_dir / "logs").mkdir(parents=True, exist_ok=True)
 
-        block = self._select_block(parent)
+        # implementation_strategy is selected BEFORE block, so a "harness_heavy" choice can dynamically exclude
+        # llm_backbone_selection from this EXPAND's block candidates -- a harness-heavy fix has no business also
+        # being steered toward "swap the LLM backbone". Only "harness_heavy" restricts the block pool; "llm_heavy"/
+        # "mixed"/None leave block selection completely unaffected (block_exclude stays None for those).
+        impl_strategy = self._select_implementation_strategy(parent)
+        if self._last_implementation_strategy_selection is not None:
+            (out_dir / "implementation_strategy_adaptive.json").write_text(
+                json.dumps(
+                    dataclasses.asdict(self._last_implementation_strategy_selection), indent=2
+                )
+            )
+        block_exclude = {"llm_backbone_selection"} if impl_strategy == "harness_heavy" else None
+        block = self._select_block(parent, exclude=block_exclude)
         if self._last_block_selection is not None:
             (out_dir / "adaptive_strategy.json").write_text(
                 json.dumps(
@@ -650,6 +797,7 @@ class HGMManager:
             )
         context = self._render_expand_context(
             parent, block, out_dir, node_id, curriculum_directive=curriculum_directive,
+            implementation_strategy=impl_strategy,
         )
         edit_result = editor.apply(
             self._feedback.get(parent_id), parent.round_dir, out_dir,
@@ -657,6 +805,7 @@ class HGMManager:
         )
         strategy = edit_result.strategy or fallback_strategy()
         strategy.block = block
+        strategy.implementation_strategy = impl_strategy
         node = HGMNode(node_id=node_id, parent_id=parent_id, round_dir=out_dir)
 
         if not edit_result.success:
@@ -806,10 +955,54 @@ class HGMManager:
         return len(batch)
 
     # ------------------------------------------------------------------ #
+    # Implementation-strategy selection — swappable seam, mirrors block
+    # ------------------------------------------------------------------ #
+
+    def _select_implementation_strategy(self, parent: HGMNode) -> Optional[str]:
+        """Which implementation-strategy value (llm_heavy/mixed/harness_heavy
+        -- see meta_agent/implementation_strategy.py) this EXPAND should
+        target, per ``self.implementation_strategy_selection_strategy``.
+        Mirrors ``_select_block`` exactly, on a separate axis.
+
+        Returns None when the axis isn't configured at all (the default --
+        zero behavior change: no steering text is added, EvolutionStrategy.
+        implementation_strategy stays None). Otherwise: the three fixed
+        values return themselves; "non_adaptive" samples uniformly at
+        random (via self._implementation_strategy_rng); "adaptive"
+        Thompson-samples from self._implementation_strategy_bandit, the
+        exact same Beta-Bernoulli mechanism _select_block's "adaptive" uses.
+        Called exactly once per _expand, BEFORE _select_block -- its return
+        value (specifically "harness_heavy") is used to compute the
+        dynamic block-candidate exclusion passed into _select_block, so the
+        two selections are ordered, not independent."""
+        # Reset here (not just in evolve()) so a stale AdaptiveImplementationStrategy from a previous "adaptive"
+        # call can never leak into this round's persisted artifact if the strategy isn't "adaptive".
+        self._last_implementation_strategy_selection = None
+        if self.implementation_strategy_selection_strategy is None:
+            return None
+        if self.implementation_strategy_selection_strategy in ("llm_heavy", "mixed", "harness_heavy"):
+            return self.implementation_strategy_selection_strategy
+        if self.implementation_strategy_selection_strategy == "non_adaptive":
+            from ..implementation_strategy import _IMPLEMENTATION_STRATEGY_BODIES
+
+            candidates = sorted(_IMPLEMENTATION_STRATEGY_BODIES)
+            return self._implementation_strategy_rng.choice(candidates)
+        if self.implementation_strategy_selection_strategy == "adaptive":
+            adaptive = self._implementation_strategy_bandit.select(self._tree, self._feedback)
+            self._last_implementation_strategy_selection = adaptive
+            return adaptive.implementation_strategy
+        # Unreachable: __init__ already validates implementation_strategy_selection_strategy against the exact
+        # same set (plus None). Kept as a loud failure in case that invariant is ever broken by a future edit.
+        raise ValueError(
+            "unhandled implementation_strategy_selection_strategy="
+            f"{self.implementation_strategy_selection_strategy!r}"
+        )
+
+    # ------------------------------------------------------------------ #
     # Block selection — swappable seam
     # ------------------------------------------------------------------ #
 
-    def _select_block(self, parent: HGMNode) -> str:
+    def _select_block(self, parent: HGMNode, *, exclude: Optional[set[str]] = None) -> str:
         """Which block (see meta_agent/block_suggester.py) this EXPAND
         should target, per ``self.block_selection_strategy``.
 
@@ -832,7 +1025,18 @@ class HGMManager:
         steering the editor and stamping EvolutionStrategy.block, since a
         stochastic strategy must not be sampled twice for one EXPAND (this
         is exactly why "non_adaptive"/"adaptive" must live in this single
-        method rather than being sampled at each call site separately)."""
+        method rather than being sampled at each call site separately).
+
+        ``exclude``: a DYNAMIC, per-call restriction on top of
+        self.active_blocks (e.g. {"llm_backbone_selection"} when this
+        EXPAND's implementation_strategy is "harness_heavy") -- only
+        consulted by the "non_adaptive"/"adaptive" branches (the four
+        fixed-constant strategies can never select an excluded block in
+        the first place, so `exclude` is a correct no-op there). Never
+        mutates self.active_blocks or self._block_bandit's own state --
+        an excluded block's historical reward tally is preserved for
+        future non-excluded rounds (see BlockBandit.select's own
+        `exclude` handling)."""
         # Reset here (not just in evolve()) so a stale AdaptiveStrategy from
         # a previous "adaptive" call can never leak into this round's
         # persisted artifact if block_selection_strategy isn't "adaptive".
@@ -862,9 +1066,11 @@ class HGMManager:
                 from ..block_suggester import _BLOCK_BODIES
 
                 candidates = sorted(_BLOCK_BODIES)
+            if exclude:
+                candidates = [b for b in candidates if b not in exclude]
             return self._block_rng.choice(candidates)
         if self.block_selection_strategy == "adaptive":
-            adaptive = self._block_bandit.select(self._tree, self._feedback)
+            adaptive = self._block_bandit.select(self._tree, self._feedback, exclude=exclude)
             self._last_block_selection = adaptive
             return adaptive.block
         # Unreachable: __init__ already validates block_selection_strategy
@@ -882,6 +1088,7 @@ class HGMManager:
     def _render_expand_context(
         self, parent: HGMNode, block: str, out_dir: Path, node_id: int,
         *, curriculum_directive: Optional[str] = None,
+        implementation_strategy: Optional[str] = None,
     ) -> str:
         """Build the manager's steering context for an EXPAND: the parent's
         edit lineage, performance + clade metaproductivity, the best node
@@ -891,7 +1098,15 @@ class HGMManager:
         ``curriculum_directive`` (see meta_agent/curriculum.py) is ``None``
         for every caller that doesn't pass it (e.g. HGMDualManager's own
         Stage A/B call sites) -- identical to the curriculum being
-        disabled."""
+        disabled.
+
+        ``implementation_strategy`` (see meta_agent/implementation_strategy.py)
+        is ``None`` when that axis isn't configured (the default) -- no
+        implementation-strategy section is added, identical to before this
+        axis existed. When set, its instruction body is spliced in right
+        after the block line, additively -- BOTH block (which surface) and
+        implementation_strategy (how to fix it) steer the same EXPAND
+        together, neither replacing the other."""
         parts: list[str] = []
 
         # Edit lineage — the chain of optimization goals already applied
@@ -972,6 +1187,10 @@ class HGMManager:
         # lightweight steer, degrading gracefully to "no suggestion
         # available" rather than silently vanishing.
         parts.append(f"\n## Selected block for this EXPAND: {block}")
+        if implementation_strategy:
+            from ..implementation_strategy import _IMPLEMENTATION_STRATEGY_BODIES
+
+            parts.append("\n" + _IMPLEMENTATION_STRATEGY_BODIES[implementation_strategy])
         if curriculum_directive:
             parts.append(f"\n## Current curriculum focus\n{curriculum_directive}")
         # Tracks whether a real suggestion was actually produced -- stays
@@ -1260,13 +1479,18 @@ class HGMManager:
         # needs work or the whole curriculum is exhausted.
         advance_reason: Optional[str] = None
         rate: Optional[float] = None
+        best_metrics = best_fb.project_metrics if best_fb is not None else {}
         while not self._curriculum.done:
             rate = self._curriculum.failure_rate_for(
                 self._curriculum.current_goal,
-                best_fb.project_metrics if best_fb is not None else {},
+                best_metrics,
                 best_node.n_evals if best_node is not None else 0,
             )
-            reason = self._curriculum.advance_if_ready(failure_rate=rate)
+            # check_counts is ignored by check-mode Curriculum (accepted only for signature parity -- see its
+            # own docstring); unit-mode UnitCurriculum uses it to re-pick its current unit from the live rollup.
+            reason = self._curriculum.advance_if_ready(
+                failure_rate=rate, check_counts=_combined_check_counts(best_metrics),
+            )
             if reason is None:
                 break
             advance_reason = reason

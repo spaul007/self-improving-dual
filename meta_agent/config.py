@@ -109,6 +109,14 @@ class SplitSpec(BaseModel):
     # compare hgm vs hgm_dual on identical cases).
     train_ids: Optional[list[str]] = None
     train_ids_path: Optional[str] = None
+    # Opt-in: after train/eval ids are computed by whichever path above ran, overwrite eval_ids
+    # with an exact copy of train_ids -- the held-out eval set becomes the SAME cases as train,
+    # not a disjoint set. False (default -- zero behavior change for every existing config) keeps
+    # eval genuinely held-out. True is a deliberate methodology choice (e.g. when there simply
+    # aren't enough cases to hold out a real disjoint set, or a run wants every case to count
+    # toward development); it means "held-out" reporting is no longer really held-out -- the final
+    # measurement is in-sample, not a genuine generalization check.
+    eval_equals_train: bool = False
 
 
 class FrameworkConfig(BaseModel):
@@ -162,6 +170,14 @@ class FrameworkConfig(BaseModel):
     # block name. Omit (or null) to disable; existing configs keep current
     # behavior without changes.
     block_suggester: Optional[ComponentSpec] = None
+    # Optional. When set, an LLM-based unit-choosing component (see
+    # meta_agent/unit_selector.py) is used by HGMManager's
+    # curriculum_granularity="unit" mode to pick which unit (a group of
+    # related failing checks) to target next, instead of the mechanical
+    # "most failures" fallback. No effect when curriculum_granularity is
+    # "check" (the default) or curriculum is disabled. Omit (or null) to
+    # disable; existing configs keep current behavior without changes.
+    unit_selector: Optional[ComponentSpec] = None
     plugins: list[str] = Field(default_factory=list)
 
     task_agent: TaskAgentSpec = Field(default_factory=TaskAgentSpec)
@@ -240,6 +256,7 @@ class AssembledFramework:
     summarizer: Any = None
     failure_summarizer: Any = None
     block_suggester: Any = None
+    unit_selector: Any = None
     train_case_ids: Optional[list[str]] = None
     eval_case_ids: Optional[list[str]] = None
 
@@ -254,6 +271,7 @@ def _ensure_builtins_loaded() -> None:
     importlib.import_module("meta_agent.behavior_summarizer")
     importlib.import_module("meta_agent.failure_summarizer")
     importlib.import_module("meta_agent.block_suggester")
+    importlib.import_module("meta_agent.unit_selector")
     importlib.import_module("meta_agent.managers")  # imports submodules
 
 
@@ -409,6 +427,14 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
             {"llm_caller": call_llm, **editor_injections},
         )
 
+    unit_selector_obj: Any = None
+    if cfg.unit_selector is not None:
+        unit_selector_obj = _build_with_injection(
+            cfg.unit_selector,
+            "unit_selector",
+            {"llm_caller": call_llm},
+        )
+
     manager_obj = registry.get("manager", cfg.manager.type)(**cfg.manager.config)
 
     train_ids: Optional[list[str]] = None
@@ -430,6 +456,8 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
                 "split: needs either train_size (seeded split) or "
                 "train_ids / train_ids_path (predetermined set)"
             )
+        if cfg.split.eval_equals_train and train_ids is not None:
+            eval_ids = list(train_ids)
 
     return AssembledFramework(
         config=cfg,
@@ -445,6 +473,7 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         summarizer=summarizer_obj,
         failure_summarizer=failure_summarizer_obj,
         block_suggester=block_suggester_obj,
+        unit_selector=unit_selector_obj,
         train_case_ids=train_ids,
         eval_case_ids=eval_ids,
     )

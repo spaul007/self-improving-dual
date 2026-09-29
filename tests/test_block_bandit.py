@@ -236,6 +236,61 @@ class BlockBanditTests(unittest.TestCase):
         # even 1-vs-1 split above.
         self.assertGreater(fractional_post.n_success, 80.0)
 
+    def test_exclude_none_reproduces_todays_exact_behavior(self) -> None:
+        # Regression guard: omitting `exclude` (every existing call site)
+        # must be byte-identical to before this parameter existed.
+        tree, feedback = _tree_and_feedback(
+            [
+                (0, None, None, [], False),
+                (1, 0, "individual_subagent", [0.9] * 5, False),
+                (2, 0, "collaboration_workflow", [0.1] * 5, False),
+            ]
+        )
+        bandit_a = BlockBandit(blocks=self.BLOCKS, rng=random.Random(42))
+        bandit_b = BlockBandit(blocks=self.BLOCKS, rng=random.Random(42))
+        self.assertEqual(
+            bandit_a.select(tree, feedback).block,
+            bandit_b.select(tree, feedback, exclude=None).block,
+        )
+
+    def test_exclude_never_returns_the_excluded_block(self) -> None:
+        # individual_subagent is the clear winner (strong evidence) --
+        # excluding it must force selection of something else, even though
+        # its sampled posterior would otherwise dominate every trial.
+        tree, feedback = _tree_and_feedback(
+            [
+                (0, None, None, [], False),
+                (1, 0, "individual_subagent", [0.95] * 20, False),
+            ]
+        )
+        rng = random.Random(3)
+        bandit = BlockBandit(blocks=self.BLOCKS, rng=rng)
+        for _ in range(50):
+            chosen = bandit.select(
+                tree, feedback, exclude={"individual_subagent"}
+            ).block
+            self.assertNotEqual(chosen, "individual_subagent")
+
+    def test_exclude_does_not_alter_posteriors_or_tallies(self) -> None:
+        # `exclude` narrows the argmax candidate set only -- the excluded
+        # block's own posterior/tally must be computed identically (its
+        # historical evidence is preserved for future non-excluded rounds).
+        tree, feedback = _tree_and_feedback(
+            [
+                (0, None, None, [], False),
+                (1, 0, "individual_subagent", [0.7] * 5, False),
+            ]
+        )
+        bandit_a = BlockBandit(blocks=self.BLOCKS, rng=random.Random(9))
+        bandit_b = BlockBandit(blocks=self.BLOCKS, rng=random.Random(9))
+        post_a = bandit_a.select(tree, feedback).posteriors["individual_subagent"]
+        post_b = bandit_b.select(
+            tree, feedback, exclude={"individual_subagent"}
+        ).posteriors["individual_subagent"]
+        self.assertEqual(post_a.n_success, post_b.n_success)
+        self.assertEqual(post_a.n_failure, post_b.n_failure)
+        self.assertEqual(post_a.mean, post_b.mean)
+
     def test_reproducible_under_fixed_seed(self) -> None:
         tree, feedback = _tree_and_feedback(
             [

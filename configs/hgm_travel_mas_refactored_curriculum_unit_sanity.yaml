@@ -1,0 +1,135 @@
+# Live sanity check for the new unit-level curriculum granularity (Phase B, step 15 of the
+# implementation-strategy + unit-curriculum plan) -- curriculum_granularity="unit" with a real
+# unit_selector (DeepSeek V4 Pro) choosing which unit (grouped failing checks) to target each round,
+# instead of the mechanical check-by-check ordering configs/hgm_travel_mas_refactored_curriculum_
+# sanity_v4.yaml exercises. HGM's reward mechanism (composite score) is unchanged by this -- only
+# the goal text steering each EXPAND differs.
+#
+# Task agent / meta-agent split identical to
+# configs/hgm_travel_mas_refactored_implementation_strategy_sanity.yaml -- see that file's header
+# for the full rationale. This config does NOT enable the implementation_strategy axis, to keep this
+# a targeted, single-feature sanity check.
+#
+#   set -a; source .env; set +a
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_mas_refactored_curriculum_unit_sanity.yaml
+#
+# Double-check the task_agent/editor endpoints below against whatever's actually live before running.
+
+experiment_name: "travel_mas_refactored_curriculum_unit_sanity"
+project: "travel_mas_refactored"
+seed_dir_name: "seed_qwen27b_nothink"
+
+mutable_exclude:
+  - "workflow.py"
+  - "benchmark/"
+  - "agents/immutable/"
+
+loop:
+  max_rounds: 14
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.8-27B"
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "http://gpu-aic-mv-02-st-p5-node-6:8001/v1"
+
+manager:
+  type: "hgm"
+  config:
+    eval_budget: 40
+    init_expansions: 1
+    alpha: 0.6
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 4
+    finalize_top_k: 1
+    full_eval_top_k: 0
+    seed: 42
+    block_selection_strategy: "adaptive"
+    curriculum_enabled: true
+    curriculum_granularity: "unit"
+    curriculum_units_path: "projects/travel_mas_refactored/adapter/units.json"
+    curriculum_resolution_threshold: 0.15
+    curriculum_patience: 4
+    curriculum_unit_max_attempts: 2
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    parallelism: 8
+    scorer: "travel_mas_refactored_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+    n_hard_cases: 1
+
+editor:
+  type: "default"
+  config:
+    model: "deepseek/deepseek-v4-pro"
+    base_url: "https://openrouter.ai/api/v1"
+    reasoning_effort: "medium"
+    max_output_tokens: 32768
+    max_attempts: 2
+
+summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+block_suggester:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "medium"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    strategies_path: "strategies.md"
+
+unit_selector:
+  type: "default"
+  config:
+    model: "deepseek/deepseek-v4-pro"
+    base_url: "https://openrouter.ai/api/v1"
+    reasoning_effort: "medium"
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  # TEMPORARY: Qwen3.5-35B-A3B is not served on node-6 as of 2026-09-24 (both :8000 and :8001
+  # serve Qwen3.8-27B) -- scorer's plan-to-JSON conversion step points at the 122B endpoint on
+  # node-5 instead. Not directly comparable to any earlier baseline that used the 35B converter.
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.5-122B-A10B"
+  TRAVEL_CONVERT_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+split:
+  seed: 42
+  train_size: 10
+  eval_size: 0
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+    config:
+      workflow_filenames: ["workflow.py", "mas_workflow.py"]
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"
+  - type: "undefined_names"
+  - type: "smoke_test"

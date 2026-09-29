@@ -14,6 +14,7 @@ _REGISTRIES: dict[str, dict[str, type]] = {
     "summarizer": {},
     "failure_summarizer": {},
     "block_suggester": {},
+    "unit_selector": {},
 }
 
 

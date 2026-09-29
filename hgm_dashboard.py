@@ -32,7 +32,11 @@ st.set_page_config(page_title="HGM Run Dashboard", layout="wide")
 # --------------------------------------------------------------------------- #
 
 st.sidebar.title("HGM Run Dashboard")
-runs_root = Path(st.sidebar.text_input("Runs root", value="runs"))
+# TEMPORARY: hardcoded to dashboard_pinned_run/ (a single symlink to
+# runs/20260914_001136_travel_mas_refactored_gemma_full_scale_block_tagged_X100Y180,
+# an 18K-eval_budget block-tagged run) per explicit request -- change this back to
+# value="runs" (or edit the symlink) once no longer needed for this specific run.
+runs_root = Path(st.sidebar.text_input("Runs root", value="dashboard_pinned_run"))
 experiments = ri.list_experiments(runs_root)
 
 if not experiments:
@@ -59,7 +63,7 @@ if not experiments:
 # experiment_dir = default_dir
 
 exp_names = [p.name for p in experiments]
-_REQUESTED = "20260914_001136_travel_mas_refactored_gemma_full_scale_block_tagged_X100Y180"
+_REQUESTED = "20260918_210556_travel_mas_refactored_5x120_block_tagged_X100Y180"
 _default_index = exp_names.index(_REQUESTED) if _REQUESTED in exp_names else 0
 selected_name = st.sidebar.selectbox("Experiment (newest first)", exp_names, index=_default_index)
 experiment_dir = runs_root / selected_name

@@ -8,8 +8,10 @@ train-split failures. After each session the harness -- not the model -- decides
 
   * the candidate workspace is re-evaluated on ALL 60 TRAIN cases;
   * it is ACCEPTED (becomes the new checkpoint and the source of the next stage's corpus) only if the TARGETED unit's own score improves on the
-    checkpoint's (by --min-gain) and the no-plan rate does not get worse; otherwise it is ROLLED BACK. Overall composite is reported but is not itself
-    the gate (see unit_score()).
+    checkpoint's (by --min-gain), the no-plan rate does not get worse, AND overall composite does not regress by more than
+    --max-composite-regression; otherwise it is ROLLED BACK. Composite is not the PRIMARY gate (see unit_score()) since it blends units a
+    single-unit edit never touches -- but it IS a backstop: a "fix" that improves its own unit while quietly breaking several others is
+    collateral damage, not progress, and must not become the base later stages build on.
 
 Information rule (same categories as HGM's editor): each session sees the seed-derived workspace it will edit, the train-split evaluation of the CURRENT
 checkpoint (per case: request, plan, failed-check labels and grader messages, dimension scores), a train-only digest, the trace of that evaluation and the
@@ -39,6 +41,7 @@ REPO_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(REPO_ROOT))
 
 import experiment_harness_redesign as h  # noqa: E402
+from platform_core.llm_wrapper import call_llm  # noqa: E402
 from meta_agent import config as cfg_mod  # noqa: E402
 from meta_agent import runtime_env  # noqa: E402
 
@@ -104,6 +107,19 @@ RULES
   with apostrophes or multi-word names) -- and check your function against them directly with run_python, the same way you'd test any parsing
   code. The real stored cases tell you whether it works on what's already in front of you; synthetic edge cases tell you whether the
   underlying logic actually generalizes, rather than happening to match only the specific inputs you've seen so far.
+- The task agent is stochastic (nonzero temperature) -- a small case_ids sample can look like it regressed or improved from run-to-run noise
+  alone, not from your actual change. If a small-sample result looks surprising (a fix that should help doesn't, or a change you didn't expect
+  to matter seems to move the score), consider re-running evaluate_variant on the SAME small case_ids set 3-5 times before concluding
+  anything -- comparing the spread across those repeats to the size of the effect you're trying to detect is far cheaper than spending a full
+  60-case call only to discover afterward that the result was noise. Weigh this against your total evaluate_variant budget: worth it when
+  you're genuinely unsure whether an effect is real, not as a routine habit for every check.
+- If you are struggling with a couple of very few stubborn examples that keep failing after real attempts to fix them, it is OK to give up on
+  those examples and move on -- a fix that clearly improves the unit overall is worth submitting even if a small handful of hard cases remain
+  unsolved. Do not let a few outliers consume turns or evaluate_variant calls that would be better spent confirming the fix holds broadly.
+- Two independent safety nets, use whichever fits: restore_best_checkpoint goes back to your best-scoring full-60 evaluate_variant call so
+  far (saved automatically, no action needed from you). save_checkpoint / restore_checkpoint is a single manual slot YOU control --
+  save a state you're fairly confident in from run_python testing or a small sample, before spending a full-60 call to confirm it; calling
+  save_checkpoint again overwrites the previous manual save, it does not keep a history.
 
 WORKFLOW
 1. Read corpus/digest.md and the train cases where this unit fails (list_cases with failed_check=..., show_case) -- these are the CURRENT pipeline's own
@@ -288,9 +304,74 @@ def _fmt_opt(x: Optional[float]) -> str:
     return "n/a" if x is None else f"{x:.4f}"
 
 
-def choose_unit(fails: dict[str, int], attempts: dict[str, int], max_attempts: int) -> Optional[str]:
+def choose_unit(fails: dict[str, int], attempts: dict[str, int], max_attempts: int,
+                 recs: dict[str, dict], semantics: dict) -> Optional[str]:
+    """Pick the next unit for a stage to target. ALL selection-strategy logic lives here --
+    swap the strategy by editing this one function; every caller just gets a unit name back.
+
+    Current strategy: a single lightweight call_llm, given the per-candidate failure summaries
+    (real failure examples + counts, same as describe_unit() would show the editing session) and
+    the error-semantics/error-bucket reference, no tools. An earlier version gave this call a
+    bounded agentic loop with read tools over the corpus/workspace, but in practice a thorough
+    model used the whole turn budget re-deriving each candidate's diagnosis from scratch (reading
+    cases and source files one by one) rather than reasoning from the summaries it was already
+    given -- not worth the extra latency/cost for a selection step. Falls back to the mechanical
+    "most failing check instances" heuristic if there's only one candidate (no choice to make) or
+    on ANY LLM failure -- this must never block the pipeline.
+    """
     cands = [(n, u) for u, n in fails.items() if n > 0 and attempts.get(u, 0) < max_attempts]
-    return max(cands)[1] if cands else None
+    if not cands:
+        return None
+    fallback = max(cands)[1]
+    if len(cands) == 1:
+        return fallback
+
+    lines = ["Candidates for the NEXT stage to target, with real failure data from the CURRENT checkpoint's train evaluation "
+             "(most failing instances first):"]
+    for n, u in sorted(cands, key=lambda x: -x[0]):
+        lines.append(f"\n## {u} ({n} failing check instances)")
+        lines.append(describe_unit(u, recs, semantics))
+    user = "\n".join(lines)
+    system = (
+        "You are choosing which unit (a grader dimension or hard-constraint family) a travel-planning harness's next "
+        "improvement stage should target, from the candidates given. For EACH one: identify the likely root cause(s), "
+        "estimate how hard a fix looks (a narrow, mechanical, code-level fix for one clear shared cause is easy; something "
+        "needing broad prompt/schedule changes across many unrelated causes is harder), and estimate the likely gain if fixed "
+        "(do most of its failures look like the SAME root cause, or many different one-off causes? a fix for one shared bug "
+        "explaining most failures is worth more than a unit with more failures but no single actionable diagnosis). Raw "
+        "failure count is NOT the same as best value -- a unit with fewer failures but one clean, high-confidence, narrow "
+        "root cause is often the better pick over a unit with more failures and no clear single fix. Also consider "
+        "DEPENDENCIES between candidates: prefer a unit whose fix stands on its own over one whose real fix would require "
+        "another candidate to be fixed first (e.g. if unit X's failures are actually downstream of unit Y's -- fixing Y "
+        "would likely resolve some of X's failures too, but not the reverse) -- pick Y in that case, not X, since a fix "
+        "attempted on the downstream unit while the upstream cause is still broken is more likely to be shallow, fragile, "
+        "or to get undone by a later fix to the real cause. Judge from the failure examples and error-semantics reference "
+        "given -- you have no tools here, so reason directly from what's in front of you rather than guessing at anything "
+        "not shown. Call propose_unit with your choice (the unit name EXACTLY as given) and a short rationale."
+    )
+    propose_tool = {"name": "propose_unit", "description": "Choose the next unit for the stage to target.",
+                     "input_schema": {"type": "object",
+                                       "properties": {"unit": {"type": "string", "enum": [u for _, u in cands]},
+                                                       "rationale": {"type": "string"}},
+                                       "required": ["unit", "rationale"]}}
+    valid = {u for _, u in cands}
+    try:
+        resp = call_llm(messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                         tools=[propose_tool], model=h.META_MODEL, base_url=h.META_BASE_URL,
+                         reasoning_effort=os.environ.get("REDESIGN_META_REASONING", "medium"), max_output_tokens=4096)
+        calls = getattr(resp, "tool_calls", None) or []
+        for c in calls:
+            if c.name != "propose_unit":
+                continue
+            a = c.arguments if isinstance(c.arguments, dict) else {}
+            chosen = a.get("unit")
+            if chosen in valid:
+                log(f"unit selection: meta-agent proposed '{chosen}' over {sorted(valid)} -- {str(a.get('rationale', ''))[:200]}")
+                return chosen
+        log(f"unit-selection call returned no valid propose_unit choice; falling back to '{fallback}' (most failing instances)")
+    except Exception as exc:  # noqa: BLE001 -- an LLM/infra hiccup must never block stage selection
+        log(f"unit-selection call failed ({exc!r}); falling back to '{fallback}' (most failing instances)")
+    return fallback
 
 
 def main() -> None:
@@ -305,6 +386,9 @@ def main() -> None:
     ap.add_argument("--stage-eval-rounds", type=int, default=4)
     ap.add_argument("--inloop-cases", type=int, default=8)
     ap.add_argument("--min-gain", type=float, default=0.005, help="composite gain on the 60 train cases required to accept a stage")
+    ap.add_argument("--max-composite-regression", type=float, default=0.02,
+                    help="a stage is rolled back if overall composite drops by more than this vs. the checkpoint, "
+                         "even if the targeted unit itself improved (catches collateral damage to other units)")
     ap.add_argument("--final-repeats", type=int, default=3)
     ap.add_argument("--parallelism", type=int, default=15)
     ap.add_argument("--case-timeout", type=float, default=3000.0)
@@ -313,9 +397,20 @@ def main() -> None:
                          "starting workspace, IF that dir's copied task_agent is byte-identical to --start-workspace")
     ap.add_argument("--force-unit", default=None, help="force stage 1's unit instead of auto-selecting by failure count (e.g. "
                     "for a quick single-stage check); later stages still auto-select. One of: " + ", ".join(UNITS))
+    ap.add_argument("--exclude-unit", action="append", default=[],
+                    help="a unit to permanently exclude from choose_unit's candidates for this whole run (e.g. one already "
+                         "tried and repeatedly rolled back in an earlier run). Repeatable. One of: " + ", ".join(UNITS))
+    ap.add_argument("--whitebox-evaluator", action="store_true",
+                    help="EXPERIMENT ONLY: grant the editing session read access to the real grader source "
+                         "(benchmark/scorer.py + benchmark/_eval/*.py) and, scoped to exactly this run's own train "
+                         "case set, the same per-case reference database (data/database_en/id_<case>/*.csv) the "
+                         "grader itself cross-checks against -- normally both strictly off-limits. See Vfs's own "
+                         "docstring in experiment_harness_redesign.py.")
     args = ap.parse_args()
     if args.force_unit is not None:
         assert args.force_unit in UNITS, f"--force-unit must be one of {list(UNITS)}, got {args.force_unit!r}"
+    for u in args.exclude_unit:
+        assert u in UNITS, f"--exclude-unit must be one of {list(UNITS)}, got {u!r}"
     out = args.out_dir.resolve()
     out.mkdir(parents=True, exist_ok=True)
     log(f"output dir: {out}; starting from {args.start_workspace}")
@@ -377,26 +472,38 @@ def main() -> None:
     for r in history:
         if r["stage"] > 0:
             attempts[r["unit"]] = attempts.get(r["unit"], 0) + 1
+    # ckpt_ws/cur are maintained as the BEST composite seen so far, not merely the last accepted stage -- every
+    # stage starts from this. best_composite is the invariant that keeps that true across the whole run (a stage
+    # can pass its own local accept gate -- unit improved, no regression beyond --max-composite-regression -- without
+    # being a new outright best; in that case it is recorded but the checkpoint is left where it was, so a later
+    # stage never inherits a state worse than one already seen).
+    best_composite = cur["composite"]
 
     for k in range(len(history), args.n_stages + 1):
         fails = unit_failures(cur["recs"])
+        for u in args.exclude_unit:
+            fails.pop(u, None)
+        sdir = out / f"stage_{k}"
+        info = build_stage_corpus(sdir, res, args.baseline_dir, cur_eval_dir, args.seed + k, args.inloop_cases)
         if k == 1 and args.force_unit is not None:
             unit = args.force_unit
             log(f"stage {k}: unit FORCED to '{unit}' (--force-unit)")
         else:
-            unit = choose_unit(fails, attempts, args.max_attempts_per_unit)
+            unit = choose_unit(fails, attempts, args.max_attempts_per_unit, cur["recs"], semantics)
         if unit is None:
             log("no unit left to improve; stopping")
             break
         attempts[unit] = attempts.get(unit, 0) + 1
         log(f"stage {k}: unit '{unit}' ({fails[unit]} failing check instances on train); checkpoint composite {cur['composite']:.4f}")
-        sdir = out / f"stage_{k}"
-        info = build_stage_corpus(sdir, res, args.baseline_dir, cur_eval_dir, args.seed + k, args.inloop_cases)
         sargs = argparse.Namespace(baseline_dir=args.baseline_dir, seed=args.seed + k, max_turns=args.stage_max_turns,
                                    eval_rounds=args.stage_eval_rounds, inloop_cases=args.inloop_cases, final_repeats=args.final_repeats,
                                    parallelism=args.parallelism, case_timeout=args.case_timeout, redo=False)
-        sess = h.Session(sdir, fw, sargs, info)
+        sess = h.Session(sdir, fw, sargs, info, checkpoint_metric=lambda recs, u=unit: unit_score(recs, u))
         sess.setup(start_workspace=ckpt_ws)
+        if args.whitebox_evaluator:
+            sess.whitebox_scorer_dir = h.PROJECT_DIR / "benchmark"
+            sess.whitebox_database_dir = h.PROJECT_DIR / "data" / "database_en"
+            sess.whitebox_case_ids = train_ids
         esc = lambda t: t.replace("{", "{{").replace("}", "}}")  # noqa: E731 -- these strings pass through str.format later
         start_unit_score = unit_score(cur["recs"], unit)
         task_model = os.environ.get("LLM_MODEL", "Qwen3.5-35B-A3B")
@@ -404,6 +511,23 @@ def main() -> None:
             .replace("{ckpt_composite:.4f}", f"{cur['composite']:.4f}") \
             .replace("{unit_score:.4f}", _fmt_opt(start_unit_score)).replace("{min_gain}", f"{args.min_gain:g}") \
             .replace("{task_model}", esc(task_model))
+        if args.whitebox_evaluator:
+            system += (
+                "\n\nWHITE-BOX EVALUATOR ACCESS (this run only -- not normally available). You additionally have read "
+                "access to the REAL grader source (scorer_source/scorer.py, scorer_source/_eval/constraints_hard.py, "
+                "scorer_source/_eval/constraints_commonsense.py, scorer_source/_eval/eval_converted.py, "
+                "scorer_source/_eval/utils.py) and, for exactly this run's own train cases, the same per-case reference "
+                "database the grader itself cross-checks against (database/id_<case>/<category>/<category>.csv -- "
+                "attractions/hotels/restaurants/flights/trains, with real hours/prices/coordinates). Use these to read "
+                "the EXACT check logic and tolerance the grader applies (e.g. the precise formula/threshold "
+                "reasonable_transfer_time or dining_within_service_hours actually uses) instead of inferring it from a "
+                "limited set of failure examples, and to verify a fix against ground truth directly rather than "
+                "guessing at values. This does NOT relax the no-hardcoding rule above: you may not special-case a "
+                "specific case id or hardcode a value read from the grader/database for one case -- the fix must still "
+                "be a general, deterministic computation that would work on any case with the same shape of input. The "
+                "point of this access is to make your GENERAL logic exactly match what the grader actually checks, not "
+                "to shortcut to a known-correct answer for the cases you happen to be looking at."
+            )
         user = (f"Improve the unit '{unit}' as described. Start with corpus/digest.md and the train cases where this unit fails, read the relevant "
                 "workspace code, and use run_python on real data before you change anything.")
         t0 = time.time()
@@ -423,21 +547,36 @@ def main() -> None:
             # Gate on the TARGETED unit's own score, not overall composite: composite blends 8 other units this
             # stage never touched, and is a much noisier signal for a single-unit edit than the unit's own progress.
             # The no-plan guard stays composite-independent -- a fix that starts breaking plans is rejected regardless.
+            # ALSO gate on composite not regressing beyond --max-composite-regression: a unit-score win achieved by
+            # collateral damage to several OTHER units (observed live: a Time Feasibility fix that improved its own
+            # unit 0.220->0.259 while quietly breaking 8 of the other 12 units, composite 0.6177->0.5521) is not a
+            # real improvement and must not become the base later stages build on. A small tolerance is kept because
+            # a single train-evaluation composite is itself somewhat noisy (no in-loop repeats); anything bigger than
+            # that is real collateral damage, not sampling noise.
             ok = (before_unit is not None and after_unit is not None and after_unit >= before_unit + args.min_gain
-                  and cs["no_plan_rate"] <= cur["no_plan_rate"] + 0.02)
-            rec.update(accepted=ok, composite=cs["composite"], no_plan_rate=cs["no_plan_rate"],
+                  and cs["no_plan_rate"] <= cur["no_plan_rate"] + 0.02
+                  and cs["composite"] >= best_composite - args.max_composite_regression)
+            # "ok" alone is not enough to advance the checkpoint: it only means this fix isn't an outright regression
+            # (within noise tolerance of the best composite seen so far). Advancing additionally requires matching or
+            # beating best_composite outright, so ckpt_ws always stays the single best state ever observed -- a stage
+            # that passes its own local gate but lands a little under best_composite (still within tolerance, e.g.
+            # ordinary eval noise) is recorded as accepted but does NOT become what later stages build from.
+            new_best = ok and cs["composite"] >= best_composite
+            rec.update(accepted=ok, advanced=new_best, composite=cs["composite"], no_plan_rate=cs["no_plan_rate"],
                        unit_score_before=before_unit, unit_score_after=after_unit,
-                       reason=("accepted" if ok else
+                       reason=("accepted, new best" if new_best else
+                               "accepted but not a new best -- checkpoint left unchanged" if ok else
                                f"rolled back (unit score {_fmt_opt(after_unit)} vs {_fmt_opt(before_unit)}, "
-                               f"composite {cs['composite']:.4f} vs {cur['composite']:.4f}, no-plan {cs['no_plan_rate']:.3f})"))
-            if ok:
+                               f"composite {cs['composite']:.4f} vs best {best_composite:.4f}, no-plan {cs['no_plan_rate']:.3f})"))
+            if new_best:
                 shutil.rmtree(ckpt_ws)
                 shutil.copytree(cand, ckpt_ws, ignore=shutil.ignore_patterns("__pycache__"))
                 res, cur, cur_eval_dir = cres, cs, out / f"eval_stage_{k}"
+                best_composite = cs["composite"]
         history.append(rec)
         hist_path.write_text(json.dumps(history, indent=1))
         log(f"stage {k}: {rec.get('reason')} | '{unit}' score now {_fmt_opt(rec.get('unit_score_after', rec.get('unit_score_before')))} "
-            f"| checkpoint composite now {cur['composite']:.4f}")
+            f"| checkpoint composite now {cur['composite']:.4f} (best {best_composite:.4f})")
 
     # ---- final measurement of the last accepted checkpoint on all held-out eval cases ----
     log("final measurement of the last accepted checkpoint on all held-out eval cases ...")

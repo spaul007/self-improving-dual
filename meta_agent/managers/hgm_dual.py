@@ -930,6 +930,12 @@ class HGMDualManager(HGMManager):
         # Same reasoning as failure_summarizer above, for
         # meta_agent/block_suggester.py's new component.
         block_suggester: Any = None,
+        # Same reasoning as failure_summarizer above, for
+        # meta_agent/unit_selector.py's new component (curriculum_granularity="unit"). Dual's own Stage A/B
+        # paths don't consult the curriculum at all (see HGMManager.curriculum_enabled's own docstring), so
+        # this is accepted purely to avoid crashing on main_loop.py's unconditional kwarg, same as
+        # failure_summarizer/block_suggester above.
+        unit_selector: Any = None,
     ) -> Any:
         # Stash the evaluator so _expand can call _evaluate_candidate
         # without changing the HGMManager._expand signature.
@@ -960,4 +966,5 @@ class HGMDualManager(HGMManager):
             summarizer=summarizer,
             failure_summarizer=failure_summarizer,
             block_suggester=block_suggester,
+            unit_selector=unit_selector,
         )

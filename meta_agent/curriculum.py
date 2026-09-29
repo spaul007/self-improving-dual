@@ -45,6 +45,21 @@ def _ranked(counts: dict[str, int]) -> list[tuple[str, int]]:
     return sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
 
 
+def scored_evals(project_metrics: dict, n_evals: int) -> float:
+    """``n_evals`` corrected to exclude crashed (no-plan) cases when the
+    scorer reports ``no_plan_rate`` in ``project_metrics`` (absent means no
+    correction, identical to using ``n_evals`` directly). Extracted from
+    ``Curriculum.failure_rate_for``'s own former private closure so
+    ``unit_curriculum.py`` can reuse the exact same no-plan-rate correction
+    -- see that method's docstring for why this correction matters (a
+    heavily-crashed node's rate would otherwise be falsely deflated toward
+    0 for every check)."""
+    no_plan_rate = project_metrics.get("no_plan_rate")
+    if isinstance(no_plan_rate, (int, float)) and 0.0 <= no_plan_rate <= 1.0:
+        return n_evals * (1.0 - no_plan_rate)
+    return float(n_evals)
+
+
 def _combined_check_counts(project_metrics: dict) -> dict[str, int]:
     """Merge two independent (name, count) rankings a project's scorer may
     emit in ``project_metrics`` into one combined name -> count dict:
@@ -257,23 +272,17 @@ class Curriculum:
         if check is None or n_evals is None or n_evals <= 0:
             return None
 
-        def _scored_evals() -> float:
-            no_plan_rate = project_metrics.get("no_plan_rate")
-            if isinstance(no_plan_rate, (int, float)) and 0.0 <= no_plan_rate <= 1.0:
-                return n_evals * (1.0 - no_plan_rate)
-            return float(n_evals)
-
         for entry in project_metrics.get("top_failed_checks") or []:
             try:
                 name, occurrences = entry[0], entry[1]
             except (TypeError, IndexError, KeyError):
                 continue
             if name == check:
-                scored_evals = _scored_evals()
-                if scored_evals <= 0:
+                se = scored_evals(project_metrics, n_evals)
+                if se <= 0:
                     return None
                 try:
-                    return float(occurrences) / scored_evals
+                    return float(occurrences) / se
                 except (TypeError, ValueError):
                     return None
 
@@ -288,8 +297,8 @@ class Curriculum:
                 except (TypeError, ValueError):
                     return None
 
-        scored_evals = _scored_evals()
-        if scored_evals <= 0:
+        se = scored_evals(project_metrics, n_evals)
+        if se <= 0:
             return None
         return 0.0
 
@@ -302,14 +311,24 @@ class Curriculum:
         if not self.done:
             self._rounds_on_current += 1
 
-    def advance_if_ready(self, *, failure_rate: Optional[float]) -> Optional[str]:
+    def advance_if_ready(
+        self, *, failure_rate: Optional[float],
+        check_counts: Optional[dict[str, int]] = None,
+    ) -> Optional[str]:
         """Advance past the current goal if resolved-or-patience-exhausted;
         returns ``"resolved"`` / ``"patience_exhausted"`` / ``None``.
         ``failure_rate=None`` (nothing evaluated yet for the best node)
         never counts as resolved, but patience still accrues regardless of
         whether resolution could even be checked this call -- keeps the
         fallback simple and robust (an unevaluated period still burns
-        patience rather than stalling the curriculum indefinitely)."""
+        patience rather than stalling the curriculum indefinitely).
+
+        ``check_counts`` is IGNORED here (accepted only so the manager's
+        single call site -- HGMManager._curriculum_directive_for_expand --
+        can stay granularity-agnostic; check-mode never needs it, since its
+        goal list is fixed at construction time). unit_curriculum.py's
+        ``UnitCurriculum.advance_if_ready`` uses it to re-pick its current
+        unit from the live rollup."""
         if self.done:
             return None
         resolved = (
