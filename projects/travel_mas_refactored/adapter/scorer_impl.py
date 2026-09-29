@@ -146,6 +146,23 @@ def _convert_plan_to_json(plan_text: str, *, retries: int = DEFAULT_RETRIES) -> 
         else:
             return None, "OPENAI_API_KEY not set"
 
+    # Optional, mirrors TRAVEL_CONVERT_MODEL/TRAVEL_CONVERT_BASE_URL's own
+    # convention: only meaningful for a Qwen3-hybrid convert_model (e.g.
+    # Qwen3.8-27B) via vLLM's chat_template_kwargs mechanism (same
+    # mechanism as platform_core/llm_wrapper.py's own enable_thinking
+    # handling for the task agent). Unset (the default) sends no
+    # extra_body override at all, so every existing config that doesn't
+    # set this env var is byte-identical to before this was added.
+    _convert_enable_thinking_raw = os.environ.get("TRAVEL_CONVERT_ENABLE_THINKING")
+    extra_body = None
+    if _convert_enable_thinking_raw is not None:
+        extra_body = {
+            "chat_template_kwargs": {
+                "enable_thinking": _convert_enable_thinking_raw.strip().lower()
+                not in ("0", "false", "no", "")
+            }
+        }
+
     # Per-attempt timeout (SDK default is ~600s): without this, a single
     # slow local-model completion blocks that one attempt indefinitely --
     # see platform_core/llm_wrapper.py's DEFAULT_REQUEST_TIMEOUT_S for the
@@ -188,10 +205,10 @@ def _convert_plan_to_json(plan_text: str, *, retries: int = DEFAULT_RETRIES) -> 
             break
         try:
             # gpt-5-2025-08-07 is a reasoning model — do not pass max_tokens.
-            resp = client.chat.completions.create(
-                model=convert_model,
-                messages=messages,
-            )
+            create_kwargs: dict[str, Any] = {"model": convert_model, "messages": messages}
+            if extra_body is not None:
+                create_kwargs["extra_body"] = extra_body
+            resp = client.chat.completions.create(**create_kwargs)
             content = resp.choices[0].message.content or ""
         except Exception as exc:  # noqa: BLE001 - surface SDK errors as scorer detail
             last_err = f"openai call failed (attempt {attempt + 1}): {exc!r}"
@@ -408,7 +425,24 @@ def _evaluate(plan: dict, meta: dict, sample_id: str) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
-def _zero_result(reason: str, *, raw_output: str = "") -> dict[str, Any]:
+def _classify_conversion_error(err: Optional[str]) -> str:
+    """Buckets a real (non-empty-plan) conversion failure's error string
+    into a short, stable type for aggregate()'s conversion_error_types
+    tally -- distinct from a genuine no-plan case (empty plan_text, which
+    never reaches this classifier at all -- see score()'s own branch)."""
+    text = (err or "").lower()
+    if "timed out" in text:
+        return "timeout"
+    if "could not parse json" in text:
+        return "json_parse"
+    if "openai call failed" in text:
+        return "api_error"
+    return "other"
+
+
+def _zero_result(
+    reason: str, *, raw_output: str = "", conversion_error_type: Optional[str] = None
+) -> dict[str, Any]:
     return {
         "score": 0.0,
         "passed": False,
@@ -423,6 +457,15 @@ def _zero_result(reason: str, *, raw_output: str = "") -> dict[str, Any]:
             # (or comparing agents qualitatively) needs the whole plan
             # text, not just its first 500 chars.
             "raw_plan_text": raw_output or "",
+            # None for every non-conversion zero-result (missing meta_info,
+            # constraint evaluation raised, or a genuine empty-plan
+            # no-plan case) -- set only when the agent DID produce a real
+            # plan and the plan->JSON conversion step itself is what
+            # failed (timeout/parse/API error against TRAVEL_CONVERT_MODEL),
+            # so aggregate() can tell "agent produced nothing usable" apart
+            # from "agent's plan was fine, conversion infra failed" --
+            # exactly the confusion that motivated adding this field.
+            "conversion_error_type": conversion_error_type,
         },
     }
 
@@ -489,7 +532,14 @@ class TravelCompositeScorer:
                 agent_meta = dict(getattr(agent_output, "metadata", None) or {})
                 if agent_meta:
                     reason += f" (agent_metadata: {agent_meta})"
-            return _zero_result(reason, raw_output=plan_text)
+                return _zero_result(reason, raw_output=plan_text)
+            # plan_text was non-empty -- the agent produced a real plan and
+            # the conversion step itself is what failed (timeout, JSON
+            # parse failure, or an API error against TRAVEL_CONVERT_MODEL).
+            return _zero_result(
+                reason, raw_output=plan_text,
+                conversion_error_type=_classify_conversion_error(err),
+            )
 
         try:
             breakdown = _evaluate(parsed, meta, sample_id)
@@ -546,6 +596,20 @@ class TravelCompositeScorer:
         # renames or restructures them. A generic count-of-True-flags
         # stays correct across any future generation of the workflow.
         harness_checks: dict[str, int] = {}
+        # Real conversion-infra failures ONLY (conversion_error_type is set
+        # by score() exclusively when the agent produced a real, non-empty
+        # plan and the plan->JSON conversion step itself failed -- timeout/
+        # parse/API error against TRAVEL_CONVERT_MODEL). Deliberately a
+        # SEPARATE tally from no_plan_count/no_plan_rate above (whose own
+        # counting/semantics stay byte-identical to before this was added
+        # -- it still counts every _NO_PLAN_RE match, conversion errors
+        # included) so existing consumers of no_plan_rate are unaffected;
+        # this lets the dashboard/editor tell "agent produced nothing
+        # usable" apart from "agent's plan was fine, conversion infra
+        # failed" -- see _zero_result's own docstring comment for why that
+        # distinction matters.
+        conversion_error_count = 0
+        conversion_error_types: dict[str, int] = {}
 
         for case in per_case:
             details = getattr(case, "details", None) or {}
@@ -555,6 +619,12 @@ class TravelCompositeScorer:
                 for key, val in (details.get("agent_metadata") or {}).items():
                     if val is True:
                         harness_checks[key] = harness_checks.get(key, 0) + 1
+                conv_type = details.get("conversion_error_type")
+                if conv_type:
+                    conversion_error_count += 1
+                    conversion_error_types[conv_type] = (
+                        conversion_error_types.get(conv_type, 0) + 1
+                    )
                 # Cases with no plan have no failed_checks/dimension_scores.
                 continue
 
@@ -610,6 +680,10 @@ class TravelCompositeScorer:
         untraced_rate, untraced_ranked = _tool_input_traceability(
             per_case, trace_events
         )
+        conversion_error_rate = conversion_error_count / len(per_case)
+        conversion_error_types_ranked: list[tuple[str, int]] = sorted(
+            conversion_error_types.items(), key=lambda kv: (-kv[1], kv[0])
+        )
         return {
             "no_plan_rate": no_plan_rate,
             "top_failed_checks": top_failed_checks,
@@ -618,6 +692,13 @@ class TravelCompositeScorer:
             "check_semantics": check_semantics,
             "tool_input_untraced_rate": untraced_rate,
             "untraced_tool_inputs": untraced_ranked,
+            # Subset of no_plan_rate's cases where the agent produced a
+            # real plan but the plan->JSON conversion step itself failed
+            # (timeout/parse/API error) -- see the conversion_error_count
+            # comment above for why this is tracked separately from
+            # no_plan_rate rather than folded into it.
+            "conversion_error_rate": conversion_error_rate,
+            "conversion_error_types": conversion_error_types_ranked,
         }
 
 
