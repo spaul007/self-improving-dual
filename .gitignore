@@ -37,6 +37,7 @@ tmp/
 projects/travel/data/
 projects/shopping/data/
 docs/
+arxiv/
 
 # --- Local-only working notes (do not check in) ---
 CLAUDE.md
