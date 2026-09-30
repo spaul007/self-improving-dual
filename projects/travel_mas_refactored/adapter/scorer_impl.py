@@ -110,6 +110,21 @@ def _resolve_database_root() -> Optional[Path]:
     return candidate if candidate.exists() else None
 
 
+def _convert_create_kwargs(convert_model: str, messages: list[dict]) -> dict:
+    """The conversion request. ``TRAVEL_CONVERT_ENABLE_THINKING`` ("true" /
+    "false") turns a Qwen3-hybrid converter's thinking on or off via vLLM's
+    ``chat_template_kwargs.enable_thinking``; unset (the default) leaves the
+    request exactly as before. The converter uses its own OpenAI client, so
+    the task agent's ``LLM_ENABLE_THINKING`` never reaches it."""
+    kwargs: dict = {"model": convert_model, "messages": messages}
+    flag = (os.environ.get("TRAVEL_CONVERT_ENABLE_THINKING") or "").strip().lower()
+    if flag:
+        kwargs["extra_body"] = {
+            "chat_template_kwargs": {"enable_thinking": flag in ("1", "true", "yes")}
+        }
+    return kwargs
+
+
 def _convert_plan_to_json(plan_text: str, *, retries: int = DEFAULT_RETRIES) -> tuple[Optional[dict], Optional[str]]:
     """Call gpt-5-2025-08-07 to convert the agent's text plan into the
     structured JSON the constraint evaluators expect.
@@ -171,6 +186,7 @@ def _convert_plan_to_json(plan_text: str, *, retries: int = DEFAULT_RETRIES) -> 
         {"role": "system", "content": FORMAT_CONVERT_PROMPT_EN},
         {"role": "user", "content": plan_text},
     ]
+    create_kwargs = _convert_create_kwargs(convert_model, messages)
 
     last_err: Optional[str] = None
     started = time.monotonic()
@@ -188,10 +204,7 @@ def _convert_plan_to_json(plan_text: str, *, retries: int = DEFAULT_RETRIES) -> 
             break
         try:
             # gpt-5-2025-08-07 is a reasoning model — do not pass max_tokens.
-            resp = client.chat.completions.create(
-                model=convert_model,
-                messages=messages,
-            )
+            resp = client.chat.completions.create(**create_kwargs)
             content = resp.choices[0].message.content or ""
         except Exception as exc:  # noqa: BLE001 - surface SDK errors as scorer detail
             last_err = f"openai call failed (attempt {attempt + 1}): {exc!r}"
