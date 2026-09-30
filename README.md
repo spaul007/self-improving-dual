@@ -164,6 +164,154 @@ Results land in `runs/eval_<stamp>_<agent_basename>/round_eval/`. Per-case
 results are persisted to `logs/case_<id>.json` as each case finishes, so
 you can inspect partial scores while the run is still going.
 
+## Agentic editor and edit memory (block HGM)
+
+Ported from the sep18 line (`edit-memory-sep18-agentic`, branch `agentic-clean`).
+Everything is opt-in; configs that don't name these components behave exactly as
+before (locked by `tests/test_default_editor_prompt_golden.py` and
+`tests/test_hgm_default_path_golden.py`).
+
+**Agentic editor** (`editor.type: agentic`, `meta_agent/agent_editor_agentic.py`).
+Not the same as `editor.type: default` + `agentic_editing: true`. Each EXPAND is one
+tool-use session: `bash` inside a bubblewrap sandbox, a targeted `editor`
+(`view` / `str_replace` / `insert` / `replace_lines` / `create`), `validate`, and
+`submit_self_improvement`. Nothing is inlined in the prompt; the session reads the
+parent's evidence itself through `$RUN_DIR`, `$NODE_DIR`, `$PARENT_DIR` and `$REPO_DIR`.
+
+- **Surface.** With `mutable_exclude` (multi-agent projects) everything under
+  `task_agent/` is writable except the excluded paths, which the sandbox mounts
+  read-only; a scope check rejects any change to them and any new symlink.
+  `benchmark/`, `data/`, `adapter/`, `meta_agent/` and `tests/` are not visible.
+- **Steering.** With `steering: assignment` (default) the manager passes the
+  selected block as an assignment: `## Selected block for this EXPAND` plus the
+  block's scope and a pointer to `strategies.md` (`strategies_path`). The
+  implementation strategy and curriculum focus are added only when those axes are
+  on. A configured `block_suggester` still runs; its note is shown as advice.
+  Block scope is prompt-only, as with the default editor.
+- **Useful knobs.** `model`, `base_url`, `api_key_env` and `max_output_tokens` must
+  be explicit, because `call_llm` otherwise falls back to the task agent's settings
+  (`check_meta_llm_config` enforces this). `validate_exclude: [smoke_test]` keeps
+  the real-case smoke test out of the `validate` tool (submit still runs it).
+  `read_scope: run | parent`, `sandbox: bwrap | auto | none`, `max_llm_calls`,
+  `timeout_s`, `project_overview_path`.
+- **Artifacts.** `round_NNN/agentic/{prompt_system.txt, prompt_instruction.txt,
+  transcript.jsonl, session.json}` and `round_NNN/assignment.json`.
+
+**Edit memory** (`edit_memory: {type: agentic}`, `meta_agent/edit_memory/`). After
+every `window_size` successful expansions an agentic curator reviews them (diffs,
+editor transcripts, case logs) and a generator updates one run-wide memory document
+(`edit_memory/edit_memory_vNNN.md`, all blocks). Every `instruction_every` versions
+an instruction curator audits how the memory was used and revises the generator's
+addendum. Per EXPAND a Thompson bandit over HGM's own pooled tallies picks the
+with / without arm (after `arm_min_pulls` shuffled warm-up pulls each); the with-arm
+editor reads the memory as `$EDIT_MEMORY_FILE`. The arm choice never touches block
+selection, the bandits or the curriculum. Requirements: the agentic editor, an
+`hgm` / `hgm_block_tagged` manager (`hgm_dual` refuses) and
+`manager.config.expand_eval_size > 0`.
+
+**Manager knobs** (`manager.config`, all default off):
+
+- `expand_eval_size: N` evaluates every successful child on N train cases right
+  after its edit. Init expansions then branch from the root.
+- `max_consecutive_edit_failures: N` stops the run (`EditorDeadError`) instead of
+  looping on a dead editor, e.g. an exhausted API key.
+
+**Hard-coded answers.** The `hardcoded_answers` validator rejects an edit whose added
+code contains a scorer-computed answer that the scorer's failure messages reveal
+(e.g. `Required return train not found: G729`). The project supplies the extractor
+(`projects/travel_mas_refactored/adapter/answer_literals.py`).
+
+**Resume.** `main_loop.py --resume runs/<run>` continues an unfinished `hgm` /
+`hgm_block_tagged` run in place. It rebuilds the tree, feedback, spend, curriculum
+and memory state from the round dirs, moves an interrupted editor session to
+`interrupted/`, and writes `config.resume_NNN.yaml` and `resume_log.json`.
+`--config` defaults to the run's own snapshot; `--drop-case-error REGEX` drops
+crash-artifact cases.
+
+**Configs.** `configs/hgm_travel_mas_agentic_{no_editmem,editmem}_X100Y180.yaml` are
+a matched pair (identical except `edit_memory`); `hgm_travel_mas_agentic_editmem_sanity.yaml`
+is the small end-to-end check. All three run Qwen3.8-27B with thinking off as both the
+task agent (`seed_qwen27b_nothink`) and the plan converter
+(`TRAVEL_CONVERT_ENABLE_THINKING: "false"`). Every meta-agent call uses
+`deepseek/deepseek-v4-pro-0813` on OpenRouter with reasoning medium: the editor, the
+memory curators and generator, the failure summarizer, and the gatherer's error-bucket
+classification. There is no behavior summarizer. Each takes its key from
+`OpenRouter_API_KEY` (`api_key_env`; for the gatherer `error_bucket_api_key_env`) and
+pins the provider to StreamLake then Alibaba (`extra_body`; `error_bucket_extra_body`).
+`main_loop.py` checks every named key variable is set before the seed evaluation.
+
+### Starting a full edit-memory run
+
+The full-scale pair is `hgm_travel_mas_agentic_editmem_X100Y180.yaml` (with memory) and
+`hgm_travel_mas_agentic_no_editmem_X100Y180.yaml` (the control). Start the pair with the
+same code and endpoints so the comparison is fair.
+
+1. **Pick a node where bubblewrap works.** The configs set `sandbox: "bwrap"`, so the
+   editor fails fast without it (node-3 works):
+   `bwrap --ro-bind / / --unshare-all /bin/true && echo ok`
+2. **Check the task-agent / converter endpoint** serves `Qwen/Qwen3.8-27B`:
+   `curl -s http://gpu-aic-mv-02-st-p5-node-3:8010/v1/models`
+3. **Check OpenRouter credit.** An exhausted key stops the run after 5 failed edits
+   (`EditorDeadError`); a sep18 run died this way. Every meta-agent call is DeepSeek V4
+   Pro at reasoning medium, so budget for well over $100 per edit-memory run.
+   `source /groups/AIC-MV/sudipta.paul/code/random/api.sh && curl -s https://openrouter.ai/api/v1/credits -H "Authorization: Bearer $OpenRouter_API_KEY"`
+4. **Run the sanity config first**, and check that its run dir has `round_*/agentic/`,
+   `round_*/assignment.json`, `edit_memory/edit_memory_v*.md` and a `run_summary.md`.
+5. **Launch each arm in its own tmux session** (conda env `hgm-dual`; `PYTHONUNBUFFERED`
+   keeps the console log live):
+
+   ```bash
+   cd /groups/AIC-MV/sudipta.paul/code/rsi/block-hgm-edit-memory-sep29/self-improving-dual
+   mkdir -p runs
+   tmux new-session -d -s agentic_editmem -c "$PWD" 'bash -c "source /users/sudipta.paul/miniconda3/etc/profile.d/conda.sh && conda activate hgm-dual && source /groups/AIC-MV/sudipta.paul/code/random/api.sh && PYTHONPATH=. PYTHONUNBUFFERED=1 python3 -u main_loop.py --config configs/hgm_travel_mas_agentic_editmem_X100Y180.yaml 2>&1 | tee runs/console_agentic_editmem.log; echo \"[exit] press enter\"; read"'
+   ```
+
+   For the control, repeat with session `agentic_no_editmem`, config
+   `hgm_travel_mas_agentic_no_editmem_X100Y180.yaml` and log
+   `runs/console_agentic_no_editmem.log`. Each run evaluates 32 cases in parallel on
+   node-3:8010, so running both at once doubles the load on that endpoint.
+6. **Watch it.**
+   - Attach with `tmux attach -t agentic_editmem` (detach with `Ctrl-b d`) or
+     `tail -f runs/console_agentic_editmem.log`.
+   - The run dir is `runs/<YYYYmmdd_HHMMSS>_travel_mas_agentic_editmem_X100Y180/`.
+   - A finished run writes `run_summary.md` there.
+7. **Stop and continue.**
+   - `Ctrl-c` in the tmux pane stops a run.
+   - `main_loop.py --resume runs/<run dir>` continues it in place (same tmux recipe,
+     with `--resume` instead of `--config`). Do this also after an `EditorDeadError`,
+     once the key or provider is fixed.
+
+### Dashboard
+
+The run does not start a dashboard; `hgm_dashboard.py` is a separate Streamlit app. It
+shows an Edit memory section (arm posteriors, memory and instruction versions, curation
+windows) and the Assignment and Editor session drill-down tabs when a run has them (views
+in `dashboard_editmem.py`).
+
+1. **Make `pyflakes` importable.** Streamlit is installed only in the base miniconda
+   python (`/users/sudipta.paul/miniconda3/bin/python3`), and the dashboard's imports
+   need `pyflakes`, which is only in `hgm-dual`. Expose it without installing anything:
+
+   ```bash
+   mkdir -p ~/.cache/hgm_dashboard_site
+   ln -sfn /users/sudipta.paul/miniconda3/envs/hgm-dual/lib/python3.12/site-packages/pyflakes ~/.cache/hgm_dashboard_site/pyflakes
+   ```
+
+   (Or install it once into the base python: `python3 -m pip install --user pyflakes`.)
+2. **Pick a free port** (`ss -ltn | grep -E ':850[0-9]'`; 8503 was taken on node-3 on
+   2026-09-30) and start the app in its own tmux session from the repo root:
+
+   ```bash
+   tmux new-session -d -s dashboard_agentic -c "$PWD" 'PYTHONPATH=.:$HOME/.cache/hgm_dashboard_site /users/sudipta.paul/miniconda3/bin/python3 -m streamlit run hgm_dashboard.py --server.port 8504 --server.address 0.0.0.0 --server.headless true'
+   ```
+
+3. **Open it** at `http://gpu-aic-mv-02-st-p5-node-3:8504`, or through a tunnel if the
+   node isn't reachable: `ssh -L 8504:localhost:8504 gpu-aic-mv-02-st-p5-node-3`, then
+   `http://localhost:8504`.
+4. **Set "Runs root" in the sidebar to `runs`.** It defaults to `dashboard_pinned_run`,
+   a directory this checkout doesn't have. Then pick the run under "Experiment (newest
+   first)". A live run auto-refreshes.
+
 ## Tree snapshots (best-at-budget analysis)
 
 The optimization managers evaluate nodes dynamically, so "which node is the
