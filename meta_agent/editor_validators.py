@@ -772,6 +772,138 @@ class SmokeTestValidator:
         return []
 
 
+
+@register("validator", "hardcoded_answers")
+class HardcodedAnswerValidator:
+    """Rejects an edit whose ADDED lines contain a value that belongs to
+    specific benchmark cases -- a scorer-computed answer the case's query
+    does not state (e.g. the train number that is "the latest direct train",
+    which the scorer's failure messages name: ``Required return train not
+    found: G729``). Those messages are visible to meta-agents that read case
+    logs, so this guards against the editor copying answers into the agent.
+
+    ``extractor`` ("module:function") maps one benchmark case dict to its
+    answer literals; the project decides what counts (see
+    ``projects/travel_mas_refactored/adapter/answer_literals.py``). Literals
+    shorter than ``min_length`` are ignored. Matching is case-insensitive on
+    word boundaries, so ``G729`` does not match inside ``G7290``. Only lines
+    the edit added are checked (a line multiset against the parent's copy of
+    the same file), so values the parent already contains never re-fail.
+    Full-line Python comments are skipped: they cannot change behavior (a
+    real editor wrote ``# e.g. "flight HO1729, ..."`` to document a format);
+    string literals -- prompt text included -- are checked.
+    ``forbidden_patterns`` (regexes) additionally reject added lines that
+    reference evaluation data, e.g. ``cases\\.jsonl``. Error messages never
+    name a case. Naive by design: string splitting defeats it.
+    """
+
+    # Read by the agentic editor to add its "never hard-code case values" rule.
+    rejects_hardcoded_answers = True
+
+    def __init__(
+        self,
+        *,
+        extractor: str,
+        benchmark_dir: Optional[Path] = None,
+        mutable_exclude: Optional[list[str]] = None,
+        min_length: int = 3,
+        forbidden_patterns: Optional[list[str]] = None,
+        max_reported: int = 5,
+    ) -> None:
+        import importlib
+        import re
+
+        module_name, _, func_name = extractor.partition(":")
+        if not module_name or not func_name:
+            raise ValueError(f"hardcoded_answers extractor must be 'module:function', got {extractor!r}")
+        self._extract = getattr(importlib.import_module(module_name), func_name)
+        self.benchmark_dir = Path(benchmark_dir) if benchmark_dir else None
+        self.mutable_exclude = mutable_exclude
+        self.min_length = int(min_length)
+        self.forbidden = [re.compile(p) for p in (forbidden_patterns or [])]
+        self.max_reported = int(max_reported)
+        self._pattern = None  # compiled lazily on first validate()
+
+    def _literal_pattern(self):
+        import re
+
+        from .evaluator import load_cases
+
+        if self._pattern is None:
+            if self.benchmark_dir is None:
+                raise ValueError("hardcoded_answers needs benchmark_dir (injected by build_components)")
+            literals: set[str] = set()
+            for case in load_cases(self.benchmark_dir):
+                for value in self._extract(case) or ():
+                    value = str(value).strip()
+                    if len(value) >= self.min_length:
+                        literals.add(value)
+            if literals:
+                alternation = "|".join(
+                    re.escape(v) for v in sorted(literals, key=lambda v: (-len(v), v))
+                )
+                self._pattern = re.compile(
+                    rf"(?<![A-Za-z0-9_])(?:{alternation})(?![A-Za-z0-9_])", re.IGNORECASE
+                )
+            else:
+                self._pattern = re.compile(r"(?!x)x")  # matches nothing
+        return self._pattern
+
+    def validate(self, out_dir: Path, base_dir: Path) -> list[str]:
+        from collections import Counter
+
+        pattern = self._literal_pattern()
+        new_root, old_root = Path(out_dir) / "task_agent", Path(base_dir) / "task_agent"
+        if not new_root.exists():
+            return []
+        errors: list[str] = []
+        for path in sorted(new_root.rglob("*")):
+            if not path.is_file() or path.is_symlink():
+                continue
+            rel = path.relative_to(new_root).as_posix()
+            if set(Path(rel).parts) & {"__pycache__", "results"}:
+                continue
+            if self.mutable_exclude is not None and is_excluded(rel, self.mutable_exclude):
+                continue
+            try:
+                new_lines = path.read_text(encoding="utf-8").splitlines()
+            except (UnicodeDecodeError, OSError):
+                continue
+            old_path = old_root / rel
+            try:
+                old_lines = old_path.read_text(encoding="utf-8").splitlines() if old_path.is_file() else []
+            except (UnicodeDecodeError, OSError):
+                old_lines = []
+            added = Counter(new_lines) - Counter(old_lines)
+            is_python = path.suffix == ".py"
+            for line in added:
+                if is_python and line.lstrip().startswith("#"):
+                    continue
+                m = pattern.search(line)
+                if m:
+                    errors.append(
+                        f"{rel}: adds a value that belongs to specific benchmark cases "
+                        f"({m.group(0)!r}) — hard-coding case-specific values (train/flight "
+                        "numbers, hotel/restaurant/attraction names) is not allowed; the agent "
+                        "must obtain them from its tools at run time"
+                    )
+                    continue
+                for fp in self.forbidden:
+                    fm = fp.search(line)
+                    if fm:
+                        errors.append(
+                            f"{rel}: references evaluation data ({fm.group(0)!r}) — the agent "
+                            "may not read benchmark cases or their constraints"
+                        )
+                        break
+        errors = list(dict.fromkeys(errors))
+        if len(errors) > self.max_reported:
+            errors = errors[: self.max_reported] + [
+                f"(+{len(errors) - self.max_reported} more hard-coded value(s))"
+            ]
+        return errors
+
+
 DEFAULT_VALIDATOR_NAMES = [
     "syntax",
     "signature",
