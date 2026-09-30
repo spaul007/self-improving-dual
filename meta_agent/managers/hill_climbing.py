@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from ..agent_editor import AgentEditor, fallback_strategy
 from ..evaluator import Evaluator
@@ -78,7 +78,17 @@ class HillClimbingManager:
         score_target: float | None,
         train_case_ids: Optional[list[str]] = None,
         eval_case_ids: Optional[list[str]] = None,
+        # Accepted so main_loop.py's optional components don't crash this
+        # manager; hill climbing uses none of them.
+        summarizer: Any = None,
+        failure_summarizer: Any = None,
+        block_suggester: Any = None,
+        unit_selector: Any = None,
+        edit_memory: Any = None,
     ) -> EvolutionOutcome:
+        if edit_memory is not None:
+            raise ValueError("hill_climbing does not support edit_memory; use manager hgm "
+                             "or hgm_block_tagged")
         self._history = []
         self._train_case_ids = train_case_ids
         self._eval_case_ids = eval_case_ids

@@ -94,6 +94,11 @@ class HGMDualManager(HGMManager):
         category_tiebreak: str = "max_p_greater",
         **base_kwargs: Any,
     ) -> None:
+        if base_kwargs.get("expand_eval_size"):
+            raise ValueError(
+                "hgm_dual does not support expand_eval_size (its Stage A/B "
+                "already evaluates inside each expansion); use manager hgm"
+            )
         super().__init__(**base_kwargs)
         self.num_variants = max(0, num_variants)
         self.intra_expand_eval_size = max(1, intra_expand_eval_size)
@@ -936,7 +941,16 @@ class HGMDualManager(HGMManager):
         # this is accepted purely to avoid crashing on main_loop.py's unconditional kwarg, same as
         # failure_summarizer/block_suggester above.
         unit_selector: Any = None,
+        edit_memory: Any = None,
     ) -> Any:
+        # The agentic editor and the edit-memory layer are wired for
+        # single-child expansions (hgm / hgm_block_tagged) only.
+        if edit_memory is not None:
+            raise ValueError("hgm_dual does not support edit_memory; use manager hgm "
+                             "or hgm_block_tagged")
+        if getattr(editor, "steering", None) == "assignment":
+            raise ValueError("hgm_dual does not support the agentic editor's assignment "
+                             "steering; use manager hgm or hgm_block_tagged")
         # Stash the evaluator so _expand can call _evaluate_candidate
         # without changing the HGMManager._expand signature.
         self._evaluator = evaluator  # type: ignore[attr-defined]
