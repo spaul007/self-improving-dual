@@ -195,6 +195,40 @@ class RoundInfo:
     # exclude_llm_call_failures is turned on; absent (None) for any round
     # from before this feature existed, or one still mid-EVALUATE.
     llm_failure_health: Optional[dict[str, Any]] = None
+    # Agentic editor rounds: the manager's assignment (assignment.json) and
+    # the editor session summary (agentic/session.json).
+    assignment: Optional[dict[str, Any]] = None
+    agentic_session: Optional[dict[str, Any]] = None
+    # Edit-memory arm from the layer's state.json (``attach_state_arms``),
+    # for edit-failed rounds, which have no hgm_node.json mid-run.
+    state_arm: Optional[tuple[str, Optional[int]]] = None
+
+    @property
+    def is_root(self) -> bool:
+        return self.node_id == 0
+
+    @property
+    def memory_arm(self) -> str:
+        """"with" | "without" | "none" (no layer, or before the first memory)."""
+        if self.hgm_node is not None and "memory_arm" in self.hgm_node:
+            return str(self.hgm_node["memory_arm"])
+        if self.state_arm is not None:
+            return str(self.state_arm[0])
+        if self.agentic_session and self.agentic_session.get("memory_path"):
+            return "with"
+        return "none"
+
+    @property
+    def memory_version(self) -> Optional[int]:
+        if self.hgm_node is not None and "memory_arm" in self.hgm_node:
+            return self.hgm_node.get("memory_version")
+        if self.state_arm is not None:
+            return self.state_arm[1]
+        return None
+
+    @property
+    def implementation_strategy(self) -> Optional[str]:
+        return (self.strategy or {}).get("implementation_strategy")
 
     @property
     def llm_failure_rate_pct(self) -> Optional[float]:
@@ -321,6 +355,8 @@ def discover_rounds(experiment_dir: Path) -> list[RoundInfo]:
         adaptive_strategy = _read_json(round_dir / "adaptive_strategy.json")
         behavior_aggregate = _read_json(round_dir / "behavior_aggregate.json")
         llm_failure_health = _read_json(round_dir / "llm_failure_health.json")
+        assignment = _read_json(round_dir / "assignment.json")
+        agentic_session = _read_json(round_dir / "agentic" / "session.json")
         rounds.append(
             RoundInfo(
                 round_dir=round_dir,
@@ -335,6 +371,8 @@ def discover_rounds(experiment_dir: Path) -> list[RoundInfo]:
                 has_variants=(round_dir / "variants").is_dir(),
                 adaptive_strategy=adaptive_strategy,
                 llm_failure_health=llm_failure_health,
+                assignment=assignment,
+                agentic_session=agentic_session,
             )
         )
     rounds.sort(key=lambda r: r.node_id)
@@ -585,3 +623,101 @@ def beta_pdf_curve(a: float, b: float, *, n_points: int = 200) -> tuple[list[flo
         for x in xs
     ]
     return xs, ys
+
+
+# --------------------------------------------------------------------------- #
+# Edit memory: arms and the bandit's posteriors
+# --------------------------------------------------------------------------- #
+
+
+def edit_memory_config(cfg: dict[str, Any]) -> Optional[dict[str, Any]]:
+    """``edit_memory.config`` of a run's config snapshot; None without a layer."""
+    em = cfg.get("edit_memory")
+    if not isinstance(em, dict):
+        return None
+    return dict(em.get("config") or {})
+
+
+def attach_state_arms(rounds: list[RoundInfo], state: dict[str, Any]) -> None:
+    """Give rounds without a sidecar arm (edit-failed ones, mid-run) the arm
+    the layer recorded in ``state.json``'s ``node_arms``."""
+    arms = state.get("node_arms") or {}
+    for r in rounds:
+        entry = arms.get(str(r.node_id))
+        if entry:
+            r.state_arm = (str(entry[0]), entry[1] if len(entry) > 1 else None)
+
+
+def arm_utility_summary(rounds: list[RoundInfo]) -> dict[str, dict[str, Any]]:
+    """Per memory arm ("with" | "without" | "none"): node counts and the mean
+    of evaluated nodes' train means. Only arms that occur are returned."""
+    out: dict[str, dict[str, Any]] = {}
+    for r in rounds:
+        if r.is_root:
+            continue
+        e = out.setdefault(r.memory_arm, {
+            "n_nodes": 0, "n_evaluated": 0, "n_edit_failed": 0,
+            "mean_of_means": None, "best_mean": None, "total_evals": 0, "_means": [],
+        })
+        e["n_nodes"] += 1
+        if r.edit_failed:
+            e["n_edit_failed"] += 1
+        if r.n_evals > 0 and r.mean_utility is not None:
+            e["n_evaluated"] += 1
+            e["total_evals"] += r.n_evals
+            e["_means"].append(float(r.mean_utility))
+    for e in out.values():
+        means = e.pop("_means")
+        if means:
+            e["mean_of_means"] = sum(means) / len(means)
+            e["best_mean"] = max(means)
+    return out
+
+
+def arm_beta_tallies(rounds: list[RoundInfo]) -> dict[str, dict[str, float]]:
+    """The bandit's pooled per-arm tallies, recomputed from ``hgm_node.json``
+    exactly as ``EditMemoryLayer.arm_tallies`` does (HGM ``n_success`` /
+    ``n_failure`` over every node pulled under that arm, all blocks pooled;
+    the seed and pre-memory ``none`` nodes excluded)."""
+    out = {"with": {"S": 0.0, "F": 0.0, "n_nodes": 0},
+           "without": {"S": 0.0, "F": 0.0, "n_nodes": 0}}
+    for r in rounds:
+        if r.is_root or r.hgm_node is None or r.memory_arm not in out:
+            continue
+        out[r.memory_arm]["S"] += float(r.hgm_node.get("n_success") or 0.0)
+        out[r.memory_arm]["F"] += float(r.hgm_node.get("n_failure") or 0.0)
+        out[r.memory_arm]["n_nodes"] += 1
+    return out
+
+
+def beta_summary(a: float, b: float) -> dict[str, float]:
+    """Mean and a central 90% interval of Beta(a, b), on the curve's grid."""
+    xs, ys = beta_pdf_curve(a, b, n_points=400)
+    step = xs[1] - xs[0]
+    cdf, acc = [], 0.0
+    for y in ys:
+        acc += y * step
+        cdf.append(acc)
+    total = cdf[-1] or 1.0
+
+    def q(p: float) -> float:
+        for x, c in zip(xs, cdf):
+            if c / total >= p:
+                return x
+        return xs[-1]
+
+    return {"mean": a / (a + b), "lo90": q(0.05), "hi90": q(0.95)}
+
+
+def prob_beta_greater(a1: float, b1: float, a2: float, b2: float) -> float:
+    """P(X > Y) for X~Beta(a1,b1), Y~Beta(a2,b2) by numeric integration --
+    the probability the bandit's next Thompson draw picks arm 1."""
+    xs, f1 = beta_pdf_curve(a1, b1, n_points=400)
+    _, f2 = beta_pdf_curve(a2, b2, n_points=400)
+    step = xs[1] - xs[0]
+    cdf2, acc, total = [], 0.0, sum(f2) * step
+    for y in f2:
+        acc += y * step
+        cdf2.append(acc / total if total else 0.0)
+    norm1 = sum(f1) * step or 1.0
+    return sum(f * c for f, c in zip(f1, cdf2)) * step / norm1

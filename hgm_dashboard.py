@@ -20,7 +20,9 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import dashboard_editmem as dem  # noqa: E402
 from meta_agent import run_inspect as ri  # noqa: E402
+from meta_agent import run_inspect_agentic as ra  # noqa: E402
 from meta_agent.feedback_gatherer import render_metrics  # noqa: E402
 from meta_agent.llm_failure_health import DEFAULT_INCIDENCE_THRESHOLD_PCT  # noqa: E402
 
@@ -87,6 +89,14 @@ alerts = ri.extract_diagnostics(rounds, is_active=is_active)
 run_summary = ri.load_run_summary(experiment_dir)
 
 rounds_by_id = {r.node_id: r for r in rounds}
+
+# Agentic editor / edit memory: shown only when the run has them.
+edit_memory_info = ra.load_edit_memory(experiment_dir)
+if edit_memory_info is not None:
+    ri.attach_state_arms(rounds, edit_memory_info.state)
+has_memory = edit_memory_info is not None
+has_assignment = any(r.assignment for r in rounds)
+has_sessions = any(r.agentic_session for r in rounds)
 
 # Per-node diff cache (against each node's actual parent) -- computed once,
 # reused by both the tree diagram and the nodes table.
@@ -236,6 +246,8 @@ for r in rounds:
     label = f"node {r.node_id}\\nmean={mu_str}"
     if block:
         label += f"\\nblock={block}"
+    if has_memory and r.memory_arm != "none":
+        label += f"\\narm={r.memory_arm}"
     if r.node_id in diffs_by_node:
         _, added, removed = diffs_by_node[r.node_id]
         label += f"\\n+{added}/-{removed}"
@@ -298,6 +310,15 @@ for r in rounds:
             "llm_terminal_failures": r.llm_terminal_failures,
         }
     )
+    if has_memory:
+        rows[-1]["arm"] = r.memory_arm
+        rows[-1]["mem_v"] = r.memory_version
+    if has_assignment:
+        rows[-1]["impl"] = r.implementation_strategy
+    if has_sessions:
+        session = r.agentic_session or {}
+        rows[-1]["editor_calls"] = session.get("n_llm_calls")
+        rows[-1]["end_reason"] = session.get("end_reason")
 nodes_df = pd.DataFrame(rows)
 st.dataframe(nodes_df, width="stretch", hide_index=True)
 
@@ -331,6 +352,14 @@ else:
 
 
 # --------------------------------------------------------------------------- #
+# Edit memory (only for runs with the edit-memory layer)
+# --------------------------------------------------------------------------- #
+
+if has_memory:
+    dem.render_edit_memory(experiment_dir, rounds, cfg)
+
+
+# --------------------------------------------------------------------------- #
 # Round drill-down
 # --------------------------------------------------------------------------- #
 
@@ -340,9 +369,19 @@ node_ids = [r.node_id for r in rounds]
 selected_node = st.selectbox("Node", node_ids, index=len(node_ids) - 1)
 round_ = rounds_by_id[selected_node]
 
-tab_strategy, tab_eval, tab_diff, tab_feedback, tab_memory = st.tabs(
-    ["Strategy", "Evaluation", "Diff vs parent", "Feedback", "Behavior memory"]
-)
+_tab_names = ["Strategy", "Evaluation", "Diff vs parent", "Feedback", "Behavior memory"]
+if has_assignment:
+    _tab_names.append("Assignment")
+if has_sessions:
+    _tab_names.append("Editor session")
+_tabs = st.tabs(_tab_names)
+tab_strategy, tab_eval, tab_diff, tab_feedback, tab_memory = _tabs[:5]
+if has_assignment:
+    with _tabs[_tab_names.index("Assignment")]:
+        dem.render_assignment(round_)
+if has_sessions:
+    with _tabs[_tab_names.index("Editor session")]:
+        dem.render_editor_session(round_)
 
 with tab_strategy:
     if round_.strategy:
