@@ -129,6 +129,12 @@ class FailureSummarizer:
         trace_digest_max_calls: int = 15,
         # No point exceeding trace.jsonl's own result_preview truncation.
         trace_digest_preview_chars: int = 200,
+        # Env var holding the key for this component's calls (e.g.
+        # "OpenRouter_API_KEY" when base_url is OpenRouter but OPENAI_API_KEY
+        # is another provider's), and request-body extras such as an
+        # OpenRouter provider pin. None (default): call_llm's usual key/body.
+        api_key_env: Optional[str] = None,
+        extra_body: Optional[dict[str, Any]] = None,
     ) -> None:
         self.llm = llm_caller
         self.model = model
@@ -141,6 +147,8 @@ class FailureSummarizer:
         self.trace_digest_case_count = trace_digest_case_count
         self.trace_digest_max_calls = trace_digest_max_calls
         self.trace_digest_preview_chars = trace_digest_preview_chars
+        self.api_key_env = api_key_env or None
+        self.extra_body = dict(extra_body) if extra_body else None
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -456,6 +464,10 @@ class FailureSummarizer:
             kwargs["base_url"] = self.base_url
         if self.max_output_tokens is not None:
             kwargs["max_output_tokens"] = self.max_output_tokens
+        if self.api_key_env:
+            kwargs["api_key_env"] = self.api_key_env
+        if self.extra_body:
+            kwargs["extra_body"] = self.extra_body
         response = self.llm(**kwargs)
         content = getattr(response, "content", None) or ""
         return _strip_reasoning_preamble(content)

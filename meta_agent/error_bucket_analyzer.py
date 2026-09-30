@@ -423,6 +423,8 @@ def classify_batches(
     batch_size: int,
     max_output_tokens: Optional[int] = 16384,
     on_batch: Optional[Callable[[str, str, str], None]] = None,
+    api_key_env: Optional[str] = None,
+    extra_body: Optional[dict[str, Any]] = None,
 ) -> dict[str, list[dict[str, str]]]:
     """Classifies every digest, batch_size cases at a time. ``on_batch``,
     if given, is called with (system_prompt, user_prompt, raw_response)
@@ -435,7 +437,12 @@ def classify_batches(
     exhausting max_output_tokens before ever reaching the requested JSON.
     This is a pure transcription/categorization task per case, same as
     the travel_mas_refactored Phase-3 composition call that motivated this
-    default originally -- it doesn't need open-ended deliberation."""
+    default originally -- it doesn't need open-ended deliberation.
+
+    ``api_key_env`` / ``extra_body`` are passed to ``call_llm`` only when set:
+    the env var holding this call's key (e.g. an OpenRouter key while the
+    run's OPENAI_API_KEY is another provider's) and request-body extras
+    such as an OpenRouter provider pin."""
     effective_reasoning_effort = reasoning_effort or "low"
     all_labels: dict[str, list[dict[str, str]]] = {}
     for i in range(0, len(digests), batch_size):
@@ -456,6 +463,10 @@ def classify_batches(
             kwargs["base_url"] = base_url
         if max_output_tokens is not None:
             kwargs["max_output_tokens"] = max_output_tokens
+        if api_key_env:
+            kwargs["api_key_env"] = api_key_env
+        if extra_body:
+            kwargs["extra_body"] = extra_body
 
         try:
             response = llm_caller(**kwargs)
@@ -605,6 +616,8 @@ def analyze_cases(
     max_cases: Optional[int] = None,
     artifacts_dir: Optional[Path] = None,
     source_label: str = "",
+    api_key_env: Optional[str] = None,
+    extra_body: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
     """The core pipeline, over already-loaded ``cases`` (each shaped like
     one ``case_*.json`` -- case_id/passed/score/error/details) and
@@ -663,6 +676,8 @@ def analyze_cases(
         reasoning_effort=reasoning_effort,
         batch_size=batch_size,
         on_batch=on_batch,
+        api_key_env=api_key_env,
+        extra_body=extra_body,
     ) if digests else {}
 
     agg = aggregate(cases, labels_by_case, deterministic_by_case)

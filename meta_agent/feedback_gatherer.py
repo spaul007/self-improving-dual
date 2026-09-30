@@ -153,6 +153,12 @@ class DefaultFeedbackGatherer:
         error_bucket_model: Optional[str] = None,
         error_bucket_base_url: Optional[str] = None,
         error_bucket_reasoning_effort: Optional[str] = None,
+        # Env var holding the key for these calls (e.g. "OpenRouter_API_KEY"
+        # when error_bucket_base_url is OpenRouter but OPENAI_API_KEY is
+        # another provider's), and request-body extras such as an OpenRouter
+        # provider pin. None (default): call_llm's usual key and body.
+        error_bucket_api_key_env: Optional[str] = None,
+        error_bucket_extra_body: Optional[dict[str, Any]] = None,
         # Cost control: worst-scoring-first cap on how many failing cases
         # get an LLM classification call each round — unlike the
         # standalone CLI tool (no cap by default), this runs every round
@@ -169,6 +175,8 @@ class DefaultFeedbackGatherer:
         self.error_bucket_model = error_bucket_model
         self.error_bucket_base_url = error_bucket_base_url
         self.error_bucket_reasoning_effort = error_bucket_reasoning_effort
+        self.error_bucket_api_key_env = error_bucket_api_key_env or None
+        self.error_bucket_extra_body = dict(error_bucket_extra_body) if error_bucket_extra_body else None
         self.error_bucket_max_cases = error_bucket_max_cases
         self.error_bucket_batch_size = error_bucket_batch_size
         # The scorer instance — used to source project-specific roll-ups
@@ -388,6 +396,8 @@ class DefaultFeedbackGatherer:
                 max_cases=self.error_bucket_max_cases,
                 artifacts_dir=round_dir / "error_bucket_analysis",
                 source_label=str(round_dir),
+                api_key_env=self.error_bucket_api_key_env,
+                extra_body=self.error_bucket_extra_body,
             )
         except Exception as exc:  # noqa: BLE001
             print(

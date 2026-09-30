@@ -41,6 +41,7 @@ def run(
     cfg = cfg_mod.load(config_path)
 
     runtime_env.apply_all(cfg)
+    _preflight_keys(cfg)
 
     fw = cfg_mod.build_components(cfg)
 
@@ -120,6 +121,25 @@ def _prepare_resume(run_dir: Path, config_path: Optional[Path]) -> Path:
         Path(config_path).read_text(encoding="utf-8"), encoding="utf-8")
     print(f"[resume] continuing {run_dir} with {config_path}", flush=True)
     return config_path
+
+
+def _preflight_keys(cfg: Any) -> None:
+    """Fail before the (free but slow) seed pre-evaluation when a meta
+    component names an API-key env var that is not set."""
+    import os
+
+    checks = [("editor.config.api_key_env", cfg.editor.config.get("api_key_env")),
+              ("gatherer.config.error_bucket_api_key_env",
+               cfg.gatherer.config.get("error_bucket_api_key_env"))]
+    if cfg.edit_memory is not None:
+        checks.append(("edit_memory.config.api_key_env", cfg.edit_memory.config.get("api_key_env")))
+    if cfg.failure_summarizer is not None:
+        checks.append(("failure_summarizer.config.api_key_env",
+                       cfg.failure_summarizer.config.get("api_key_env")))
+    for name, env in checks:
+        if env and not os.environ.get(env):
+            raise RuntimeError(f"{name} names {env}, which is not set "
+                               "(source the key file first)")
 
 
 # ---------------------------------------------------------------------- #
