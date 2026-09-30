@@ -391,6 +391,9 @@ def call_llm(
     max_output_tokens: Optional[int] = DEFAULT_MAX_OUTPUT_TOKENS,
     provider: Optional[dict[str, Any]] = None,
     enable_thinking: Optional[bool] = None,
+    api_key_env: Optional[str] = None,
+    timeout_s: Optional[float] = None,
+    extra_body: Optional[dict[str, Any]] = None,
     **kwargs: Any,
 ) -> LLMResponse:
     """Make one Responses-API round-trip and return a normalised response.
@@ -404,6 +407,23 @@ def call_llm(
     variables, which lets the meta-agent set them once for the whole run
     and have them propagate into every evaluator subprocess without
     threading them through the seed code.
+
+    Three per-call options exist for meta-agent callers (the agentic editor
+    and the edit-memory curators) that talk to a different provider than
+    the task agent. All default to None, which leaves the request exactly
+    as before:
+
+    - ``api_key_env`` names the env var holding this call's key (e.g. an
+      OpenRouter key while the task agent runs on a keyless local vLLM). It
+      must be set and non-empty; there is no fallback.
+    - ``timeout_s`` is this call's per-attempt timeout. The whole retry
+      loop's ceiling becomes ``max(DEFAULT_OVERALL_TIMEOUT_S, 2*timeout_s)``,
+      so at least two attempts always fit.
+    - ``extra_body`` is merged into the request body. Its ``provider`` and
+      ``chat_template_kwargs.enable_thinking`` sit between the explicit
+      ``provider`` / ``enable_thinking`` arguments (which win) and the
+      ``LLM_PROVIDER_PREFERENCE`` / ``LLM_ENABLE_THINKING`` env defaults,
+      which the task agent's settings export globally.
     """
     try:
         from openai import OpenAI
@@ -422,10 +442,30 @@ def call_llm(
         max_output_tokens if max_output_tokens is not None
         else _env_default_max_output_tokens()
     )
-    resolved_provider = provider if provider is not None else _env_default_provider()
-    resolved_enable_thinking = enable_thinking if enable_thinking is not None else _env_default_enable_thinking()
+    caller_body: dict[str, Any] = dict(extra_body or {})
+    caller_thinking = (caller_body.get("chat_template_kwargs") or {}).get("enable_thinking")
+    if provider is not None:
+        resolved_provider = provider
+    elif "provider" in caller_body:
+        resolved_provider = caller_body["provider"]
+    else:
+        resolved_provider = _env_default_provider()
+    if enable_thinking is not None:
+        resolved_enable_thinking = enable_thinking
+    elif caller_thinking is not None:
+        resolved_enable_thinking = caller_thinking
+    else:
+        resolved_enable_thinking = _env_default_enable_thinking()
 
-    api_key = os.environ.get("OPENAI_API_KEY")
+    if api_key_env:
+        api_key = os.environ.get(api_key_env)
+        if not api_key:
+            raise RuntimeError(
+                f"{api_key_env} (api_key_env) is not set or empty -- the key "
+                "for this call must come from that environment variable"
+            )
+    else:
+        api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
         if resolved_base_url:
             # Local OpenAI-compatible servers (vLLM, etc.) ignore the key,
@@ -462,7 +502,7 @@ def call_llm(
 
     client_kwargs: dict[str, Any] = {
         "api_key": api_key,
-        "timeout": _env_default_request_timeout(),
+        "timeout": float(timeout_s) if timeout_s else _env_default_request_timeout(),
         # The SDK's own default (2) retries silently *inside* a single
         # call, so one manual attempt in the retry loop below could cost
         # up to 3x the configured timeout before ever raising -- confirmed
@@ -491,28 +531,38 @@ def call_llm(
         request["reasoning"] = {"effort": resolved_effort}
     else:
         request["temperature"] = resolved_temperature
-    extra_body: dict[str, Any] = {}
+    body_extra: dict[str, Any] = {
+        k: v for k, v in caller_body.items() if k != "provider"
+    }
     if resolved_provider:
         # OpenRouter-specific extension, not part of the OpenAI Responses
         # API schema -- forwarded via extra_body, which the SDK passes
         # through verbatim in the JSON body. Any other OpenAI-compatible
         # endpoint (local vLLM, etc.) simply ignores an unrecognized field.
-        extra_body["provider"] = resolved_provider
+        body_extra["provider"] = resolved_provider
     if resolved_enable_thinking is not None:
         # vLLM/Qwen3-hybrid chat-template extension -- see
         # _env_default_enable_thinking()'s docstring. Ignored by any
         # endpoint that doesn't recognize it, same safety property as
         # the provider field above.
-        extra_body["chat_template_kwargs"] = {"enable_thinking": resolved_enable_thinking}
-    if extra_body:
-        request["extra_body"] = extra_body
+        body_extra["chat_template_kwargs"] = {
+            **(body_extra.get("chat_template_kwargs") or {}),
+            "enable_thinking": resolved_enable_thinking,
+        }
+    if body_extra:
+        request["extra_body"] = body_extra
 
+    # Read the module constant at call time (tests patch it).
+    overall_timeout_s = (
+        max(DEFAULT_OVERALL_TIMEOUT_S, 2.0 * float(timeout_s))
+        if timeout_s else DEFAULT_OVERALL_TIMEOUT_S
+    )
     started = time.time()
     last_err: Optional[Exception] = None
     response = None
     for attempt in range(DEFAULT_API_MAX_RETRIES):
         elapsed_so_far = time.time() - started
-        if elapsed_so_far >= DEFAULT_OVERALL_TIMEOUT_S:
+        if elapsed_so_far >= overall_timeout_s:
             # Hard ceiling this loop exists to guarantee: give up after
             # ~DEFAULT_OVERALL_TIMEOUT_S total, no matter how many of
             # DEFAULT_API_MAX_RETRIES attempts have actually run or how
