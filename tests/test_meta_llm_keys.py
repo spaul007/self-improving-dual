@@ -127,5 +127,23 @@ class AnalyzerKwargsTests(unittest.TestCase):
         self.assertEqual((calls[1]["api_key_env"], calls[1]["extra_body"]), ("K", PIN))
 
 
+class PreflightTests(unittest.TestCase):
+    def test_every_named_key_is_checked(self) -> None:
+        from main_loop import _preflight_keys
+        from meta_agent import config as C
+
+        cfg = C.load(Path(__file__).resolve().parents[1]
+                     / "configs" / "hgm_travel_mas_agentic_editmem_sanity.yaml")
+        cfg.editor.config.pop("api_key_env")
+        cfg.edit_memory.config.pop("api_key_env")
+        base = {k: v for k, v in os.environ.items() if k != "OpenRouter_API_KEY"}
+        with mock.patch.dict(os.environ, base, clear=True):
+            with self.assertRaisesRegex(RuntimeError, "gatherer.config.error_bucket_api_key_env"):
+                _preflight_keys(cfg)
+            cfg.gatherer.config.pop("error_bucket_api_key_env")
+            with self.assertRaisesRegex(RuntimeError, "failure_summarizer.config.api_key_env"):
+                _preflight_keys(cfg)
+
+
 if __name__ == "__main__":
     unittest.main()
