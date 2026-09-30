@@ -38,9 +38,10 @@ import json
 import random
 import shutil
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from ..agent_editor import AgentEditor, fallback_strategy
+from ..assignment import ASSIGNMENT_FILE, ExpandAssignment
 from ..block_bandit import AdaptiveStrategy, BlockBandit
 from ..curriculum import Curriculum, _combined_check_counts, infer_curriculum
 from ..implementation_strategy_bandit import (
@@ -320,6 +321,13 @@ class HGMManager:
         # implementation_strategy_initial_ranking. Only meaningful when
         # that's set.
         implementation_strategy_initial_rank_strength: float = 2.0,
+        # Opt-in paired evaluation: every successful child is evaluated on
+        # this many train cases right after its edit (charged to eval_budget
+        # like any EVALUATE), so no editor session goes unmeasured. 0 (the
+        # default) keeps HGM's decoupled schedule, where the bandit decides
+        # later when a child is evaluated. Required > 0 by an edit-memory
+        # layer (its windows count paired-evaluated children).
+        expand_eval_size: int = 0,
     ) -> None:
         self.eval_budget = eval_budget
         self.init_expansions = init_expansions
@@ -435,6 +443,9 @@ class HGMManager:
         # and snapshot_eval.py. Off by default — zero behavior change.
         self.snapshot_tree = snapshot_tree
         self.seed = seed
+        if expand_eval_size < 0:
+            raise ValueError(f"expand_eval_size must be >= 0, got {expand_eval_size}")
+        self.expand_eval_size = int(expand_eval_size)
 
         # Per-run state (reset at the top of evolve()).
         self._tree: HGMTree = HGMTree()
@@ -705,8 +716,15 @@ class HGMManager:
             # eval_budget is tiny relative to the dual expansion cost).
             if self.eval_budget - self._budget_spent < self._min_budget_to_expand():
                 break
-            self._expand(self._tree.argmax_expand(1.0, expandable), editor, gatherer)
-            self._snapshot("expand")
+            # With paired evaluation the init children are evaluated at once
+            # and become expandable themselves, so pin init expansions to
+            # the root (as sep18 does). Otherwise the existing Thompson draw
+            # runs unchanged (same RNG consumption as before).
+            if self.expand_eval_size > 0 and 0 in expandable:
+                parent_id = 0
+            else:
+                parent_id = self._tree.argmax_expand(1.0, expandable)
+            self._expand_step(parent_id, editor, evaluator, gatherer)
 
         # Scheduled EXPAND/EVALUATE loop. The while-stop keys off total spend
         # (``_budget_spent``), but the widening schedule keys off
@@ -734,8 +752,9 @@ class HGMManager:
                 self._tree.schedule_favors_expand(self.alpha, self._node_evals_spent)
                 and can_grow
             ):
-                self._expand(self._tree.argmax_expand(tau, expandable), editor, gatherer)
-                self._snapshot("expand")
+                self._expand_step(
+                    self._tree.argmax_expand(tau, expandable), editor, evaluator, gatherer
+                )
             elif evaluable:
                 node_id = self._tree.argmax_evaluate(tau, evaluable)
                 spent = self._evaluate(node_id, evaluator, gatherer)
@@ -749,8 +768,9 @@ class HGMManager:
                     break
             elif can_grow:
                 # Nothing left to evaluate, but the tree can still widen.
-                self._expand(self._tree.argmax_expand(tau, expandable), editor, gatherer)
-                self._snapshot("expand")
+                self._expand_step(
+                    self._tree.argmax_expand(tau, expandable), editor, evaluator, gatherer
+                )
             else:
                 break
 
@@ -759,6 +779,28 @@ class HGMManager:
     # ------------------------------------------------------------------ #
     # EXPAND / EVALUATE
     # ------------------------------------------------------------------ #
+
+    def _expand_step(
+        self, parent_id: int, editor: AgentEditor, evaluator: Evaluator,
+        gatherer: FeedbackGatherer,
+    ) -> int:
+        """One scheduled EXPAND: the edit (``_expand``, overridable), its
+        ``expand`` snapshot and -- with ``expand_eval_size > 0`` -- the
+        child's paired evaluation followed by an ``expand_eval`` snapshot.
+        Kept separate from ``_expand`` so the dual manager's ``_expand``
+        override keeps its signature."""
+        node_id = self._expand(parent_id, editor, gatherer)
+        self._snapshot("expand")
+        if self._tree[node_id].edit_failed:
+            return node_id
+        if self.expand_eval_size > 0:
+            spent = self._evaluate(
+                node_id, evaluator, gatherer, batch_size=self.expand_eval_size
+            )
+            self._budget_spent += spent
+            self._node_evals_spent += spent
+            self._snapshot("expand_eval")
+        return node_id
 
     def _expand(
         self, parent_id: int, editor: AgentEditor, gatherer: FeedbackGatherer
@@ -795,13 +837,30 @@ class HGMManager:
             (out_dir / "curriculum_status.json").write_text(
                 json.dumps(curriculum_snapshot, indent=2)
             )
-        context = self._render_expand_context(
-            parent, block, out_dir, node_id, curriculum_directive=curriculum_directive,
-            implementation_strategy=impl_strategy,
-        )
+        # An assignment-steered editor (the agentic editor) gets the
+        # selection as a structured ExpandAssignment and reads everything
+        # else from the run itself; every other editor gets the prose
+        # steering context exactly as before.
+        assignment: Optional[ExpandAssignment] = None
+        if getattr(editor, "steering", None) == "assignment":
+            assignment = self._build_assignment(
+                parent, block, out_dir, node_id,
+                curriculum_directive=curriculum_directive,
+                implementation_strategy=impl_strategy,
+            )
+            context = None
+        else:
+            context = self._render_expand_context(
+                parent, block, out_dir, node_id, curriculum_directive=curriculum_directive,
+                implementation_strategy=impl_strategy,
+            )
+        apply_kwargs: dict[str, Any] = {
+            "context": context, "has_suggestion": self._last_suggestion_produced,
+        }
+        if assignment is not None:
+            apply_kwargs["assignment"] = assignment
         edit_result = editor.apply(
-            self._feedback.get(parent_id), parent.round_dir, out_dir,
-            context=context, has_suggestion=self._last_suggestion_produced,
+            self._feedback.get(parent_id), parent.round_dir, out_dir, **apply_kwargs,
         )
         strategy = edit_result.strategy or fallback_strategy()
         strategy.block = block
@@ -891,10 +950,12 @@ class HGMManager:
             )
 
     def _evaluate(
-        self, node_id: int, evaluator: Evaluator, gatherer: FeedbackGatherer
+        self, node_id: int, evaluator: Evaluator, gatherer: FeedbackGatherer,
+        *, batch_size: Optional[int] = None,
     ) -> int:
         """Drip a random batch of un-run train cases to a node. Returns the
-        number of evaluations actually spent."""
+        number of evaluations actually spent. ``batch_size`` overrides
+        ``eval_batch_size`` (the paired evaluation uses ``expand_eval_size``)."""
         node = self._tree[node_id]
         if self.eval_repeats > 1:
             # Repeat-eligible: every case is always a valid candidate,
@@ -914,7 +975,7 @@ class HGMManager:
         # eval_budget exactly. Tasks are sampled at RANDOM — the reference
         # runs with eval_random_level=1.0 (fully random task selection).
         remaining = self.eval_budget - self._budget_spent
-        n_take = min(self.eval_batch_size, len(unevaluated), max(remaining, 0))
+        n_take = min(batch_size or self.eval_batch_size, len(unevaluated), max(remaining, 0))
         if n_take <= 0:
             return 0
         batch = self._task_rng.sample(unevaluated, n_take)
@@ -1084,6 +1145,58 @@ class HGMManager:
     # ------------------------------------------------------------------ #
     # Steering context for the editor's self-improvement call
     # ------------------------------------------------------------------ #
+
+    def _build_assignment(
+        self, parent: HGMNode, block: str, out_dir: Path, node_id: int,
+        *, curriculum_directive: Optional[str] = None,
+        implementation_strategy: Optional[str] = None,
+    ) -> ExpandAssignment:
+        """The structured counterpart of ``_render_expand_context`` for an
+        assignment-steered editor: the selected block and its scope, the
+        implementation-strategy body and curriculum focus when those axes
+        are on, and -- only when a block suggester is configured -- its
+        suggestion, requested with the same arguments as there. Writes
+        ``assignment.json`` and sets ``_last_suggestion_produced``."""
+        from ..block_suggester import block_scope
+        from ..implementation_strategy import _IMPLEMENTATION_STRATEGY_BODIES
+
+        suggestion = None
+        if self._block_suggester is not None:
+            from ..failure_summarizer import render_failure_summary_for_steering
+
+            siblings = [self._feedback[c] for c in parent.children if c in self._feedback]
+            try:
+                suggestion = self._block_suggester.suggest(
+                    block=block,
+                    agent_dir=parent.round_dir / "task_agent",
+                    out_dir=out_dir,
+                    node_id=node_id,
+                    feedback=self._feedback.get(parent.node_id),
+                    failure_summary=render_failure_summary_for_steering(parent.round_dir),
+                    siblings=[(sib.strategy.block, sib.strategy.optimization_goal)
+                              for sib in siblings],
+                    curriculum_directive=curriculum_directive,
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(f"[block_suggester] unexpected error on node {node_id}: {exc!r}",
+                      flush=True)
+                suggestion = None
+        self._last_suggestion_produced = bool(suggestion)
+        assignment = ExpandAssignment(
+            block=block,
+            block_scope=block_scope(
+                block, backbone_catalog=getattr(self._block_suggester, "backbone_catalog", None)
+            ),
+            implementation_strategy=implementation_strategy,
+            implementation_strategy_body=(
+                _IMPLEMENTATION_STRATEGY_BODIES[implementation_strategy]
+                if implementation_strategy else None
+            ),
+            curriculum_directive=curriculum_directive or None,
+            suggestion=suggestion or None,
+        )
+        (out_dir / ASSIGNMENT_FILE).write_text(assignment.to_json(), encoding="utf-8")
+        return assignment
 
     def _render_expand_context(
         self, parent: HGMNode, block: str, out_dir: Path, node_id: int,
@@ -1579,8 +1692,10 @@ class HGMManager:
         minimum here (returns 0; behavior unchanged). The dual manager, whose
         ``_expand`` runs an intra-evaluation, overrides this to
         ``intra_expand_eval_size`` so the main loop stops instead of spawning
-        un-evaluated nodes once the budget can no longer fund one."""
-        return 0
+        un-evaluated nodes once the budget can no longer fund one. With
+        ``expand_eval_size > 0`` (paired evaluation) each EXPAND costs that
+        many evaluations, so the same guard applies."""
+        return self.expand_eval_size
 
     # ------------------------------------------------------------------ #
     # Finalization
