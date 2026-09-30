@@ -239,22 +239,28 @@ for r in rounds:
     display_mean = r.mean_utility if r.n_evals > 0 else None
     mu_str = f"{display_mean:.3f}" if display_mean is not None else "in-progress"
     block = (r.strategy or {}).get("block")
-    label = f"node {r.node_id}\\nmean={mu_str}"
+    lines = [f"node {r.node_id}", f"mean={mu_str}"]
     if block:
-        label += f"\\nblock={block}"
-    if has_memory and r.memory_arm != "none":
-        label += f"\\narm={r.memory_arm}"
+        lines.append(f"block={block}")
     if r.node_id in diffs_by_node:
         _, added, removed = diffs_by_node[r.node_id]
-        label += f"\\n+{added}/-{removed}"
+        lines.append(f"+{added}/-{removed}")
     if r.edit_failed:
-        label += "\\nEDIT FAILED"
+        lines.append("EDIT FAILED")
     color = _color_for(display_mean, r.edit_failed)
-    dot_lines.append(f'  n{r.node_id} [label="{label}", fillcolor="{color}"];')
+    if has_memory:
+        # Header band + border + incoming edge in the memory arm's style.
+        dot_lines.append(f"  n{r.node_id} [{dem.tree_node_attrs(r, lines, color)}];")
+    else:
+        label = "\\n".join(lines)
+        dot_lines.append(f'  n{r.node_id} [label="{label}", fillcolor="{color}"];')
     if r.parent_id is not None and r.parent_id in rounds_by_id:
-        dot_lines.append(f"  n{r.parent_id} -> n{r.node_id};")
+        edge = dem.tree_edge_attrs(r) if has_memory else ""
+        dot_lines.append(f"  n{r.parent_id} -> n{r.node_id}" + (f" [{edge}]" if edge else "") + ";")
 dot_lines.append("}")
 
+if has_memory:
+    dem.render_tree_arm_legend(rounds)
 try:
     st.graphviz_chart("\n".join(dot_lines))
 except Exception as exc:  # noqa: BLE001 -- graphviz binary may be absent
@@ -307,7 +313,7 @@ for r in rounds:
         }
     )
     if has_memory:
-        rows[-1]["arm"] = r.memory_arm
+        rows[-1]["arm"] = dem.arm_cell(r)
         rows[-1]["mem_v"] = r.memory_version
     if has_assignment:
         rows[-1]["impl"] = r.implementation_strategy

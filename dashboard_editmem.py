@@ -25,6 +25,122 @@ ARM_COLOR = {"with": SERIES[0], "without": SERIES[1], "none": "#8a8985"}
 NEUTRAL_FILL = "#e2e1dd"
 
 
+# --------------------------------------------------------------------------- #
+# Memory arm in the tree diagram and the nodes table
+# --------------------------------------------------------------------------- #
+
+SEED_COLOR = "#52514e"
+PENDING_COLOR = "#3d3c3a"
+_ARM_LABEL = {"with": "with memory", "without": "without memory", "none": "before memory",
+              "pending": "editing…"}
+
+
+def _arm_of(r: ri.RoundInfo) -> str:
+    """"with" / "without" / "none", or "pending" while the node's editor
+    session is still running: its arm is recorded only when the edit ends
+    (hgm_node.json for a success, feedback.json + the layer's state for a
+    failure), so it isn't shown as "before memory" in the meantime."""
+    if (not r.is_root and r.hgm_node is None and r.feedback is None
+            and r.state_arm is None and r.agentic_session is None):
+        return "pending"
+    arm = r.memory_arm
+    return arm if arm in ("with", "without") else "none"
+
+
+def _arm_badge(r: ri.RoundInfo) -> tuple[str, str]:
+    """(band text, band color) for a node: the arm its edit ran under."""
+    if r.is_root:
+        return "SEED", SEED_COLOR
+    arm = _arm_of(r)
+    if arm == "with":
+        v = r.memory_version
+        return f"MEMORY v{v}" if v is not None else "MEMORY", ARM_COLOR["with"]
+    if arm == "without":
+        return "NO MEMORY", ARM_COLOR["without"]
+    if arm == "pending":
+        return "editing…", PENDING_COLOR
+    return "before memory", ARM_COLOR["none"]
+
+
+def tree_node_attrs(r: ri.RoundInfo, lines: list[str], fill: str) -> str:
+    """Graphviz attributes of a tree node in a run with edit memory: an HTML
+    label with a header band naming the arm (SEED / MEMORY vN / NO MEMORY /
+    before memory) above the usual lines, the score-colored fill, and a
+    border in the arm's color (solid for with, dashed for without)."""
+    from html import escape
+
+    band, band_color = _arm_badge(r)
+    rows = [f'<TR><TD BGCOLOR="{band_color}"><FONT COLOR="white" POINT-SIZE="10">'
+            f"<B>{escape(band)}</B></FONT></TD></TR>"]
+    for i, text in enumerate(lines):
+        cell = f"<B>{escape(text)}</B>" if i == 0 else escape(text)
+        rows.append(f"<TR><TD>{cell}</TD></TR>")
+    label = ('<<TABLE BORDER="0" CELLBORDER="0" CELLSPACING="0" CELLPADDING="2">'
+             + "".join(rows) + "</TABLE>>")
+    attrs = [f"label={label}", f'fillcolor="{fill}"']
+    arm = "none" if r.is_root else _arm_of(r)
+    if arm == "with":
+        attrs += [f'color="{ARM_COLOR["with"]}"', "penwidth=3"]
+    elif arm == "without":
+        attrs += [f'color="{ARM_COLOR["without"]}"', "penwidth=3", 'style="filled,rounded,dashed"']
+    return ", ".join(attrs)
+
+
+def tree_edge_attrs(r: ri.RoundInfo) -> str:
+    """Attributes of the parent -> r edge: the edit that created r, drawn in
+    the style of its arm ("" for the default edge)."""
+    arm = _arm_of(r)
+    if arm == "with":
+        return f'color="{ARM_COLOR["with"]}", penwidth=2.5'
+    if arm == "without":
+        return f'color="{ARM_COLOR["without"]}", penwidth=2, style=dashed'
+    return ""
+
+
+def render_tree_arm_legend(rounds: list[ri.RoundInfo]) -> None:
+    """Legend for the tree's arm styling, with each arm's node count and the
+    average of its nodes' mean scores (paired-eval batches are small, so
+    read the averages as a rough signal)."""
+    groups: dict[str, list[ri.RoundInfo]] = {"with": [], "without": [], "none": [], "pending": []}
+    for r in rounds:
+        if not r.is_root:
+            groups[_arm_of(r)].append(r)
+    colors = {**ARM_COLOR, "pending": PENDING_COLOR}
+    chips = []
+    for arm in ("with", "without", "none", "pending"):
+        rs = groups[arm]
+        if arm == "pending" and not rs:
+            continue
+        scored = [r.mean_utility for r in rs if r.n_evals > 0 and not r.edit_failed]
+        stat = f"{len(rs)} node{'s' if len(rs) != 1 else ''}"
+        if scored:
+            stat += f" · avg node mean {sum(scored) / len(scored):.3f}"
+        border = "dashed" if arm == "without" else "solid"
+        width = 3 if arm in ("with", "without") else 1
+        chips.append(
+            f'<span style="display:inline-block;border:{width}px {border} {colors[arm]};'
+            f'border-radius:6px;padding:2px 8px;margin:0 10px 6px 0">'
+            f'<span style="background:{colors[arm]};color:white;border-radius:3px;'
+            f'padding:0 6px;font-weight:600">{_ARM_LABEL[arm]}</span>&nbsp;{stat}</span>'
+        )
+    st.markdown("".join(chips), unsafe_allow_html=True)
+    st.caption(
+        "Each node's header band, border and incoming edge show the arm its edit ran under: "
+        "**with memory** (the editor read memory vN), **without memory** (a memory existed but "
+        "was withheld: the control), **before memory** (expanded before the first memory "
+        "existed), **editing…** (session still running; the arm is recorded when it ends). "
+        "The fill is still the node's mean score (red → green)."
+    )
+
+
+def arm_cell(r: ri.RoundInfo) -> str:
+    """The nodes table's `arm` value, with the tree's color as a marker."""
+    if r.is_root:
+        return "seed"
+    return {"with": "🔵 with", "without": "🟠 without",
+            "pending": "⏳ editing"}.get(_arm_of(r), "⚪ before memory")
+
+
 def _bottom_legend() -> "alt.Legend":
     """Legend below the chart, one entry per line, with NO label truncation:
     run names are long and share a prefix, so Vega's default labelLimit
