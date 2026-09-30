@@ -624,6 +624,33 @@ _BLOCK_BODIES: dict[str, str] = {
 }
 
 
+def block_scope(block: str, *, backbone_catalog: Optional[Any] = None) -> str:
+    """The editor-facing scope of ``block``: the paragraphs of its body from
+    after the ``## Block:`` heading through its ``Scope:`` paragraph (for
+    ``llm_backbone_selection`` that includes the HARD CONSTRAINT paragraph
+    before it), without the suggester-only guidance and output format that
+    follow. ``{{BACKBONE_CATALOG}}`` is rendered from ``backbone_catalog``
+    (default: the built-in catalog). Used by the agentic editor's assignment
+    (``meta_agent/assignment.py``); the suggester's own prompt is unchanged."""
+    body = _BLOCK_BODIES[block]
+    paras = body.split("\n\n")
+    scope_idx = next(
+        (i for i, para in enumerate(paras) if para.lstrip().startswith("Scope:")), None
+    )
+    if scope_idx is None:
+        raise ValueError(f"block {block!r} has no 'Scope:' paragraph")
+    start = 1 if paras and paras[0].lstrip().startswith("## Block:") else 0
+    text = "\n\n".join(paras[start:scope_idx + 1]).strip()
+    if "{{BACKBONE_CATALOG}}" in text:
+        text = text.replace(
+            "{{BACKBONE_CATALOG}}",
+            _render_backbone_catalog(
+                backbone_catalog if backbone_catalog is not None else _DEFAULT_BACKBONE_CATALOG
+            ),
+        )
+    return text
+
+
 @register("block_suggester", "default")
 class BlockSuggester:
     """LLM-synthesized, block-scoped improvement suggestion for one EXPAND.

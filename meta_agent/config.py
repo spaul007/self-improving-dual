@@ -268,6 +268,7 @@ def _ensure_builtins_loaded() -> None:
     importlib.import_module("meta_agent.evaluator")
     importlib.import_module("meta_agent.feedback_gatherer")
     importlib.import_module("meta_agent.agent_editor")
+    importlib.import_module("meta_agent.agent_editor_agentic")
     importlib.import_module("meta_agent.behavior_summarizer")
     importlib.import_module("meta_agent.failure_summarizer")
     importlib.import_module("meta_agent.block_suggester")
@@ -395,6 +396,9 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         "tools_source": _read_tools_source(project_root, seed_dir),
         "db_schema": _read_db_schema(project_root),
         "mutable_exclude": cfg.mutable_exclude,
+        # Only the agentic editor declares it (its sandbox reads the project's
+        # tools/ and must deny benchmark/, data/, adapter/).
+        "project_root": project_root,
     }
     if cfg.eval_visibility == "whitebox":
         editor_injections["scorer_source"] = _read_scorer_source(benchmark_dir)
@@ -434,6 +438,9 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
             "unit_selector",
             {"llm_caller": call_llm},
         )
+
+    for warning in check_meta_llm_config(cfg):
+        print(f"[config] warning: {warning}", flush=True)
 
     manager_obj = registry.get("manager", cfg.manager.type)(**cfg.manager.config)
 
@@ -477,6 +484,35 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         train_case_ids=train_ids,
         eval_case_ids=eval_ids,
     )
+
+
+def check_meta_llm_config(cfg: FrameworkConfig) -> list[str]:
+    """Model settings of the agentic editor.
+
+    ``call_llm`` falls back to ``LLM_MODEL`` / ``LLM_BASE_URL`` /
+    ``LLM_MAX_OUTPUT_TOKENS``, which ``runtime_env`` exports from the TASK
+    AGENT's settings -- so a meta component without its own model would
+    silently run on the task agent's model and endpoint. Raises for a missing
+    ``model`` (or a missing ``base_url`` while the task agent has one);
+    returns warnings (a missing ``max_output_tokens`` while the task agent
+    caps its own output)."""
+    warnings: list[str] = []
+    specs = []
+    if cfg.editor.type == "agentic":
+        specs.append(("editor", cfg.editor.config))
+    for name, conf in specs:
+        if not conf.get("model"):
+            raise ValueError(f"{name}.config.model must be set (otherwise it runs on "
+                             "the task agent's model)")
+        if cfg.task_agent.base_url and not conf.get("base_url"):
+            raise ValueError(f"{name}.config.base_url must be set (otherwise it calls "
+                             f"the task agent's endpoint {cfg.task_agent.base_url})")
+        if cfg.task_agent.max_output_tokens and not conf.get("max_output_tokens"):
+            warnings.append(
+                f"{name}.config.max_output_tokens is unset, so {name} calls are capped at "
+                f"the task agent's max_output_tokens ({cfg.task_agent.max_output_tokens})"
+            )
+    return warnings
 
 
 def _build_with_injection(
