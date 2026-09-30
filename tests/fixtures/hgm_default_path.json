@@ -1,0 +1,2163 @@
+{
+ "block_tagged_adaptive_repeats": {
+  "budget_spent": 48,
+  "editor_calls": [
+   {
+    "context_len": 937,
+    "context_sha256": "3225658fcbaec3e83b142c80e5190082dd4619ddc339d7352b0983be469d6c21",
+    "feedback_round": 0,
+    "has_suggestion": true,
+    "out": "round_001",
+    "parent": "round_000"
+   },
+   {
+    "context_len": 937,
+    "context_sha256": "10f4cce87fd94addd5c66f8584c2decf47b7a81c8262f6d6298159131f56be73",
+    "feedback_round": 0,
+    "has_suggestion": true,
+    "out": "round_002",
+    "parent": "round_000"
+   },
+   {
+    "context_len": 1013,
+    "context_sha256": "727d6e5dbc24d155cb20f6a3e5d131c2583ed58b963db961df91b3850c3837d6",
+    "feedback_round": 1,
+    "has_suggestion": true,
+    "out": "round_003",
+    "parent": "round_001"
+   },
+   {
+    "context_len": 1064,
+    "context_sha256": "a23677750c02d13c7b15927b31bf6cdea90b1b557cb298e932101b6cf3f0d91a",
+    "feedback_round": 1,
+    "has_suggestion": true,
+    "out": "round_004",
+    "parent": "round_001"
+   },
+   {
+    "context_len": 1064,
+    "context_sha256": "c40331fde3190358b279f63efefa5dd313961d110b82048a70499ccca3ec818b",
+    "feedback_round": 1,
+    "has_suggestion": true,
+    "out": "round_005",
+    "parent": "round_001"
+   },
+   {
+    "context_len": 1064,
+    "context_sha256": "b00c2885cc0f76c938263d1368c79c2e2c17684862cc826f929d3b2dd90cbfed",
+    "feedback_round": 2,
+    "has_suggestion": true,
+    "out": "round_006",
+    "parent": "round_002"
+   },
+   {
+    "context_len": 1079,
+    "context_sha256": "87bd968c850c4edbdf743ce7e2e071778f0c4b1194f1b19290c8225284cbecf2",
+    "feedback_round": 4,
+    "has_suggestion": true,
+    "out": "round_007",
+    "parent": "round_004"
+   },
+   {
+    "context_len": 1088,
+    "context_sha256": "4cd8acf2b329c40a93839f7400a467e8efdacb959bdec33b63e9295414cdcec3",
+    "feedback_round": 5,
+    "has_suggestion": true,
+    "out": "round_008",
+    "parent": "round_005"
+   },
+   {
+    "context_len": 1088,
+    "context_sha256": "e471f5f4a4a583c873efe710a21f9e924958c3a38874043a1c882c9bba550267",
+    "feedback_round": 5,
+    "has_suggestion": true,
+    "out": "round_009",
+    "parent": "round_005"
+   },
+   {
+    "context_len": 1062,
+    "context_sha256": "037029bdf1fcaafd8d1b72382047dca0bb950afc8c1c5e4960cbbef8e3005149",
+    "feedback_round": 1,
+    "has_suggestion": true,
+    "out": "round_010",
+    "parent": "round_001"
+   },
+   {
+    "context_len": 1080,
+    "context_sha256": "8f05cdeeb57279b0c1e3abc6f9cdfaef103d926b8a91853d9b0a7d370a7cc100",
+    "feedback_round": 6,
+    "has_suggestion": true,
+    "out": "round_011",
+    "parent": "round_006"
+   }
+  ],
+  "last_snapshot": {
+   "best_mean_utility": 0.62275,
+   "best_node_id": 5,
+   "best_round_dir": "round_005",
+   "budget_spent": 48,
+   "event": "finalize",
+   "manager": "BlockTaggedHGMManager",
+   "n_nodes": 12,
+   "node_evals_spent": 48,
+   "nodes": [
+    {
+     "cmp": 0.5270952380952382,
+     "edit_failed": false,
+     "mean_utility": 0.4736875,
+     "n_evals": 16,
+     "n_failure": 8.421000000000001,
+     "n_success": 7.578999999999999,
+     "node_id": 0,
+     "parent_id": null,
+     "round_dir": "round_000"
+    },
+    {
+     "cmp": 0.5475227272727273,
+     "edit_failed": false,
+     "mean_utility": 0.5973499999999999,
+     "n_evals": 20,
+     "n_failure": 8.053,
+     "n_success": 11.947000000000001,
+     "node_id": 1,
+     "parent_id": 0,
+     "round_dir": "round_001"
+    },
+    {
+     "cmp": 0.52525,
+     "edit_failed": false,
+     "mean_utility": 0.217,
+     "n_evals": 4,
+     "n_failure": 3.1320000000000006,
+     "n_success": 0.868,
+     "node_id": 2,
+     "parent_id": 0,
+     "round_dir": "round_002"
+    },
+    {
+     "cmp": 0.0,
+     "edit_failed": true,
+     "mean_utility": 0.0,
+     "n_evals": 0,
+     "n_failure": 0.0,
+     "n_success": 0.0,
+     "node_id": 3,
+     "parent_id": 1,
+     "round_dir": "round_003"
+    },
+    {
+     "cmp": 0.5225833333333333,
+     "edit_failed": false,
+     "mean_utility": 0.55525,
+     "n_evals": 4,
+     "n_failure": 1.779,
+     "n_success": 2.221,
+     "node_id": 4,
+     "parent_id": 1,
+     "round_dir": "round_004"
+    },
+    {
+     "cmp": 0.48941666666666667,
+     "edit_failed": false,
+     "mean_utility": 0.62275,
+     "n_evals": 8,
+     "n_failure": 3.018,
+     "n_success": 4.982,
+     "node_id": 5,
+     "parent_id": 1,
+     "round_dir": "round_005"
+    },
+    {
+     "cmp": 0.5869,
+     "edit_failed": false,
+     "mean_utility": 0.5579999999999999,
+     "n_evals": 4,
+     "n_failure": 1.768,
+     "n_success": 2.232,
+     "node_id": 6,
+     "parent_id": 2,
+     "round_dir": "round_006"
+    },
+    {
+     "cmp": 0.50625,
+     "edit_failed": false,
+     "mean_utility": 0.50625,
+     "n_evals": 8,
+     "n_failure": 3.95,
+     "n_success": 4.050000000000001,
+     "node_id": 7,
+     "parent_id": 4,
+     "round_dir": "round_007"
+    },
+    {
+     "cmp": 0.22275,
+     "edit_failed": false,
+     "mean_utility": 0.22275,
+     "n_evals": 4,
+     "n_failure": 3.109,
+     "n_success": 0.891,
+     "node_id": 8,
+     "parent_id": 5,
+     "round_dir": "round_008"
+    },
+    {
+     "cmp": 0.0,
+     "edit_failed": false,
+     "mean_utility": 0.0,
+     "n_evals": 0,
+     "n_failure": 0.0,
+     "n_success": 0.0,
+     "node_id": 9,
+     "parent_id": 5,
+     "round_dir": "round_009"
+    },
+    {
+     "cmp": 0.0,
+     "edit_failed": false,
+     "mean_utility": 0.0,
+     "n_evals": 0,
+     "n_failure": 0.0,
+     "n_success": 0.0,
+     "node_id": 10,
+     "parent_id": 1,
+     "round_dir": "round_010"
+    },
+    {
+     "cmp": 0.594125,
+     "edit_failed": false,
+     "mean_utility": 0.594125,
+     "n_evals": 16,
+     "n_failure": 6.494,
+     "n_success": 9.505999999999998,
+     "node_id": 11,
+     "parent_id": 6,
+     "round_dir": "round_011"
+    }
+   ],
+   "snapshot_idx": 24
+  },
+  "node_evals_spent": 48,
+  "round_files": [
+   "adaptive_strategy.json",
+   "eval_result.json",
+   "feedback.json",
+   "hgm_node.json",
+   "llm_failure_health.json",
+   "strategy.json"
+  ],
+  "sidecar_keys": [
+   "case_eval_counts",
+   "children",
+   "clade_failure",
+   "clade_success",
+   "cmp",
+   "edit_failed",
+   "evaluated_case_ids",
+   "mean_utility",
+   "n_evals",
+   "n_failure",
+   "n_success",
+   "node_id",
+   "parent_id",
+   "utility_measures"
+  ],
+  "snapshot_events": [
+   "seed",
+   "expand",
+   "expand",
+   "evaluate",
+   "expand",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "evaluate",
+   "finalize"
+  ],
+  "snapshot_keys": [
+   "best_mean_utility",
+   "best_node_id",
+   "best_round_dir",
+   "budget_spent",
+   "event",
+   "manager",
+   "n_nodes",
+   "node_evals_spent",
+   "nodes",
+   "snapshot_idx"
+  ],
+  "snapshot_node_keys": [
+   "cmp",
+   "edit_failed",
+   "mean_utility",
+   "n_evals",
+   "n_failure",
+   "n_success",
+   "node_id",
+   "parent_id",
+   "round_dir"
+  ],
+  "suggester_calls": [
+   {
+    "block": "foundation_capability",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 1
+   },
+   {
+    "block": "foundation_capability",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 2
+   },
+   {
+    "block": "mixed",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 3
+   },
+   {
+    "block": "llm_backbone_selection",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 4
+   },
+   {
+    "block": "collaboration_workflow",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 5
+   },
+   {
+    "block": "collaboration_workflow",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 6
+   },
+   {
+    "block": "individual_subagent",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 7
+   },
+   {
+    "block": "collaboration_workflow",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 8
+   },
+   {
+    "block": "llm_backbone_selection",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 9
+   },
+   {
+    "block": "foundation_capability",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 10
+   },
+   {
+    "block": "individual_subagent",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 11
+   }
+  ],
+  "tree": [
+   {
+    "block": null,
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.4736875,
+    "n_evals": 16,
+    "node_id": 0,
+    "parent_id": null
+   },
+   {
+    "block": "foundation_capability",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.59735,
+    "n_evals": 20,
+    "node_id": 1,
+    "parent_id": 0
+   },
+   {
+    "block": "foundation_capability",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.217,
+    "n_evals": 4,
+    "node_id": 2,
+    "parent_id": 0
+   },
+   {
+    "block": "mixed",
+    "edit_failed": true,
+    "implementation_strategy": null,
+    "mean": 0.0,
+    "n_evals": 0,
+    "node_id": 3,
+    "parent_id": 1
+   },
+   {
+    "block": "llm_backbone_selection",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.55525,
+    "n_evals": 4,
+    "node_id": 4,
+    "parent_id": 1
+   },
+   {
+    "block": "collaboration_workflow",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.62275,
+    "n_evals": 8,
+    "node_id": 5,
+    "parent_id": 1
+   },
+   {
+    "block": "collaboration_workflow",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.558,
+    "n_evals": 4,
+    "node_id": 6,
+    "parent_id": 2
+   },
+   {
+    "block": "individual_subagent",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.50625,
+    "n_evals": 8,
+    "node_id": 7,
+    "parent_id": 4
+   },
+   {
+    "block": "collaboration_workflow",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.22275,
+    "n_evals": 4,
+    "node_id": 8,
+    "parent_id": 5
+   },
+   {
+    "block": "llm_backbone_selection",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.0,
+    "n_evals": 0,
+    "node_id": 9,
+    "parent_id": 5
+   },
+   {
+    "block": "foundation_capability",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.0,
+    "n_evals": 0,
+    "node_id": 10,
+    "parent_id": 1
+   },
+   {
+    "block": "individual_subagent",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.594125,
+    "n_evals": 16,
+    "node_id": 11,
+    "parent_id": 6
+   }
+  ]
+ },
+ "block_tagged_two_tier": {
+  "budget_spent": 48,
+  "editor_calls": [
+   {
+    "context_len": 1827,
+    "context_sha256": "8c10c96ffe4dd627522127ba639a1db12a3648b6f8c54012eab28c00fdc42be5",
+    "feedback_round": 0,
+    "has_suggestion": true,
+    "out": "round_001",
+    "parent": "round_000"
+   },
+   {
+    "context_len": 1827,
+    "context_sha256": "c9ea4c0ff6d080d72fbc2cc2076cdda10dd565eef72ac15e302d54c4df80caa9",
+    "feedback_round": 0,
+    "has_suggestion": true,
+    "out": "round_002",
+    "parent": "round_000"
+   },
+   {
+    "context_len": 1903,
+    "context_sha256": "a9ff5d20acf7ff10231776dd77c99b396a024ec988896717d5a917218fd45c1b",
+    "feedback_round": 1,
+    "has_suggestion": true,
+    "out": "round_003",
+    "parent": "round_001"
+   },
+   {
+    "context_len": 1954,
+    "context_sha256": "953b126c6c880f0396670e6a21505322f84f891e6e0ac348f1ae5d4162c9887b",
+    "feedback_round": 1,
+    "has_suggestion": true,
+    "out": "round_004",
+    "parent": "round_001"
+   },
+   {
+    "context_len": 1641,
+    "context_sha256": "185ef22373e838b7daf5988c52c521222348cb2294ef9fb1e844437ba41a91de",
+    "feedback_round": 4,
+    "has_suggestion": true,
+    "out": "round_005",
+    "parent": "round_004"
+   },
+   {
+    "context_len": 1842,
+    "context_sha256": "0f06812fb1bd0eb12044341ea509ece04bf9fcb05862e3cb765b422f0389e5e1",
+    "feedback_round": 1,
+    "has_suggestion": true,
+    "out": "round_006",
+    "parent": "round_001"
+   },
+   {
+    "context_len": 1866,
+    "context_sha256": "52f87f5d25af544dd3a7c2b108d2f855382801ca3af40934fd2a3b24e59d7f67",
+    "feedback_round": 4,
+    "has_suggestion": true,
+    "out": "round_007",
+    "parent": "round_004"
+   },
+   {
+    "context_len": 1975,
+    "context_sha256": "6439214e949b30b5849f75d5430a41d902837b09b2ea865bb7ee6d3d3c819aae",
+    "feedback_round": 4,
+    "has_suggestion": true,
+    "out": "round_008",
+    "parent": "round_004"
+   },
+   {
+    "context_len": 1939,
+    "context_sha256": "45a2b0148b702cc249a4a80c19097030441fce36b92eb624a9889f97c84d0325",
+    "feedback_round": 4,
+    "has_suggestion": true,
+    "out": "round_009",
+    "parent": "round_004"
+   },
+   {
+    "context_len": 2003,
+    "context_sha256": "c9f2fdfc56e220ee3ba2aa08172d08487c6bc850f9d740cbea41bcc01b1ef50f",
+    "feedback_round": 9,
+    "has_suggestion": true,
+    "out": "round_010",
+    "parent": "round_009"
+   },
+   {
+    "context_len": 1714,
+    "context_sha256": "e267fd2ec335b4d60923e930d45ea8469747aa54a343420a740b163d1716ee34",
+    "feedback_round": 9,
+    "has_suggestion": true,
+    "out": "round_011",
+    "parent": "round_009"
+   }
+  ],
+  "last_snapshot": {
+   "best_mean_utility": 0.6161666666666666,
+   "best_node_id": 10,
+   "best_round_dir": "round_010",
+   "budget_spent": 48,
+   "event": "finalize",
+   "manager": "BlockTaggedHGMManager",
+   "n_nodes": 12,
+   "node_evals_spent": 48,
+   "nodes": [
+    {
+     "cmp": 0.5285277777777778,
+     "edit_failed": false,
+     "mean_utility": 0.49633333333333335,
+     "n_evals": 12,
+     "n_failure": 6.0440000000000005,
+     "n_success": 5.9559999999999995,
+     "node_id": 0,
+     "parent_id": null,
+     "round_dir": "round_000"
+    },
+    {
+     "cmp": 0.5349666666666667,
+     "edit_failed": false,
+     "mean_utility": 0.5628333333333333,
+     "n_evals": 12,
+     "n_failure": 5.246000000000001,
+     "n_success": 6.753999999999999,
+     "node_id": 1,
+     "parent_id": 0,
+     "round_dir": "round_001"
+    },
+    {
+     "cmp": 0.0,
+     "edit_failed": false,
+     "mean_utility": 0.0,
+     "n_evals": 0,
+     "n_failure": 0.0,
+     "n_success": 0.0,
+     "node_id": 2,
+     "parent_id": 0,
+     "round_dir": "round_002"
+    },
+    {
+     "cmp": 0.0,
+     "edit_failed": true,
+     "mean_utility": 0.0,
+     "n_evals": 0,
+     "n_failure": 0.0,
+     "n_success": 0.0,
+     "node_id": 3,
+     "parent_id": 1,
+     "round_dir": "round_003"
+    },
+    {
+     "cmp": 0.5433636363636364,
+     "edit_failed": false,
+     "mean_utility": 0.538875,
+     "n_evals": 8,
+     "n_failure": 3.689,
+     "n_success": 4.311,
+     "node_id": 4,
+     "parent_id": 1,
+     "round_dir": "round_004"
+    },
+    {
+     "cmp": 0.5983333333333333,
+     "edit_failed": false,
+     "mean_utility": 0.5983333333333333,
+     "n_evals": 12,
+     "n_failure": 4.82,
+     "n_success": 7.18,
+     "node_id": 5,
+     "parent_id": 4,
+     "round_dir": "round_005"
+    },
+    {
+     "cmp": 0.359,
+     "edit_failed": false,
+     "mean_utility": 0.359,
+     "n_evals": 4,
+     "n_failure": 2.564,
+     "n_success": 1.436,
+     "node_id": 6,
+     "parent_id": 1,
+     "round_dir": "round_006"
+    },
+    {
+     "cmp": 0.34275,
+     "edit_failed": false,
+     "mean_utility": 0.34275,
+     "n_evals": 8,
+     "n_failure": 5.258,
+     "n_success": 2.7419999999999995,
+     "node_id": 7,
+     "parent_id": 4,
+     "round_dir": "round_007"
+    },
+    {
+     "cmp": 0.0,
+     "edit_failed": false,
+     "mean_utility": 0.0,
+     "n_evals": 0,
+     "n_failure": 0.0,
+     "n_success": 0.0,
+     "node_id": 8,
+     "parent_id": 4,
+     "round_dir": "round_008"
+    },
+    {
+     "cmp": 0.6046875,
+     "edit_failed": false,
+     "mean_utility": 0.57025,
+     "n_evals": 4,
+     "n_failure": 1.7189999999999999,
+     "n_success": 2.281,
+     "node_id": 9,
+     "parent_id": 4,
+     "round_dir": "round_009"
+    },
+    {
+     "cmp": 0.6161666666666666,
+     "edit_failed": false,
+     "mean_utility": 0.6161666666666666,
+     "n_evals": 12,
+     "n_failure": 4.606,
+     "n_success": 7.394,
+     "node_id": 10,
+     "parent_id": 9,
+     "round_dir": "round_010"
+    },
+    {
+     "cmp": 0.0,
+     "edit_failed": false,
+     "mean_utility": 0.0,
+     "n_evals": 0,
+     "n_failure": 0.0,
+     "n_success": 0.0,
+     "node_id": 11,
+     "parent_id": 9,
+     "round_dir": "round_011"
+    }
+   ],
+   "snapshot_idx": 24
+  },
+  "node_evals_spent": 48,
+  "round_files": [
+   "adaptive_strategy.json",
+   "eval_result.json",
+   "feedback.json",
+   "hgm_node.json",
+   "implementation_strategy_adaptive.json",
+   "llm_failure_health.json",
+   "strategy.json"
+  ],
+  "sidecar_keys": [
+   "case_eval_counts",
+   "children",
+   "clade_failure",
+   "clade_success",
+   "cmp",
+   "edit_failed",
+   "evaluated_case_ids",
+   "mean_utility",
+   "n_evals",
+   "n_failure",
+   "n_success",
+   "node_id",
+   "parent_id",
+   "utility_measures"
+  ],
+  "snapshot_events": [
+   "seed",
+   "expand",
+   "expand",
+   "evaluate",
+   "expand",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "evaluate",
+   "finalize"
+  ],
+  "snapshot_keys": [
+   "best_mean_utility",
+   "best_node_id",
+   "best_round_dir",
+   "budget_spent",
+   "event",
+   "manager",
+   "n_nodes",
+   "node_evals_spent",
+   "nodes",
+   "snapshot_idx"
+  ],
+  "snapshot_node_keys": [
+   "cmp",
+   "edit_failed",
+   "mean_utility",
+   "n_evals",
+   "n_failure",
+   "n_success",
+   "node_id",
+   "parent_id",
+   "round_dir"
+  ],
+  "suggester_calls": [
+   {
+    "block": "foundation_capability",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 1
+   },
+   {
+    "block": "foundation_capability",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 2
+   },
+   {
+    "block": "mixed",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 3
+   },
+   {
+    "block": "llm_backbone_selection",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 4
+   },
+   {
+    "block": "mixed",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 5
+   },
+   {
+    "block": "mixed",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 6
+   },
+   {
+    "block": "mixed",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 7
+   },
+   {
+    "block": "foundation_capability",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 8
+   },
+   {
+    "block": "verifiers",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 9
+   },
+   {
+    "block": "llm_backbone_selection",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 10
+   },
+   {
+    "block": "foundation_capability",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 11
+   }
+  ],
+  "tree": [
+   {
+    "block": null,
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.496333333,
+    "n_evals": 12,
+    "node_id": 0,
+    "parent_id": null
+   },
+   {
+    "block": "foundation_capability",
+    "edit_failed": false,
+    "implementation_strategy": "llm_heavy",
+    "mean": 0.562833333,
+    "n_evals": 12,
+    "node_id": 1,
+    "parent_id": 0
+   },
+   {
+    "block": "foundation_capability",
+    "edit_failed": false,
+    "implementation_strategy": "llm_heavy",
+    "mean": 0.0,
+    "n_evals": 0,
+    "node_id": 2,
+    "parent_id": 0
+   },
+   {
+    "block": "mixed",
+    "edit_failed": true,
+    "implementation_strategy": "llm_heavy",
+    "mean": 0.0,
+    "n_evals": 0,
+    "node_id": 3,
+    "parent_id": 1
+   },
+   {
+    "block": "llm_backbone_selection",
+    "edit_failed": false,
+    "implementation_strategy": "llm_heavy",
+    "mean": 0.538875,
+    "n_evals": 8,
+    "node_id": 4,
+    "parent_id": 1
+   },
+   {
+    "block": "mixed",
+    "edit_failed": false,
+    "implementation_strategy": "mixed",
+    "mean": 0.598333333,
+    "n_evals": 12,
+    "node_id": 5,
+    "parent_id": 4
+   },
+   {
+    "block": "mixed",
+    "edit_failed": false,
+    "implementation_strategy": "harness_heavy",
+    "mean": 0.359,
+    "n_evals": 4,
+    "node_id": 6,
+    "parent_id": 1
+   },
+   {
+    "block": "mixed",
+    "edit_failed": false,
+    "implementation_strategy": "harness_heavy",
+    "mean": 0.34275,
+    "n_evals": 8,
+    "node_id": 7,
+    "parent_id": 4
+   },
+   {
+    "block": "foundation_capability",
+    "edit_failed": false,
+    "implementation_strategy": "llm_heavy",
+    "mean": 0.0,
+    "n_evals": 0,
+    "node_id": 8,
+    "parent_id": 4
+   },
+   {
+    "block": "verifiers",
+    "edit_failed": false,
+    "implementation_strategy": "llm_heavy",
+    "mean": 0.57025,
+    "n_evals": 4,
+    "node_id": 9,
+    "parent_id": 4
+   },
+   {
+    "block": "llm_backbone_selection",
+    "edit_failed": false,
+    "implementation_strategy": "llm_heavy",
+    "mean": 0.616166667,
+    "n_evals": 12,
+    "node_id": 10,
+    "parent_id": 9
+   },
+   {
+    "block": "foundation_capability",
+    "edit_failed": false,
+    "implementation_strategy": "mixed",
+    "mean": 0.0,
+    "n_evals": 0,
+    "node_id": 11,
+    "parent_id": 9
+   }
+  ]
+ },
+ "hgm_adaptive_repeats": {
+  "budget_spent": 48,
+  "editor_calls": [
+   {
+    "context_len": 937,
+    "context_sha256": "3225658fcbaec3e83b142c80e5190082dd4619ddc339d7352b0983be469d6c21",
+    "feedback_round": 0,
+    "has_suggestion": true,
+    "out": "round_001",
+    "parent": "round_000"
+   },
+   {
+    "context_len": 937,
+    "context_sha256": "10f4cce87fd94addd5c66f8584c2decf47b7a81c8262f6d6298159131f56be73",
+    "feedback_round": 0,
+    "has_suggestion": true,
+    "out": "round_002",
+    "parent": "round_000"
+   },
+   {
+    "context_len": 1013,
+    "context_sha256": "727d6e5dbc24d155cb20f6a3e5d131c2583ed58b963db961df91b3850c3837d6",
+    "feedback_round": 1,
+    "has_suggestion": true,
+    "out": "round_003",
+    "parent": "round_001"
+   },
+   {
+    "context_len": 1064,
+    "context_sha256": "a23677750c02d13c7b15927b31bf6cdea90b1b557cb298e932101b6cf3f0d91a",
+    "feedback_round": 1,
+    "has_suggestion": true,
+    "out": "round_004",
+    "parent": "round_001"
+   },
+   {
+    "context_len": 1064,
+    "context_sha256": "c40331fde3190358b279f63efefa5dd313961d110b82048a70499ccca3ec818b",
+    "feedback_round": 1,
+    "has_suggestion": true,
+    "out": "round_005",
+    "parent": "round_001"
+   },
+   {
+    "context_len": 1064,
+    "context_sha256": "b00c2885cc0f76c938263d1368c79c2e2c17684862cc826f929d3b2dd90cbfed",
+    "feedback_round": 2,
+    "has_suggestion": true,
+    "out": "round_006",
+    "parent": "round_002"
+   },
+   {
+    "context_len": 1079,
+    "context_sha256": "87bd968c850c4edbdf743ce7e2e071778f0c4b1194f1b19290c8225284cbecf2",
+    "feedback_round": 4,
+    "has_suggestion": true,
+    "out": "round_007",
+    "parent": "round_004"
+   },
+   {
+    "context_len": 1088,
+    "context_sha256": "4cd8acf2b329c40a93839f7400a467e8efdacb959bdec33b63e9295414cdcec3",
+    "feedback_round": 5,
+    "has_suggestion": true,
+    "out": "round_008",
+    "parent": "round_005"
+   },
+   {
+    "context_len": 1088,
+    "context_sha256": "e471f5f4a4a583c873efe710a21f9e924958c3a38874043a1c882c9bba550267",
+    "feedback_round": 5,
+    "has_suggestion": true,
+    "out": "round_009",
+    "parent": "round_005"
+   },
+   {
+    "context_len": 1062,
+    "context_sha256": "037029bdf1fcaafd8d1b72382047dca0bb950afc8c1c5e4960cbbef8e3005149",
+    "feedback_round": 1,
+    "has_suggestion": true,
+    "out": "round_010",
+    "parent": "round_001"
+   },
+   {
+    "context_len": 1080,
+    "context_sha256": "8f05cdeeb57279b0c1e3abc6f9cdfaef103d926b8a91853d9b0a7d370a7cc100",
+    "feedback_round": 6,
+    "has_suggestion": true,
+    "out": "round_011",
+    "parent": "round_006"
+   }
+  ],
+  "last_snapshot": {
+   "best_mean_utility": 0.62275,
+   "best_node_id": 5,
+   "best_round_dir": "round_005",
+   "budget_spent": 48,
+   "event": "finalize",
+   "manager": "HGMManager",
+   "n_nodes": 12,
+   "node_evals_spent": 48,
+   "nodes": [
+    {
+     "cmp": 0.5270952380952382,
+     "edit_failed": false,
+     "mean_utility": 0.4736875,
+     "n_evals": 16,
+     "n_failure": 8.421000000000001,
+     "n_success": 7.578999999999999,
+     "node_id": 0,
+     "parent_id": null,
+     "round_dir": "round_000"
+    },
+    {
+     "cmp": 0.5475227272727273,
+     "edit_failed": false,
+     "mean_utility": 0.5973499999999999,
+     "n_evals": 20,
+     "n_failure": 8.053,
+     "n_success": 11.947000000000001,
+     "node_id": 1,
+     "parent_id": 0,
+     "round_dir": "round_001"
+    },
+    {
+     "cmp": 0.52525,
+     "edit_failed": false,
+     "mean_utility": 0.217,
+     "n_evals": 4,
+     "n_failure": 3.1320000000000006,
+     "n_success": 0.868,
+     "node_id": 2,
+     "parent_id": 0,
+     "round_dir": "round_002"
+    },
+    {
+     "cmp": 0.0,
+     "edit_failed": true,
+     "mean_utility": 0.0,
+     "n_evals": 0,
+     "n_failure": 0.0,
+     "n_success": 0.0,
+     "node_id": 3,
+     "parent_id": 1,
+     "round_dir": "round_003"
+    },
+    {
+     "cmp": 0.5225833333333333,
+     "edit_failed": false,
+     "mean_utility": 0.55525,
+     "n_evals": 4,
+     "n_failure": 1.779,
+     "n_success": 2.221,
+     "node_id": 4,
+     "parent_id": 1,
+     "round_dir": "round_004"
+    },
+    {
+     "cmp": 0.48941666666666667,
+     "edit_failed": false,
+     "mean_utility": 0.62275,
+     "n_evals": 8,
+     "n_failure": 3.018,
+     "n_success": 4.982,
+     "node_id": 5,
+     "parent_id": 1,
+     "round_dir": "round_005"
+    },
+    {
+     "cmp": 0.5869,
+     "edit_failed": false,
+     "mean_utility": 0.5579999999999999,
+     "n_evals": 4,
+     "n_failure": 1.768,
+     "n_success": 2.232,
+     "node_id": 6,
+     "parent_id": 2,
+     "round_dir": "round_006"
+    },
+    {
+     "cmp": 0.50625,
+     "edit_failed": false,
+     "mean_utility": 0.50625,
+     "n_evals": 8,
+     "n_failure": 3.95,
+     "n_success": 4.050000000000001,
+     "node_id": 7,
+     "parent_id": 4,
+     "round_dir": "round_007"
+    },
+    {
+     "cmp": 0.22275,
+     "edit_failed": false,
+     "mean_utility": 0.22275,
+     "n_evals": 4,
+     "n_failure": 3.109,
+     "n_success": 0.891,
+     "node_id": 8,
+     "parent_id": 5,
+     "round_dir": "round_008"
+    },
+    {
+     "cmp": 0.0,
+     "edit_failed": false,
+     "mean_utility": 0.0,
+     "n_evals": 0,
+     "n_failure": 0.0,
+     "n_success": 0.0,
+     "node_id": 9,
+     "parent_id": 5,
+     "round_dir": "round_009"
+    },
+    {
+     "cmp": 0.0,
+     "edit_failed": false,
+     "mean_utility": 0.0,
+     "n_evals": 0,
+     "n_failure": 0.0,
+     "n_success": 0.0,
+     "node_id": 10,
+     "parent_id": 1,
+     "round_dir": "round_010"
+    },
+    {
+     "cmp": 0.594125,
+     "edit_failed": false,
+     "mean_utility": 0.594125,
+     "n_evals": 16,
+     "n_failure": 6.494,
+     "n_success": 9.505999999999998,
+     "node_id": 11,
+     "parent_id": 6,
+     "round_dir": "round_011"
+    }
+   ],
+   "snapshot_idx": 24
+  },
+  "node_evals_spent": 48,
+  "round_files": [
+   "adaptive_strategy.json",
+   "eval_result.json",
+   "feedback.json",
+   "hgm_node.json",
+   "llm_failure_health.json",
+   "strategy.json"
+  ],
+  "sidecar_keys": [
+   "case_eval_counts",
+   "children",
+   "clade_failure",
+   "clade_success",
+   "cmp",
+   "edit_failed",
+   "evaluated_case_ids",
+   "mean_utility",
+   "n_evals",
+   "n_failure",
+   "n_success",
+   "node_id",
+   "parent_id",
+   "utility_measures"
+  ],
+  "snapshot_events": [
+   "seed",
+   "expand",
+   "expand",
+   "evaluate",
+   "expand",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "evaluate",
+   "finalize"
+  ],
+  "snapshot_keys": [
+   "best_mean_utility",
+   "best_node_id",
+   "best_round_dir",
+   "budget_spent",
+   "event",
+   "manager",
+   "n_nodes",
+   "node_evals_spent",
+   "nodes",
+   "snapshot_idx"
+  ],
+  "snapshot_node_keys": [
+   "cmp",
+   "edit_failed",
+   "mean_utility",
+   "n_evals",
+   "n_failure",
+   "n_success",
+   "node_id",
+   "parent_id",
+   "round_dir"
+  ],
+  "suggester_calls": [
+   {
+    "block": "foundation_capability",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 1
+   },
+   {
+    "block": "foundation_capability",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 2
+   },
+   {
+    "block": "mixed",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 3
+   },
+   {
+    "block": "llm_backbone_selection",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 4
+   },
+   {
+    "block": "collaboration_workflow",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 5
+   },
+   {
+    "block": "collaboration_workflow",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 6
+   },
+   {
+    "block": "individual_subagent",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 7
+   },
+   {
+    "block": "collaboration_workflow",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 8
+   },
+   {
+    "block": "llm_backbone_selection",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 9
+   },
+   {
+    "block": "foundation_capability",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 10
+   },
+   {
+    "block": "individual_subagent",
+    "kwargs": [
+     "agent_dir",
+     "block",
+     "curriculum_directive",
+     "failure_summary",
+     "feedback",
+     "node_id",
+     "out_dir",
+     "siblings"
+    ],
+    "node_id": 11
+   }
+  ],
+  "tree": [
+   {
+    "block": null,
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.4736875,
+    "n_evals": 16,
+    "node_id": 0,
+    "parent_id": null
+   },
+   {
+    "block": "foundation_capability",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.59735,
+    "n_evals": 20,
+    "node_id": 1,
+    "parent_id": 0
+   },
+   {
+    "block": "foundation_capability",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.217,
+    "n_evals": 4,
+    "node_id": 2,
+    "parent_id": 0
+   },
+   {
+    "block": "mixed",
+    "edit_failed": true,
+    "implementation_strategy": null,
+    "mean": 0.0,
+    "n_evals": 0,
+    "node_id": 3,
+    "parent_id": 1
+   },
+   {
+    "block": "llm_backbone_selection",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.55525,
+    "n_evals": 4,
+    "node_id": 4,
+    "parent_id": 1
+   },
+   {
+    "block": "collaboration_workflow",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.62275,
+    "n_evals": 8,
+    "node_id": 5,
+    "parent_id": 1
+   },
+   {
+    "block": "collaboration_workflow",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.558,
+    "n_evals": 4,
+    "node_id": 6,
+    "parent_id": 2
+   },
+   {
+    "block": "individual_subagent",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.50625,
+    "n_evals": 8,
+    "node_id": 7,
+    "parent_id": 4
+   },
+   {
+    "block": "collaboration_workflow",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.22275,
+    "n_evals": 4,
+    "node_id": 8,
+    "parent_id": 5
+   },
+   {
+    "block": "llm_backbone_selection",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.0,
+    "n_evals": 0,
+    "node_id": 9,
+    "parent_id": 5
+   },
+   {
+    "block": "foundation_capability",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.0,
+    "n_evals": 0,
+    "node_id": 10,
+    "parent_id": 1
+   },
+   {
+    "block": "individual_subagent",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.594125,
+    "n_evals": 16,
+    "node_id": 11,
+    "parent_id": 6
+   }
+  ]
+ },
+ "hgm_non_adaptive_no_suggester": {
+  "budget_spent": 48,
+  "editor_calls": [
+   {
+    "context_len": 361,
+    "context_sha256": "668408d4e6a8e9fda81607bde91806a8744ddf6d490b627962d07eb452986417",
+    "feedback_round": 0,
+    "has_suggestion": false,
+    "out": "round_001",
+    "parent": "round_000"
+   },
+   {
+    "context_len": 451,
+    "context_sha256": "789b68a0f8f608ef165102ba1abde6fc699f9053586f7bd250addc00c5b3bdbf",
+    "feedback_round": 0,
+    "has_suggestion": false,
+    "out": "round_002",
+    "parent": "round_000"
+   },
+   {
+    "context_len": 485,
+    "context_sha256": "4244a5881a827e441c32b347bb2088a333e789a5b06ea6f9a26cc998782e635f",
+    "feedback_round": 1,
+    "has_suggestion": false,
+    "out": "round_003",
+    "parent": "round_001"
+   },
+   {
+    "context_len": 592,
+    "context_sha256": "06d102b0ee249f1e79d62c215bb9314584307eb4609da4fad341e75f26be140c",
+    "feedback_round": 1,
+    "has_suggestion": false,
+    "out": "round_004",
+    "parent": "round_001"
+   },
+   {
+    "context_len": 492,
+    "context_sha256": "73442f92f2574d30a34d0627c9e5c731a480282f2a3d22adcb4f734031ebf6c1",
+    "feedback_round": 4,
+    "has_suggestion": false,
+    "out": "round_005",
+    "parent": "round_004"
+   },
+   {
+    "context_len": 591,
+    "context_sha256": "b226532be3c649672101fe63f51426f9e425df0d7c46d53a798c412c3f3d52d5",
+    "feedback_round": 1,
+    "has_suggestion": false,
+    "out": "round_006",
+    "parent": "round_001"
+   },
+   {
+    "context_len": 615,
+    "context_sha256": "ceae11a64e48b067c750371273373372b09407cce34ec10482e1583bf343cd4e",
+    "feedback_round": 4,
+    "has_suggestion": false,
+    "out": "round_007",
+    "parent": "round_004"
+   },
+   {
+    "context_len": 631,
+    "context_sha256": "7b9b279017371dd9b96eeac31aa20e64d998315c6d3511c980bcc34d2db907f7",
+    "feedback_round": 4,
+    "has_suggestion": false,
+    "out": "round_008",
+    "parent": "round_004"
+   },
+   {
+    "context_len": 631,
+    "context_sha256": "c68f1e0d460fe7d97d90267e157629b36343dc4dc789ed1ed2da7d4943a7c7ab",
+    "feedback_round": 4,
+    "has_suggestion": false,
+    "out": "round_009",
+    "parent": "round_004"
+   },
+   {
+    "context_len": 533,
+    "context_sha256": "dd85303f83d0100335203d7cbc45aa66dd44b71e1fa363a32d3801bd24bf8725",
+    "feedback_round": 9,
+    "has_suggestion": false,
+    "out": "round_010",
+    "parent": "round_009"
+   },
+   {
+    "context_len": 628,
+    "context_sha256": "0312d0a3e621d33ce7e2227b22df29d14242f61d71e5eab58b4da000b4053295",
+    "feedback_round": 9,
+    "has_suggestion": false,
+    "out": "round_011",
+    "parent": "round_009"
+   }
+  ],
+  "last_snapshot": {
+   "best_mean_utility": 0.6161666666666666,
+   "best_node_id": 10,
+   "best_round_dir": "round_010",
+   "budget_spent": 48,
+   "event": "finalize",
+   "manager": "HGMManager",
+   "n_nodes": 12,
+   "node_evals_spent": 48,
+   "nodes": [
+    {
+     "cmp": 0.5285277777777778,
+     "edit_failed": false,
+     "mean_utility": 0.49633333333333335,
+     "n_evals": 12,
+     "n_failure": 6.0440000000000005,
+     "n_success": 5.9559999999999995,
+     "node_id": 0,
+     "parent_id": null,
+     "round_dir": "round_000"
+    },
+    {
+     "cmp": 0.5349666666666667,
+     "edit_failed": false,
+     "mean_utility": 0.5628333333333333,
+     "n_evals": 12,
+     "n_failure": 5.246000000000001,
+     "n_success": 6.753999999999999,
+     "node_id": 1,
+     "parent_id": 0,
+     "round_dir": "round_001"
+    },
+    {
+     "cmp": 0.0,
+     "edit_failed": false,
+     "mean_utility": 0.0,
+     "n_evals": 0,
+     "n_failure": 0.0,
+     "n_success": 0.0,
+     "node_id": 2,
+     "parent_id": 0,
+     "round_dir": "round_002"
+    },
+    {
+     "cmp": 0.0,
+     "edit_failed": true,
+     "mean_utility": 0.0,
+     "n_evals": 0,
+     "n_failure": 0.0,
+     "n_success": 0.0,
+     "node_id": 3,
+     "parent_id": 1,
+     "round_dir": "round_003"
+    },
+    {
+     "cmp": 0.5433636363636364,
+     "edit_failed": false,
+     "mean_utility": 0.538875,
+     "n_evals": 8,
+     "n_failure": 3.689,
+     "n_success": 4.311,
+     "node_id": 4,
+     "parent_id": 1,
+     "round_dir": "round_004"
+    },
+    {
+     "cmp": 0.5983333333333333,
+     "edit_failed": false,
+     "mean_utility": 0.5983333333333333,
+     "n_evals": 12,
+     "n_failure": 4.82,
+     "n_success": 7.18,
+     "node_id": 5,
+     "parent_id": 4,
+     "round_dir": "round_005"
+    },
+    {
+     "cmp": 0.359,
+     "edit_failed": false,
+     "mean_utility": 0.359,
+     "n_evals": 4,
+     "n_failure": 2.564,
+     "n_success": 1.436,
+     "node_id": 6,
+     "parent_id": 1,
+     "round_dir": "round_006"
+    },
+    {
+     "cmp": 0.34275,
+     "edit_failed": false,
+     "mean_utility": 0.34275,
+     "n_evals": 8,
+     "n_failure": 5.258,
+     "n_success": 2.7419999999999995,
+     "node_id": 7,
+     "parent_id": 4,
+     "round_dir": "round_007"
+    },
+    {
+     "cmp": 0.0,
+     "edit_failed": false,
+     "mean_utility": 0.0,
+     "n_evals": 0,
+     "n_failure": 0.0,
+     "n_success": 0.0,
+     "node_id": 8,
+     "parent_id": 4,
+     "round_dir": "round_008"
+    },
+    {
+     "cmp": 0.6046875,
+     "edit_failed": false,
+     "mean_utility": 0.57025,
+     "n_evals": 4,
+     "n_failure": 1.7189999999999999,
+     "n_success": 2.281,
+     "node_id": 9,
+     "parent_id": 4,
+     "round_dir": "round_009"
+    },
+    {
+     "cmp": 0.6161666666666666,
+     "edit_failed": false,
+     "mean_utility": 0.6161666666666666,
+     "n_evals": 12,
+     "n_failure": 4.606,
+     "n_success": 7.394,
+     "node_id": 10,
+     "parent_id": 9,
+     "round_dir": "round_010"
+    },
+    {
+     "cmp": 0.0,
+     "edit_failed": false,
+     "mean_utility": 0.0,
+     "n_evals": 0,
+     "n_failure": 0.0,
+     "n_success": 0.0,
+     "node_id": 11,
+     "parent_id": 9,
+     "round_dir": "round_011"
+    }
+   ],
+   "snapshot_idx": 24
+  },
+  "node_evals_spent": 48,
+  "round_files": [
+   "eval_result.json",
+   "feedback.json",
+   "hgm_node.json",
+   "llm_failure_health.json",
+   "strategy.json"
+  ],
+  "sidecar_keys": [
+   "case_eval_counts",
+   "children",
+   "clade_failure",
+   "clade_success",
+   "cmp",
+   "edit_failed",
+   "evaluated_case_ids",
+   "mean_utility",
+   "n_evals",
+   "n_failure",
+   "n_success",
+   "node_id",
+   "parent_id",
+   "utility_measures"
+  ],
+  "snapshot_events": [
+   "seed",
+   "expand",
+   "expand",
+   "evaluate",
+   "expand",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "expand",
+   "evaluate",
+   "evaluate",
+   "finalize"
+  ],
+  "snapshot_keys": [
+   "best_mean_utility",
+   "best_node_id",
+   "best_round_dir",
+   "budget_spent",
+   "event",
+   "manager",
+   "n_nodes",
+   "node_evals_spent",
+   "nodes",
+   "snapshot_idx"
+  ],
+  "snapshot_node_keys": [
+   "cmp",
+   "edit_failed",
+   "mean_utility",
+   "n_evals",
+   "n_failure",
+   "n_success",
+   "node_id",
+   "parent_id",
+   "round_dir"
+  ],
+  "suggester_calls": null,
+  "tree": [
+   {
+    "block": null,
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.496333333,
+    "n_evals": 12,
+    "node_id": 0,
+    "parent_id": null
+   },
+   {
+    "block": "llm_backbone_selection",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.562833333,
+    "n_evals": 12,
+    "node_id": 1,
+    "parent_id": 0
+   },
+   {
+    "block": "mixed",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.0,
+    "n_evals": 0,
+    "node_id": 2,
+    "parent_id": 0
+   },
+   {
+    "block": "llm_backbone_selection",
+    "edit_failed": true,
+    "implementation_strategy": null,
+    "mean": 0.0,
+    "n_evals": 0,
+    "node_id": 3,
+    "parent_id": 1
+   },
+   {
+    "block": "llm_backbone_selection",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.538875,
+    "n_evals": 8,
+    "node_id": 4,
+    "parent_id": 1
+   },
+   {
+    "block": "mixed",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.598333333,
+    "n_evals": 12,
+    "node_id": 5,
+    "parent_id": 4
+   },
+   {
+    "block": "mixed",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.359,
+    "n_evals": 4,
+    "node_id": 6,
+    "parent_id": 1
+   },
+   {
+    "block": "foundation_capability",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.34275,
+    "n_evals": 8,
+    "node_id": 7,
+    "parent_id": 4
+   },
+   {
+    "block": "foundation_capability",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.0,
+    "n_evals": 0,
+    "node_id": 8,
+    "parent_id": 4
+   },
+   {
+    "block": "mixed",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.57025,
+    "n_evals": 4,
+    "node_id": 9,
+    "parent_id": 4
+   },
+   {
+    "block": "llm_backbone_selection",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.616166667,
+    "n_evals": 12,
+    "node_id": 10,
+    "parent_id": 9
+   },
+   {
+    "block": "verifiers",
+    "edit_failed": false,
+    "implementation_strategy": null,
+    "mean": 0.0,
+    "n_evals": 0,
+    "node_id": 11,
+    "parent_id": 9
+   }
+  ]
+ }
+}

@@ -1,0 +1,1154 @@
+{
+ "exclude:agentic:plain": [
+  {
+   "base_url": "http://meta/v1",
+   "max_output_tokens": 16384,
+   "messages": [
+    {
+     "content": "You are the self-improvement module of a self-evolving agent. Diagnose what to change from the feedback and the current code.\nFirst understand the task: read the agent's own code, and (when provided below) the tool implementations, database schema, and evaluation scoring code \u2014 together they show what the system does, what the data looks like, and how output is graded. Target edits at the failures that most affect the score.\nYou may edit ANY file in the task_agent workspace EXCEPT:\n  - agents/immutable/, benchmark/, workflow.py\nThis includes prompt/config text AND the actual orchestration code (workflow logic, tool implementations, retry/decision branches, control flow) \u2014 not just one or the other. If the failure pattern points to a structural or logical problem (e.g. how evidence is gathered, when a retry fires, how a decision is made), change the code that implements it; don't default to a prompt-only wording tweak just because it is the easiest edit to make. Pick whichever kind of change actually fixes the diagnosed failure, or both together.\n\nHard rules:\n  1. The workspace MUST keep exposing `def run_task(task: Task) -> AgentOutput` from its top-level `workflow.py` (the single arg must be named `task` \u2014 the validator enforces this); it may delegate to any other file you're allowed to edit.\n\nIf this workspace uses, or you introduce, a `tool_wrapper.py` + `tools_schema.json` + `mutable_tools/` pattern (the framework's generic tool-calling convention), these additional rules apply to that pattern specifically \u2014 irrelevant otherwise:\n  2. workflow.py may import only: platform_core.llm_wrapper.call_llm, platform_core.runner (Task, AgentOutput), tool_wrapper, plus stdlib.\n  3. tool_wrapper.py may import only: platform_core.tools, mutable_tools.*, plus stdlib.\n  4. Mutable tools (mutable_tools/*.py) may import only: platform_core.tools, sibling mutable_tools.*, plus stdlib.\n  5. Reach capabilities only via `platform_core.tools`: `call_tool(name, **kwargs)` for immutable tools, and `call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never invoke a mutable tool's `run()` directly \u2014 routing through `call_mutable_tool` keeps its calls recorded in the trace.\n  6. tools_schema.json: every entry's `name` must be backed by either an immutable tool OR a `mutable_tools/<name>.py` file. No collisions between immutable and mutable names.\n\n  7. Instrument your edits for the behavior summarizer. When you add a verifier, helper, or decision branch, call `platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', name='specific_check_name', **context)` at the decision point. Conventions: pick a stable `label` (e.g. 'verifier_fired', 'decision_branch'); use `name` to disambiguate within a label; set `verdict` to `pass`, `fail`, or `skip`. The summarizer cross-tabs these logs against case outcomes so the next editor knows which of your additions helped, which didn't, and why. Skip instrumentation only for trivial edits (renames, docstrings).\n\n  8. Double-check your own rationale before submitting. Every factual claim in `rationale`/`proposed_changes` (e.g. \"the tag is malformed\", \"case X failed because of Y\") must be verified against the actual current source shown above or the feedback/metrics below \u2014 re-read the specific line or field you are citing and confirm it really says what you're about to claim. Do not invent a plausible-sounding diagnosis you have not checked. If a claim doesn't hold up on re-reading, drop it or soften it (e.g. \"possibly\", \"this may contribute\") rather than stating it as settled fact \u2014 a correct edit with an honest, hedged rationale is better than a confident but unverified one.\n\n  9. If the steering context above includes a specific suggestion or recommendation for what to change, state in your `rationale` whether your edit follows it. If your edit departs from it in any way \u2014 a different target, a different mechanism, or scope beyond what it proposed \u2014 say so explicitly: what you changed instead and why. Silently doing something else is not acceptable; an honest \"I deviated from the suggestion because X\" is.\n\n  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone's actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md's \"Reading the error-bucket prevalence table\" section for how to infer the tier from the table's shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.\n\nYou have these tools: `read_file` to inspect any of the files listed below before editing it; `write_file` to submit ONE file's FULL new content (call once per changed file \u2014 never bundle multiple files' content into one call); `run_code_validators` to check your changes so far (syntax, imports, signatures, etc.); and `submit_self_improvement_summary` to finish.\n\nWork in this order: call `read_file` on each file you plan to change (you don't need to read files you won't touch). Then call `write_file` once per changed file with that file's complete new content \u2014 not a diff. After writing your changes, call `run_code_validators`; if it reports problems, fix them with another `write_file` call to the relevant file(s) and check again. When everything is written and validators pass, call `submit_self_improvement_summary` with a one-line optimization_goal, a proposed_changes summary, and a rationale to finish.",
+     "role": "system"
+    },
+    {
+     "content": "## Steering context\n## Selected block for this EXPAND: verifiers\nSTEERING TEXT\n\n## Last round's feedback\nscore=0.425  passed=1  failed=3  crashed=False\n(scope: tool_usage / tool error rates / llm_calls / log excerpt below are over 2 traced case(s); score, project metrics, and failure analysis cover 4 evaluated case(s))\nllm_calls=11\ntool_usage={'search_trains': 7, 'search_hotels': 3}\ntool error rates: search_trains=0.25\nproject metrics:\n  composite_mean: 0.425\n  top_failed_checks (top 2):\n    - transfer_gap: 3\n    - budget: 2\n  dimension_scores (low 2): cost=0.40, time=0.70\nruntime_exceptions:\n  - KeyError: 'price'\n\n## Tool implementations (immutable \u2014 reached via platform_core.tools.call_tool; read to see what each tool actually does)\n# tools source\ndef search_trains(): ...\n\n\n## Database schema (what the tools query against)\ntrains(id, no, dep, arr)\n\n## Files you may read/edit\n  - agents/flight.py\n  - mas_llm_backbone.yaml\n  - mas_workflow.py\n  - mutable_tools/helper.py\n  - tool_wrapper.py\n  - tools_schema.json\n\nUse `read_file` to see any of these before editing it -- their content isn't shown here.\n",
+     "role": "user"
+    }
+   ],
+   "model": "meta-model",
+   "temperature": 0.2,
+   "tools": [
+    {
+     "description": "Read one file's current content from the task agent workspace.",
+     "input_schema": {
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ],
+      "type": "object"
+     },
+     "name": "read_file"
+    },
+    {
+     "description": "Submit ONE file's full new content. Call once per changed file \u2014 never bundle multiple files into one call.",
+     "input_schema": {
+      "properties": {
+       "content": {
+        "type": "string"
+       },
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ],
+      "type": "object"
+     },
+     "name": "write_file"
+    },
+    {
+     "description": "Run the project's real validator suite against your changes so far (syntax, imports, signatures, etc.).",
+     "input_schema": {
+      "properties": {},
+      "type": "object"
+     },
+     "name": "run_code_validators"
+    },
+    {
+     "description": "Finish: state what you changed and why, once all edits are written and validators pass.",
+     "input_schema": {
+      "properties": {
+       "optimization_goal": {
+        "type": "string"
+       },
+       "proposed_changes": {
+        "type": "string"
+       },
+       "rationale": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "optimization_goal",
+       "proposed_changes",
+       "rationale"
+      ],
+      "type": "object"
+     },
+     "name": "submit_self_improvement_summary"
+    }
+   ]
+  },
+  {
+   "base_url": "http://meta/v1",
+   "max_output_tokens": 16384,
+   "messages": [
+    {
+     "content": "You are the self-improvement module of a self-evolving agent. Diagnose what to change from the feedback and the current code.\nFirst understand the task: read the agent's own code, and (when provided below) the tool implementations, database schema, and evaluation scoring code \u2014 together they show what the system does, what the data looks like, and how output is graded. Target edits at the failures that most affect the score.\nYou may edit ANY file in the task_agent workspace EXCEPT:\n  - agents/immutable/, benchmark/, workflow.py\nThis includes prompt/config text AND the actual orchestration code (workflow logic, tool implementations, retry/decision branches, control flow) \u2014 not just one or the other. If the failure pattern points to a structural or logical problem (e.g. how evidence is gathered, when a retry fires, how a decision is made), change the code that implements it; don't default to a prompt-only wording tweak just because it is the easiest edit to make. Pick whichever kind of change actually fixes the diagnosed failure, or both together.\n\nHard rules:\n  1. The workspace MUST keep exposing `def run_task(task: Task) -> AgentOutput` from its top-level `workflow.py` (the single arg must be named `task` \u2014 the validator enforces this); it may delegate to any other file you're allowed to edit.\n\nIf this workspace uses, or you introduce, a `tool_wrapper.py` + `tools_schema.json` + `mutable_tools/` pattern (the framework's generic tool-calling convention), these additional rules apply to that pattern specifically \u2014 irrelevant otherwise:\n  2. workflow.py may import only: platform_core.llm_wrapper.call_llm, platform_core.runner (Task, AgentOutput), tool_wrapper, plus stdlib.\n  3. tool_wrapper.py may import only: platform_core.tools, mutable_tools.*, plus stdlib.\n  4. Mutable tools (mutable_tools/*.py) may import only: platform_core.tools, sibling mutable_tools.*, plus stdlib.\n  5. Reach capabilities only via `platform_core.tools`: `call_tool(name, **kwargs)` for immutable tools, and `call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never invoke a mutable tool's `run()` directly \u2014 routing through `call_mutable_tool` keeps its calls recorded in the trace.\n  6. tools_schema.json: every entry's `name` must be backed by either an immutable tool OR a `mutable_tools/<name>.py` file. No collisions between immutable and mutable names.\n\n  7. Instrument your edits for the behavior summarizer. When you add a verifier, helper, or decision branch, call `platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', name='specific_check_name', **context)` at the decision point. Conventions: pick a stable `label` (e.g. 'verifier_fired', 'decision_branch'); use `name` to disambiguate within a label; set `verdict` to `pass`, `fail`, or `skip`. The summarizer cross-tabs these logs against case outcomes so the next editor knows which of your additions helped, which didn't, and why. Skip instrumentation only for trivial edits (renames, docstrings).\n\n  8. Double-check your own rationale before submitting. Every factual claim in `rationale`/`proposed_changes` (e.g. \"the tag is malformed\", \"case X failed because of Y\") must be verified against the actual current source shown above or the feedback/metrics below \u2014 re-read the specific line or field you are citing and confirm it really says what you're about to claim. Do not invent a plausible-sounding diagnosis you have not checked. If a claim doesn't hold up on re-reading, drop it or soften it (e.g. \"possibly\", \"this may contribute\") rather than stating it as settled fact \u2014 a correct edit with an honest, hedged rationale is better than a confident but unverified one.\n\n  9. If the steering context above includes a specific suggestion or recommendation for what to change, state in your `rationale` whether your edit follows it. If your edit departs from it in any way \u2014 a different target, a different mechanism, or scope beyond what it proposed \u2014 say so explicitly: what you changed instead and why. Silently doing something else is not acceptable; an honest \"I deviated from the suggestion because X\" is.\n\n  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone's actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md's \"Reading the error-bucket prevalence table\" section for how to infer the tier from the table's shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.\n\nYou have these tools: `read_file` to inspect any of the files listed below before editing it; `write_file` to submit ONE file's FULL new content (call once per changed file \u2014 never bundle multiple files' content into one call); `run_code_validators` to check your changes so far (syntax, imports, signatures, etc.); and `submit_self_improvement_summary` to finish.\n\nWork in this order: call `read_file` on each file you plan to change (you don't need to read files you won't touch). Then call `write_file` once per changed file with that file's complete new content \u2014 not a diff. After writing your changes, call `run_code_validators`; if it reports problems, fix them with another `write_file` call to the relevant file(s) and check again. When everything is written and validators pass, call `submit_self_improvement_summary` with a one-line optimization_goal, a proposed_changes summary, and a rationale to finish.",
+     "role": "system"
+    },
+    {
+     "content": "## Steering context\n## Selected block for this EXPAND: verifiers\nSTEERING TEXT\n\n## Last round's feedback\nscore=0.425  passed=1  failed=3  crashed=False\n(scope: tool_usage / tool error rates / llm_calls / log excerpt below are over 2 traced case(s); score, project metrics, and failure analysis cover 4 evaluated case(s))\nllm_calls=11\ntool_usage={'search_trains': 7, 'search_hotels': 3}\ntool error rates: search_trains=0.25\nproject metrics:\n  composite_mean: 0.425\n  top_failed_checks (top 2):\n    - transfer_gap: 3\n    - budget: 2\n  dimension_scores (low 2): cost=0.40, time=0.70\nruntime_exceptions:\n  - KeyError: 'price'\n\n## Tool implementations (immutable \u2014 reached via platform_core.tools.call_tool; read to see what each tool actually does)\n# tools source\ndef search_trains(): ...\n\n\n## Database schema (what the tools query against)\ntrains(id, no, dep, arr)\n\n## Files you may read/edit\n  - agents/flight.py\n  - mas_llm_backbone.yaml\n  - mas_workflow.py\n  - mutable_tools/helper.py\n  - tool_wrapper.py\n  - tools_schema.json\n\nUse `read_file` to see any of these before editing it -- their content isn't shown here.\n\n## Previous attempt failed validation. Fix these errors:\n  - editor returned no file edits\n",
+     "role": "user"
+    }
+   ],
+   "model": "meta-model",
+   "temperature": 0.2,
+   "tools": [
+    {
+     "description": "Read one file's current content from the task agent workspace.",
+     "input_schema": {
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ],
+      "type": "object"
+     },
+     "name": "read_file"
+    },
+    {
+     "description": "Submit ONE file's full new content. Call once per changed file \u2014 never bundle multiple files into one call.",
+     "input_schema": {
+      "properties": {
+       "content": {
+        "type": "string"
+       },
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ],
+      "type": "object"
+     },
+     "name": "write_file"
+    },
+    {
+     "description": "Run the project's real validator suite against your changes so far (syntax, imports, signatures, etc.).",
+     "input_schema": {
+      "properties": {},
+      "type": "object"
+     },
+     "name": "run_code_validators"
+    },
+    {
+     "description": "Finish: state what you changed and why, once all edits are written and validators pass.",
+     "input_schema": {
+      "properties": {
+       "optimization_goal": {
+        "type": "string"
+       },
+       "proposed_changes": {
+        "type": "string"
+       },
+       "rationale": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "optimization_goal",
+       "proposed_changes",
+       "rationale"
+      ],
+      "type": "object"
+     },
+     "name": "submit_self_improvement_summary"
+    }
+   ]
+  }
+ ],
+ "exclude:agentic:suggestion": [
+  {
+   "base_url": "http://meta/v1",
+   "max_output_tokens": 16384,
+   "messages": [
+    {
+     "content": "You are the self-improvement module of a self-evolving agent. Diagnose what to change from the feedback and the current code.\nFirst understand the task: read the agent's own code, and (when provided below) the tool implementations, database schema, and evaluation scoring code \u2014 together they show what the system does, what the data looks like, and how output is graded. Target edits at the failures that most affect the score.\nYou may edit ANY file in the task_agent workspace EXCEPT:\n  - agents/immutable/, benchmark/, workflow.py\nThis includes prompt/config text AND the actual orchestration code (workflow logic, tool implementations, retry/decision branches, control flow) \u2014 not just one or the other. If the failure pattern points to a structural or logical problem (e.g. how evidence is gathered, when a retry fires, how a decision is made), change the code that implements it; don't default to a prompt-only wording tweak just because it is the easiest edit to make. Pick whichever kind of change actually fixes the diagnosed failure, or both together.\n\nHard rules:\n  1. The workspace MUST keep exposing `def run_task(task: Task) -> AgentOutput` from its top-level `workflow.py` (the single arg must be named `task` \u2014 the validator enforces this); it may delegate to any other file you're allowed to edit.\n\nIf this workspace uses, or you introduce, a `tool_wrapper.py` + `tools_schema.json` + `mutable_tools/` pattern (the framework's generic tool-calling convention), these additional rules apply to that pattern specifically \u2014 irrelevant otherwise:\n  2. workflow.py may import only: platform_core.llm_wrapper.call_llm, platform_core.runner (Task, AgentOutput), tool_wrapper, plus stdlib.\n  3. tool_wrapper.py may import only: platform_core.tools, mutable_tools.*, plus stdlib.\n  4. Mutable tools (mutable_tools/*.py) may import only: platform_core.tools, sibling mutable_tools.*, plus stdlib.\n  5. Reach capabilities only via `platform_core.tools`: `call_tool(name, **kwargs)` for immutable tools, and `call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never invoke a mutable tool's `run()` directly \u2014 routing through `call_mutable_tool` keeps its calls recorded in the trace.\n  6. tools_schema.json: every entry's `name` must be backed by either an immutable tool OR a `mutable_tools/<name>.py` file. No collisions between immutable and mutable names.\n\n  7. Instrument your edits for the behavior summarizer. When you add a verifier, helper, or decision branch, call `platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', name='specific_check_name', **context)` at the decision point. Conventions: pick a stable `label` (e.g. 'verifier_fired', 'decision_branch'); use `name` to disambiguate within a label; set `verdict` to `pass`, `fail`, or `skip`. The summarizer cross-tabs these logs against case outcomes so the next editor knows which of your additions helped, which didn't, and why. Skip instrumentation only for trivial edits (renames, docstrings).\n\n  8. Double-check your own rationale before submitting. Every factual claim in `rationale`/`proposed_changes` (e.g. \"the tag is malformed\", \"case X failed because of Y\") must be verified against the actual current source shown above or the feedback/metrics below \u2014 re-read the specific line or field you are citing and confirm it really says what you're about to claim. Do not invent a plausible-sounding diagnosis you have not checked. If a claim doesn't hold up on re-reading, drop it or soften it (e.g. \"possibly\", \"this may contribute\") rather than stating it as settled fact \u2014 a correct edit with an honest, hedged rationale is better than a confident but unverified one.\n\n  9. If the steering context above includes a specific suggestion or recommendation for what to change, state in your `rationale` whether your edit follows it. If your edit departs from it in any way \u2014 a different target, a different mechanism, or scope beyond what it proposed \u2014 say so explicitly: what you changed instead and why. Silently doing something else is not acceptable; an honest \"I deviated from the suggestion because X\" is.\n\n  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone's actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md's \"Reading the error-bucket prevalence table\" section for how to infer the tier from the table's shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.\n\nYou have these tools: `read_file` to inspect any of the files listed below before editing it; `write_file` to submit ONE file's FULL new content (call once per changed file \u2014 never bundle multiple files' content into one call); `run_code_validators` to check your changes so far (syntax, imports, signatures, etc.); and `submit_self_improvement_summary` to finish.\n\nWork in this order: call `read_file` on each file you plan to change (you don't need to read files you won't touch). Then call `write_file` once per changed file with that file's complete new content \u2014 not a diff. After writing your changes, call `run_code_validators`; if it reports problems, fix them with another `write_file` call to the relevant file(s) and check again. When everything is written and validators pass, call `submit_self_improvement_summary` with a one-line optimization_goal, a proposed_changes summary, and a rationale to finish.",
+     "role": "system"
+    },
+    {
+     "content": "## Steering context\n## Selected block for this EXPAND: verifiers\nSTEERING TEXT\n\n## Last round's feedback\nscore=0.425  passed=1  failed=3  crashed=False\n(scope: tool_usage / tool error rates / llm_calls / log excerpt below are over 2 traced case(s); score, project metrics, and failure analysis cover 4 evaluated case(s))\nllm_calls=11\ntool_usage={'search_trains': 7, 'search_hotels': 3}\ntool error rates: search_trains=0.25\nruntime_exceptions:\n  - KeyError: 'price'\n\n## Tool implementations (immutable \u2014 reached via platform_core.tools.call_tool; read to see what each tool actually does)\n# tools source\ndef search_trains(): ...\n\n\n## Database schema (what the tools query against)\ntrains(id, no, dep, arr)\n\n## Files you may read/edit\n  - agents/flight.py\n  - mas_llm_backbone.yaml\n  - mas_workflow.py\n  - mutable_tools/helper.py\n  - tool_wrapper.py\n  - tools_schema.json\n\nUse `read_file` to see any of these before editing it -- their content isn't shown here.\n",
+     "role": "user"
+    }
+   ],
+   "model": "meta-model",
+   "temperature": 0.2,
+   "tools": [
+    {
+     "description": "Read one file's current content from the task agent workspace.",
+     "input_schema": {
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ],
+      "type": "object"
+     },
+     "name": "read_file"
+    },
+    {
+     "description": "Submit ONE file's full new content. Call once per changed file \u2014 never bundle multiple files into one call.",
+     "input_schema": {
+      "properties": {
+       "content": {
+        "type": "string"
+       },
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ],
+      "type": "object"
+     },
+     "name": "write_file"
+    },
+    {
+     "description": "Run the project's real validator suite against your changes so far (syntax, imports, signatures, etc.).",
+     "input_schema": {
+      "properties": {},
+      "type": "object"
+     },
+     "name": "run_code_validators"
+    },
+    {
+     "description": "Finish: state what you changed and why, once all edits are written and validators pass.",
+     "input_schema": {
+      "properties": {
+       "optimization_goal": {
+        "type": "string"
+       },
+       "proposed_changes": {
+        "type": "string"
+       },
+       "rationale": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "optimization_goal",
+       "proposed_changes",
+       "rationale"
+      ],
+      "type": "object"
+     },
+     "name": "submit_self_improvement_summary"
+    }
+   ]
+  },
+  {
+   "base_url": "http://meta/v1",
+   "max_output_tokens": 16384,
+   "messages": [
+    {
+     "content": "You are the self-improvement module of a self-evolving agent. Diagnose what to change from the feedback and the current code.\nFirst understand the task: read the agent's own code, and (when provided below) the tool implementations, database schema, and evaluation scoring code \u2014 together they show what the system does, what the data looks like, and how output is graded. Target edits at the failures that most affect the score.\nYou may edit ANY file in the task_agent workspace EXCEPT:\n  - agents/immutable/, benchmark/, workflow.py\nThis includes prompt/config text AND the actual orchestration code (workflow logic, tool implementations, retry/decision branches, control flow) \u2014 not just one or the other. If the failure pattern points to a structural or logical problem (e.g. how evidence is gathered, when a retry fires, how a decision is made), change the code that implements it; don't default to a prompt-only wording tweak just because it is the easiest edit to make. Pick whichever kind of change actually fixes the diagnosed failure, or both together.\n\nHard rules:\n  1. The workspace MUST keep exposing `def run_task(task: Task) -> AgentOutput` from its top-level `workflow.py` (the single arg must be named `task` \u2014 the validator enforces this); it may delegate to any other file you're allowed to edit.\n\nIf this workspace uses, or you introduce, a `tool_wrapper.py` + `tools_schema.json` + `mutable_tools/` pattern (the framework's generic tool-calling convention), these additional rules apply to that pattern specifically \u2014 irrelevant otherwise:\n  2. workflow.py may import only: platform_core.llm_wrapper.call_llm, platform_core.runner (Task, AgentOutput), tool_wrapper, plus stdlib.\n  3. tool_wrapper.py may import only: platform_core.tools, mutable_tools.*, plus stdlib.\n  4. Mutable tools (mutable_tools/*.py) may import only: platform_core.tools, sibling mutable_tools.*, plus stdlib.\n  5. Reach capabilities only via `platform_core.tools`: `call_tool(name, **kwargs)` for immutable tools, and `call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never invoke a mutable tool's `run()` directly \u2014 routing through `call_mutable_tool` keeps its calls recorded in the trace.\n  6. tools_schema.json: every entry's `name` must be backed by either an immutable tool OR a `mutable_tools/<name>.py` file. No collisions between immutable and mutable names.\n\n  7. Instrument your edits for the behavior summarizer. When you add a verifier, helper, or decision branch, call `platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', name='specific_check_name', **context)` at the decision point. Conventions: pick a stable `label` (e.g. 'verifier_fired', 'decision_branch'); use `name` to disambiguate within a label; set `verdict` to `pass`, `fail`, or `skip`. The summarizer cross-tabs these logs against case outcomes so the next editor knows which of your additions helped, which didn't, and why. Skip instrumentation only for trivial edits (renames, docstrings).\n\n  8. Double-check your own rationale before submitting. Every factual claim in `rationale`/`proposed_changes` (e.g. \"the tag is malformed\", \"case X failed because of Y\") must be verified against the actual current source shown above or the feedback/metrics below \u2014 re-read the specific line or field you are citing and confirm it really says what you're about to claim. Do not invent a plausible-sounding diagnosis you have not checked. If a claim doesn't hold up on re-reading, drop it or soften it (e.g. \"possibly\", \"this may contribute\") rather than stating it as settled fact \u2014 a correct edit with an honest, hedged rationale is better than a confident but unverified one.\n\n  9. If the steering context above includes a specific suggestion or recommendation for what to change, state in your `rationale` whether your edit follows it. If your edit departs from it in any way \u2014 a different target, a different mechanism, or scope beyond what it proposed \u2014 say so explicitly: what you changed instead and why. Silently doing something else is not acceptable; an honest \"I deviated from the suggestion because X\" is.\n\n  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone's actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md's \"Reading the error-bucket prevalence table\" section for how to infer the tier from the table's shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.\n\nYou have these tools: `read_file` to inspect any of the files listed below before editing it; `write_file` to submit ONE file's FULL new content (call once per changed file \u2014 never bundle multiple files' content into one call); `run_code_validators` to check your changes so far (syntax, imports, signatures, etc.); and `submit_self_improvement_summary` to finish.\n\nWork in this order: call `read_file` on each file you plan to change (you don't need to read files you won't touch). Then call `write_file` once per changed file with that file's complete new content \u2014 not a diff. After writing your changes, call `run_code_validators`; if it reports problems, fix them with another `write_file` call to the relevant file(s) and check again. When everything is written and validators pass, call `submit_self_improvement_summary` with a one-line optimization_goal, a proposed_changes summary, and a rationale to finish.",
+     "role": "system"
+    },
+    {
+     "content": "## Steering context\n## Selected block for this EXPAND: verifiers\nSTEERING TEXT\n\n## Last round's feedback\nscore=0.425  passed=1  failed=3  crashed=False\n(scope: tool_usage / tool error rates / llm_calls / log excerpt below are over 2 traced case(s); score, project metrics, and failure analysis cover 4 evaluated case(s))\nllm_calls=11\ntool_usage={'search_trains': 7, 'search_hotels': 3}\ntool error rates: search_trains=0.25\nruntime_exceptions:\n  - KeyError: 'price'\n\n## Tool implementations (immutable \u2014 reached via platform_core.tools.call_tool; read to see what each tool actually does)\n# tools source\ndef search_trains(): ...\n\n\n## Database schema (what the tools query against)\ntrains(id, no, dep, arr)\n\n## Files you may read/edit\n  - agents/flight.py\n  - mas_llm_backbone.yaml\n  - mas_workflow.py\n  - mutable_tools/helper.py\n  - tool_wrapper.py\n  - tools_schema.json\n\nUse `read_file` to see any of these before editing it -- their content isn't shown here.\n\n## Previous attempt failed validation. Fix these errors:\n  - editor returned no file edits\n",
+     "role": "user"
+    }
+   ],
+   "model": "meta-model",
+   "temperature": 0.2,
+   "tools": [
+    {
+     "description": "Read one file's current content from the task agent workspace.",
+     "input_schema": {
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ],
+      "type": "object"
+     },
+     "name": "read_file"
+    },
+    {
+     "description": "Submit ONE file's full new content. Call once per changed file \u2014 never bundle multiple files into one call.",
+     "input_schema": {
+      "properties": {
+       "content": {
+        "type": "string"
+       },
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ],
+      "type": "object"
+     },
+     "name": "write_file"
+    },
+    {
+     "description": "Run the project's real validator suite against your changes so far (syntax, imports, signatures, etc.).",
+     "input_schema": {
+      "properties": {},
+      "type": "object"
+     },
+     "name": "run_code_validators"
+    },
+    {
+     "description": "Finish: state what you changed and why, once all edits are written and validators pass.",
+     "input_schema": {
+      "properties": {
+       "optimization_goal": {
+        "type": "string"
+       },
+       "proposed_changes": {
+        "type": "string"
+       },
+       "rationale": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "optimization_goal",
+       "proposed_changes",
+       "rationale"
+      ],
+      "type": "object"
+     },
+     "name": "submit_self_improvement_summary"
+    }
+   ]
+  }
+ ],
+ "exclude:single:plain": [
+  {
+   "base_url": "http://meta/v1",
+   "max_output_tokens": 16384,
+   "messages": [
+    {
+     "content": "You are the self-improvement module of a self-evolving agent. Diagnose what to change from the feedback and the current code, then call `submit_self_improvement`.\nFirst understand the task: read the agent's own code, and (when provided below) the tool implementations, database schema, and evaluation scoring code \u2014 together they show what the system does, what the data looks like, and how output is graded. Target edits at the failures that most affect the score.\nYou may edit ANY file in the task_agent workspace EXCEPT:\n  - agents/immutable/, benchmark/, workflow.py\nThis includes prompt/config text AND the actual orchestration code (workflow logic, tool implementations, retry/decision branches, control flow) \u2014 not just one or the other. If the failure pattern points to a structural or logical problem (e.g. how evidence is gathered, when a retry fires, how a decision is made), change the code that implements it; don't default to a prompt-only wording tweak just because it is the easiest edit to make. Pick whichever kind of change actually fixes the diagnosed failure, or both together.\n\nHard rules:\n  1. The workspace MUST keep exposing `def run_task(task: Task) -> AgentOutput` from its top-level `workflow.py` (the single arg must be named `task` \u2014 the validator enforces this); it may delegate to any other file you're allowed to edit.\n\nIf this workspace uses, or you introduce, a `tool_wrapper.py` + `tools_schema.json` + `mutable_tools/` pattern (the framework's generic tool-calling convention), these additional rules apply to that pattern specifically \u2014 irrelevant otherwise:\n  2. workflow.py may import only: platform_core.llm_wrapper.call_llm, platform_core.runner (Task, AgentOutput), tool_wrapper, plus stdlib.\n  3. tool_wrapper.py may import only: platform_core.tools, mutable_tools.*, plus stdlib.\n  4. Mutable tools (mutable_tools/*.py) may import only: platform_core.tools, sibling mutable_tools.*, plus stdlib.\n  5. Reach capabilities only via `platform_core.tools`: `call_tool(name, **kwargs)` for immutable tools, and `call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never invoke a mutable tool's `run()` directly \u2014 routing through `call_mutable_tool` keeps its calls recorded in the trace.\n  6. tools_schema.json: every entry's `name` must be backed by either an immutable tool OR a `mutable_tools/<name>.py` file. No collisions between immutable and mutable names.\n\n  7. Instrument your edits for the behavior summarizer. When you add a verifier, helper, or decision branch, call `platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', name='specific_check_name', **context)` at the decision point. Conventions: pick a stable `label` (e.g. 'verifier_fired', 'decision_branch'); use `name` to disambiguate within a label; set `verdict` to `pass`, `fail`, or `skip`. The summarizer cross-tabs these logs against case outcomes so the next editor knows which of your additions helped, which didn't, and why. Skip instrumentation only for trivial edits (renames, docstrings).\n\n  8. Double-check your own rationale before submitting. Every factual claim in `rationale`/`proposed_changes` (e.g. \"the tag is malformed\", \"case X failed because of Y\") must be verified against the actual current source shown above or the feedback/metrics below \u2014 re-read the specific line or field you are citing and confirm it really says what you're about to claim. Do not invent a plausible-sounding diagnosis you have not checked. If a claim doesn't hold up on re-reading, drop it or soften it (e.g. \"possibly\", \"this may contribute\") rather than stating it as settled fact \u2014 a correct edit with an honest, hedged rationale is better than a confident but unverified one.\n\n  9. If the steering context above includes a specific suggestion or recommendation for what to change, state in your `rationale` whether your edit follows it. If your edit departs from it in any way \u2014 a different target, a different mechanism, or scope beyond what it proposed \u2014 say so explicitly: what you changed instead and why. Silently doing something else is not acceptable; an honest \"I deviated from the suggestion because X\" is.\n\n  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone's actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md's \"Reading the error-bucket prevalence table\" section for how to infer the tier from the table's shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.\n\nCall `submit_self_improvement` with a one-line optimization_goal, a proposed_changes summary, a rationale, and the `files` payload. Each file is the FULL replacement content \u2014 do not produce diffs. Omit files you do not change.",
+     "role": "system"
+    },
+    {
+     "content": "## Steering context\n## Selected block for this EXPAND: verifiers\nSTEERING TEXT\n\n## Last round's feedback\nscore=0.425  passed=1  failed=3  crashed=False\n(scope: tool_usage / tool error rates / llm_calls / log excerpt below are over 2 traced case(s); score, project metrics, and failure analysis cover 4 evaluated case(s))\nllm_calls=11\ntool_usage={'search_trains': 7, 'search_hotels': 3}\ntool error rates: search_trains=0.25\nproject metrics:\n  composite_mean: 0.425\n  top_failed_checks (top 2):\n    - transfer_gap: 3\n    - budget: 2\n  dimension_scores (low 2): cost=0.40, time=0.70\nruntime_exceptions:\n  - KeyError: 'price'\n\n## Tool implementations (immutable \u2014 reached via platform_core.tools.call_tool; read to see what each tool actually does)\n# tools source\ndef search_trains(): ...\n\n\n## Database schema (what the tools query against)\ntrains(id, no, dep, arr)\n\n## Current sources\n### agents/flight.py\n```\nPROMPT = 'fly'\n\n```\n### mas_llm_backbone.yaml\n```\ndefault: {}\n\n```\n### mas_workflow.py\n```\ndef run_task(task):\n    return 1\n\n```\n### mutable_tools/helper.py\n```\nX = 1\n\n```\n### tool_wrapper.py\n```\nfrom platform_core import tools\n\n```\n### tools_schema.json\n```\n[]\n\n```\n",
+     "role": "user"
+    }
+   ],
+   "model": "meta-model",
+   "temperature": 0.2,
+   "tools": [
+    {
+     "description": "Diagnose the task agent from its current code and last round's feedback, then submit a targeted self-improvement: a short strategy summary plus the full file edits that implement it.",
+     "input_schema": {
+      "properties": {
+       "files": {
+        "items": {
+         "properties": {
+          "content": {
+           "type": "string"
+          },
+          "path": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "path",
+          "content"
+         ],
+         "type": "object"
+        },
+        "type": "array"
+       },
+       "optimization_goal": {
+        "type": "string"
+       },
+       "proposed_changes": {
+        "type": "string"
+       },
+       "rationale": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "optimization_goal",
+       "proposed_changes",
+       "files"
+      ],
+      "type": "object"
+     },
+     "name": "submit_self_improvement"
+    }
+   ]
+  },
+  {
+   "base_url": "http://meta/v1",
+   "max_output_tokens": 16384,
+   "messages": [
+    {
+     "content": "You are the self-improvement module of a self-evolving agent. Diagnose what to change from the feedback and the current code, then call `submit_self_improvement`.\nFirst understand the task: read the agent's own code, and (when provided below) the tool implementations, database schema, and evaluation scoring code \u2014 together they show what the system does, what the data looks like, and how output is graded. Target edits at the failures that most affect the score.\nYou may edit ANY file in the task_agent workspace EXCEPT:\n  - agents/immutable/, benchmark/, workflow.py\nThis includes prompt/config text AND the actual orchestration code (workflow logic, tool implementations, retry/decision branches, control flow) \u2014 not just one or the other. If the failure pattern points to a structural or logical problem (e.g. how evidence is gathered, when a retry fires, how a decision is made), change the code that implements it; don't default to a prompt-only wording tweak just because it is the easiest edit to make. Pick whichever kind of change actually fixes the diagnosed failure, or both together.\n\nHard rules:\n  1. The workspace MUST keep exposing `def run_task(task: Task) -> AgentOutput` from its top-level `workflow.py` (the single arg must be named `task` \u2014 the validator enforces this); it may delegate to any other file you're allowed to edit.\n\nIf this workspace uses, or you introduce, a `tool_wrapper.py` + `tools_schema.json` + `mutable_tools/` pattern (the framework's generic tool-calling convention), these additional rules apply to that pattern specifically \u2014 irrelevant otherwise:\n  2. workflow.py may import only: platform_core.llm_wrapper.call_llm, platform_core.runner (Task, AgentOutput), tool_wrapper, plus stdlib.\n  3. tool_wrapper.py may import only: platform_core.tools, mutable_tools.*, plus stdlib.\n  4. Mutable tools (mutable_tools/*.py) may import only: platform_core.tools, sibling mutable_tools.*, plus stdlib.\n  5. Reach capabilities only via `platform_core.tools`: `call_tool(name, **kwargs)` for immutable tools, and `call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never invoke a mutable tool's `run()` directly \u2014 routing through `call_mutable_tool` keeps its calls recorded in the trace.\n  6. tools_schema.json: every entry's `name` must be backed by either an immutable tool OR a `mutable_tools/<name>.py` file. No collisions between immutable and mutable names.\n\n  7. Instrument your edits for the behavior summarizer. When you add a verifier, helper, or decision branch, call `platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', name='specific_check_name', **context)` at the decision point. Conventions: pick a stable `label` (e.g. 'verifier_fired', 'decision_branch'); use `name` to disambiguate within a label; set `verdict` to `pass`, `fail`, or `skip`. The summarizer cross-tabs these logs against case outcomes so the next editor knows which of your additions helped, which didn't, and why. Skip instrumentation only for trivial edits (renames, docstrings).\n\n  8. Double-check your own rationale before submitting. Every factual claim in `rationale`/`proposed_changes` (e.g. \"the tag is malformed\", \"case X failed because of Y\") must be verified against the actual current source shown above or the feedback/metrics below \u2014 re-read the specific line or field you are citing and confirm it really says what you're about to claim. Do not invent a plausible-sounding diagnosis you have not checked. If a claim doesn't hold up on re-reading, drop it or soften it (e.g. \"possibly\", \"this may contribute\") rather than stating it as settled fact \u2014 a correct edit with an honest, hedged rationale is better than a confident but unverified one.\n\n  9. If the steering context above includes a specific suggestion or recommendation for what to change, state in your `rationale` whether your edit follows it. If your edit departs from it in any way \u2014 a different target, a different mechanism, or scope beyond what it proposed \u2014 say so explicitly: what you changed instead and why. Silently doing something else is not acceptable; an honest \"I deviated from the suggestion because X\" is.\n\n  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone's actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md's \"Reading the error-bucket prevalence table\" section for how to infer the tier from the table's shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.\n\nCall `submit_self_improvement` with a one-line optimization_goal, a proposed_changes summary, a rationale, and the `files` payload. Each file is the FULL replacement content \u2014 do not produce diffs. Omit files you do not change.",
+     "role": "system"
+    },
+    {
+     "content": "## Steering context\n## Selected block for this EXPAND: verifiers\nSTEERING TEXT\n\n## Last round's feedback\nscore=0.425  passed=1  failed=3  crashed=False\n(scope: tool_usage / tool error rates / llm_calls / log excerpt below are over 2 traced case(s); score, project metrics, and failure analysis cover 4 evaluated case(s))\nllm_calls=11\ntool_usage={'search_trains': 7, 'search_hotels': 3}\ntool error rates: search_trains=0.25\nproject metrics:\n  composite_mean: 0.425\n  top_failed_checks (top 2):\n    - transfer_gap: 3\n    - budget: 2\n  dimension_scores (low 2): cost=0.40, time=0.70\nruntime_exceptions:\n  - KeyError: 'price'\n\n## Tool implementations (immutable \u2014 reached via platform_core.tools.call_tool; read to see what each tool actually does)\n# tools source\ndef search_trains(): ...\n\n\n## Database schema (what the tools query against)\ntrains(id, no, dep, arr)\n\n## Current sources\n### agents/flight.py\n```\nPROMPT = 'fly'\n\n```\n### mas_llm_backbone.yaml\n```\ndefault: {}\n\n```\n### mas_workflow.py\n```\ndef run_task(task):\n    return 1\n\n```\n### mutable_tools/helper.py\n```\nX = 1\n\n```\n### tool_wrapper.py\n```\nfrom platform_core import tools\n\n```\n### tools_schema.json\n```\n[]\n\n```\n\n## Previous attempt failed validation. Fix these errors:\n  - editor returned no file edits\n",
+     "role": "user"
+    }
+   ],
+   "model": "meta-model",
+   "temperature": 0.2,
+   "tools": [
+    {
+     "description": "Diagnose the task agent from its current code and last round's feedback, then submit a targeted self-improvement: a short strategy summary plus the full file edits that implement it.",
+     "input_schema": {
+      "properties": {
+       "files": {
+        "items": {
+         "properties": {
+          "content": {
+           "type": "string"
+          },
+          "path": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "path",
+          "content"
+         ],
+         "type": "object"
+        },
+        "type": "array"
+       },
+       "optimization_goal": {
+        "type": "string"
+       },
+       "proposed_changes": {
+        "type": "string"
+       },
+       "rationale": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "optimization_goal",
+       "proposed_changes",
+       "files"
+      ],
+      "type": "object"
+     },
+     "name": "submit_self_improvement"
+    }
+   ]
+  }
+ ],
+ "exclude:single:suggestion": [
+  {
+   "base_url": "http://meta/v1",
+   "max_output_tokens": 16384,
+   "messages": [
+    {
+     "content": "You are the self-improvement module of a self-evolving agent. Diagnose what to change from the feedback and the current code, then call `submit_self_improvement`.\nFirst understand the task: read the agent's own code, and (when provided below) the tool implementations, database schema, and evaluation scoring code \u2014 together they show what the system does, what the data looks like, and how output is graded. Target edits at the failures that most affect the score.\nYou may edit ANY file in the task_agent workspace EXCEPT:\n  - agents/immutable/, benchmark/, workflow.py\nThis includes prompt/config text AND the actual orchestration code (workflow logic, tool implementations, retry/decision branches, control flow) \u2014 not just one or the other. If the failure pattern points to a structural or logical problem (e.g. how evidence is gathered, when a retry fires, how a decision is made), change the code that implements it; don't default to a prompt-only wording tweak just because it is the easiest edit to make. Pick whichever kind of change actually fixes the diagnosed failure, or both together.\n\nHard rules:\n  1. The workspace MUST keep exposing `def run_task(task: Task) -> AgentOutput` from its top-level `workflow.py` (the single arg must be named `task` \u2014 the validator enforces this); it may delegate to any other file you're allowed to edit.\n\nIf this workspace uses, or you introduce, a `tool_wrapper.py` + `tools_schema.json` + `mutable_tools/` pattern (the framework's generic tool-calling convention), these additional rules apply to that pattern specifically \u2014 irrelevant otherwise:\n  2. workflow.py may import only: platform_core.llm_wrapper.call_llm, platform_core.runner (Task, AgentOutput), tool_wrapper, plus stdlib.\n  3. tool_wrapper.py may import only: platform_core.tools, mutable_tools.*, plus stdlib.\n  4. Mutable tools (mutable_tools/*.py) may import only: platform_core.tools, sibling mutable_tools.*, plus stdlib.\n  5. Reach capabilities only via `platform_core.tools`: `call_tool(name, **kwargs)` for immutable tools, and `call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never invoke a mutable tool's `run()` directly \u2014 routing through `call_mutable_tool` keeps its calls recorded in the trace.\n  6. tools_schema.json: every entry's `name` must be backed by either an immutable tool OR a `mutable_tools/<name>.py` file. No collisions between immutable and mutable names.\n\n  7. Instrument your edits for the behavior summarizer. When you add a verifier, helper, or decision branch, call `platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', name='specific_check_name', **context)` at the decision point. Conventions: pick a stable `label` (e.g. 'verifier_fired', 'decision_branch'); use `name` to disambiguate within a label; set `verdict` to `pass`, `fail`, or `skip`. The summarizer cross-tabs these logs against case outcomes so the next editor knows which of your additions helped, which didn't, and why. Skip instrumentation only for trivial edits (renames, docstrings).\n\n  8. Double-check your own rationale before submitting. Every factual claim in `rationale`/`proposed_changes` (e.g. \"the tag is malformed\", \"case X failed because of Y\") must be verified against the actual current source shown above or the feedback/metrics below \u2014 re-read the specific line or field you are citing and confirm it really says what you're about to claim. Do not invent a plausible-sounding diagnosis you have not checked. If a claim doesn't hold up on re-reading, drop it or soften it (e.g. \"possibly\", \"this may contribute\") rather than stating it as settled fact \u2014 a correct edit with an honest, hedged rationale is better than a confident but unverified one.\n\n  9. If the steering context above includes a specific suggestion or recommendation for what to change, state in your `rationale` whether your edit follows it. If your edit departs from it in any way \u2014 a different target, a different mechanism, or scope beyond what it proposed \u2014 say so explicitly: what you changed instead and why. Silently doing something else is not acceptable; an honest \"I deviated from the suggestion because X\" is.\n\n  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone's actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md's \"Reading the error-bucket prevalence table\" section for how to infer the tier from the table's shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.\n\nCall `submit_self_improvement` with a one-line optimization_goal, a proposed_changes summary, a rationale, and the `files` payload. Each file is the FULL replacement content \u2014 do not produce diffs. Omit files you do not change.",
+     "role": "system"
+    },
+    {
+     "content": "## Steering context\n## Selected block for this EXPAND: verifiers\nSTEERING TEXT\n\n## Last round's feedback\nscore=0.425  passed=1  failed=3  crashed=False\n(scope: tool_usage / tool error rates / llm_calls / log excerpt below are over 2 traced case(s); score, project metrics, and failure analysis cover 4 evaluated case(s))\nllm_calls=11\ntool_usage={'search_trains': 7, 'search_hotels': 3}\ntool error rates: search_trains=0.25\nruntime_exceptions:\n  - KeyError: 'price'\n\n## Tool implementations (immutable \u2014 reached via platform_core.tools.call_tool; read to see what each tool actually does)\n# tools source\ndef search_trains(): ...\n\n\n## Database schema (what the tools query against)\ntrains(id, no, dep, arr)\n\n## Current sources\n### agents/flight.py\n```\nPROMPT = 'fly'\n\n```\n### mas_llm_backbone.yaml\n```\ndefault: {}\n\n```\n### mas_workflow.py\n```\ndef run_task(task):\n    return 1\n\n```\n### mutable_tools/helper.py\n```\nX = 1\n\n```\n### tool_wrapper.py\n```\nfrom platform_core import tools\n\n```\n### tools_schema.json\n```\n[]\n\n```\n",
+     "role": "user"
+    }
+   ],
+   "model": "meta-model",
+   "temperature": 0.2,
+   "tools": [
+    {
+     "description": "Diagnose the task agent from its current code and last round's feedback, then submit a targeted self-improvement: a short strategy summary plus the full file edits that implement it.",
+     "input_schema": {
+      "properties": {
+       "files": {
+        "items": {
+         "properties": {
+          "content": {
+           "type": "string"
+          },
+          "path": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "path",
+          "content"
+         ],
+         "type": "object"
+        },
+        "type": "array"
+       },
+       "optimization_goal": {
+        "type": "string"
+       },
+       "proposed_changes": {
+        "type": "string"
+       },
+       "rationale": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "optimization_goal",
+       "proposed_changes",
+       "files"
+      ],
+      "type": "object"
+     },
+     "name": "submit_self_improvement"
+    }
+   ]
+  },
+  {
+   "base_url": "http://meta/v1",
+   "max_output_tokens": 16384,
+   "messages": [
+    {
+     "content": "You are the self-improvement module of a self-evolving agent. Diagnose what to change from the feedback and the current code, then call `submit_self_improvement`.\nFirst understand the task: read the agent's own code, and (when provided below) the tool implementations, database schema, and evaluation scoring code \u2014 together they show what the system does, what the data looks like, and how output is graded. Target edits at the failures that most affect the score.\nYou may edit ANY file in the task_agent workspace EXCEPT:\n  - agents/immutable/, benchmark/, workflow.py\nThis includes prompt/config text AND the actual orchestration code (workflow logic, tool implementations, retry/decision branches, control flow) \u2014 not just one or the other. If the failure pattern points to a structural or logical problem (e.g. how evidence is gathered, when a retry fires, how a decision is made), change the code that implements it; don't default to a prompt-only wording tweak just because it is the easiest edit to make. Pick whichever kind of change actually fixes the diagnosed failure, or both together.\n\nHard rules:\n  1. The workspace MUST keep exposing `def run_task(task: Task) -> AgentOutput` from its top-level `workflow.py` (the single arg must be named `task` \u2014 the validator enforces this); it may delegate to any other file you're allowed to edit.\n\nIf this workspace uses, or you introduce, a `tool_wrapper.py` + `tools_schema.json` + `mutable_tools/` pattern (the framework's generic tool-calling convention), these additional rules apply to that pattern specifically \u2014 irrelevant otherwise:\n  2. workflow.py may import only: platform_core.llm_wrapper.call_llm, platform_core.runner (Task, AgentOutput), tool_wrapper, plus stdlib.\n  3. tool_wrapper.py may import only: platform_core.tools, mutable_tools.*, plus stdlib.\n  4. Mutable tools (mutable_tools/*.py) may import only: platform_core.tools, sibling mutable_tools.*, plus stdlib.\n  5. Reach capabilities only via `platform_core.tools`: `call_tool(name, **kwargs)` for immutable tools, and `call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never invoke a mutable tool's `run()` directly \u2014 routing through `call_mutable_tool` keeps its calls recorded in the trace.\n  6. tools_schema.json: every entry's `name` must be backed by either an immutable tool OR a `mutable_tools/<name>.py` file. No collisions between immutable and mutable names.\n\n  7. Instrument your edits for the behavior summarizer. When you add a verifier, helper, or decision branch, call `platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', name='specific_check_name', **context)` at the decision point. Conventions: pick a stable `label` (e.g. 'verifier_fired', 'decision_branch'); use `name` to disambiguate within a label; set `verdict` to `pass`, `fail`, or `skip`. The summarizer cross-tabs these logs against case outcomes so the next editor knows which of your additions helped, which didn't, and why. Skip instrumentation only for trivial edits (renames, docstrings).\n\n  8. Double-check your own rationale before submitting. Every factual claim in `rationale`/`proposed_changes` (e.g. \"the tag is malformed\", \"case X failed because of Y\") must be verified against the actual current source shown above or the feedback/metrics below \u2014 re-read the specific line or field you are citing and confirm it really says what you're about to claim. Do not invent a plausible-sounding diagnosis you have not checked. If a claim doesn't hold up on re-reading, drop it or soften it (e.g. \"possibly\", \"this may contribute\") rather than stating it as settled fact \u2014 a correct edit with an honest, hedged rationale is better than a confident but unverified one.\n\n  9. If the steering context above includes a specific suggestion or recommendation for what to change, state in your `rationale` whether your edit follows it. If your edit departs from it in any way \u2014 a different target, a different mechanism, or scope beyond what it proposed \u2014 say so explicitly: what you changed instead and why. Silently doing something else is not acceptable; an honest \"I deviated from the suggestion because X\" is.\n\n  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone's actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md's \"Reading the error-bucket prevalence table\" section for how to infer the tier from the table's shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.\n\nCall `submit_self_improvement` with a one-line optimization_goal, a proposed_changes summary, a rationale, and the `files` payload. Each file is the FULL replacement content \u2014 do not produce diffs. Omit files you do not change.",
+     "role": "system"
+    },
+    {
+     "content": "## Steering context\n## Selected block for this EXPAND: verifiers\nSTEERING TEXT\n\n## Last round's feedback\nscore=0.425  passed=1  failed=3  crashed=False\n(scope: tool_usage / tool error rates / llm_calls / log excerpt below are over 2 traced case(s); score, project metrics, and failure analysis cover 4 evaluated case(s))\nllm_calls=11\ntool_usage={'search_trains': 7, 'search_hotels': 3}\ntool error rates: search_trains=0.25\nruntime_exceptions:\n  - KeyError: 'price'\n\n## Tool implementations (immutable \u2014 reached via platform_core.tools.call_tool; read to see what each tool actually does)\n# tools source\ndef search_trains(): ...\n\n\n## Database schema (what the tools query against)\ntrains(id, no, dep, arr)\n\n## Current sources\n### agents/flight.py\n```\nPROMPT = 'fly'\n\n```\n### mas_llm_backbone.yaml\n```\ndefault: {}\n\n```\n### mas_workflow.py\n```\ndef run_task(task):\n    return 1\n\n```\n### mutable_tools/helper.py\n```\nX = 1\n\n```\n### tool_wrapper.py\n```\nfrom platform_core import tools\n\n```\n### tools_schema.json\n```\n[]\n\n```\n\n## Previous attempt failed validation. Fix these errors:\n  - editor returned no file edits\n",
+     "role": "user"
+    }
+   ],
+   "model": "meta-model",
+   "temperature": 0.2,
+   "tools": [
+    {
+     "description": "Diagnose the task agent from its current code and last round's feedback, then submit a targeted self-improvement: a short strategy summary plus the full file edits that implement it.",
+     "input_schema": {
+      "properties": {
+       "files": {
+        "items": {
+         "properties": {
+          "content": {
+           "type": "string"
+          },
+          "path": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "path",
+          "content"
+         ],
+         "type": "object"
+        },
+        "type": "array"
+       },
+       "optimization_goal": {
+        "type": "string"
+       },
+       "proposed_changes": {
+        "type": "string"
+       },
+       "rationale": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "optimization_goal",
+       "proposed_changes",
+       "files"
+      ],
+      "type": "object"
+     },
+     "name": "submit_self_improvement"
+    }
+   ]
+  }
+ ],
+ "include:agentic:plain": [
+  {
+   "base_url": "http://meta/v1",
+   "max_output_tokens": 16384,
+   "messages": [
+    {
+     "content": "You are the self-improvement module of a self-evolving agent. Diagnose what to change from the feedback and the current code.\nFirst understand the task: read the agent's system prompt in workflow.py, and (when provided below) the tool implementations, database schema, and evaluation scoring code \u2014 together they show what each tool does, what the data looks like, and how output is graded. Target edits at the failures that most affect the score.\nYou may only modify these files in the task_agent workspace:\n  - tool_wrapper.py, tools_schema.json, workflow.py\n  - any *.py file under mutable_tools/\n\nHard rules:\n  1. workflow.py MUST define `def run_task(task: Task) -> AgentOutput`. The single arg must be named `task` (the validator enforces this).\n  2. workflow.py may import only: platform_core.llm_wrapper.call_llm, platform_core.runner (Task, AgentOutput), tool_wrapper, plus stdlib.\n  3. tool_wrapper.py may import only: platform_core.tools, mutable_tools.*, plus stdlib.\n  4. Mutable tools (mutable_tools/*.py) may import only: platform_core.tools, sibling mutable_tools.*, plus stdlib.\n  5. Reach capabilities only via `platform_core.tools`: `call_tool(name, **kwargs)` for immutable tools, and `call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never invoke a mutable tool's `run()` directly \u2014 routing through `call_mutable_tool` keeps its calls recorded in the trace.\n  6. tools_schema.json: every entry's `name` must be backed by either an immutable tool OR a `mutable_tools/<name>.py` file. No collisions between immutable and mutable names.\n  7. Instrument your edits for the behavior summarizer. When you add a verifier, helper, or decision branch in workflow.py or a mutable_tools/*.py file, call `platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', name='specific_check_name', **context)` at the decision point. Conventions: pick a stable `label` (e.g. 'verifier_fired', 'decision_branch'); use `name` to disambiguate within a label; set `verdict` to `pass`, `fail`, or `skip`. The summarizer cross-tabs these logs against case outcomes so the next editor knows which of your additions helped, which didn't, and why. Skip instrumentation only for trivial edits (renames, docstrings).\n\n  8. Double-check your own rationale before submitting. Every factual claim in `rationale`/`proposed_changes` (e.g. \"the tag is malformed\", \"case X failed because of Y\") must be verified against the actual current source shown above or the feedback/metrics below \u2014 re-read the specific line or field you are citing and confirm it really says what you're about to claim. Do not invent a plausible-sounding diagnosis you have not checked. If a claim doesn't hold up on re-reading, drop it or soften it (e.g. \"possibly\", \"this may contribute\") rather than stating it as settled fact \u2014 a correct edit with an honest, hedged rationale is better than a confident but unverified one.\n\n  9. If the steering context above includes a specific suggestion or recommendation for what to change, state in your `rationale` whether your edit follows it. If your edit departs from it in any way \u2014 a different target, a different mechanism, or scope beyond what it proposed \u2014 say so explicitly: what you changed instead and why. Silently doing something else is not acceptable; an honest \"I deviated from the suggestion because X\" is.\n\n  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone's actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md's \"Reading the error-bucket prevalence table\" section for how to infer the tier from the table's shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.\n\nYou have these tools: `read_file` to inspect any of the files listed below before editing it; `write_file` to submit ONE file's FULL new content (call once per changed file \u2014 never bundle multiple files' content into one call); `run_code_validators` to check your changes so far (syntax, imports, signatures, etc.); and `submit_self_improvement_summary` to finish.\n\nWork in this order: call `read_file` on each file you plan to change (you don't need to read files you won't touch). Then call `write_file` once per changed file with that file's complete new content \u2014 not a diff. After writing your changes, call `run_code_validators`; if it reports problems, fix them with another `write_file` call to the relevant file(s) and check again. When everything is written and validators pass, call `submit_self_improvement_summary` with a one-line optimization_goal, a proposed_changes summary, and a rationale to finish.",
+     "role": "system"
+    },
+    {
+     "content": "## Steering context\n## Selected block for this EXPAND: verifiers\nSTEERING TEXT\n\n## Last round's feedback\nscore=0.425  passed=1  failed=3  crashed=False\n(scope: tool_usage / tool error rates / llm_calls / log excerpt below are over 2 traced case(s); score, project metrics, and failure analysis cover 4 evaluated case(s))\nllm_calls=11\ntool_usage={'search_trains': 7, 'search_hotels': 3}\ntool error rates: search_trains=0.25\nproject metrics:\n  composite_mean: 0.425\n  top_failed_checks (top 2):\n    - transfer_gap: 3\n    - budget: 2\n  dimension_scores (low 2): cost=0.40, time=0.70\nruntime_exceptions:\n  - KeyError: 'price'\n\n## Tool implementations (immutable \u2014 reached via platform_core.tools.call_tool; read to see what each tool actually does)\n# tools source\ndef search_trains(): ...\n\n\n## Database schema (what the tools query against)\ntrains(id, no, dep, arr)\n\n## Files you may read/edit\n  - mutable_tools/helper.py\n  - tool_wrapper.py\n  - tools_schema.json\n  - workflow.py\n\nUse `read_file` to see any of these before editing it -- their content isn't shown here.\n",
+     "role": "user"
+    }
+   ],
+   "model": "meta-model",
+   "temperature": 0.2,
+   "tools": [
+    {
+     "description": "Read one file's current content from the task agent workspace.",
+     "input_schema": {
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ],
+      "type": "object"
+     },
+     "name": "read_file"
+    },
+    {
+     "description": "Submit ONE file's full new content. Call once per changed file \u2014 never bundle multiple files into one call.",
+     "input_schema": {
+      "properties": {
+       "content": {
+        "type": "string"
+       },
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ],
+      "type": "object"
+     },
+     "name": "write_file"
+    },
+    {
+     "description": "Run the project's real validator suite against your changes so far (syntax, imports, signatures, etc.).",
+     "input_schema": {
+      "properties": {},
+      "type": "object"
+     },
+     "name": "run_code_validators"
+    },
+    {
+     "description": "Finish: state what you changed and why, once all edits are written and validators pass.",
+     "input_schema": {
+      "properties": {
+       "optimization_goal": {
+        "type": "string"
+       },
+       "proposed_changes": {
+        "type": "string"
+       },
+       "rationale": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "optimization_goal",
+       "proposed_changes",
+       "rationale"
+      ],
+      "type": "object"
+     },
+     "name": "submit_self_improvement_summary"
+    }
+   ]
+  },
+  {
+   "base_url": "http://meta/v1",
+   "max_output_tokens": 16384,
+   "messages": [
+    {
+     "content": "You are the self-improvement module of a self-evolving agent. Diagnose what to change from the feedback and the current code.\nFirst understand the task: read the agent's system prompt in workflow.py, and (when provided below) the tool implementations, database schema, and evaluation scoring code \u2014 together they show what each tool does, what the data looks like, and how output is graded. Target edits at the failures that most affect the score.\nYou may only modify these files in the task_agent workspace:\n  - tool_wrapper.py, tools_schema.json, workflow.py\n  - any *.py file under mutable_tools/\n\nHard rules:\n  1. workflow.py MUST define `def run_task(task: Task) -> AgentOutput`. The single arg must be named `task` (the validator enforces this).\n  2. workflow.py may import only: platform_core.llm_wrapper.call_llm, platform_core.runner (Task, AgentOutput), tool_wrapper, plus stdlib.\n  3. tool_wrapper.py may import only: platform_core.tools, mutable_tools.*, plus stdlib.\n  4. Mutable tools (mutable_tools/*.py) may import only: platform_core.tools, sibling mutable_tools.*, plus stdlib.\n  5. Reach capabilities only via `platform_core.tools`: `call_tool(name, **kwargs)` for immutable tools, and `call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never invoke a mutable tool's `run()` directly \u2014 routing through `call_mutable_tool` keeps its calls recorded in the trace.\n  6. tools_schema.json: every entry's `name` must be backed by either an immutable tool OR a `mutable_tools/<name>.py` file. No collisions between immutable and mutable names.\n  7. Instrument your edits for the behavior summarizer. When you add a verifier, helper, or decision branch in workflow.py or a mutable_tools/*.py file, call `platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', name='specific_check_name', **context)` at the decision point. Conventions: pick a stable `label` (e.g. 'verifier_fired', 'decision_branch'); use `name` to disambiguate within a label; set `verdict` to `pass`, `fail`, or `skip`. The summarizer cross-tabs these logs against case outcomes so the next editor knows which of your additions helped, which didn't, and why. Skip instrumentation only for trivial edits (renames, docstrings).\n\n  8. Double-check your own rationale before submitting. Every factual claim in `rationale`/`proposed_changes` (e.g. \"the tag is malformed\", \"case X failed because of Y\") must be verified against the actual current source shown above or the feedback/metrics below \u2014 re-read the specific line or field you are citing and confirm it really says what you're about to claim. Do not invent a plausible-sounding diagnosis you have not checked. If a claim doesn't hold up on re-reading, drop it or soften it (e.g. \"possibly\", \"this may contribute\") rather than stating it as settled fact \u2014 a correct edit with an honest, hedged rationale is better than a confident but unverified one.\n\n  9. If the steering context above includes a specific suggestion or recommendation for what to change, state in your `rationale` whether your edit follows it. If your edit departs from it in any way \u2014 a different target, a different mechanism, or scope beyond what it proposed \u2014 say so explicitly: what you changed instead and why. Silently doing something else is not acceptable; an honest \"I deviated from the suggestion because X\" is.\n\n  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone's actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md's \"Reading the error-bucket prevalence table\" section for how to infer the tier from the table's shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.\n\nYou have these tools: `read_file` to inspect any of the files listed below before editing it; `write_file` to submit ONE file's FULL new content (call once per changed file \u2014 never bundle multiple files' content into one call); `run_code_validators` to check your changes so far (syntax, imports, signatures, etc.); and `submit_self_improvement_summary` to finish.\n\nWork in this order: call `read_file` on each file you plan to change (you don't need to read files you won't touch). Then call `write_file` once per changed file with that file's complete new content \u2014 not a diff. After writing your changes, call `run_code_validators`; if it reports problems, fix them with another `write_file` call to the relevant file(s) and check again. When everything is written and validators pass, call `submit_self_improvement_summary` with a one-line optimization_goal, a proposed_changes summary, and a rationale to finish.",
+     "role": "system"
+    },
+    {
+     "content": "## Steering context\n## Selected block for this EXPAND: verifiers\nSTEERING TEXT\n\n## Last round's feedback\nscore=0.425  passed=1  failed=3  crashed=False\n(scope: tool_usage / tool error rates / llm_calls / log excerpt below are over 2 traced case(s); score, project metrics, and failure analysis cover 4 evaluated case(s))\nllm_calls=11\ntool_usage={'search_trains': 7, 'search_hotels': 3}\ntool error rates: search_trains=0.25\nproject metrics:\n  composite_mean: 0.425\n  top_failed_checks (top 2):\n    - transfer_gap: 3\n    - budget: 2\n  dimension_scores (low 2): cost=0.40, time=0.70\nruntime_exceptions:\n  - KeyError: 'price'\n\n## Tool implementations (immutable \u2014 reached via platform_core.tools.call_tool; read to see what each tool actually does)\n# tools source\ndef search_trains(): ...\n\n\n## Database schema (what the tools query against)\ntrains(id, no, dep, arr)\n\n## Files you may read/edit\n  - mutable_tools/helper.py\n  - tool_wrapper.py\n  - tools_schema.json\n  - workflow.py\n\nUse `read_file` to see any of these before editing it -- their content isn't shown here.\n\n## Previous attempt failed validation. Fix these errors:\n  - editor returned no file edits\n",
+     "role": "user"
+    }
+   ],
+   "model": "meta-model",
+   "temperature": 0.2,
+   "tools": [
+    {
+     "description": "Read one file's current content from the task agent workspace.",
+     "input_schema": {
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ],
+      "type": "object"
+     },
+     "name": "read_file"
+    },
+    {
+     "description": "Submit ONE file's full new content. Call once per changed file \u2014 never bundle multiple files into one call.",
+     "input_schema": {
+      "properties": {
+       "content": {
+        "type": "string"
+       },
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ],
+      "type": "object"
+     },
+     "name": "write_file"
+    },
+    {
+     "description": "Run the project's real validator suite against your changes so far (syntax, imports, signatures, etc.).",
+     "input_schema": {
+      "properties": {},
+      "type": "object"
+     },
+     "name": "run_code_validators"
+    },
+    {
+     "description": "Finish: state what you changed and why, once all edits are written and validators pass.",
+     "input_schema": {
+      "properties": {
+       "optimization_goal": {
+        "type": "string"
+       },
+       "proposed_changes": {
+        "type": "string"
+       },
+       "rationale": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "optimization_goal",
+       "proposed_changes",
+       "rationale"
+      ],
+      "type": "object"
+     },
+     "name": "submit_self_improvement_summary"
+    }
+   ]
+  }
+ ],
+ "include:agentic:suggestion": [
+  {
+   "base_url": "http://meta/v1",
+   "max_output_tokens": 16384,
+   "messages": [
+    {
+     "content": "You are the self-improvement module of a self-evolving agent. Diagnose what to change from the feedback and the current code.\nFirst understand the task: read the agent's system prompt in workflow.py, and (when provided below) the tool implementations, database schema, and evaluation scoring code \u2014 together they show what each tool does, what the data looks like, and how output is graded. Target edits at the failures that most affect the score.\nYou may only modify these files in the task_agent workspace:\n  - tool_wrapper.py, tools_schema.json, workflow.py\n  - any *.py file under mutable_tools/\n\nHard rules:\n  1. workflow.py MUST define `def run_task(task: Task) -> AgentOutput`. The single arg must be named `task` (the validator enforces this).\n  2. workflow.py may import only: platform_core.llm_wrapper.call_llm, platform_core.runner (Task, AgentOutput), tool_wrapper, plus stdlib.\n  3. tool_wrapper.py may import only: platform_core.tools, mutable_tools.*, plus stdlib.\n  4. Mutable tools (mutable_tools/*.py) may import only: platform_core.tools, sibling mutable_tools.*, plus stdlib.\n  5. Reach capabilities only via `platform_core.tools`: `call_tool(name, **kwargs)` for immutable tools, and `call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never invoke a mutable tool's `run()` directly \u2014 routing through `call_mutable_tool` keeps its calls recorded in the trace.\n  6. tools_schema.json: every entry's `name` must be backed by either an immutable tool OR a `mutable_tools/<name>.py` file. No collisions between immutable and mutable names.\n  7. Instrument your edits for the behavior summarizer. When you add a verifier, helper, or decision branch in workflow.py or a mutable_tools/*.py file, call `platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', name='specific_check_name', **context)` at the decision point. Conventions: pick a stable `label` (e.g. 'verifier_fired', 'decision_branch'); use `name` to disambiguate within a label; set `verdict` to `pass`, `fail`, or `skip`. The summarizer cross-tabs these logs against case outcomes so the next editor knows which of your additions helped, which didn't, and why. Skip instrumentation only for trivial edits (renames, docstrings).\n\n  8. Double-check your own rationale before submitting. Every factual claim in `rationale`/`proposed_changes` (e.g. \"the tag is malformed\", \"case X failed because of Y\") must be verified against the actual current source shown above or the feedback/metrics below \u2014 re-read the specific line or field you are citing and confirm it really says what you're about to claim. Do not invent a plausible-sounding diagnosis you have not checked. If a claim doesn't hold up on re-reading, drop it or soften it (e.g. \"possibly\", \"this may contribute\") rather than stating it as settled fact \u2014 a correct edit with an honest, hedged rationale is better than a confident but unverified one.\n\n  9. If the steering context above includes a specific suggestion or recommendation for what to change, state in your `rationale` whether your edit follows it. If your edit departs from it in any way \u2014 a different target, a different mechanism, or scope beyond what it proposed \u2014 say so explicitly: what you changed instead and why. Silently doing something else is not acceptable; an honest \"I deviated from the suggestion because X\" is.\n\n  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone's actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md's \"Reading the error-bucket prevalence table\" section for how to infer the tier from the table's shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.\n\nYou have these tools: `read_file` to inspect any of the files listed below before editing it; `write_file` to submit ONE file's FULL new content (call once per changed file \u2014 never bundle multiple files' content into one call); `run_code_validators` to check your changes so far (syntax, imports, signatures, etc.); and `submit_self_improvement_summary` to finish.\n\nWork in this order: call `read_file` on each file you plan to change (you don't need to read files you won't touch). Then call `write_file` once per changed file with that file's complete new content \u2014 not a diff. After writing your changes, call `run_code_validators`; if it reports problems, fix them with another `write_file` call to the relevant file(s) and check again. When everything is written and validators pass, call `submit_self_improvement_summary` with a one-line optimization_goal, a proposed_changes summary, and a rationale to finish.",
+     "role": "system"
+    },
+    {
+     "content": "## Steering context\n## Selected block for this EXPAND: verifiers\nSTEERING TEXT\n\n## Last round's feedback\nscore=0.425  passed=1  failed=3  crashed=False\n(scope: tool_usage / tool error rates / llm_calls / log excerpt below are over 2 traced case(s); score, project metrics, and failure analysis cover 4 evaluated case(s))\nllm_calls=11\ntool_usage={'search_trains': 7, 'search_hotels': 3}\ntool error rates: search_trains=0.25\nruntime_exceptions:\n  - KeyError: 'price'\n\n## Tool implementations (immutable \u2014 reached via platform_core.tools.call_tool; read to see what each tool actually does)\n# tools source\ndef search_trains(): ...\n\n\n## Database schema (what the tools query against)\ntrains(id, no, dep, arr)\n\n## Files you may read/edit\n  - mutable_tools/helper.py\n  - tool_wrapper.py\n  - tools_schema.json\n  - workflow.py\n\nUse `read_file` to see any of these before editing it -- their content isn't shown here.\n",
+     "role": "user"
+    }
+   ],
+   "model": "meta-model",
+   "temperature": 0.2,
+   "tools": [
+    {
+     "description": "Read one file's current content from the task agent workspace.",
+     "input_schema": {
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ],
+      "type": "object"
+     },
+     "name": "read_file"
+    },
+    {
+     "description": "Submit ONE file's full new content. Call once per changed file \u2014 never bundle multiple files into one call.",
+     "input_schema": {
+      "properties": {
+       "content": {
+        "type": "string"
+       },
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ],
+      "type": "object"
+     },
+     "name": "write_file"
+    },
+    {
+     "description": "Run the project's real validator suite against your changes so far (syntax, imports, signatures, etc.).",
+     "input_schema": {
+      "properties": {},
+      "type": "object"
+     },
+     "name": "run_code_validators"
+    },
+    {
+     "description": "Finish: state what you changed and why, once all edits are written and validators pass.",
+     "input_schema": {
+      "properties": {
+       "optimization_goal": {
+        "type": "string"
+       },
+       "proposed_changes": {
+        "type": "string"
+       },
+       "rationale": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "optimization_goal",
+       "proposed_changes",
+       "rationale"
+      ],
+      "type": "object"
+     },
+     "name": "submit_self_improvement_summary"
+    }
+   ]
+  },
+  {
+   "base_url": "http://meta/v1",
+   "max_output_tokens": 16384,
+   "messages": [
+    {
+     "content": "You are the self-improvement module of a self-evolving agent. Diagnose what to change from the feedback and the current code.\nFirst understand the task: read the agent's system prompt in workflow.py, and (when provided below) the tool implementations, database schema, and evaluation scoring code \u2014 together they show what each tool does, what the data looks like, and how output is graded. Target edits at the failures that most affect the score.\nYou may only modify these files in the task_agent workspace:\n  - tool_wrapper.py, tools_schema.json, workflow.py\n  - any *.py file under mutable_tools/\n\nHard rules:\n  1. workflow.py MUST define `def run_task(task: Task) -> AgentOutput`. The single arg must be named `task` (the validator enforces this).\n  2. workflow.py may import only: platform_core.llm_wrapper.call_llm, platform_core.runner (Task, AgentOutput), tool_wrapper, plus stdlib.\n  3. tool_wrapper.py may import only: platform_core.tools, mutable_tools.*, plus stdlib.\n  4. Mutable tools (mutable_tools/*.py) may import only: platform_core.tools, sibling mutable_tools.*, plus stdlib.\n  5. Reach capabilities only via `platform_core.tools`: `call_tool(name, **kwargs)` for immutable tools, and `call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never invoke a mutable tool's `run()` directly \u2014 routing through `call_mutable_tool` keeps its calls recorded in the trace.\n  6. tools_schema.json: every entry's `name` must be backed by either an immutable tool OR a `mutable_tools/<name>.py` file. No collisions between immutable and mutable names.\n  7. Instrument your edits for the behavior summarizer. When you add a verifier, helper, or decision branch in workflow.py or a mutable_tools/*.py file, call `platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', name='specific_check_name', **context)` at the decision point. Conventions: pick a stable `label` (e.g. 'verifier_fired', 'decision_branch'); use `name` to disambiguate within a label; set `verdict` to `pass`, `fail`, or `skip`. The summarizer cross-tabs these logs against case outcomes so the next editor knows which of your additions helped, which didn't, and why. Skip instrumentation only for trivial edits (renames, docstrings).\n\n  8. Double-check your own rationale before submitting. Every factual claim in `rationale`/`proposed_changes` (e.g. \"the tag is malformed\", \"case X failed because of Y\") must be verified against the actual current source shown above or the feedback/metrics below \u2014 re-read the specific line or field you are citing and confirm it really says what you're about to claim. Do not invent a plausible-sounding diagnosis you have not checked. If a claim doesn't hold up on re-reading, drop it or soften it (e.g. \"possibly\", \"this may contribute\") rather than stating it as settled fact \u2014 a correct edit with an honest, hedged rationale is better than a confident but unverified one.\n\n  9. If the steering context above includes a specific suggestion or recommendation for what to change, state in your `rationale` whether your edit follows it. If your edit departs from it in any way \u2014 a different target, a different mechanism, or scope beyond what it proposed \u2014 say so explicitly: what you changed instead and why. Silently doing something else is not acceptable; an honest \"I deviated from the suggestion because X\" is.\n\n  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone's actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md's \"Reading the error-bucket prevalence table\" section for how to infer the tier from the table's shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.\n\nYou have these tools: `read_file` to inspect any of the files listed below before editing it; `write_file` to submit ONE file's FULL new content (call once per changed file \u2014 never bundle multiple files' content into one call); `run_code_validators` to check your changes so far (syntax, imports, signatures, etc.); and `submit_self_improvement_summary` to finish.\n\nWork in this order: call `read_file` on each file you plan to change (you don't need to read files you won't touch). Then call `write_file` once per changed file with that file's complete new content \u2014 not a diff. After writing your changes, call `run_code_validators`; if it reports problems, fix them with another `write_file` call to the relevant file(s) and check again. When everything is written and validators pass, call `submit_self_improvement_summary` with a one-line optimization_goal, a proposed_changes summary, and a rationale to finish.",
+     "role": "system"
+    },
+    {
+     "content": "## Steering context\n## Selected block for this EXPAND: verifiers\nSTEERING TEXT\n\n## Last round's feedback\nscore=0.425  passed=1  failed=3  crashed=False\n(scope: tool_usage / tool error rates / llm_calls / log excerpt below are over 2 traced case(s); score, project metrics, and failure analysis cover 4 evaluated case(s))\nllm_calls=11\ntool_usage={'search_trains': 7, 'search_hotels': 3}\ntool error rates: search_trains=0.25\nruntime_exceptions:\n  - KeyError: 'price'\n\n## Tool implementations (immutable \u2014 reached via platform_core.tools.call_tool; read to see what each tool actually does)\n# tools source\ndef search_trains(): ...\n\n\n## Database schema (what the tools query against)\ntrains(id, no, dep, arr)\n\n## Files you may read/edit\n  - mutable_tools/helper.py\n  - tool_wrapper.py\n  - tools_schema.json\n  - workflow.py\n\nUse `read_file` to see any of these before editing it -- their content isn't shown here.\n\n## Previous attempt failed validation. Fix these errors:\n  - editor returned no file edits\n",
+     "role": "user"
+    }
+   ],
+   "model": "meta-model",
+   "temperature": 0.2,
+   "tools": [
+    {
+     "description": "Read one file's current content from the task agent workspace.",
+     "input_schema": {
+      "properties": {
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path"
+      ],
+      "type": "object"
+     },
+     "name": "read_file"
+    },
+    {
+     "description": "Submit ONE file's full new content. Call once per changed file \u2014 never bundle multiple files into one call.",
+     "input_schema": {
+      "properties": {
+       "content": {
+        "type": "string"
+       },
+       "path": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "path",
+       "content"
+      ],
+      "type": "object"
+     },
+     "name": "write_file"
+    },
+    {
+     "description": "Run the project's real validator suite against your changes so far (syntax, imports, signatures, etc.).",
+     "input_schema": {
+      "properties": {},
+      "type": "object"
+     },
+     "name": "run_code_validators"
+    },
+    {
+     "description": "Finish: state what you changed and why, once all edits are written and validators pass.",
+     "input_schema": {
+      "properties": {
+       "optimization_goal": {
+        "type": "string"
+       },
+       "proposed_changes": {
+        "type": "string"
+       },
+       "rationale": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "optimization_goal",
+       "proposed_changes",
+       "rationale"
+      ],
+      "type": "object"
+     },
+     "name": "submit_self_improvement_summary"
+    }
+   ]
+  }
+ ],
+ "include:single:plain": [
+  {
+   "base_url": "http://meta/v1",
+   "max_output_tokens": 16384,
+   "messages": [
+    {
+     "content": "You are the self-improvement module of a self-evolving agent. Diagnose what to change from the feedback and the current code, then call `submit_self_improvement`.\nFirst understand the task: read the agent's system prompt in workflow.py, and (when provided below) the tool implementations, database schema, and evaluation scoring code \u2014 together they show what each tool does, what the data looks like, and how output is graded. Target edits at the failures that most affect the score.\nYou may only modify these files in the task_agent workspace:\n  - tool_wrapper.py, tools_schema.json, workflow.py\n  - any *.py file under mutable_tools/\n\nHard rules:\n  1. workflow.py MUST define `def run_task(task: Task) -> AgentOutput`. The single arg must be named `task` (the validator enforces this).\n  2. workflow.py may import only: platform_core.llm_wrapper.call_llm, platform_core.runner (Task, AgentOutput), tool_wrapper, plus stdlib.\n  3. tool_wrapper.py may import only: platform_core.tools, mutable_tools.*, plus stdlib.\n  4. Mutable tools (mutable_tools/*.py) may import only: platform_core.tools, sibling mutable_tools.*, plus stdlib.\n  5. Reach capabilities only via `platform_core.tools`: `call_tool(name, **kwargs)` for immutable tools, and `call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never invoke a mutable tool's `run()` directly \u2014 routing through `call_mutable_tool` keeps its calls recorded in the trace.\n  6. tools_schema.json: every entry's `name` must be backed by either an immutable tool OR a `mutable_tools/<name>.py` file. No collisions between immutable and mutable names.\n  7. Instrument your edits for the behavior summarizer. When you add a verifier, helper, or decision branch in workflow.py or a mutable_tools/*.py file, call `platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', name='specific_check_name', **context)` at the decision point. Conventions: pick a stable `label` (e.g. 'verifier_fired', 'decision_branch'); use `name` to disambiguate within a label; set `verdict` to `pass`, `fail`, or `skip`. The summarizer cross-tabs these logs against case outcomes so the next editor knows which of your additions helped, which didn't, and why. Skip instrumentation only for trivial edits (renames, docstrings).\n\n  8. Double-check your own rationale before submitting. Every factual claim in `rationale`/`proposed_changes` (e.g. \"the tag is malformed\", \"case X failed because of Y\") must be verified against the actual current source shown above or the feedback/metrics below \u2014 re-read the specific line or field you are citing and confirm it really says what you're about to claim. Do not invent a plausible-sounding diagnosis you have not checked. If a claim doesn't hold up on re-reading, drop it or soften it (e.g. \"possibly\", \"this may contribute\") rather than stating it as settled fact \u2014 a correct edit with an honest, hedged rationale is better than a confident but unverified one.\n\n  9. If the steering context above includes a specific suggestion or recommendation for what to change, state in your `rationale` whether your edit follows it. If your edit departs from it in any way \u2014 a different target, a different mechanism, or scope beyond what it proposed \u2014 say so explicitly: what you changed instead and why. Silently doing something else is not acceptable; an honest \"I deviated from the suggestion because X\" is.\n\n  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone's actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md's \"Reading the error-bucket prevalence table\" section for how to infer the tier from the table's shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.\n\nCall `submit_self_improvement` with a one-line optimization_goal, a proposed_changes summary, a rationale, and the `files` payload. Each file is the FULL replacement content \u2014 do not produce diffs. Omit files you do not change.",
+     "role": "system"
+    },
+    {
+     "content": "## Steering context\n## Selected block for this EXPAND: verifiers\nSTEERING TEXT\n\n## Last round's feedback\nscore=0.425  passed=1  failed=3  crashed=False\n(scope: tool_usage / tool error rates / llm_calls / log excerpt below are over 2 traced case(s); score, project metrics, and failure analysis cover 4 evaluated case(s))\nllm_calls=11\ntool_usage={'search_trains': 7, 'search_hotels': 3}\ntool error rates: search_trains=0.25\nproject metrics:\n  composite_mean: 0.425\n  top_failed_checks (top 2):\n    - transfer_gap: 3\n    - budget: 2\n  dimension_scores (low 2): cost=0.40, time=0.70\nruntime_exceptions:\n  - KeyError: 'price'\n\n## Tool implementations (immutable \u2014 reached via platform_core.tools.call_tool; read to see what each tool actually does)\n# tools source\ndef search_trains(): ...\n\n\n## Database schema (what the tools query against)\ntrains(id, no, dep, arr)\n\n## Current sources\n### tool_wrapper.py\n```\nfrom platform_core import tools\n\n```\n### tools_schema.json\n```\n[]\n\n```\n### workflow.py\n```\ndef run_task(task):\n    return None\n\n```\n### mutable_tools/helper.py\n```\nX = 1\n\n```\n",
+     "role": "user"
+    }
+   ],
+   "model": "meta-model",
+   "temperature": 0.2,
+   "tools": [
+    {
+     "description": "Diagnose the task agent from its current code and last round's feedback, then submit a targeted self-improvement: a short strategy summary plus the full file edits that implement it.",
+     "input_schema": {
+      "properties": {
+       "files": {
+        "items": {
+         "properties": {
+          "content": {
+           "type": "string"
+          },
+          "path": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "path",
+          "content"
+         ],
+         "type": "object"
+        },
+        "type": "array"
+       },
+       "optimization_goal": {
+        "type": "string"
+       },
+       "proposed_changes": {
+        "type": "string"
+       },
+       "rationale": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "optimization_goal",
+       "proposed_changes",
+       "files"
+      ],
+      "type": "object"
+     },
+     "name": "submit_self_improvement"
+    }
+   ]
+  },
+  {
+   "base_url": "http://meta/v1",
+   "max_output_tokens": 16384,
+   "messages": [
+    {
+     "content": "You are the self-improvement module of a self-evolving agent. Diagnose what to change from the feedback and the current code, then call `submit_self_improvement`.\nFirst understand the task: read the agent's system prompt in workflow.py, and (when provided below) the tool implementations, database schema, and evaluation scoring code \u2014 together they show what each tool does, what the data looks like, and how output is graded. Target edits at the failures that most affect the score.\nYou may only modify these files in the task_agent workspace:\n  - tool_wrapper.py, tools_schema.json, workflow.py\n  - any *.py file under mutable_tools/\n\nHard rules:\n  1. workflow.py MUST define `def run_task(task: Task) -> AgentOutput`. The single arg must be named `task` (the validator enforces this).\n  2. workflow.py may import only: platform_core.llm_wrapper.call_llm, platform_core.runner (Task, AgentOutput), tool_wrapper, plus stdlib.\n  3. tool_wrapper.py may import only: platform_core.tools, mutable_tools.*, plus stdlib.\n  4. Mutable tools (mutable_tools/*.py) may import only: platform_core.tools, sibling mutable_tools.*, plus stdlib.\n  5. Reach capabilities only via `platform_core.tools`: `call_tool(name, **kwargs)` for immutable tools, and `call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never invoke a mutable tool's `run()` directly \u2014 routing through `call_mutable_tool` keeps its calls recorded in the trace.\n  6. tools_schema.json: every entry's `name` must be backed by either an immutable tool OR a `mutable_tools/<name>.py` file. No collisions between immutable and mutable names.\n  7. Instrument your edits for the behavior summarizer. When you add a verifier, helper, or decision branch in workflow.py or a mutable_tools/*.py file, call `platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', name='specific_check_name', **context)` at the decision point. Conventions: pick a stable `label` (e.g. 'verifier_fired', 'decision_branch'); use `name` to disambiguate within a label; set `verdict` to `pass`, `fail`, or `skip`. The summarizer cross-tabs these logs against case outcomes so the next editor knows which of your additions helped, which didn't, and why. Skip instrumentation only for trivial edits (renames, docstrings).\n\n  8. Double-check your own rationale before submitting. Every factual claim in `rationale`/`proposed_changes` (e.g. \"the tag is malformed\", \"case X failed because of Y\") must be verified against the actual current source shown above or the feedback/metrics below \u2014 re-read the specific line or field you are citing and confirm it really says what you're about to claim. Do not invent a plausible-sounding diagnosis you have not checked. If a claim doesn't hold up on re-reading, drop it or soften it (e.g. \"possibly\", \"this may contribute\") rather than stating it as settled fact \u2014 a correct edit with an honest, hedged rationale is better than a confident but unverified one.\n\n  9. If the steering context above includes a specific suggestion or recommendation for what to change, state in your `rationale` whether your edit follows it. If your edit departs from it in any way \u2014 a different target, a different mechanism, or scope beyond what it proposed \u2014 say so explicitly: what you changed instead and why. Silently doing something else is not acceptable; an honest \"I deviated from the suggestion because X\" is.\n\n  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone's actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md's \"Reading the error-bucket prevalence table\" section for how to infer the tier from the table's shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.\n\nCall `submit_self_improvement` with a one-line optimization_goal, a proposed_changes summary, a rationale, and the `files` payload. Each file is the FULL replacement content \u2014 do not produce diffs. Omit files you do not change.",
+     "role": "system"
+    },
+    {
+     "content": "## Steering context\n## Selected block for this EXPAND: verifiers\nSTEERING TEXT\n\n## Last round's feedback\nscore=0.425  passed=1  failed=3  crashed=False\n(scope: tool_usage / tool error rates / llm_calls / log excerpt below are over 2 traced case(s); score, project metrics, and failure analysis cover 4 evaluated case(s))\nllm_calls=11\ntool_usage={'search_trains': 7, 'search_hotels': 3}\ntool error rates: search_trains=0.25\nproject metrics:\n  composite_mean: 0.425\n  top_failed_checks (top 2):\n    - transfer_gap: 3\n    - budget: 2\n  dimension_scores (low 2): cost=0.40, time=0.70\nruntime_exceptions:\n  - KeyError: 'price'\n\n## Tool implementations (immutable \u2014 reached via platform_core.tools.call_tool; read to see what each tool actually does)\n# tools source\ndef search_trains(): ...\n\n\n## Database schema (what the tools query against)\ntrains(id, no, dep, arr)\n\n## Current sources\n### tool_wrapper.py\n```\nfrom platform_core import tools\n\n```\n### tools_schema.json\n```\n[]\n\n```\n### workflow.py\n```\ndef run_task(task):\n    return None\n\n```\n### mutable_tools/helper.py\n```\nX = 1\n\n```\n\n## Previous attempt failed validation. Fix these errors:\n  - editor returned no file edits\n",
+     "role": "user"
+    }
+   ],
+   "model": "meta-model",
+   "temperature": 0.2,
+   "tools": [
+    {
+     "description": "Diagnose the task agent from its current code and last round's feedback, then submit a targeted self-improvement: a short strategy summary plus the full file edits that implement it.",
+     "input_schema": {
+      "properties": {
+       "files": {
+        "items": {
+         "properties": {
+          "content": {
+           "type": "string"
+          },
+          "path": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "path",
+          "content"
+         ],
+         "type": "object"
+        },
+        "type": "array"
+       },
+       "optimization_goal": {
+        "type": "string"
+       },
+       "proposed_changes": {
+        "type": "string"
+       },
+       "rationale": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "optimization_goal",
+       "proposed_changes",
+       "files"
+      ],
+      "type": "object"
+     },
+     "name": "submit_self_improvement"
+    }
+   ]
+  }
+ ],
+ "include:single:suggestion": [
+  {
+   "base_url": "http://meta/v1",
+   "max_output_tokens": 16384,
+   "messages": [
+    {
+     "content": "You are the self-improvement module of a self-evolving agent. Diagnose what to change from the feedback and the current code, then call `submit_self_improvement`.\nFirst understand the task: read the agent's system prompt in workflow.py, and (when provided below) the tool implementations, database schema, and evaluation scoring code \u2014 together they show what each tool does, what the data looks like, and how output is graded. Target edits at the failures that most affect the score.\nYou may only modify these files in the task_agent workspace:\n  - tool_wrapper.py, tools_schema.json, workflow.py\n  - any *.py file under mutable_tools/\n\nHard rules:\n  1. workflow.py MUST define `def run_task(task: Task) -> AgentOutput`. The single arg must be named `task` (the validator enforces this).\n  2. workflow.py may import only: platform_core.llm_wrapper.call_llm, platform_core.runner (Task, AgentOutput), tool_wrapper, plus stdlib.\n  3. tool_wrapper.py may import only: platform_core.tools, mutable_tools.*, plus stdlib.\n  4. Mutable tools (mutable_tools/*.py) may import only: platform_core.tools, sibling mutable_tools.*, plus stdlib.\n  5. Reach capabilities only via `platform_core.tools`: `call_tool(name, **kwargs)` for immutable tools, and `call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never invoke a mutable tool's `run()` directly \u2014 routing through `call_mutable_tool` keeps its calls recorded in the trace.\n  6. tools_schema.json: every entry's `name` must be backed by either an immutable tool OR a `mutable_tools/<name>.py` file. No collisions between immutable and mutable names.\n  7. Instrument your edits for the behavior summarizer. When you add a verifier, helper, or decision branch in workflow.py or a mutable_tools/*.py file, call `platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', name='specific_check_name', **context)` at the decision point. Conventions: pick a stable `label` (e.g. 'verifier_fired', 'decision_branch'); use `name` to disambiguate within a label; set `verdict` to `pass`, `fail`, or `skip`. The summarizer cross-tabs these logs against case outcomes so the next editor knows which of your additions helped, which didn't, and why. Skip instrumentation only for trivial edits (renames, docstrings).\n\n  8. Double-check your own rationale before submitting. Every factual claim in `rationale`/`proposed_changes` (e.g. \"the tag is malformed\", \"case X failed because of Y\") must be verified against the actual current source shown above or the feedback/metrics below \u2014 re-read the specific line or field you are citing and confirm it really says what you're about to claim. Do not invent a plausible-sounding diagnosis you have not checked. If a claim doesn't hold up on re-reading, drop it or soften it (e.g. \"possibly\", \"this may contribute\") rather than stating it as settled fact \u2014 a correct edit with an honest, hedged rationale is better than a confident but unverified one.\n\n  9. If the steering context above includes a specific suggestion or recommendation for what to change, state in your `rationale` whether your edit follows it. If your edit departs from it in any way \u2014 a different target, a different mechanism, or scope beyond what it proposed \u2014 say so explicitly: what you changed instead and why. Silently doing something else is not acceptable; an honest \"I deviated from the suggestion because X\" is.\n\n  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone's actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md's \"Reading the error-bucket prevalence table\" section for how to infer the tier from the table's shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.\n\nCall `submit_self_improvement` with a one-line optimization_goal, a proposed_changes summary, a rationale, and the `files` payload. Each file is the FULL replacement content \u2014 do not produce diffs. Omit files you do not change.",
+     "role": "system"
+    },
+    {
+     "content": "## Steering context\n## Selected block for this EXPAND: verifiers\nSTEERING TEXT\n\n## Last round's feedback\nscore=0.425  passed=1  failed=3  crashed=False\n(scope: tool_usage / tool error rates / llm_calls / log excerpt below are over 2 traced case(s); score, project metrics, and failure analysis cover 4 evaluated case(s))\nllm_calls=11\ntool_usage={'search_trains': 7, 'search_hotels': 3}\ntool error rates: search_trains=0.25\nruntime_exceptions:\n  - KeyError: 'price'\n\n## Tool implementations (immutable \u2014 reached via platform_core.tools.call_tool; read to see what each tool actually does)\n# tools source\ndef search_trains(): ...\n\n\n## Database schema (what the tools query against)\ntrains(id, no, dep, arr)\n\n## Current sources\n### tool_wrapper.py\n```\nfrom platform_core import tools\n\n```\n### tools_schema.json\n```\n[]\n\n```\n### workflow.py\n```\ndef run_task(task):\n    return None\n\n```\n### mutable_tools/helper.py\n```\nX = 1\n\n```\n",
+     "role": "user"
+    }
+   ],
+   "model": "meta-model",
+   "temperature": 0.2,
+   "tools": [
+    {
+     "description": "Diagnose the task agent from its current code and last round's feedback, then submit a targeted self-improvement: a short strategy summary plus the full file edits that implement it.",
+     "input_schema": {
+      "properties": {
+       "files": {
+        "items": {
+         "properties": {
+          "content": {
+           "type": "string"
+          },
+          "path": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "path",
+          "content"
+         ],
+         "type": "object"
+        },
+        "type": "array"
+       },
+       "optimization_goal": {
+        "type": "string"
+       },
+       "proposed_changes": {
+        "type": "string"
+       },
+       "rationale": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "optimization_goal",
+       "proposed_changes",
+       "files"
+      ],
+      "type": "object"
+     },
+     "name": "submit_self_improvement"
+    }
+   ]
+  },
+  {
+   "base_url": "http://meta/v1",
+   "max_output_tokens": 16384,
+   "messages": [
+    {
+     "content": "You are the self-improvement module of a self-evolving agent. Diagnose what to change from the feedback and the current code, then call `submit_self_improvement`.\nFirst understand the task: read the agent's system prompt in workflow.py, and (when provided below) the tool implementations, database schema, and evaluation scoring code \u2014 together they show what each tool does, what the data looks like, and how output is graded. Target edits at the failures that most affect the score.\nYou may only modify these files in the task_agent workspace:\n  - tool_wrapper.py, tools_schema.json, workflow.py\n  - any *.py file under mutable_tools/\n\nHard rules:\n  1. workflow.py MUST define `def run_task(task: Task) -> AgentOutput`. The single arg must be named `task` (the validator enforces this).\n  2. workflow.py may import only: platform_core.llm_wrapper.call_llm, platform_core.runner (Task, AgentOutput), tool_wrapper, plus stdlib.\n  3. tool_wrapper.py may import only: platform_core.tools, mutable_tools.*, plus stdlib.\n  4. Mutable tools (mutable_tools/*.py) may import only: platform_core.tools, sibling mutable_tools.*, plus stdlib.\n  5. Reach capabilities only via `platform_core.tools`: `call_tool(name, **kwargs)` for immutable tools, and `call_mutable_tool(name, **kwargs)` for `mutable_tools/*`. Never invoke a mutable tool's `run()` directly \u2014 routing through `call_mutable_tool` keeps its calls recorded in the trace.\n  6. tools_schema.json: every entry's `name` must be backed by either an immutable tool OR a `mutable_tools/<name>.py` file. No collisions between immutable and mutable names.\n  7. Instrument your edits for the behavior summarizer. When you add a verifier, helper, or decision branch in workflow.py or a mutable_tools/*.py file, call `platform_core.trace.log(label='your_label', verdict='pass'|'fail'|'skip', name='specific_check_name', **context)` at the decision point. Conventions: pick a stable `label` (e.g. 'verifier_fired', 'decision_branch'); use `name` to disambiguate within a label; set `verdict` to `pass`, `fail`, or `skip`. The summarizer cross-tabs these logs against case outcomes so the next editor knows which of your additions helped, which didn't, and why. Skip instrumentation only for trivial edits (renames, docstrings).\n\n  8. Double-check your own rationale before submitting. Every factual claim in `rationale`/`proposed_changes` (e.g. \"the tag is malformed\", \"case X failed because of Y\") must be verified against the actual current source shown above or the feedback/metrics below \u2014 re-read the specific line or field you are citing and confirm it really says what you're about to claim. Do not invent a plausible-sounding diagnosis you have not checked. If a claim doesn't hold up on re-reading, drop it or soften it (e.g. \"possibly\", \"this may contribute\") rather than stating it as settled fact \u2014 a correct edit with an honest, hedged rationale is better than a confident but unverified one.\n\n  9. If the steering context above includes a specific suggestion or recommendation for what to change, state in your `rationale` whether your edit follows it. If your edit departs from it in any way \u2014 a different target, a different mechanism, or scope beyond what it proposed \u2014 say so explicitly: what you changed instead and why. Silently doing something else is not acceptable; an honest \"I deviated from the suggestion because X\" is.\n\n  10. If the feedback below includes an error-bucket prevalence table, use it before deciding HOW to implement your fix: which bucket(s) dominate the failing cases is itself evidence of this backbone's actual capability tier (low/medium/high), not just a pointer to which case to cite. See strategies.md's \"Reading the error-bucket prevalence table\" section for how to infer the tier from the table's shape, and its per-(bucket, tier) strategy table for what KIND of fix that combination calls for -- a code-level fix, a prompt/instruction change, or a lightweight verifier. A high tool_omission/tool_calling_budget_exceeded rate is evidence this backbone needs the more aggressive, code-level fix regardless of how clean a prompt-only edit might look; a low rate with mostly constraint_misreading/apply_info_incorrectly is evidence a lighter prompt/verifier-level fix is more proportionate.\n\nCall `submit_self_improvement` with a one-line optimization_goal, a proposed_changes summary, a rationale, and the `files` payload. Each file is the FULL replacement content \u2014 do not produce diffs. Omit files you do not change.",
+     "role": "system"
+    },
+    {
+     "content": "## Steering context\n## Selected block for this EXPAND: verifiers\nSTEERING TEXT\n\n## Last round's feedback\nscore=0.425  passed=1  failed=3  crashed=False\n(scope: tool_usage / tool error rates / llm_calls / log excerpt below are over 2 traced case(s); score, project metrics, and failure analysis cover 4 evaluated case(s))\nllm_calls=11\ntool_usage={'search_trains': 7, 'search_hotels': 3}\ntool error rates: search_trains=0.25\nruntime_exceptions:\n  - KeyError: 'price'\n\n## Tool implementations (immutable \u2014 reached via platform_core.tools.call_tool; read to see what each tool actually does)\n# tools source\ndef search_trains(): ...\n\n\n## Database schema (what the tools query against)\ntrains(id, no, dep, arr)\n\n## Current sources\n### tool_wrapper.py\n```\nfrom platform_core import tools\n\n```\n### tools_schema.json\n```\n[]\n\n```\n### workflow.py\n```\ndef run_task(task):\n    return None\n\n```\n### mutable_tools/helper.py\n```\nX = 1\n\n```\n\n## Previous attempt failed validation. Fix these errors:\n  - editor returned no file edits\n",
+     "role": "user"
+    }
+   ],
+   "model": "meta-model",
+   "temperature": 0.2,
+   "tools": [
+    {
+     "description": "Diagnose the task agent from its current code and last round's feedback, then submit a targeted self-improvement: a short strategy summary plus the full file edits that implement it.",
+     "input_schema": {
+      "properties": {
+       "files": {
+        "items": {
+         "properties": {
+          "content": {
+           "type": "string"
+          },
+          "path": {
+           "type": "string"
+          }
+         },
+         "required": [
+          "path",
+          "content"
+         ],
+         "type": "object"
+        },
+        "type": "array"
+       },
+       "optimization_goal": {
+        "type": "string"
+       },
+       "proposed_changes": {
+        "type": "string"
+       },
+       "rationale": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "optimization_goal",
+       "proposed_changes",
+       "files"
+      ],
+      "type": "object"
+     },
+     "name": "submit_self_improvement"
+    }
+   ]
+  }
+ ]
+}
