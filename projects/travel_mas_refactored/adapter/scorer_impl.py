@@ -110,6 +110,59 @@ def _resolve_database_root() -> Optional[Path]:
     return candidate if candidate.exists() else None
 
 
+def _convert_request_kwargs() -> dict:
+    """Reasoning controls for the conversion call, from the environment.
+
+    - ``TRAVEL_CONVERT_REASONING_EFFORT`` (e.g. ``low``) -> ``reasoning_effort``;
+    - ``TRAVEL_CONVERT_ENABLE_THINKING`` -- three-state: explicitly set to one of
+      ``0``/``false``/``no``/``off`` -> ``enable_thinking: False``; set to anything else
+      non-empty -> ``enable_thinking: True`` (an explicit force-on, not just "leave at
+      default" -- mirrors platform_core/llm_wrapper.py's own enable_thinking handling for
+      the task agent, which supports the same three states); unset/empty -> no override at
+      all, i.e. the model's own chat-template default.
+
+    Both env vars unset (default) sends nothing -- unchanged behaviour. A thinking model
+    otherwise runs at its chat template's default: Qwen3.8's is xhigh. Measured 2026-09-24:
+    3.4K-char plan xhigh 227s / 11,857 tokens vs low 91s / 3,812; 7.7K-char plan low
+    290s / 11,969 vs thinking OFF 138s / 5,702 -- all valid JSON. Under shared load, xhigh
+    timed out 29/60 cases of EXP-034's root and low still 2/7 (the longest plans) of EXP-034b:
+    scorer timeouts scored as agent zeros.
+    """
+    kw: dict = {}
+    effort = (os.environ.get("TRAVEL_CONVERT_REASONING_EFFORT") or "").strip()
+    if effort:
+        kw["reasoning_effort"] = effort
+    thinking_raw = os.environ.get("TRAVEL_CONVERT_ENABLE_THINKING")
+    if thinking_raw is not None and thinking_raw.strip():
+        kw["enable_thinking"] = thinking_raw.strip().lower() not in ("0", "false", "no", "off")
+    return {"extra_body": {"chat_template_kwargs": kw}} if kw else {}
+
+
+def _env_seconds(name: str, default: float) -> float:
+    """A positive float from the environment, else ``default`` (bad values fall back)."""
+    raw = (os.environ.get(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        val = float(raw)
+    except ValueError:
+        return default
+    return val if val > 0 else default
+
+
+def _convert_timeouts() -> tuple[float, float]:
+    """(per_attempt, overall) seconds; env overrides of the module defaults.
+
+    TRAVEL_CONVERT_PER_ATTEMPT_TIMEOUT_S / TRAVEL_CONVERT_OVERALL_TIMEOUT_S. If per-attempt
+    is not below overall, per-attempt is clamped to half of overall so >= 2 attempts fit.
+    """
+    per = _env_seconds("TRAVEL_CONVERT_PER_ATTEMPT_TIMEOUT_S", CONVERT_PER_ATTEMPT_TIMEOUT_S)
+    overall = _env_seconds("TRAVEL_CONVERT_OVERALL_TIMEOUT_S", CONVERT_OVERALL_TIMEOUT_S)
+    if per >= overall:
+        per = overall / 2
+    return per, overall
+
+
 def _convert_plan_to_json(plan_text: str, *, retries: int = DEFAULT_RETRIES) -> tuple[Optional[dict], Optional[str]]:
     """Call gpt-5-2025-08-07 to convert the agent's text plan into the
     structured JSON the constraint evaluators expect.
@@ -146,23 +199,6 @@ def _convert_plan_to_json(plan_text: str, *, retries: int = DEFAULT_RETRIES) -> 
         else:
             return None, "OPENAI_API_KEY not set"
 
-    # Optional, mirrors TRAVEL_CONVERT_MODEL/TRAVEL_CONVERT_BASE_URL's own
-    # convention: only meaningful for a Qwen3-hybrid convert_model (e.g.
-    # Qwen3.8-27B) via vLLM's chat_template_kwargs mechanism (same
-    # mechanism as platform_core/llm_wrapper.py's own enable_thinking
-    # handling for the task agent). Unset (the default) sends no
-    # extra_body override at all, so every existing config that doesn't
-    # set this env var is byte-identical to before this was added.
-    _convert_enable_thinking_raw = os.environ.get("TRAVEL_CONVERT_ENABLE_THINKING")
-    extra_body = None
-    if _convert_enable_thinking_raw is not None:
-        extra_body = {
-            "chat_template_kwargs": {
-                "enable_thinking": _convert_enable_thinking_raw.strip().lower()
-                not in ("0", "false", "no", "")
-            }
-        }
-
     # Per-attempt timeout (SDK default is ~600s): without this, a single
     # slow local-model completion blocks that one attempt indefinitely --
     # see platform_core/llm_wrapper.py's DEFAULT_REQUEST_TIMEOUT_S for the
@@ -176,13 +212,14 @@ def _convert_plan_to_json(plan_text: str, *, retries: int = DEFAULT_RETRIES) -> 
     # below already provides its own retry/backoff, deliberately timed
     # against CONVERT_OVERALL_TIMEOUT_S; the SDK's internal retries just
     # fight it for the same budget.
+    per_attempt_s, overall_s = _convert_timeouts()
     client = (
         OpenAI(
             api_key=api_key, base_url=base_url,
-            timeout=CONVERT_PER_ATTEMPT_TIMEOUT_S, max_retries=0,
+            timeout=per_attempt_s, max_retries=0,
         )
         if base_url
-        else OpenAI(timeout=CONVERT_PER_ATTEMPT_TIMEOUT_S, max_retries=0)
+        else OpenAI(timeout=per_attempt_s, max_retries=0)
     )
     messages = [
         {"role": "system", "content": FORMAT_CONVERT_PROMPT_EN},
@@ -193,7 +230,7 @@ def _convert_plan_to_json(plan_text: str, *, retries: int = DEFAULT_RETRIES) -> 
     started = time.monotonic()
     for attempt in range(retries):
         elapsed = time.monotonic() - started
-        if elapsed >= CONVERT_OVERALL_TIMEOUT_S:
+        if elapsed >= overall_s:
             # The hard ceiling this function exists to guarantee: give up
             # after ~CONVERT_OVERALL_TIMEOUT_S total, no matter how many of
             # `retries` attempts have actually run or how long any single
@@ -205,10 +242,11 @@ def _convert_plan_to_json(plan_text: str, *, retries: int = DEFAULT_RETRIES) -> 
             break
         try:
             # gpt-5-2025-08-07 is a reasoning model — do not pass max_tokens.
-            create_kwargs: dict[str, Any] = {"model": convert_model, "messages": messages}
-            if extra_body is not None:
-                create_kwargs["extra_body"] = extra_body
-            resp = client.chat.completions.create(**create_kwargs)
+            resp = client.chat.completions.create(
+                model=convert_model,
+                messages=messages,
+                **_convert_request_kwargs(),
+            )
             content = resp.choices[0].message.content or ""
         except Exception as exc:  # noqa: BLE001 - surface SDK errors as scorer detail
             last_err = f"openai call failed (attempt {attempt + 1}): {exc!r}"

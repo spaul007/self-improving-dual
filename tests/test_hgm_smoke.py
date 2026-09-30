@@ -50,7 +50,10 @@ class HGMTreeTests(unittest.TestCase):
         tree = HGMTree(clade_pseudo_count=3, rng=random.Random(0))
         tree.add(self._node(0, None, [0.8] * 10))
         # n_evals (10) >= clade_pseudo_count (3) -> 3 copies of the mean.
-        self.assertEqual(tree.clade_evals(0), [0.8, 0.8, 0.8])
+        evals = tree.clade_evals(0)
+        self.assertEqual(len(evals), 3)
+        for v in evals:
+            self.assertAlmostEqual(v, 0.8)
 
     def test_cmp_rewards_a_strong_descendant(self) -> None:
         """The metaproductivity-performance mismatch: two nodes with the

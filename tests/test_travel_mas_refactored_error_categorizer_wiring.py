@@ -1,5 +1,4 @@
-"""Every travel_mas_refactored config must wire up an error_categorizer,
-and keep the supplementary hardest-cases top-off trimmed to 1.
+"""Every travel_mas_refactored config must wire up an error_categorizer.
 
 Real gap this guards against: gatherer.config was `{}` for travel_mas_refactored
 across every config (confirmed live 2026-09-01) -- without an error_categorizer,
@@ -11,10 +10,12 @@ instead of symptoms. projects/travel/travel_error_categorizer.py is pure
 schema-logic over dimension_details/hard_constraints/failed_checks, which
 travel_mas_refactored's own scorer emits identically (confirmed live against
 real reval case data) -- same categorizer already reused verbatim for the
-sibling travel_mas project's hgm_dual config. n_hard_cases (already a plain
-DefaultFeedbackGatherer kwarg, no new code needed) is a separate top-off of
-lowest-scoring cases shown ALONGSIDE the categorized examples, not just a
-no-categorizer fallback -- trimmed from its default of 3 to 1 the same day.
+sibling travel_mas project's hgm_dual config.
+
+n_hard_cases (a separate top-off of lowest-scoring cases shown ALONGSIDE the
+categorized examples) is intentionally NOT enforced here -- it defaults to 3
+via DefaultFeedbackGatherer/failure_report.py and per-config values are a
+volume tuning knob, not a correctness requirement.
 
     PYTHONPATH=. python3 -m unittest tests.test_travel_mas_refactored_error_categorizer_wiring
 """
@@ -26,7 +27,6 @@ import unittest
 import yaml
 
 _EXPECTED_CATEGORIZER = "projects.travel.travel_error_categorizer:categorize_errors"
-_EXPECTED_N_HARD_CASES = 1
 
 
 class TravelMasRefactoredErrorCategorizerWiringTests(unittest.TestCase):
@@ -44,8 +44,6 @@ class TravelMasRefactoredErrorCategorizerWiringTests(unittest.TestCase):
                 missing.append(
                     f"{path}: error_categorizer={gc.get('error_categorizer')!r}"
                 )
-            if gc.get("n_hard_cases") != _EXPECTED_N_HARD_CASES:
-                missing.append(f"{path}: n_hard_cases={gc.get('n_hard_cases')!r}")
 
         # Sanity: this test is only meaningful if it actually found configs
         # to check -- a silent 0-checked pass would hide a real regression

@@ -246,6 +246,7 @@ class HGMDualManager(HGMManager):
             intermediate_dir,
             context=context_a,
             has_suggestion=self._last_suggestion_produced,
+            **self._edit_scope_kwargs(block_a),
         )
         strategy_a = res_a.strategy or fallback_strategy()
         strategy_a.block = block_a
