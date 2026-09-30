@@ -942,7 +942,11 @@ class HGMDualManager(HGMManager):
         # failure_summarizer/block_suggester above.
         unit_selector: Any = None,
         edit_memory: Any = None,
+        resume: bool = False,
     ) -> Any:
+        if resume:
+            raise ValueError("hgm_dual does not support --resume; use manager hgm or "
+                             "hgm_block_tagged")
         # The agentic editor and the edit-memory layer are wired for
         # single-child expansions (hgm / hgm_block_tagged) only.
         if edit_memory is not None:

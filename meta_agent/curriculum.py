@@ -400,6 +400,14 @@ class Curriculum:
             "regardless of which block ends up fixing it."
         )
 
+    def restore(self, snap: dict) -> None:
+        """Continue from a persisted ``curriculum_status.json`` (a resumed
+        run): the goal list is rebuilt from the seed as usual, then the
+        position, patience counter and resolved goals are put back."""
+        self._index = min(int(snap.get("current_index", 0)), len(self._goals))
+        self._rounds_on_current = int(snap.get("rounds_on_current", 0))
+        self._resolved = [str(g) for g in snap.get("resolved_goals", [])]
+
     def snapshot(
         self,
         *,

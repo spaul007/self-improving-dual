@@ -25,14 +25,34 @@ from meta_agent import runtime_env
 from meta_agent.models import EvolutionOutcome
 
 
-def run(config_path: Path) -> EvolutionOutcome:
+def run(
+    config_path: Optional[Path],
+    *,
+    resume: Optional[Path] = None,
+    drop_case_error: Optional[str] = None,
+) -> EvolutionOutcome:
+    """Start a run from ``config_path``, or -- with ``resume`` -- continue the
+    unfinished run in that directory (config: ``config_path`` if given, else
+    the run's own ``config.snapshot.yaml``)."""
+    if resume is not None:
+        config_path = _prepare_resume(Path(resume), config_path)
+    if config_path is None:
+        raise ValueError("--config is required unless --resume is given")
     cfg = cfg_mod.load(config_path)
 
     runtime_env.apply_all(cfg)
 
     fw = cfg_mod.build_components(cfg)
 
-    experiment_dir = cfg_mod.init_experiment_dir(cfg, config_path, fw.runs_root)
+    if resume is not None:
+        experiment_dir = Path(resume)
+    else:
+        experiment_dir = cfg_mod.init_experiment_dir(cfg, config_path, fw.runs_root)
+    resume_kwargs: dict[str, Any] = {}
+    if resume is not None:
+        resume_kwargs["resume"] = True
+        if drop_case_error:
+            resume_kwargs["resume_drop_case_error"] = drop_case_error
 
     outcome = fw.manager.evolve(
         editor=fw.editor,
@@ -52,6 +72,7 @@ def run(config_path: Path) -> EvolutionOutcome:
         # Passed only when configured, so managers without the parameter
         # keep working for every other config.
         **({"edit_memory": fw.edit_memory} if fw.edit_memory is not None else {}),
+        **resume_kwargs,
     )
 
     summary_path: Optional[Path] = None
@@ -68,6 +89,37 @@ def run(config_path: Path) -> EvolutionOutcome:
     if summary_path is not None:
         print(f"Run summary: {summary_path}")
     return outcome
+
+
+def _prepare_resume(run_dir: Path, config_path: Optional[Path]) -> Path:
+    """Check ``run_dir`` can be continued and record the config the
+    continuation uses (``config.resume_NNN.yaml``). Refuses a finished run,
+    a run whose seed pre-evaluation never finished, and a change in whether
+    an edit memory is configured; warns when the manager or split differ."""
+    import yaml
+
+    if not (run_dir / "config.snapshot.yaml").is_file():
+        raise ValueError(f"{run_dir} is not a run directory (no config.snapshot.yaml)")
+    if (run_dir / "run_summary.md").exists():
+        raise ValueError(f"{run_dir} already finished (run_summary.md exists)")
+    if not (run_dir / "round_000" / "hgm_node.json").is_file():
+        raise ValueError(f"{run_dir}: the seed pre-evaluation never finished -- start a new run")
+    config_path = Path(config_path) if config_path else run_dir / "config.snapshot.yaml"
+    original = yaml.safe_load((run_dir / "config.snapshot.yaml").read_text(encoding="utf-8")) or {}
+    current = yaml.safe_load(Path(config_path).read_text(encoding="utf-8")) or {}
+    if bool(original.get("edit_memory")) != bool(current.get("edit_memory")):
+        raise ValueError("the resume config must keep (or keep omitting) the edit_memory block "
+                         "of the original run")
+    for key in ("manager", "split"):
+        if original.get(key) != current.get(key):
+            print(f"[resume] warning: `{key}` differs from the original run's config", flush=True)
+    k = 1
+    while (run_dir / f"config.resume_{k:03d}.yaml").exists():
+        k += 1
+    (run_dir / f"config.resume_{k:03d}.yaml").write_text(
+        Path(config_path).read_text(encoding="utf-8"), encoding="utf-8")
+    print(f"[resume] continuing {run_dir} with {config_path}", flush=True)
+    return config_path
 
 
 # ---------------------------------------------------------------------- #
@@ -278,6 +330,15 @@ def _write_run_summary(experiment_dir: Path, outcome: EvolutionOutcome) -> Path:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the meta-agent self-evolution loop.")
-    parser.add_argument("--config", type=Path, required=True, help="Path to YAML config")
+    parser.add_argument("--config", type=Path, default=None,
+                        help="Path to YAML config (with --resume: defaults to the run's "
+                             "config.snapshot.yaml)")
+    parser.add_argument("--resume", type=Path, default=None, metavar="RUN_DIR",
+                        help="Continue the unfinished run in RUN_DIR (hgm / hgm_block_tagged)")
+    parser.add_argument("--drop-case-error", default=None, metavar="REGEX",
+                        help="With --resume: drop recorded cases whose error matches REGEX "
+                             "(crash artifacts of an infrastructure failure)")
     args = parser.parse_args()
-    run(args.config)
+    if args.config is None and args.resume is None:
+        parser.error("--config is required unless --resume is given")
+    run(args.config, resume=args.resume, drop_case_error=args.drop_case_error)

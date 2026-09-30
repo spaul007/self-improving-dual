@@ -241,6 +241,32 @@ class UnitCurriculum:
         self._done = False
         self._advance_to_next(seed_check_counts)
 
+    @classmethod
+    def restored(
+        cls, snap: dict, *, units: dict[str, tuple[str, ...]], max_attempts: int,
+        resolution_threshold: float = 0.15, patience: int = 5,
+        check_descriptions: Optional[dict[str, str]] = None,
+        unit_selector: Any = None,
+    ) -> "UnitCurriculum":
+        """Continue from a persisted ``curriculum_status.json`` (a resumed
+        run) without re-choosing the current unit -- which may call the
+        unit selector's LLM. ``snapshot()`` stores the attempts per unit
+        under ``seed_counts``."""
+        self = cls.__new__(cls)
+        self._units = dict(units)
+        self._max_attempts = max_attempts
+        self.resolution_threshold = resolution_threshold
+        self.patience = patience
+        self._check_descriptions = check_descriptions or {}
+        self._unit_descriptions = derive_unit_descriptions(self._units, self._check_descriptions)
+        self._unit_selector = unit_selector
+        self._attempts = {str(k): int(v) for k, v in (snap.get("seed_counts") or {}).items()}
+        self._resolved = [str(g) for g in snap.get("resolved_goals", [])]
+        self._rounds_on_current = int(snap.get("rounds_on_current", 0))
+        self._current = snap.get("current_goal")
+        self._done = bool(snap.get("done", self._current is None))
+        return self
+
     def _chooser(self, unit_counts: dict, descriptions: dict) -> Optional[str]:
         # Passes the already-rendered per-candidate descriptions straight through -- UnitSelector.choose never
         # needs to recompute describe_unit_from_counts itself, it just renders a prompt from what it's given.

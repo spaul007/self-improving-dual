@@ -85,7 +85,10 @@ class HillClimbingManager:
         block_suggester: Any = None,
         unit_selector: Any = None,
         edit_memory: Any = None,
+        resume: bool = False,
     ) -> EvolutionOutcome:
+        if resume:
+            raise ValueError("hill_climbing does not support --resume")
         if edit_memory is not None:
             raise ValueError("hill_climbing does not support edit_memory; use manager hgm "
                              "or hgm_block_tagged")

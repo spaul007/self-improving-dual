@@ -1,4 +1,5 @@
-"""Opt-in paired evaluation (``expand_eval_size``) in ``HGMManager``.
+"""Opt-in paired evaluation (``expand_eval_size``) and the failed-edit stop
+(``max_consecutive_edit_failures``) in ``HGMManager``.
 
     PYTHONPATH=. python3 -m unittest tests.test_hgm_paired_eval
 """
@@ -149,6 +150,28 @@ class PairedEvalTests(_Base):
 
         with self.assertRaises(ValueError):
             HGMManager(expand_eval_size=-1)
+
+
+class FailedEditStopTests(_Base):
+    def test_stops_after_n_consecutive_failures(self) -> None:
+        from meta_agent.managers.hgm import EditorDeadError
+
+        editor = _Editor(fail={2, 3, 4})
+        with self.assertRaises(EditorDeadError) as cm:
+            self.run_hgm(editor, max_consecutive_edit_failures=3)
+        self.assertIn("forced failure 4", str(cm.exception))
+        self.assertIn("--resume", str(cm.exception))
+        self.assertEqual(editor.calls, 4)
+
+    def test_a_success_resets_the_streak(self) -> None:
+        editor = _Editor(fail={2, 3, 5, 6})
+        manager, _ = self.run_hgm(editor, max_consecutive_edit_failures=3)
+        self.assertEqual(sum(n.edit_failed for n in manager._tree.nodes.values()), 4)
+
+    def test_off_by_default(self) -> None:
+        editor = _Editor(fail={2, 3, 4, 5})
+        manager, _ = self.run_hgm(editor)
+        self.assertEqual(sum(n.edit_failed for n in manager._tree.nodes.values()), 4)
 
 
 if __name__ == "__main__":

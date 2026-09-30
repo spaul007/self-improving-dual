@@ -36,6 +36,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import random
+import re
 import shutil
 from pathlib import Path
 from typing import Any, Optional
@@ -69,6 +70,20 @@ from .hgm_tree import HGMNode, HGMTree
 # Rough char<->token proxy for the lineage-memory budget (avoids a hard
 # tiktoken dependency in the eval path; the budget is approximate by design).
 _CHARS_PER_TOKEN = 4
+
+
+def _read_json(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+class EditorDeadError(RuntimeError):
+    """Raised by ``_expand_step`` after ``max_consecutive_edit_failures``
+    failed edits in a row -- the editor can no longer produce edits (an
+    exhausted API key, a broken sandbox, ...). The run dir is left intact;
+    fix the cause and continue with ``main_loop.py --resume RUN_DIR``."""
 
 
 @register("manager", "hgm")
@@ -328,6 +343,11 @@ class HGMManager:
         # later when a child is evaluated. Required > 0 by an edit-memory
         # layer (its windows count paired-evaluated children).
         expand_eval_size: int = 0,
+        # Opt-in stop: raise EditorDeadError after this many consecutive
+        # failed edits. Failed edits spend no eval budget, so an editor that
+        # can no longer edit (e.g. an exhausted OpenRouter key) would
+        # otherwise loop forever. 0 (the default) = never stop.
+        max_consecutive_edit_failures: int = 0,
     ) -> None:
         self.eval_budget = eval_budget
         self.init_expansions = init_expansions
@@ -446,10 +466,14 @@ class HGMManager:
         if expand_eval_size < 0:
             raise ValueError(f"expand_eval_size must be >= 0, got {expand_eval_size}")
         self.expand_eval_size = int(expand_eval_size)
+        self.max_consecutive_edit_failures = max(0, int(max_consecutive_edit_failures))
         # Optional edit-memory layer (meta_agent/edit_memory), set by evolve():
         # chooses the with/without-memory arm per EXPAND and hears every tree
         # event through _snapshot. None = no layer (every path unchanged).
         self._memory: Any = None
+        self._consecutive_edit_failures: int = 0
+        # Set when a resumed run was interrupted during finalization.
+        self._skip_finalize_top_k: bool = False
 
         # Per-run state (reset at the top of evolve()).
         self._tree: HGMTree = HGMTree()
@@ -570,6 +594,13 @@ class HGMManager:
         block_suggester: Any = None,
         unit_selector: Any = None,
         edit_memory: Any = None,
+        # Continue the run in ``experiment_dir`` instead of starting one:
+        # the tree, feedback, budget counters, curriculum and the memory
+        # layer are rebuilt from the round dirs (see _restore_run).
+        resume: bool = False,
+        # With ``resume``: drop recorded cases whose error matches this
+        # regex (crash artifacts of an infrastructure failure) when replaying.
+        resume_drop_case_error: Optional[str] = None,
     ) -> EvolutionOutcome:
         if edit_memory is not None and self.expand_eval_size <= 0:
             raise ValueError(
@@ -577,6 +608,8 @@ class HGMManager:
                 "(its windows count paired-evaluated children)"
             )
         self._memory = edit_memory
+        self._consecutive_edit_failures = 0
+        self._skip_finalize_top_k = False
         self._benchmark_dir = benchmark_dir
         self._experiment_dir = experiment_dir
         self._eval_case_ids = eval_case_ids
@@ -597,30 +630,7 @@ class HGMManager:
         # the widening schedule; ``_budget_spent`` (which also includes the
         # dual manager's throw-away variant trials) only caps total spend.
         self._node_evals_spent = 0
-        self._task_rng = random.Random(self.seed)
-        self._block_rng = random.Random(self.seed)
-        # Rebuild against the freshly-seeded RNG above -- BlockBandit holds
-        # its rng by reference, so without this it would keep drawing from
-        # the (stale) RNG object created in __init__.
-        self._block_bandit = BlockBandit(
-            beta_prior=self.beta_prior, rng=self._block_rng,
-            reward_metric=self.block_reward_metric,
-            initial_block_ranking=self.block_initial_ranking,
-            initial_rank_strength=self.block_initial_rank_strength,
-            blocks=sorted(self.active_blocks) if self.active_blocks is not None else None,
-        )
-        self._last_block_selection = None
-        self._implementation_strategy_rng = random.Random(self.seed)
-        # Rebuild against the freshly-seeded RNG above -- same reason as
-        # _block_bandit's own rebuild just above (holds its rng by
-        # reference).
-        self._implementation_strategy_bandit = ImplementationStrategyBandit(
-            beta_prior=self.beta_prior, rng=self._implementation_strategy_rng,
-            reward_metric=self.implementation_strategy_reward_metric,
-            initial_ranking=self.implementation_strategy_initial_ranking,
-            initial_rank_strength=self.implementation_strategy_initial_rank_strength,
-        )
-        self._last_implementation_strategy_selection = None
+        self._reset_selection_rngs()
         self._last_suggestion_produced = False
         self._curriculum = None
         self._snapshotter = TreeSnapshotWriter(
@@ -690,39 +700,22 @@ class HGMManager:
         # (free — not charged to eval_budget), so it qualifies as an
         # expansion parent. Then `init_expansions` unconditional EXPANDs;
         # only evaluated, positive-mean nodes are expandable, so these all
-        # branch off the freshly pre-evaluated root.
-        self._run_seed(seed_dir, evaluator, gatherer)
-        if self.curriculum_enabled and self.curriculum_granularity == "unit":
-            from ..unit_curriculum import UnitCurriculum, load_units_map
-
-            units = load_units_map(self.curriculum_units_path)  # raises on a bad/missing file -- fail fast
-            seed_fb = self._feedback.get(0)
-            seed_metrics = (seed_fb.project_metrics if seed_fb is not None else None) or {}
-            seed_check_counts = _combined_check_counts(seed_metrics)
-            if any(seed_check_counts.values()):
-                self._curriculum = UnitCurriculum(
-                    seed_check_counts, units=units, max_attempts=self.curriculum_unit_max_attempts,
-                    resolution_threshold=self.curriculum_resolution_threshold,
-                    patience=self.curriculum_patience,
-                    check_descriptions=self._load_curriculum_check_descriptions(),
-                    unit_selector=self._unit_selector,
-                )
-            # else: nothing failing at seed time -- curriculum stays None, identical to curriculum_enabled=False.
-        elif self.curriculum_enabled:
-            top_checks = self._curriculum_seed_goals(self._feedback.get(0))
-            if top_checks:
-                self._curriculum = Curriculum(
-                    top_checks,
-                    resolution_threshold=self.curriculum_resolution_threshold,
-                    patience=self.curriculum_patience,
-                    check_descriptions=self._load_curriculum_check_descriptions(),
-                )
-            # else: nothing failing at seed time (or no project_metrics
-            # support from this project's scorer) -- curriculum stays
-            # None, _curriculum_directive_for_expand() no-ops gracefully,
-            # identical to curriculum_enabled=False.
-        self._snapshot("seed")
-        for _ in range(self.init_expansions):
+        # branch off the freshly pre-evaluated root. A resumed run rebuilds
+        # all of that from its round dirs instead.
+        if resume:
+            restore_log = self._restore_run(gatherer, drop_case_error=resume_drop_case_error)
+        else:
+            self._run_seed(seed_dir, evaluator, gatherer)
+        self._build_curriculum(
+            restore=self._latest_curriculum_status() if resume else None
+        )
+        init_left = self.init_expansions
+        if resume:
+            self._finish_resume(evaluator, gatherer, restore_log)
+            init_left = max(0, self.init_expansions - len(self._tree[0].children))
+        else:
+            self._snapshot("seed")
+        for _ in range(init_left):
             expandable = self._expandable()
             if not expandable or self._tree.n_real_nodes() > max_rounds:
                 break
@@ -794,19 +787,57 @@ class HGMManager:
     # EXPAND / EVALUATE
     # ------------------------------------------------------------------ #
 
+    def _reset_selection_rngs(self, salt: Optional[int] = None) -> None:
+        """(Re)seed the task / tree / block / implementation-strategy RNGs
+        and rebuild both bandits against them (they hold their RNG by
+        reference). ``salt`` None: the run's own seed (a fresh run).
+        A resumed run passes its spend so it draws a fresh, deterministic
+        stream rather than replaying the start of the original one."""
+        seed = self.seed if salt is None else self.seed + 1_000_003 * int(salt)
+        self._tree._rng = random.Random(seed)
+        self._task_rng = random.Random(seed)
+        self._block_rng = random.Random(seed)
+        self._block_bandit = BlockBandit(
+            beta_prior=self.beta_prior, rng=self._block_rng,
+            reward_metric=self.block_reward_metric,
+            initial_block_ranking=self.block_initial_ranking,
+            initial_rank_strength=self.block_initial_rank_strength,
+            blocks=sorted(self.active_blocks) if self.active_blocks is not None else None,
+        )
+        self._last_block_selection = None
+        self._implementation_strategy_rng = random.Random(seed)
+        self._implementation_strategy_bandit = ImplementationStrategyBandit(
+            beta_prior=self.beta_prior, rng=self._implementation_strategy_rng,
+            reward_metric=self.implementation_strategy_reward_metric,
+            initial_ranking=self.implementation_strategy_initial_ranking,
+            initial_rank_strength=self.implementation_strategy_initial_rank_strength,
+        )
+        self._last_implementation_strategy_selection = None
+
     def _expand_step(
         self, parent_id: int, editor: AgentEditor, evaluator: Evaluator,
         gatherer: FeedbackGatherer,
     ) -> int:
         """One scheduled EXPAND: the edit (``_expand``, overridable), its
-        ``expand`` snapshot and -- with ``expand_eval_size > 0`` -- the
-        child's paired evaluation followed by an ``expand_eval`` snapshot.
-        Kept separate from ``_expand`` so the dual manager's ``_expand``
-        override keeps its signature."""
+        ``expand`` snapshot, the failed-edit streak check, and -- with
+        ``expand_eval_size > 0`` -- the child's paired evaluation followed by
+        an ``expand_eval`` snapshot. Kept separate from ``_expand`` so the
+        dual manager's ``_expand`` override keeps its signature."""
         node_id = self._expand(parent_id, editor, gatherer)
         self._snapshot("expand", node_id=node_id)
         if self._tree[node_id].edit_failed:
+            self._consecutive_edit_failures += 1
+            limit = self.max_consecutive_edit_failures
+            if limit and self._consecutive_edit_failures >= limit:
+                errors = self._feedback[node_id].edit_errors if node_id in self._feedback else []
+                raise EditorDeadError(
+                    f"{limit} consecutive edit failures (last: node {node_id}: "
+                    f"{errors[0][:200] if errors else '?'}); the editor is not producing "
+                    "edits -- check the provider / key / sandbox, then continue with "
+                    "main_loop.py --resume <run dir> (manager.config.max_consecutive_edit_failures)"
+                )
             return node_id
+        self._consecutive_edit_failures = 0
         if self.expand_eval_size > 0:
             spent = self._evaluate(
                 node_id, evaluator, gatherer, batch_size=self.expand_eval_size
@@ -1648,7 +1679,8 @@ class HGMManager:
         analyst can recover and re-evaluate the best agent at any budget
         level (see snapshot_eval.py). With a memory layer each record also
         carries every node's ``memory_arms`` entry."""
-        if self._memory is not None:
+        # "resume" reaches the layer from the resume path itself.
+        if self._memory is not None and event != "resume":
             self._memory.on_event(event, self._tree, node_id=node_id)
         if self._snapshotter is None or not self._snapshotter.enabled:
             return
@@ -1741,7 +1773,8 @@ class HGMManager:
     ) -> EvolutionOutcome:
         # Bring the top-k finalists to a full-train estimate, THEN select —
         # so a small-sample fluke can no longer win the LCB comparison.
-        self._finalize_top_k(evaluator, gatherer)
+        if not self._skip_finalize_top_k:
+            self._finalize_top_k(evaluator, gatherer)
         # Final snapshot: finalists are now fully train-evaluated, so the
         # best-by-mean recorded here reflects the post-finalization tree.
         self._snapshot("finalize")
@@ -1963,6 +1996,243 @@ class HGMManager:
     # ------------------------------------------------------------------ #
     # Internals
     # ------------------------------------------------------------------ #
+
+    def _build_curriculum(self, *, restore: Optional[dict] = None) -> None:
+        """Build the opt-in curriculum from the seed's (round 0) feedback.
+        ``restore`` (a resumed run's newest ``curriculum_status.json``)
+        continues it where it stopped -- for unit mode without re-running
+        the unit selection (which may call an LLM)."""
+        if self.curriculum_enabled and self.curriculum_granularity == "unit":
+            from ..unit_curriculum import UnitCurriculum, load_units_map
+
+            units = load_units_map(self.curriculum_units_path)  # raises on a bad/missing file -- fail fast
+            seed_fb = self._feedback.get(0)
+            seed_metrics = (seed_fb.project_metrics if seed_fb is not None else None) or {}
+            seed_check_counts = _combined_check_counts(seed_metrics)
+            common = dict(
+                units=units, max_attempts=self.curriculum_unit_max_attempts,
+                resolution_threshold=self.curriculum_resolution_threshold,
+                patience=self.curriculum_patience,
+                check_descriptions=self._load_curriculum_check_descriptions(),
+                unit_selector=self._unit_selector,
+            )
+            if restore is not None:
+                self._curriculum = UnitCurriculum.restored(restore, **common)
+            elif any(seed_check_counts.values()):
+                self._curriculum = UnitCurriculum(seed_check_counts, **common)
+            # else: nothing failing at seed time -- curriculum stays None, identical to curriculum_enabled=False.
+        elif self.curriculum_enabled:
+            top_checks = self._curriculum_seed_goals(self._feedback.get(0))
+            if top_checks:
+                self._curriculum = Curriculum(
+                    top_checks,
+                    resolution_threshold=self.curriculum_resolution_threshold,
+                    patience=self.curriculum_patience,
+                    check_descriptions=self._load_curriculum_check_descriptions(),
+                )
+                if restore is not None:
+                    self._curriculum.restore(restore)
+            # else: nothing failing at seed time (or no project_metrics
+            # support from this project's scorer) -- curriculum stays
+            # None, _curriculum_directive_for_expand() no-ops gracefully,
+            # identical to curriculum_enabled=False.
+
+    # ------------------------------------------------------------------ #
+    # Resume
+    # ------------------------------------------------------------------ #
+
+    _ROUND_DIR_RE = re.compile(r"^round_(\d+)$")
+
+    def _round_dirs(self) -> list[tuple[int, Path]]:
+        out = []
+        for p in self._experiment_dir.iterdir():
+            m = self._ROUND_DIR_RE.match(p.name)
+            if m and p.is_dir():
+                out.append((int(m.group(1)), p))
+        return sorted(out)
+
+    def _latest_curriculum_status(self) -> Optional[dict]:
+        for _, round_dir in reversed(self._round_dirs()):
+            status = _read_json(round_dir / "curriculum_status.json")
+            if status is not None:
+                return status
+        return None
+
+    def _restore_run(
+        self, gatherer: FeedbackGatherer, *, drop_case_error: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Rebuild the tree, feedback and counters of the run in
+        ``self._experiment_dir`` from its round dirs.
+
+        * A round with ``hgm_node.json`` or ``feedback.json`` is a node. Its
+          cases are replayed through ``HGMNode.record`` from the longer of
+          ``feedback.json`` / ``eval_result.json`` (feedback is written
+          first, so it may hold one more batch than the sidecar -- kept,
+          and the sidecar rewritten). A node with ``edit_errors`` is an
+          edit-failed placeholder (parent = ``base_round``).
+        * A round with neither (an editor session killed mid-way) is moved
+          to ``interrupted/round_NNN.<k>`` and its id reused.
+        * Spend = max(the last snapshot's ``budget_spent``, the evaluations
+          on record: every non-root node's plus the root's beyond its free
+          pre-evaluation), capped at ``eval_budget``.
+        * The failed-edit streak, the next id and the selection RNGs (reseeded
+          from the spend) are restored; the memory layer's arms come from the
+          sidecars (edit-failed nodes: from the layer's own state).
+
+        Returns a log dict (also written to ``resume_log.json``)."""
+        exp = self._experiment_dir
+        if not (exp / "round_000" / "hgm_node.json").is_file():
+            raise ValueError(f"cannot resume {exp}: round_000/hgm_node.json is missing "
+                             "(the seed's pre-evaluation never finished) -- start a new run")
+        drop_re = re.compile(drop_case_error) if drop_case_error else None
+        refresh: list[int] = []   # nodes that lost cases to drop_case_error
+        log: dict[str, Any] = {"recovered": [], "lost": [], "moved": [], "dropped_cases": 0,
+                               "warnings": []}
+        memory_arms = dict(getattr(self._memory, "node_arms", {}) or {})
+        rewrite: list[int] = []
+        for node_id, round_dir in self._round_dirs():
+            sidecar = _read_json(round_dir / "hgm_node.json")
+            fb_raw = _read_json(round_dir / "feedback.json")
+            if fb_raw is None:
+                target_root = exp / "interrupted"
+                target_root.mkdir(exist_ok=True)
+                k, target = 1, target_root / f"{round_dir.name}.1"
+                while target.exists():
+                    k += 1
+                    target = target_root / f"{round_dir.name}.{k}"
+                shutil.move(str(round_dir), str(target))
+                log["moved"].append(f"{round_dir.name} -> interrupted/{target.name}")
+                continue
+            feedback = AgentFeedback.model_validate(fb_raw)
+            edit_failed = bool(feedback.edit_errors) or bool((sidecar or {}).get("edit_failed"))
+            if node_id == 0:
+                parent_id = None
+            elif sidecar is not None:
+                parent_id = sidecar.get("parent_id")
+            else:
+                parent_id = feedback.base_round
+            arm, version = "none", None
+            if sidecar is not None and "memory_arm" in sidecar:
+                arm, version = sidecar["memory_arm"], sidecar.get("memory_version")
+            elif node_id in memory_arms:
+                arm, version = memory_arms[node_id]
+            node = HGMNode(node_id=node_id, parent_id=parent_id, round_dir=round_dir,
+                           memory_arm=arm, memory_version=version)
+            node.edit_failed = edit_failed
+            if not edit_failed:
+                cases = list(feedback.eval_result.per_case)
+                er_raw = _read_json(round_dir / "eval_result.json")
+                if er_raw is not None:
+                    er_cases = EvaluationResult.model_validate(er_raw).per_case
+                    if len(er_cases) > len(cases):
+                        cases = list(er_cases)
+                if drop_re is not None:
+                    kept = [c for c in cases if not (c.error and drop_re.search(c.error))]
+                    log["dropped_cases"] += len(cases) - len(kept)
+                    if len(kept) != len(cases):
+                        refresh.append(node_id)
+                    cases = kept
+                for case in cases:
+                    node.record(case)
+                recorded = int((sidecar or {}).get("n_evals", -1))
+                if sidecar is None:
+                    rewrite.append(node_id)
+                elif node.n_evals > recorded:
+                    log["recovered"].append(node_id)
+                    rewrite.append(node_id)
+                elif node.n_evals < recorded:
+                    log["lost"].append(node_id)
+                    log["warnings"].append(f"node {node_id}: {recorded - node.n_evals} evaluation(s) "
+                                           "in hgm_node.json have no case record; using the cases")
+                    rewrite.append(node_id)
+            self._tree.add(node)
+            self._feedback[node_id] = feedback
+        if 0 not in self._tree:
+            raise ValueError(f"cannot resume {exp}: round_000 could not be restored")
+
+        ids = sorted(self._tree.nodes)
+        self._next_id = ids[-1] + 1
+        streak = 0
+        for nid in reversed(ids):
+            if not self._tree[nid].edit_failed:
+                break
+            streak += 1
+        self._consecutive_edit_failures = streak
+
+        root = self._tree[0]
+        on_record = sum(n.n_evals for nid, n in self._tree.nodes.items() if nid != 0)
+        on_record += max(0, root.n_evals - len(self._train_case_ids))
+        snaps = self._snapshot_records()
+        snapshot_spent = int(snaps[-1].get("budget_spent", 0)) if snaps else 0
+        spent = min(self.eval_budget, max(on_record, snapshot_spent))
+        self._budget_spent = self._node_evals_spent = spent
+        if snaps and snaps[-1].get("event") == "finalize":
+            self._skip_finalize_top_k = True
+        if self._snapshotter is not None:
+            self._snapshotter._idx = len(snaps)
+        self._reset_selection_rngs(salt=spent + 1)
+
+        for nid in refresh:          # feedback rebuilt without the dropped cases
+            self._refresh_node_feedback(self._tree[nid], gatherer)
+        for nid in dict.fromkeys(rewrite):
+            if nid not in refresh:
+                self._write_node_sidecar(self._tree[nid])
+
+        known = set(self._train_case_ids) | set(self._eval_case_ids or [])
+        unknown = sorted({c.case_id for n in self._tree.nodes.values() for c in n.case_results}
+                         - known)
+        if unknown and known:
+            log["warnings"].append(f"{len(unknown)} recorded case id(s) are not in this "
+                                   f"config's train/eval split (e.g. {unknown[:3]})")
+        log.update({
+            "n_nodes": len(ids), "n_edit_failed": sum(self._tree[n].edit_failed for n in ids),
+            "budget_spent": spent, "spend_on_record": on_record, "spend_in_snapshots": snapshot_spent,
+            "failed_edit_streak": streak, "next_id": self._next_id,
+            "finalize_in_progress": self._skip_finalize_top_k,
+        })
+        for w in log["warnings"]:
+            print(f"[resume] warning: {w}", flush=True)
+        print(f"[resume] {exp.name}: {len(ids)} nodes, spent {spent}/{self.eval_budget}, "
+              f"recovered {log['recovered'] or 'none'}, moved {log['moved'] or 'none'}", flush=True)
+        return log
+
+    def _snapshot_records(self) -> list[dict]:
+        path = self._experiment_dir / "snapshots" / "tree_snapshots.jsonl"
+        if not path.is_file():
+            return []
+        out = []
+        for line in path.read_text(encoding="utf-8").splitlines():
+            try:
+                out.append(json.loads(line))
+            except ValueError:
+                continue  # a line torn by the crash
+        return out
+
+    def _finish_resume(
+        self, evaluator: Evaluator, gatherer: FeedbackGatherer, log: dict[str, Any],
+    ) -> None:
+        """After the restore: let the memory layer reconcile its state with
+        the tree (it may close a window that was full when the run died),
+        run the paired evaluation of any child that never got one, and log."""
+        if self._memory is not None:
+            self._memory.on_event("resume", self._tree)
+        unpaired: list[int] = []
+        if self.expand_eval_size > 0:
+            for nid, node in sorted(self._tree.nodes.items()):
+                if nid == 0 or node.edit_failed or node.n_evals > 0:
+                    continue
+                unpaired.append(nid)
+                spent = self._evaluate(nid, evaluator, gatherer, batch_size=self.expand_eval_size)
+                self._budget_spent += spent
+                self._node_evals_spent += spent
+                self._snapshot("expand_eval", node_id=nid)
+        log["paired_on_resume"] = unpaired
+        self._snapshot("resume")
+        path = self._experiment_dir / "resume_log.json"
+        history = _read_json(path) if path.is_file() else None
+        entries = history.get("resumes", []) if isinstance(history, dict) else []
+        entries.append(log)
+        path.write_text(json.dumps({"resumes": entries}, indent=2, default=str), encoding="utf-8")
 
     def _run_seed(
         self, seed_dir: Path, evaluator: Evaluator, gatherer: FeedbackGatherer
