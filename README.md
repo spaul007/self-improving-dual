@@ -308,9 +308,9 @@ in `dashboard_editmem.py`).
 3. **Open it** at `http://gpu-aic-mv-02-st-p5-node-3:8504`, or through a tunnel if the
    node isn't reachable: `ssh -L 8504:localhost:8504 gpu-aic-mv-02-st-p5-node-3`, then
    `http://localhost:8504`.
-4. **Set "Runs root" in the sidebar to `runs`.** It defaults to `dashboard_pinned_run`,
-   a directory this checkout doesn't have. Then pick the run under "Experiment (newest
-   first)". A live run auto-refreshes.
+4. **Pick the run** under "Experiment (newest first)" in the sidebar ("Runs root"
+   defaults to `runs`, relative to the directory the app was started from). A live run
+   auto-refreshes.
 
 ## Tree snapshots (best-at-budget analysis)
 

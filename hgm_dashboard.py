@@ -34,11 +34,7 @@ st.set_page_config(page_title="HGM Run Dashboard", layout="wide")
 # --------------------------------------------------------------------------- #
 
 st.sidebar.title("HGM Run Dashboard")
-# TEMPORARY: hardcoded to dashboard_pinned_run/ (a single symlink to
-# runs/20260914_001136_travel_mas_refactored_gemma_full_scale_block_tagged_X100Y180,
-# an 18K-eval_budget block-tagged run) per explicit request -- change this back to
-# value="runs" (or edit the symlink) once no longer needed for this specific run.
-runs_root = Path(st.sidebar.text_input("Runs root", value="dashboard_pinned_run"))
+runs_root = Path(st.sidebar.text_input("Runs root", value="runs"))
 experiments = ri.list_experiments(runs_root)
 
 if not experiments:
