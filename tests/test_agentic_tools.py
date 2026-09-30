@@ -6,7 +6,9 @@ when bubblewrap works on this machine — the real confinement guarantees.
 """
 from __future__ import annotations
 
+import json
 import os
+import shutil
 import tempfile
 import time
 import unittest
@@ -411,6 +413,31 @@ class TestBwrapConfinement(unittest.TestCase):
             self.assertNotIn("CURATION-SECRET", bash(f"cat {mem_dir}/window_001/curation.md 2>&1"))
             # The masked dir shows nothing but the one bound-back file.
             self.assertEqual(bash(f"ls {mem_dir}").strip(), "edit_memory_v001.md")
+
+    def test_curator_policy_sees_window_nodes_only(self) -> None:
+        from meta_agent.edit_memory.policy import build_curator_policy
+        mem_dir = self.run / "edit_memory"
+        (mem_dir / "window_001").mkdir(parents=True)
+        (mem_dir / "edit_memory.md").write_text("MEMORY-CONTENT\n")
+        (self.base / "strategy.json").write_text('{"goal": "PARENT-GOAL"}')
+        (self.out / "strategy.json").write_text('{"goal": "NODE-GOAL"}')
+        other = self.run / "round_009"
+        _agent(other, WF)
+        (other / "strategy.json").write_text('{"goal": "OTHER-SECRET"}')
+        pol = build_curator_policy(workspace=mem_dir / "window_001", memory_dir=mem_dir,
+                                   node_dirs=[self.out], parent_dirs=[self.base],
+                                   repo_root=REPO_ROOT, project_root=self.proj)
+        bash = BashTool(Sandbox(pol, mode="bwrap", bash_timeout_s=30), max_output_chars=5000)
+        self.assertIn("NODE-GOAL", bash("cat $NODE_1/strategy.json"))
+        self.assertIn("PARENT-GOAL", bash("cat $PARENT_1/strategy.json"))
+        self.assertIn("MEMORY-CONTENT", bash("cat $MEMORY_DIR/edit_memory.md"))
+        self.assertIn("No such file", bash(f"cat {other}/strategy.json 2>&1"))
+        self.assertNotIn("OTHER-SECRET", bash(f"grep -r SECRET {self.run} 2>&1"))
+        self.assertEqual(bash("pwd"), str(pol.out_dir))
+        self.assertEqual(bash("echo hi > $WORK_DIR/notes.txt && cat $WORK_DIR/notes.txt"), "hi")
+        self.assertIn("Read-only file system", bash("touch $NODE_1/x 2>&1; touch $MEMORY_DIR/x 2>&1"))
+        self.assertIn("No such file", bash(f"cat {self.proj}/data/db.csv 2>&1"))
+        self.assertIn("-    x = 1", bash("cd $WORK_DIR && printf 'def run_task(task):\\n    x = 2\\n' > v2.py && diff -u $NODE_1/task_agent/workflow.py v2.py; true"))
 
     def test_parent_read_scope_hides_other_nodes(self) -> None:
         pol = build_policy(out_dir=self.out, base_dir=self.base, repo_root=REPO_ROOT,

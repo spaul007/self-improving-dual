@@ -178,6 +178,14 @@ class FrameworkConfig(BaseModel):
     # "check" (the default) or curriculum is disabled. Omit (or null) to
     # disable; existing configs keep current behavior without changes.
     unit_selector: Optional[ComponentSpec] = None
+    # Optional. When set, the edit-memory layer (meta_agent/edit_memory):
+    # agentic curators periodically review what recent edits did and a
+    # generator writes one run-wide memory document; a Thompson bandit
+    # decides per EXPAND whether the editor reads it (with / without arm).
+    # Requires the agentic editor, an hgm / hgm_block_tagged manager and
+    # manager.config.expand_eval_size > 0. Omit (or null) to disable;
+    # existing configs keep current behavior without changes.
+    edit_memory: Optional[ComponentSpec] = None
     plugins: list[str] = Field(default_factory=list)
 
     task_agent: TaskAgentSpec = Field(default_factory=TaskAgentSpec)
@@ -257,6 +265,7 @@ class AssembledFramework:
     failure_summarizer: Any = None
     block_suggester: Any = None
     unit_selector: Any = None
+    edit_memory: Any = None
     train_case_ids: Optional[list[str]] = None
     eval_case_ids: Optional[list[str]] = None
 
@@ -273,6 +282,7 @@ def _ensure_builtins_loaded() -> None:
     importlib.import_module("meta_agent.failure_summarizer")
     importlib.import_module("meta_agent.block_suggester")
     importlib.import_module("meta_agent.unit_selector")
+    importlib.import_module("meta_agent.edit_memory")
     importlib.import_module("meta_agent.managers")  # imports submodules
 
 
@@ -439,6 +449,28 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
             {"llm_caller": call_llm},
         )
 
+    edit_memory_obj: Any = None
+    if cfg.edit_memory is not None:
+        if "memory_path" not in inspect.signature(editor_obj.apply).parameters:
+            raise ValueError(
+                f"edit_memory needs an editor whose apply() takes memory_path "
+                f"(editor.type: agentic); got editor.type {cfg.editor.type!r}"
+            )
+        if not int(cfg.manager.config.get("expand_eval_size", 0) or 0) > 0:
+            raise ValueError(
+                "edit_memory requires manager.config.expand_eval_size > 0 "
+                "(its windows count paired-evaluated children)"
+            )
+        edit_memory_obj = _build_with_injection(
+            cfg.edit_memory,
+            "edit_memory",
+            {
+                "llm_caller": call_llm,
+                "project_root": project_root,
+                "repo_root": REPO_ROOT,
+                "mutable_exclude": cfg.mutable_exclude,
+            },
+        )
     for warning in check_meta_llm_config(cfg):
         print(f"[config] warning: {warning}", flush=True)
 
@@ -481,13 +513,14 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         failure_summarizer=failure_summarizer_obj,
         block_suggester=block_suggester_obj,
         unit_selector=unit_selector_obj,
+        edit_memory=edit_memory_obj,
         train_case_ids=train_ids,
         eval_case_ids=eval_ids,
     )
 
 
 def check_meta_llm_config(cfg: FrameworkConfig) -> list[str]:
-    """Model settings of the agentic editor.
+    """Model settings of the agentic editor and the edit-memory layer.
 
     ``call_llm`` falls back to ``LLM_MODEL`` / ``LLM_BASE_URL`` /
     ``LLM_MAX_OUTPUT_TOKENS``, which ``runtime_env`` exports from the TASK
@@ -500,6 +533,8 @@ def check_meta_llm_config(cfg: FrameworkConfig) -> list[str]:
     specs = []
     if cfg.editor.type == "agentic":
         specs.append(("editor", cfg.editor.config))
+    if cfg.edit_memory is not None:
+        specs.append(("edit_memory", cfg.edit_memory.config))
     for name, conf in specs:
         if not conf.get("model"):
             raise ValueError(f"{name}.config.model must be set (otherwise it runs on "

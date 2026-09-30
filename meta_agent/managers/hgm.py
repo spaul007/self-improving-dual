@@ -446,6 +446,10 @@ class HGMManager:
         if expand_eval_size < 0:
             raise ValueError(f"expand_eval_size must be >= 0, got {expand_eval_size}")
         self.expand_eval_size = int(expand_eval_size)
+        # Optional edit-memory layer (meta_agent/edit_memory), set by evolve():
+        # chooses the with/without-memory arm per EXPAND and hears every tree
+        # event through _snapshot. None = no layer (every path unchanged).
+        self._memory: Any = None
 
         # Per-run state (reset at the top of evolve()).
         self._tree: HGMTree = HGMTree()
@@ -565,7 +569,14 @@ class HGMManager:
         failure_summarizer: Any = None,
         block_suggester: Any = None,
         unit_selector: Any = None,
+        edit_memory: Any = None,
     ) -> EvolutionOutcome:
+        if edit_memory is not None and self.expand_eval_size <= 0:
+            raise ValueError(
+                "edit_memory requires manager.config.expand_eval_size > 0 "
+                "(its windows count paired-evaluated children)"
+            )
+        self._memory = edit_memory
         self._benchmark_dir = benchmark_dir
         self._experiment_dir = experiment_dir
         self._eval_case_ids = eval_case_ids
@@ -672,6 +683,9 @@ class HGMManager:
                 for c in load_cases(benchmark_dir)
             ]
 
+        if self._memory is not None:
+            self._memory.setup(experiment_dir)
+
         # Root: copy the seed and PRE-EVALUATE it on the full train set
         # (free — not charged to eval_budget), so it qualifies as an
         # expansion parent. Then `init_expansions` unconditional EXPANDs;
@@ -760,7 +774,7 @@ class HGMManager:
                 spent = self._evaluate(node_id, evaluator, gatherer)
                 self._budget_spent += spent
                 self._node_evals_spent += spent
-                self._snapshot("evaluate")
+                self._snapshot("evaluate", node_id=node_id)
                 if (
                     score_target is not None
                     and self._tree[node_id].mean_utility >= score_target
@@ -790,7 +804,7 @@ class HGMManager:
         Kept separate from ``_expand`` so the dual manager's ``_expand``
         override keeps its signature."""
         node_id = self._expand(parent_id, editor, gatherer)
-        self._snapshot("expand")
+        self._snapshot("expand", node_id=node_id)
         if self._tree[node_id].edit_failed:
             return node_id
         if self.expand_eval_size > 0:
@@ -799,7 +813,7 @@ class HGMManager:
             )
             self._budget_spent += spent
             self._node_evals_spent += spent
-            self._snapshot("expand_eval")
+            self._snapshot("expand_eval", node_id=node_id)
         return node_id
 
     def _expand(
@@ -859,13 +873,21 @@ class HGMManager:
         }
         if assignment is not None:
             apply_kwargs["assignment"] = assignment
+        # Edit-memory arm, chosen after the block and independently of it:
+        # ("with", version, path) exposes the current memory file to the
+        # editor; "without" / "none" run the plain session.
+        arm, memory_version = "none", None
+        if self._memory is not None:
+            arm, memory_version, memory_path = self._memory.choose_arm(self._tree)
+            apply_kwargs["memory_path"] = memory_path
         edit_result = editor.apply(
             self._feedback.get(parent_id), parent.round_dir, out_dir, **apply_kwargs,
         )
         strategy = edit_result.strategy or fallback_strategy()
         strategy.block = block
         strategy.implementation_strategy = impl_strategy
-        node = HGMNode(node_id=node_id, parent_id=parent_id, round_dir=out_dir)
+        node = HGMNode(node_id=node_id, parent_id=parent_id, round_dir=out_dir,
+                       memory_arm=arm, memory_version=memory_version)
 
         if not edit_result.success:
             node.edit_failed = True
@@ -1616,12 +1638,18 @@ class HGMManager:
         )
         return directive, dataclasses.asdict(snapshot)
 
-    def _snapshot(self, event: str) -> None:
-        """Append a full-tree snapshot keyed by the current eval budget. A
-        no-op unless ``snapshot_tree`` is enabled. Records every node (incl.
-        the seed root and edit-failed placeholders) plus a pointer to the
-        current best-by-mean node, so an analyst can recover and re-evaluate
-        the best agent at any budget level (see snapshot_eval.py)."""
+    def _snapshot(self, event: str, *, node_id: Optional[int] = None) -> None:
+        """Notify the edit-memory layer (if any) of ``event`` (``seed`` /
+        ``expand`` / ``expand_eval`` / ``evaluate`` / ``finalize``, with the
+        node it concerns), then append a full-tree snapshot keyed by the
+        current eval budget. The snapshot is a no-op unless ``snapshot_tree``
+        is enabled. Records every node (incl. the seed root and edit-failed
+        placeholders) plus a pointer to the current best-by-mean node, so an
+        analyst can recover and re-evaluate the best agent at any budget
+        level (see snapshot_eval.py). With a memory layer each record also
+        carries every node's ``memory_arms`` entry."""
+        if self._memory is not None:
+            self._memory.on_event(event, self._tree, node_id=node_id)
         if self._snapshotter is None or not self._snapshotter.enabled:
             return
         nodes = [
@@ -1652,6 +1680,13 @@ class HGMManager:
             best_node_id=best_id,
             best_mean_utility=best[1] if best is not None else None,
             best_round_dir=best_round_dir,
+            extra=(
+                {"memory_arms": {
+                    str(nid): [n.memory_arm, n.memory_version]
+                    for nid, n in sorted(self._tree.nodes.items())
+                }}
+                if self._memory is not None else None
+            ),
         )
 
     # ------------------------------------------------------------------ #
@@ -2071,6 +2106,11 @@ class HGMManager:
                     # eval_repeats > 1, in which case this is the only place
                     # that shows how many times each case was re-run.
                     "case_eval_counts": dict(node.evaluated_case_ids),
+                    # Edit-memory arm bookkeeping, only when a layer is on
+                    # (keeps every other run's sidecar unchanged).
+                    **({"memory_arm": node.memory_arm,
+                        "memory_version": node.memory_version}
+                       if self._memory is not None else {}),
                 },
                 indent=2,
             ),

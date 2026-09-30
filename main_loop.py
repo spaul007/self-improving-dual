@@ -49,6 +49,9 @@ def run(config_path: Path) -> EvolutionOutcome:
         failure_summarizer=fw.failure_summarizer,
         block_suggester=fw.block_suggester,
         unit_selector=fw.unit_selector,
+        # Passed only when configured, so managers without the parameter
+        # keep working for every other config.
+        **({"edit_memory": fw.edit_memory} if fw.edit_memory is not None else {}),
     )
 
     summary_path: Optional[Path] = None
