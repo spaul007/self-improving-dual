@@ -56,6 +56,18 @@ class PairTests(unittest.TestCase):
                 self.assertIn("hardcoded_answers", names)
                 self.assertEqual(names[-1], "smoke_test")
 
+    def test_memory_fits_the_bash_output_caps(self) -> None:
+        """Bash output past max_tool_output_chars keeps only its head and tail,
+        so a memory longer than the cap loses its middle (the end of the ranked
+        edits and the Usefulness section) when an editor or a curator `cat`s it."""
+        for path in (MEM, SANITY):
+            with self.subTest(config=path.name):
+                raw = _raw(path)
+                mem = raw["edit_memory"]["config"]
+                limit = mem["memory_max_chars"]
+                self.assertGreaterEqual(raw["editor"]["config"]["max_tool_output_chars"], limit)
+                self.assertGreaterEqual(mem["curator"]["max_tool_output_chars"], limit)
+
     def test_meta_side_calls_are_deepseek_medium_and_no_behavior_summarizer(self) -> None:
         model = "deepseek/deepseek-v4-pro-0813"
         for path in (NO_MEM, MEM, SANITY):

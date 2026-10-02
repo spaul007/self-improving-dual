@@ -98,7 +98,7 @@ editor:
     max_llm_calls: 40
     timeout_s: 2400
     bash_timeout_s: 120
-    max_tool_output_chars: 20000
+    max_tool_output_chars: 30000      # >= memory_max_chars (see the X100Y180 config)
     max_view_chars: 40000
     sandbox: "bwrap"
     read_scope: "run"
@@ -133,7 +133,7 @@ edit_memory:
       max_llm_calls: 30
       timeout_s: 1800
       bash_timeout_s: 120
-      max_tool_output_chars: 20000
+      max_tool_output_chars: 40000
       max_view_chars: 40000
       sandbox: "bwrap"
       max_attempts: 2

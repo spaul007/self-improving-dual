@@ -105,7 +105,9 @@ editor:
     max_llm_calls: 150
     timeout_s: 5400
     bash_timeout_s: 120
-    max_tool_output_chars: 20000
+    # At least edit_memory.memory_max_chars, so `cat $EDIT_MEMORY_FILE` is never
+    # cut in the middle (bash output keeps only head and tail past this cap).
+    max_tool_output_chars: 30000
     max_view_chars: 40000
     sandbox: "bwrap"
     read_scope: "run"
@@ -140,7 +142,9 @@ edit_memory:
       max_llm_calls: 60
       timeout_s: 2400
       bash_timeout_s: 120
-      max_tool_output_chars: 20000
+      # Curators (and instruction auditors) read memory versions and curation.md
+      # files of up to ~30k chars, often several per command.
+      max_tool_output_chars: 40000
       max_view_chars: 40000
       sandbox: "bwrap"
       max_attempts: 2

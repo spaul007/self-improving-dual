@@ -209,6 +209,14 @@ selection, the bandits or the curriculum. Requirements: the agentic editor, an
 `hgm` / `hgm_block_tagged` manager (`hgm_dual` refuses) and
 `manager.config.expand_eval_size > 0`.
 
+Keep the bash output caps at least `memory_max_chars` (30,000): bash output longer
+than `max_tool_output_chars` keeps only its first 60% and last 40%, so an editor or
+curator that `cat`s a longer memory silently loses its middle (the end of the ranked
+edits, where the harmful ones sit, and the Usefulness section). The configs use
+30,000 for the editor (`editor.config`) and 40,000 for the curators and instruction
+auditors (`edit_memory.config.curator`), which also read `curation.md` files of up
+to ~30k. `tests/test_agentic_mas_configs.py` checks this.
+
 **Manager knobs** (`manager.config`, all default off):
 
 - `expand_eval_size: N` evaluates every successful child on N train cases right

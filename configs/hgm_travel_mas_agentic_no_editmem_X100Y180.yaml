@@ -123,7 +123,9 @@ editor:
     max_llm_calls: 150
     timeout_s: 5400
     bash_timeout_s: 120
-    max_tool_output_chars: 20000
+    # Same as the editmem arm (where it must be at least memory_max_chars), so the
+    # pair still differs only in edit_memory.
+    max_tool_output_chars: 30000
     max_view_chars: 40000
     sandbox: "bwrap"
     read_scope: "run"
