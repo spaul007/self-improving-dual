@@ -1,0 +1,162 @@
+# Production-scale two-tier Block-Tagged HGM run, FROM SCRATCH -- same everything as
+# configs/hgm_travel_deepseek27b_from_node32_agentic_X100Y300.yaml (which restarted from node
+# 32's already-evolved lineage) EXCEPT seed_dir_name: "seed_from_node32" -> "seed_qwen27b_nothink"
+# (the original bare seed, enable_thinking=False) -- a genuinely fresh run, not a continuation,
+# to see how the newly-added tools/prompt discipline perform without inheriting any prior
+# lineage's accumulated edits.
+#
+# New since the original production run: AgentEditor gained grep/str_replace_file/run_python/
+# list_cases/show_case/evaluate_variant on top of read_file/write_file/run_code_validators;
+# BlockSuggester gained list_cases/show_case/run_python on top of read_file/grep, plus a
+# tightened falsification-discipline prompt (state a rule, test it against every case the check
+# fires on -- not just the one cited example -- report exceptions honestly rather than hiding
+# them). verbose: true turns on META_AGENT_VERBOSE so every editor/block_suggester turn's full
+# prompt + raw response lands under round_NNN/verbose/.
+#
+# implementation_strategy + block both adaptive (Thompson sampling), curriculum off,
+# llm_backbone_selection outright disabled via active_blocks, X=100/Y=300 (eval_budget=30000,
+# alpha=0.446716, max_rounds=130), eval_batch_size=60 (== train_size). summarizer (behavior_memory)
+# omitted. All three meta-agent reasoning roles (editor/failure_summarizer/block_suggester) on
+# deepseek/deepseek-v4-pro via OpenRouter. TRAVEL_CONVERT_MODEL on local Qwen/Qwen3.8-27B
+# (enable_thinking=false) -- see the sibling config's env: comment for the reliability
+# investigation this came from.
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_deepseek27b_fromseed_agentic_X100Y300.yaml
+#
+# Confirm OpenRouter balance and the AIC-MV project disk quota (`lfs quota -p 1001 /groups`)
+# before launching -- both have been tight in prior runs.
+
+experiment_name: "travel_mas_refactored_deepseek27b_fromseed_agentic_X100Y300"
+project: "travel_mas_refactored"
+seed_dir_name: "seed_qwen27b_nothink"
+verbose: true
+
+mutable_exclude:
+  - "workflow.py"
+  - "benchmark/"
+  - "agents/immutable/"
+
+loop:
+  max_rounds: 130
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.8-27B"
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "http://gpu-aic-mv-02-st-p5-node-6:8001/v1"
+
+manager:
+  type: "hgm_block_tagged"
+  config:
+    eval_budget: 30000
+    init_expansions: 2
+    alpha: 0.446716
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 60
+    eval_repeats: 2  # >1 = repeats enabled (on/off switch, not a cap)
+    finalize_top_k: 5
+    full_eval_top_k: 0
+    seed: 42
+    block_selection_strategy: "adaptive"
+    active_blocks:
+      - "collaboration_workflow"
+      - "foundation_capability"
+      - "individual_subagent"
+      - "mixed"
+      - "verifiers"
+    implementation_strategy_selection_strategy: "adaptive"
+    # curriculum_enabled intentionally omitted (defaults to False) -- curriculum stays off.
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    parallelism: 32
+    scorer: "travel_mas_refactored_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+    n_hard_cases: 1
+
+editor:
+  type: "default"
+  config:
+    model: "deepseek/deepseek-v4-pro"
+    base_url: "https://openrouter.ai/api/v1"
+    reasoning_effort: "medium"
+    max_output_tokens: 65536
+    max_attempts: 2
+    agentic_editing: true
+    agentic_max_turns: 20
+    # Explicit -- agentic_tools now defaults to the ORIGINAL pre-expansion
+    # set (read_file/write_file/run_code_validators/submit_self_improvement_
+    # summary only) unless listed here. This run was launched to exercise
+    # the expanded toolset, so pin it explicitly rather than silently
+    # losing it on a future restart under this same config.
+    agentic_tools:
+      - "read_file"
+      - "write_file"
+      - "str_replace_file"
+      - "grep"
+      - "run_code_validators"
+      - "run_python"
+      - "list_cases"
+      - "show_case"
+      - "submit_self_improvement_summary"
+      - "evaluate_variant"
+
+failure_summarizer:
+  type: "default"
+  config:
+    model: "deepseek/deepseek-v4-pro"
+    base_url: "https://openrouter.ai/api/v1"
+    reasoning_effort: "medium"
+
+block_suggester:
+  type: "default"
+  config:
+    model: "deepseek/deepseek-v4-pro"
+    base_url: "https://openrouter.ai/api/v1"
+    reasoning_effort: "medium"
+    strategies_path: "strategies.md"
+    agentic_access: true
+    agentic_max_turns: 20
+    # Explicit -- see the editor's own agentic_tools comment above for why.
+    agentic_tools:
+      - "read_file"
+      - "grep"
+      - "list_cases"
+      - "show_case"
+      - "run_python"
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.8-27B"
+  TRAVEL_CONVERT_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-6:8001/v1"
+  TRAVEL_CONVERT_ENABLE_THINKING: "false"
+
+split:
+  seed: 42
+  train_size: 60
+  eval_size: 60
+  stratify_by: "meta_info.days"
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+    config:
+      workflow_filenames: ["workflow.py", "mas_workflow.py"]
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"
+  - type: "undefined_names"
+  - type: "smoke_test"

@@ -119,7 +119,14 @@ class AgenticModeTests(unittest.TestCase):
                 "c4",
             )])
 
-        result = self._apply(fake_llm, agentic_editing=True)
+        result = self._apply(
+            fake_llm, agentic_editing=True,
+            agentic_tools=[
+                "read_file", "grep", "write_file", "str_replace_file",
+                "run_code_validators", "run_python", "list_cases", "show_case",
+                "submit_self_improvement_summary",
+            ],
+        )
         self.assertTrue(result.success, result.errors)
         self.assertEqual(result.edited_files, ["workflow.py"])
         self.assertEqual(result.strategy.optimization_goal, "g")
@@ -132,6 +139,64 @@ class AgenticModeTests(unittest.TestCase):
                 "submit_self_improvement_summary",
             },
         )
+
+    def test_agentic_editing_defaults_to_the_original_pre_expansion_tool_set(self) -> None:
+        """agentic_tools=None (the default) must resolve to exactly the
+        tools that existed before grep/str_replace_file/run_python/
+        list_cases/show_case/evaluate_variant were added -- so every
+        existing config's behavior is unchanged unless it explicitly
+        opts into the newer tools (see AgentEditor.__init__'s
+        agentic_tools param and _DEFAULT_AGENTIC_TOOL_NAMES)."""
+        turns: list[dict] = []
+
+        def fake_llm(**kwargs):
+            turns.append(kwargs)
+            if len(turns) == 1:
+                return SimpleNamespace(content="", tool_calls=[_call(
+                    "write_file",
+                    {"path": "workflow.py", "content": "def run_task(task):\n    return 1\n"},
+                    "c1",
+                )])
+            return SimpleNamespace(content="", tool_calls=[_call(
+                "submit_self_improvement_summary",
+                {"optimization_goal": "g", "proposed_changes": "p", "rationale": "r"},
+                "c2",
+            )])
+
+        result = self._apply(fake_llm, agentic_editing=True)
+        self.assertTrue(result.success, result.errors)
+        self.assertEqual(
+            {t["name"] for t in turns[0]["tools"]},
+            {"read_file", "write_file", "run_code_validators", "submit_self_improvement_summary"},
+        )
+
+    def test_disabled_tool_called_anyway_is_rejected(self) -> None:
+        """Defense in depth: even if a model somehow calls a tool outside
+        the configured agentic_tools (hallucinated name, stale cached
+        tool list), the dispatch must reject it rather than silently
+        running it."""
+        turns: list[dict] = []
+
+        def fake_llm(**kwargs):
+            turns.append(kwargs)
+            if len(turns) == 1:
+                return SimpleNamespace(content="", tool_calls=[_call("grep", {"path": "workflow.py", "pattern": "x"}, "c1")])
+            if len(turns) == 2:
+                last_output = kwargs["messages"][-1]
+                self.assertIn("not enabled", last_output["output"])
+                return SimpleNamespace(content="", tool_calls=[_call(
+                    "write_file",
+                    {"path": "workflow.py", "content": "def run_task(task):\n    return 1\n"},
+                    "c2",
+                )])
+            return SimpleNamespace(content="", tool_calls=[_call(
+                "submit_self_improvement_summary",
+                {"optimization_goal": "g", "proposed_changes": "p", "rationale": "r"},
+                "c3",
+            )])
+
+        result = self._apply(fake_llm, agentic_editing=True)  # default tool set -- no grep
+        self.assertTrue(result.success, result.errors)
 
     def test_multiple_files_separate_write_file_calls(self) -> None:
         (self.tmp_base / "base" / "task_agent" / "mutable_tools").mkdir()

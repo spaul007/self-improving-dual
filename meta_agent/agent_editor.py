@@ -351,8 +351,7 @@ AGENTIC_RUN_PYTHON_TOOL: dict[str, Any] = {
         "modules (re, json, math, itertools, collections, statistics, "
         "...). No file/env/network access, and no importing this "
         "framework's own scorer/adapter/meta_agent internals. Use it to "
-        "test logic against real evaluated cases before committing to a "
-        "file edit."
+        "test a hypothesis against real evaluated cases before acting on it."
     ),
     "input_schema": {
         "type": "object",
@@ -416,9 +415,104 @@ _AGENTIC_TOOLS: list[dict[str, Any]] = [
     AGENTIC_SUBMIT_SUMMARY_TOOL,
 ]
 
+# Every agentic tool AgentEditor can offer, by name -- used to resolve the
+# configurable `agentic_tools` constructor param (see __init__) into the
+# actual schema list sent to the model. `evaluate_variant` lives here too
+# even though it's also gated separately by `self.evaluator is not None`
+# (see _self_improve_agentic) -- both conditions must hold for it to
+# actually be offered.
+_AGENTIC_TOOLS_BY_NAME: dict[str, dict[str, Any]] = {
+    "read_file": AGENTIC_READ_FILE_TOOL,
+    "write_file": AGENTIC_WRITE_FILE_TOOL,
+    "str_replace_file": AGENTIC_STR_REPLACE_FILE_TOOL,
+    "grep": AGENTIC_GREP_TOOL,
+    "run_code_validators": AGENTIC_RUN_VALIDATORS_TOOL,
+    "run_python": AGENTIC_RUN_PYTHON_TOOL,
+    "list_cases": LIST_CASES_TOOL,
+    "show_case": SHOW_CASE_TOOL,
+    "submit_self_improvement_summary": AGENTIC_SUBMIT_SUMMARY_TOOL,
+    "evaluate_variant": AGENTIC_EVALUATE_VARIANT_TOOL,
+}
+
+# The ORIGINAL tool set, from before grep/str_replace_file/run_python/
+# list_cases/show_case/evaluate_variant were added. This is the default
+# (see __init__'s `agentic_tools` param) so every existing config's
+# behavior is unchanged unless it explicitly opts into the newer tools --
+# pass e.g. agentic_tools: ["read_file", "write_file", "run_code_validators",
+# "submit_self_improvement_summary", "run_python", "evaluate_variant"] in
+# editor.config to add specific ones back.
+_DEFAULT_AGENTIC_TOOL_NAMES: tuple[str, ...] = (
+    "read_file", "write_file", "run_code_validators", "submit_self_improvement_summary",
+)
+
 _AGENTIC_TURN_BUDGET_GOAL = "(editor exceeded agentic turn budget without submitting a summary)"
 _AGENTIC_MALFORMED_SUMMARY_GOAL = "(summary call had malformed JSON; edits below were still applied)"
 _AGENTIC_LLM_CALL_FAILED_GOAL_PREFIX = "(editor's LLM call failed mid-conversation"
+
+
+def run_python_sandboxed(
+    agent_dir: Path,
+    out_dir: Path,
+    per_case: list[Any],
+    code: str,
+    timeout_s: Optional[int],
+) -> str:
+    """Shared backing implementation for the ``run_python`` agentic tool,
+    used by both ``AgentEditor`` (its own in-progress edit) and
+    ``BlockSuggester`` (the parent node's already-evaluated cases, for
+    falsifying a candidate diagnosis before reporting it — see
+    ``BlockSuggester``'s own agentic closing prompt). Runs ``code`` in a
+    subprocess with ``train_data`` (built from ``per_case``) injected via
+    ``RUN_PYTHON_PRELUDE``, ``agent_dir`` on ``sys.path`` so the model's
+    own workspace modules are importable, and no network/file access
+    beyond that (the AST checks in ``_run_python_problems`` already ran
+    before this is called). Scratch files live under
+    ``out_dir/_run_python_scratch``, a sibling of ``task_agent/`` --
+    outside every path ``AgentEditor._is_path_allowed`` would ever show or
+    allow writing to, so it can never collide with a real edit (and
+    ``BlockSuggester`` never writes at all, so it's simply a scratch dir
+    there)."""
+    scratch = out_dir / "_run_python_scratch"
+    scratch.mkdir(exist_ok=True)
+    cases = []
+    for c in per_case:
+        cases.append({
+            "case_id": c.case_id,
+            "passed": c.passed,
+            "score": c.score,
+            "error": c.error,
+            "details": c.details,
+        })
+    data_path = scratch / "cases.json"
+    data_path.write_text(json.dumps({"cases": cases}, default=str), encoding="utf-8")
+    prelude_path = scratch / "prelude.py"
+    prelude_path.write_text(RUN_PYTHON_PRELUDE, encoding="utf-8")
+    codefile = scratch / f"user_{uuid.uuid4().hex}.py"
+    codefile.write_text(code, encoding="utf-8")
+    try:
+        timeout = max(5, min(int(timeout_s or 60), 120))
+    except (TypeError, ValueError):
+        timeout = 60
+    env = {
+        "PATH": os.environ.get("PATH", ""),
+        # Offline: any accidental LLM call fails fast rather than hanging
+        # or reaching a real endpoint.
+        "LLM_BASE_URL": "http://127.0.0.1:9/v1",
+        "OPENAI_API_KEY": "EMPTY",
+    }
+    try:
+        r = subprocess.run(
+            [sys.executable, "-B", str(prelude_path), str(agent_dir), str(data_path), str(codefile)],
+            cwd=scratch, env=env, capture_output=True, text=True, timeout=timeout,
+            preexec_fn=_run_python_preexec if os.name == "posix" else None,
+        )
+    except subprocess.TimeoutExpired:
+        return f"run_python TIMED OUT after {timeout}s"
+    out = r.stdout[-9000:] if len(r.stdout) > 9000 else r.stdout
+    err = r.stderr[-2500:]
+    return f"exit code {r.returncode}\n--- stdout ---\n{out}" + (
+        f"\n--- stderr ---\n{err}" if err.strip() else ""
+    )
 
 
 @register("editor", "default")
@@ -477,6 +571,15 @@ class AgentEditor:
         # requested case through the task agent (genuine wall-clock + API
         # cost), so the turn budget alone is not a cost control.
         evaluate_variant_max_calls: int = 3,
+        # Which agentic tools to offer, by name (see _AGENTIC_TOOLS_BY_NAME
+        # for the full set). None (default) resolves to
+        # _DEFAULT_AGENTIC_TOOL_NAMES -- the ORIGINAL tool set, from before
+        # grep/str_replace_file/run_python/list_cases/show_case/
+        # evaluate_variant were added -- so every existing config's
+        # behavior is unchanged unless it explicitly opts into more.
+        # evaluate_variant is additionally gated by `evaluator is not
+        # None` regardless of whether it's listed here.
+        agentic_tools: Optional[list[str]] = None,
     ) -> None:
         self.llm = llm_caller
         self.validators = list(validators)
@@ -495,6 +598,16 @@ class AgentEditor:
         self.benchmark_dir = benchmark_dir
         self.train_case_ids = train_case_ids
         self.evaluate_variant_max_calls = evaluate_variant_max_calls
+        if agentic_tools is None:
+            self.agentic_tool_names = list(_DEFAULT_AGENTIC_TOOL_NAMES)
+        else:
+            unknown = [n for n in agentic_tools if n not in _AGENTIC_TOOLS_BY_NAME]
+            if unknown:
+                raise ValueError(
+                    f"agentic_tools: unknown tool name(s) {unknown!r} -- "
+                    f"must be a subset of {sorted(_AGENTIC_TOOLS_BY_NAME)}"
+                )
+            self.agentic_tool_names = list(agentic_tools)
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -1129,65 +1242,133 @@ class AgentEditor:
         )
 
     def _agentic_closing(self) -> str:
-        evaluate_variant_note = (
-            " `evaluate_variant` to run your current workspace through the "
-            "REAL evaluator and see each case's actual score/pass-fail -- "
-            f"limited to {self.evaluate_variant_max_calls} calls, so use it "
-            "to CONFIRM a hypothesis you've already formed with the "
-            "read-only/offline tools, not to explore blindly. You can pass "
-            "case_ids (a small handful -- e.g. the specific failing cases "
-            "your fix targets) for a fast, cheap check, or omit case_ids "
-            "for the full TRAIN set when you want the real overall signal;"
-            if self.evaluator is not None else ""
+        """Describes only the tools actually enabled (self.agentic_tool_names,
+        plus the evaluate_variant/evaluator gate) -- telling the model about
+        a tool it can't call would be actively misleading, not just unused
+        filler, so every sentence below is conditional on the tool it
+        describes actually being offered."""
+        has = lambda name: (  # noqa: E731
+            name in self.agentic_tool_names
+            and (name != "evaluate_variant" or self.evaluator is not None)
         )
-        evaluate_variant_step = (
-            " Use `evaluate_variant` to test your code if needed -- once "
-            "you've made a change you're not fully certain about, call it "
-            "with case_ids set to a small handful of relevant TRAIN cases "
-            "(fast, cheap) to confirm the fix actually works before "
-            "spending a full-set call or finishing. Not required for a "
-            "trivial or purely cosmetic change. Expect some run-to-run "
-            "variance in the score even with no code change (the task "
-            "agent's own LLM calls are stochastic) -- don't read a small "
-            "difference between two evaluate_variant calls as proof your "
-            "edit helped or hurt; weigh it against the per-case pass/fail "
-            "pattern, not the aggregate score alone. If you want more "
-            "confidence on a borderline result, you can call "
-            "evaluate_variant again on the same case_ids and compare -- "
-            "within your remaining call budget, repeating a run is a "
-            "legitimate way to tell signal from noise."
-            if self.evaluator is not None else ""
-        )
-        return (
-            "\nYou have these tools: `read_file` to inspect any of the files "
-            "listed below before editing it; `grep` to search one file for a "
-            "regex pattern without reading it whole; `write_file` to submit "
-            "ONE file's FULL new content (call once per changed file — never "
-            "bundle multiple files' content into one call); `str_replace_file` "
-            "for a small, targeted edit instead (replace one exact-match "
-            "snippet in a file you can already write to); `list_cases` and "
-            "`show_case` to inspect this node's own evaluated cases (pass/fail, "
-            "score, and — per case — the full details the project's scorer "
-            "attached, e.g. the raw plan and failed checks); `run_python` to "
-            "run your own offline Python against those same cases (no LLM, no "
-            "network) to test a hypothesis or a snippet of logic before "
-            "committing to a file edit;" + evaluate_variant_note + " "
-            "`run_code_validators` to check your "
-            "changes so far (syntax, imports, signatures, etc.); and "
-            "`submit_self_improvement_summary` to finish.\n\n"
-            "Work in this order: call `read_file` on each file you plan to "
-            "change (you don't need to read files you won't touch) — use "
-            "`grep`/`list_cases`/`show_case`/`run_python` as needed to ground "
-            "your diagnosis in real evidence first. Then call `write_file` "
-            "(or `str_replace_file` for a small change) once per changed file. "
-            "After writing your changes, call `run_code_validators`; if it "
-            "reports problems, fix them with another `write_file`/"
-            "`str_replace_file` call to the relevant file(s) and check again."
-            + evaluate_variant_step +
-            " When everything is written and validators pass, call "
-            "`submit_self_improvement_summary` with a one-line optimization_goal, "
-            "a proposed_changes summary, and a rationale to finish."
-        )
+
+        descriptions = {
+            "read_file": "`read_file` to inspect any of the files listed below before editing it",
+            "grep": "`grep` to search one file for a regex pattern without reading it whole",
+            "write_file": (
+                "`write_file` to submit ONE file's FULL new content (call "
+                "once per changed file — never bundle multiple files' "
+                "content into one call)"
+            ),
+            "str_replace_file": (
+                "`str_replace_file` for a small, targeted edit instead "
+                "(replace one exact-match snippet in a file you can "
+                "already write to)"
+            ),
+            # list_cases/show_case are described together when both are
+            # enabled, but each must still get its OWN sentence when the
+            # other is absent -- a config enabling only one of the two is
+            # unusual but valid, and the prose must not silently omit it.
+            "list_cases": (
+                "`list_cases` and `show_case` to inspect this node's own "
+                "evaluated cases (pass/fail, score, and — per case — the "
+                "full details the project's scorer attached, e.g. the raw "
+                "plan and failed checks)"
+                if has("show_case") else
+                "`list_cases` for a pass/fail/score overview of this "
+                "node's own evaluated cases"
+            ),
+            "show_case": (
+                None  # merged into list_cases's sentence above when both present
+                if has("list_cases") else
+                "`show_case` to inspect one of this node's own evaluated "
+                "cases in full (pass/fail, score, and the full details the "
+                "project's scorer attached)"
+            ),
+            "run_python": (
+                "`run_python` to run your own offline Python against those "
+                "same cases (no LLM, no network) to test a hypothesis or a "
+                "snippet of logic before committing to a file edit"
+            ),
+            "evaluate_variant": (
+                "`evaluate_variant` to run your current workspace through "
+                "the REAL evaluator and see each case's actual score/"
+                f"pass-fail -- limited to {self.evaluate_variant_max_calls} "
+                "calls, so use it to CONFIRM a hypothesis you've already "
+                "formed with the read-only/offline tools, not to explore "
+                "blindly. You can pass case_ids (a small handful -- e.g. "
+                "the specific failing cases your fix targets) for a fast, "
+                "cheap check, or omit case_ids for the full TRAIN set when "
+                "you want the real overall signal"
+            ),
+            "run_code_validators": (
+                "`run_code_validators` to check your changes so far "
+                "(syntax, imports, signatures, etc.)"
+            ),
+            "submit_self_improvement_summary": "`submit_self_improvement_summary` to finish",
+        }
+        parts = [
+            descriptions[name] for name in
+            ("read_file", "grep", "write_file", "str_replace_file", "list_cases",
+             "show_case", "run_python", "evaluate_variant", "run_code_validators",
+             "submit_self_improvement_summary")
+            if has(name) and descriptions.get(name)
+        ]
+        tool_list_sentence = "\nYou have these tools: " + "; ".join(parts) + ".\n\n"
+
+        grounding_tools = [n for n in ("grep", "list_cases", "show_case", "run_python") if has(n)]
+        order_parts = []
+        if has("read_file"):
+            order_parts.append(
+                "Work in this order: call `read_file` on each file you "
+                "plan to change (you don't need to read files you won't "
+                "touch)"
+                + (f" — use {'/'.join('`'+g+'`' for g in grounding_tools)} "
+                   "as needed to ground your diagnosis in real evidence first"
+                   if grounding_tools else "")
+                + ". "
+            )
+        if has("write_file"):
+            order_parts.append(
+                "Then call `write_file`"
+                + (" (or `str_replace_file` for a small change)" if has("str_replace_file") else "")
+                + " once per changed file. "
+            )
+        if has("run_code_validators"):
+            order_parts.append(
+                "After writing your changes, call `run_code_validators`; if "
+                "it reports problems, fix them with another `write_file`"
+                + ("/`str_replace_file`" if has("str_replace_file") else "")
+                + " call to the relevant file(s) and check again."
+            )
+        if has("evaluate_variant"):
+            order_parts.append(
+                " Use `evaluate_variant` to test your code if needed -- "
+                "once you've made a change you're not fully certain about, "
+                "call it with case_ids set to a small handful of relevant "
+                "TRAIN cases (fast, cheap) to confirm the fix actually "
+                "works before spending a full-set call or finishing. Not "
+                "required for a trivial or purely cosmetic change. Expect "
+                "some run-to-run variance in the score even with no code "
+                "change (the task agent's own LLM calls are stochastic) -- "
+                "don't read a small difference between two evaluate_variant "
+                "calls as proof your edit helped or hurt; weigh it against "
+                "the per-case pass/fail pattern, not the aggregate score "
+                "alone. If you want more confidence on a borderline result, "
+                "you can call evaluate_variant again on the same case_ids "
+                "and compare -- within your remaining call budget, "
+                "repeating a run is a legitimate way to tell signal from "
+                "noise."
+            )
+        if has("submit_self_improvement_summary"):
+            order_parts.append(
+                " When everything is written"
+                + (" and validators pass" if has("run_code_validators") else "")
+                + ", call `submit_self_improvement_summary` with a one-line "
+                "optimization_goal, a proposed_changes summary, and a "
+                "rationale to finish."
+            )
+        return tool_list_sentence + "".join(order_parts)
 
     def _run_python(
         self,
@@ -1197,58 +1378,18 @@ class AgentEditor:
         code: str,
         timeout_s: Optional[int],
     ) -> str:
-        """Backing implementation for the ``run_python`` agentic tool. Runs
-        ``code`` in a subprocess with ``train_data`` (built from
-        ``feedback.eval_result.per_case``) injected via ``RUN_PYTHON_PRELUDE``,
-        ``agent_dir`` on ``sys.path`` so the model's own workspace modules
-        are importable, and no network/file access beyond that (the AST
-        checks in ``_run_python_problems`` already ran before this is
-        called). Scratch files live under ``out_dir/_run_python_scratch``,
-        a sibling of ``task_agent/`` -- outside every path ``_is_path_allowed``
-        would ever show or allow writing to, so it can never collide with a
-        real edit."""
-        scratch = out_dir / "_run_python_scratch"
-        scratch.mkdir(exist_ok=True)
-        cases = []
-        if feedback is not None:
-            for c in feedback.eval_result.per_case:
-                cases.append({
-                    "case_id": c.case_id,
-                    "passed": c.passed,
-                    "score": c.score,
-                    "error": c.error,
-                    "details": c.details,
-                })
-        data_path = scratch / "cases.json"
-        data_path.write_text(json.dumps({"cases": cases}, default=str), encoding="utf-8")
-        prelude_path = scratch / "prelude.py"
-        prelude_path.write_text(RUN_PYTHON_PRELUDE, encoding="utf-8")
-        codefile = scratch / f"user_{uuid.uuid4().hex}.py"
-        codefile.write_text(code, encoding="utf-8")
-        try:
-            timeout = max(5, min(int(timeout_s or 60), 120))
-        except (TypeError, ValueError):
-            timeout = 60
-        env = {
-            "PATH": os.environ.get("PATH", ""),
-            # Offline: any accidental LLM call fails fast rather than hanging
-            # or reaching a real endpoint.
-            "LLM_BASE_URL": "http://127.0.0.1:9/v1",
-            "OPENAI_API_KEY": "EMPTY",
-        }
-        try:
-            r = subprocess.run(
-                [sys.executable, "-B", str(prelude_path), str(agent_dir), str(data_path), str(codefile)],
-                cwd=scratch, env=env, capture_output=True, text=True, timeout=timeout,
-                preexec_fn=_run_python_preexec if os.name == "posix" else None,
-            )
-        except subprocess.TimeoutExpired:
-            return f"run_python TIMED OUT after {timeout}s"
-        out = r.stdout[-9000:] if len(r.stdout) > 9000 else r.stdout
-        err = r.stderr[-2500:]
-        return f"exit code {r.returncode}\n--- stdout ---\n{out}" + (
-            f"\n--- stderr ---\n{err}" if err.strip() else ""
+        """Backing implementation for the ``run_python`` agentic tool.
+        Thin wrapper over ``run_python_sandboxed`` (module-level, shared
+        with ``BlockSuggester`` — see that function's own docstring for
+        what it actually does); only reshapes ``feedback`` into the plain
+        ``per_case`` list that function takes, so neither caller needs to
+        know about ``AgentFeedback``'s shape."""
+        return run_python_sandboxed(
+            agent_dir, out_dir,
+            feedback.eval_result.per_case if feedback is not None else [],
+            code, timeout_s,
         )
+
 
     def _self_improve_agentic(
         self,
@@ -1313,10 +1454,11 @@ class AgentEditor:
 
         written: dict[str, str] = {}
         evaluate_variant_calls = 0
-        agentic_tools = (
-            [*_AGENTIC_TOOLS, AGENTIC_EVALUATE_VARIANT_TOOL]
-            if self.evaluator is not None else _AGENTIC_TOOLS
-        )
+        agentic_tools = [
+            _AGENTIC_TOOLS_BY_NAME[name] for name in self.agentic_tool_names
+            if name != "evaluate_variant" or self.evaluator is not None
+        ]
+        offered_tool_names = {t["name"] for t in agentic_tools}
 
         for turn in range(self.agentic_max_turns):
             llm_kwargs: dict[str, Any] = {
@@ -1423,6 +1565,11 @@ class AgentEditor:
                             "especially `content` -- has its quotes, "
                             "backslashes, and newlines properly escaped. Retry "
                             f"this {call.name} call."
+                        )
+                    elif call.name not in offered_tool_names:
+                        output = (
+                            f"ERROR: tool {call.name!r} is not enabled for this "
+                            "run (not in the configured agentic_tools)."
                         )
                     elif call.name == "read_file":
                         path = (args.get("path") or "").lstrip("/")

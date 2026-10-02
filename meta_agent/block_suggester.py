@@ -33,6 +33,11 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from . import source_context, verbose_log
+from .agent_editor import (
+    AGENTIC_RUN_PYTHON_TOOL,
+    _run_python_problems,
+    run_python_sandboxed,
+)
 from .case_tools import (
     LIST_CASES_TOOL,
     SHOW_CASE_TOOL,
@@ -119,31 +124,25 @@ _SYSTEM_CLOSING = (
 # regex bug in a harness validator, an exact prompt-rule violation) that
 # the curated feedback digest alone never surfaced a single concrete
 # example of.
-_SYSTEM_CLOSING_AGENTIC = (
-    "\n\nYou have four read-only tools: `read_file(path)` and "
-    "`grep(path, pattern)` (grep returns a window centered on each match, "
-    "not just a line's start -- use it for any file too large to read "
-    "whole, especially 'logs/trace.jsonl'). Paths are alias-rooted -- call "
-    "read_file('.') is not needed, the aliases are exactly: 'harness/...' "
-    "(the current mutable source you're diagnosing -- read any file "
-    "before citing it, don't guess at its contents), 'logs/...' (this "
-    "parent node's own real per-case evaluation logs -- each "
-    "'logs/case_<id>.json' has a 'converted_plan' field with the exact "
-    "structured output that was scored and a 'raw_plan_text' field with "
-    "the literal text, plus 'logs/trace.jsonl', real tool_call/"
-    "tool_result/llm_call events -- use grep on it, it can be large), and "
-    "'eval_result.json' (every case's score and, per check, its exact "
-    "pass/fail and violation message).\n\n"
-    "Plus `list_cases(failed_check?, limit?)` and `show_case(case_id)` -- "
-    "structured shortcuts over that same per-case evaluation data, without "
-    "needing to grep/parse 'eval_result.json' yourself: list_cases gives a "
-    "quick pass/fail/score overview (optionally filtered to cases whose "
-    "details mention a specific check label), and show_case gives one "
-    "case's full record. Use these to ground your diagnosis in a real, "
-    "specific, cited example -- a concrete case_id and the exact evidence "
-    "you found for it -- rather than the feedback digest alone.\n\n"
+#
+# NOTE: the run_python paragraph below is deliberately spelled out in full
+# (the rule -> test-against-every-case -> report-honestly sequence, plus the
+# "don't give up on one noisy exception" carve-out) rather than a short
+# pointer, on the theory that a model won't reliably infer this discipline
+# from the tool's bare description alone. Untested against this prompt's own
+# verbosity actually landing vs. just adding tokens -- worth revisiting
+# (trim toward a one-line pointer) once there's evidence either way from
+# real runs using it.
+_SYSTEM_CLOSING_AGENTIC_TAIL = (
     "When you are ready, respond with your final answer as plain markdown "
-    "text (NOT a tool call) -- stay under 400 words. If the evidence "
+    "text (NOT a tool call) -- stay under 400 words. Your final answer "
+    "must be the distilled conclusion ONLY -- not a transcript of how you "
+    "got there. Do the exploring, the dead ends, the 'wait, let me "
+    "reconsider' -- in your own reasoning before this message, not in it; "
+    "this message is what gets read, so it should read like you already "
+    "knew the answer, stating the Target/Diagnosis/Proposed change "
+    "directly without walking through the candidates you considered and "
+    "rejected along the way. If the evidence "
     "available to you is too thin to support a specific diagnosis for "
     "this block (e.g. no failing case actually touches it yet), say so "
     "explicitly rather than inventing one; a hedged 'no strong signal for "
@@ -198,7 +197,26 @@ _AGENTIC_TOOLS: list[dict[str, Any]] = [
     AGENTIC_GREP_TOOL,
     LIST_CASES_TOOL,
     SHOW_CASE_TOOL,
+    AGENTIC_RUN_PYTHON_TOOL,
 ]
+
+# Every agentic tool BlockSuggester can offer, by name -- resolves the
+# configurable `agentic_tools` constructor param (see __init__) into the
+# actual schema list sent to the model.
+_AGENTIC_TOOLS_BY_NAME: dict[str, dict[str, Any]] = {
+    "read_file": AGENTIC_READ_FILE_TOOL,
+    "grep": AGENTIC_GREP_TOOL,
+    "list_cases": LIST_CASES_TOOL,
+    "show_case": SHOW_CASE_TOOL,
+    "run_python": AGENTIC_RUN_PYTHON_TOOL,
+}
+
+# The ORIGINAL tool set, from before list_cases/show_case/run_python were
+# added. This is the default (see __init__'s `agentic_tools` param) so
+# every existing config's behavior is unchanged unless it explicitly opts
+# into the newer tools -- pass e.g. agentic_tools: ["read_file", "grep",
+# "run_python"] in block_suggester.config to add specific ones back.
+_DEFAULT_AGENTIC_TOOL_NAMES: tuple[str, ...] = ("read_file", "grep")
 
 
 def _parse_strategies_md(text: str) -> dict[str, str]:
@@ -742,6 +760,13 @@ class BlockSuggester:
         # every other block; only substituted when block ==
         # "llm_backbone_selection".
         backbone_catalog: Optional[list[dict[str, str]]] = None,
+        # Which agentic tools to offer, by name (see _AGENTIC_TOOLS_BY_NAME
+        # for the full set). None (default) resolves to
+        # _DEFAULT_AGENTIC_TOOL_NAMES -- the ORIGINAL tool set, from before
+        # list_cases/show_case/run_python were added -- so every existing
+        # config's behavior is unchanged unless it explicitly opts into
+        # more.
+        agentic_tools: Optional[list[str]] = None,
     ) -> None:
         self.llm = llm_caller
         self.model = model
@@ -756,6 +781,16 @@ class BlockSuggester:
         self.agentic_access = agentic_access
         self.agentic_max_turns = agentic_max_turns
         self.backbone_catalog = backbone_catalog or _DEFAULT_BACKBONE_CATALOG
+        if agentic_tools is None:
+            self.agentic_tool_names = list(_DEFAULT_AGENTIC_TOOL_NAMES)
+        else:
+            unknown = [n for n in agentic_tools if n not in _AGENTIC_TOOLS_BY_NAME]
+            if unknown:
+                raise ValueError(
+                    f"agentic_tools: unknown tool name(s) {unknown!r} -- "
+                    f"must be a subset of {sorted(_AGENTIC_TOOLS_BY_NAME)}"
+                )
+            self.agentic_tool_names = list(agentic_tools)
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -878,6 +913,109 @@ class BlockSuggester:
     # ------------------------------------------------------------------ #
     # Internals
     # ------------------------------------------------------------------ #
+
+    def _agentic_closing(self) -> str:
+        """Describes only the tools actually enabled (self.agentic_tool_names)
+        -- telling the model about a tool it can't call would be actively
+        misleading, not just unused filler. _SYSTEM_CLOSING_AGENTIC_TAIL
+        (output format, sibling-differentiation rules) is unconditional --
+        none of it is tool-specific."""
+        has = lambda name: name in self.agentic_tool_names  # noqa: E731
+
+        parts: list[str] = []
+        if has("read_file") or has("grep"):
+            tool_bits = []
+            if has("read_file"):
+                tool_bits.append("`read_file(path)`")
+            if has("grep"):
+                tool_bits.append(
+                    "`grep(path, pattern)` (grep returns a window centered "
+                    "on each match, not just a line's start -- use it for "
+                    "any file too large to read whole, especially "
+                    "'logs/trace.jsonl')"
+                )
+            n = len(tool_bits) + sum(has(n) for n in ("list_cases", "show_case", "run_python"))
+            parts.append(
+                f"\n\nYou have {n} read-only tool{'s' if n != 1 else ''}: "
+                + " and ".join(tool_bits) + ". Paths are alias-rooted -- call "
+                "read_file('.') is not needed, the aliases are exactly: "
+                "'harness/...' (the current mutable source you're "
+                "diagnosing -- read any file before citing it, don't guess "
+                "at its contents), 'logs/...' (this parent node's own real "
+                "per-case evaluation logs -- each 'logs/case_<id>.json' has "
+                "a 'converted_plan' field with the exact structured output "
+                "that was scored and a 'raw_plan_text' field with the "
+                "literal text, plus 'logs/trace.jsonl', real tool_call/"
+                "tool_result/llm_call events -- use grep on it, it can be "
+                "large), and 'eval_result.json' (every case's score and, "
+                "per check, its exact pass/fail and violation message)."
+            )
+        if has("list_cases") or has("show_case"):
+            if has("list_cases") and has("show_case"):
+                tool_desc = (
+                    "Plus `list_cases(failed_check?, limit?)` and "
+                    "`show_case(case_id)` -- structured shortcuts over that "
+                    "same per-case evaluation data, without needing to "
+                    "grep/parse 'eval_result.json' yourself: list_cases "
+                    "gives a quick pass/fail/score overview (optionally "
+                    "filtered to cases whose details mention a specific "
+                    "check label), and show_case gives one case's full "
+                    "record."
+                )
+            elif has("list_cases"):
+                tool_desc = (
+                    "Plus `list_cases(failed_check?, limit?)` -- a quick "
+                    "pass/fail/score overview of this node's own evaluated "
+                    "cases, optionally filtered to cases whose details "
+                    "mention a specific check label."
+                )
+            else:
+                tool_desc = (
+                    "Plus `show_case(case_id)` -- one of this node's own "
+                    "evaluated cases in full."
+                )
+            parts.append(f"\n{tool_desc}")
+        # Unconditional whenever any evidence-gathering tool (read_file,
+        # grep, list_cases, show_case) is present -- in the TRUE original
+        # (pre-list_cases/show_case) prompt this sentence closed the
+        # read_file/grep paragraph directly; kept as its own trailer here
+        # so it still appears exactly once regardless of which subset of
+        # those tools a config enables.
+        if has("read_file") or has("grep") or has("list_cases") or has("show_case"):
+            parts.append(
+                " Use these to ground your diagnosis in a real, specific, "
+                "cited example -- a concrete case_id and the exact "
+                "evidence you found for it -- rather than the feedback "
+                "digest alone.\n"
+            )
+        if has("run_python"):
+            parts.append(
+                "\nPlus `run_python(code)` -- run your own Python against "
+                "`train_data` (this node's own evaluated cases: `CASES`, "
+                "`by_id(cid)`, `failing(label_substring)`), offline, no "
+                "LLM/network. Use it to go one step past citing a single "
+                "example: a diagnosis backed by ONE case is a hypothesis, "
+                "not a finding. For any check you're diagnosing, state the "
+                "rule you believe it enforces, then write code that checks "
+                "that rule against every case where the check appears -- "
+                "both the ones that failed it and the ones that passed it "
+                "-- rather than just the one case you started from. Real "
+                "grading data is noisy, so a rule does not need to explain "
+                "every single instance to be worth acting on -- but you "
+                "must actually look: if your rule agrees with the outcome "
+                "on most cases, say so and report it as the diagnosis; if "
+                "there are exceptions, name them and your best read of why "
+                "(a different edge case, a scorer quirk, a second "
+                "condition you're missing) rather than silently ignoring "
+                "them or pretending the rule is airtight. If the cases are "
+                "too few or too inconsistent to support any rule at all, "
+                "say that explicitly -- 'the evidence doesn't let me pin "
+                "down the exact rule, but the pattern is X' is a "
+                "legitimate, more honest answer than a confident guess "
+                "made from one example.\n"
+            )
+        parts.append("\n" + _SYSTEM_CLOSING_AGENTIC_TAIL)
+        return "".join(parts)
 
     def _block_body(self, block: str) -> str:
         """``_BLOCK_BODIES[block]`` with the llm_backbone_selection block's
@@ -1069,7 +1207,7 @@ class BlockSuggester:
             + self._render_strategies(block)
             + self._render_skills()
             + self._render_curriculum_focus(curriculum_directive)
-            + _SYSTEM_CLOSING_AGENTIC
+            + self._agentic_closing()
         )
 
         user_parts: list[str] = source_context.format_project_context(
@@ -1104,9 +1242,12 @@ class BlockSuggester:
             {"role": "user", "content": prompt_user},
         ]
 
+        agentic_tools = [_AGENTIC_TOOLS_BY_NAME[name] for name in self.agentic_tool_names]
+        offered_tool_names = {t["name"] for t in agentic_tools}
+
         text = ""
         for turn in range(self.agentic_max_turns):
-            kwargs: dict[str, Any] = {"messages": history, "tools": _AGENTIC_TOOLS}
+            kwargs: dict[str, Any] = {"messages": history, "tools": agentic_tools}
             if self.model:
                 kwargs["model"] = self.model
             if self.reasoning_effort:
@@ -1172,6 +1313,11 @@ class BlockSuggester:
                         f"are valid JSON string values. Retry this "
                         f"{call.name} call."
                     )
+                elif call.name not in offered_tool_names:
+                    output = (
+                        f"ERROR: tool {call.name!r} is not enabled for this "
+                        "run (not in the configured agentic_tools)."
+                    )
                 elif call.name == "read_file":
                     output = self._agentic_read_file(sources, round_dir, args)
                 elif call.name == "grep":
@@ -1192,6 +1338,31 @@ class BlockSuggester:
                         output = render_show_case(
                             feedback.eval_result.per_case, args.get("case_id") or ""
                         )
+                elif call.name == "run_python":
+                    code = args.get("code")
+                    if not code:
+                        output = "ERROR: run_python requires `code`."
+                    else:
+                        ws_modules: set = set()
+                        for p in sources:
+                            parts = Path(p).parts
+                            first = parts[0]
+                            ws_modules.add(
+                                first[:-3] if len(parts) == 1 and first.endswith(".py")
+                                else first
+                            )
+                        probs = _run_python_problems(code, ws_modules)
+                        if probs:
+                            output = (
+                                "run_python REJECTED (nothing executed): "
+                                + "; ".join(probs)
+                            )
+                        else:
+                            output = run_python_sandboxed(
+                                agent_dir, out_dir,
+                                feedback.eval_result.per_case if feedback is not None else [],
+                                code, args.get("timeout_s"),
+                            )
                 else:
                     output = f"ERROR: unknown tool {call.name!r}."
 

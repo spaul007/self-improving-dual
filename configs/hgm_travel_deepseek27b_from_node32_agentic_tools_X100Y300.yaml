@@ -112,6 +112,22 @@ editor:
     # (a real subprocess run of every requested case through the task
     # agent). 3 is the default; set explicitly here for visibility.
     evaluate_variant_max_calls: 3
+    # Explicit -- agentic_tools now defaults to the ORIGINAL pre-expansion
+    # set (read_file/write_file/run_code_validators/submit_self_improvement_
+    # summary only) unless listed here. This run was launched specifically
+    # to exercise the expanded toolset, so pin it explicitly rather than
+    # silently losing it on a future restart under this same config.
+    agentic_tools:
+      - "read_file"
+      - "write_file"
+      - "str_replace_file"
+      - "grep"
+      - "run_code_validators"
+      - "run_python"
+      - "list_cases"
+      - "show_case"
+      - "submit_self_improvement_summary"
+      - "evaluate_variant"
 
 failure_summarizer:
   type: "default"
@@ -129,6 +145,13 @@ block_suggester:
     strategies_path: "strategies.md"
     agentic_access: true
     agentic_max_turns: 100
+    # Explicit -- see the editor's own agentic_tools comment above for why.
+    agentic_tools:
+      - "read_file"
+      - "grep"
+      - "list_cases"
+      - "show_case"
+      - "run_python"
 
 env:
   META_AGENT_STRIP_REASONING: "1"

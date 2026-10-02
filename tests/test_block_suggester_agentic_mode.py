@@ -251,5 +251,178 @@ class BlockSuggesterAgenticModeTests(unittest.TestCase):
         self.assertIsNone(result)
 
 
+class BlockSuggesterRunPythonTests(unittest.TestCase):
+    """Tests for the run_python agentic tool added to BlockSuggester --
+    lets a diagnosis be falsified against every one of this node's own
+    evaluated cases (not just the one example cited), mirroring
+    AgentEditor's own run_python (meta_agent/agent_editor.py). See
+    block_suggester.py's _SYSTEM_CLOSING_AGENTIC for the falsification
+    discipline this tool exists to support.
+
+    PYTHONPATH=. python3 -m unittest tests.test_block_suggester_agentic_mode
+    """
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp(prefix="block_suggester_run_python_"))
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.round_dir = self.tmp / "round_005"
+        self.agent_dir = self.round_dir / "task_agent"
+        self.agent_dir.mkdir(parents=True)
+        (self.agent_dir / "workflow.py").write_text(
+            "def run_task(task):\n    return None\n", encoding="utf-8"
+        )
+        (self.round_dir / "logs").mkdir()
+        self.out_dir = self.tmp / "out_child"
+        self.out_dir.mkdir()
+
+    def _feedback(self, per_case):
+        from meta_agent.models import AgentFeedback, EvaluationResult, EvolutionStrategy
+
+        return AgentFeedback(
+            round_number=5, base_round=0,
+            strategy=EvolutionStrategy(optimization_goal="", proposed_changes=""),
+            eval_result=EvaluationResult(score=0.0, per_case=per_case),
+        )
+
+    def _suggest(self, fake_llm, feedback=None, **kwargs):
+        from meta_agent.block_suggester import BlockSuggester
+
+        kwargs.setdefault("agentic_tools", ["read_file", "grep", "run_python"])
+        bs = BlockSuggester(llm_caller=fake_llm, agentic_access=True, **kwargs)
+        return bs.suggest(
+            block="verifiers", agent_dir=self.agent_dir, out_dir=self.out_dir,
+            node_id=7, feedback=feedback,
+        )
+
+    def test_run_python_sees_this_nodes_own_cases(self) -> None:
+        from meta_agent.models import CaseResult
+
+        feedback = self._feedback([
+            CaseResult(case_id="1", passed=True, score=1.0, details={}),
+            CaseResult(case_id="2", passed=False, score=0.0,
+                       error="plan conversion failed: agent produced no plan"),
+        ])
+        turns = iter([
+            SimpleNamespace(
+                content=None,
+                tool_calls=[_call(
+                    "run_python",
+                    {"code": "import train_data\nprint(len(train_data.CASES))\nprint(train_data.by_id('2')['passed'])"},
+                    "c1",
+                )],
+            ),
+            SimpleNamespace(content="confirmed: 2 cases, case 2 failed", tool_calls=[]),
+        ])
+        captured_outputs: list[str] = []
+
+        def fake_llm(**kwargs):
+            response = next(turns)
+            for item in kwargs["messages"]:
+                if item.get("type") == "function_call_output":
+                    captured_outputs.append(item["output"])
+            return response
+
+        result = self._suggest(fake_llm, feedback=feedback)
+        self.assertEqual(result, "confirmed: 2 cases, case 2 failed")
+        self.assertTrue(any("exit code 0" in o and "2\nFalse" in o for o in captured_outputs))
+
+    def test_run_python_with_no_feedback_sees_empty_cases(self) -> None:
+        turns = iter([
+            SimpleNamespace(
+                content=None,
+                tool_calls=[_call("run_python", {"code": "import train_data\nprint(train_data.CASES)"}, "c1")],
+            ),
+            SimpleNamespace(content="no cases available", tool_calls=[]),
+        ])
+
+        def fake_llm(**kwargs):
+            return next(turns)
+
+        result = self._suggest(fake_llm, feedback=None)
+        self.assertEqual(result, "no cases available")
+
+    def test_run_python_rejects_disallowed_import(self) -> None:
+        turns = iter([
+            SimpleNamespace(
+                content=None,
+                tool_calls=[_call("run_python", {"code": "import os\nprint(os.getcwd())"}, "c1")],
+            ),
+            SimpleNamespace(content="can't do that", tool_calls=[]),
+        ])
+        captured_outputs: list[str] = []
+
+        def fake_llm(**kwargs):
+            response = next(turns)
+            for item in kwargs["messages"]:
+                if item.get("type") == "function_call_output":
+                    captured_outputs.append(item["output"])
+            return response
+
+        result = self._suggest(fake_llm)
+        self.assertEqual(result, "can't do that")
+        self.assertTrue(any("REJECTED" in o for o in captured_outputs))
+
+    def test_run_python_missing_code_is_an_error(self) -> None:
+        turns = iter([
+            SimpleNamespace(content=None, tool_calls=[_call("run_python", {}, "c1")]),
+            SimpleNamespace(content="ok", tool_calls=[]),
+        ])
+        captured_outputs: list[str] = []
+
+        def fake_llm(**kwargs):
+            response = next(turns)
+            for item in kwargs["messages"]:
+                if item.get("type") == "function_call_output":
+                    captured_outputs.append(item["output"])
+            return response
+
+        result = self._suggest(fake_llm)
+        self.assertEqual(result, "ok")
+        self.assertTrue(any("requires `code`" in o for o in captured_outputs))
+
+    def test_agentic_access_defaults_to_the_original_pre_expansion_tool_set(self) -> None:
+        """agentic_tools=None (the default) must resolve to exactly the
+        tools that existed before list_cases/show_case/run_python were
+        added (see BlockSuggester.__init__'s agentic_tools param and
+        _DEFAULT_AGENTIC_TOOL_NAMES) -- read_file and grep only."""
+        captured: dict[str, object] = {}
+
+        def fake_llm(**kwargs):
+            captured.update(kwargs)
+            return SimpleNamespace(content="a plain suggestion", tool_calls=[])
+
+        from meta_agent.block_suggester import BlockSuggester
+        bs = BlockSuggester(llm_caller=fake_llm, agentic_access=True)  # no agentic_tools override
+        result = bs.suggest(
+            block="verifiers", agent_dir=self.agent_dir, out_dir=self.out_dir, node_id=7,
+        )
+        self.assertEqual(result, "a plain suggestion")
+        self.assertEqual({t["name"] for t in captured["tools"]}, {"read_file", "grep"})
+
+    def test_disabled_tool_called_anyway_is_rejected(self) -> None:
+        """Defense in depth: calling a tool outside the configured
+        agentic_tools must be rejected, not silently run."""
+        turns = iter([
+            SimpleNamespace(
+                content=None,
+                tool_calls=[_call("run_python", {"code": "print(1)"}, "c1")],
+            ),
+            SimpleNamespace(content="done", tool_calls=[]),
+        ])
+        captured_outputs: list[str] = []
+
+        def fake_llm(**kwargs):
+            response = next(turns)
+            for item in kwargs["messages"]:
+                if item.get("type") == "function_call_output":
+                    captured_outputs.append(item["output"])
+            return response
+
+        # read_file/grep only -- no run_python -- so the call must be rejected.
+        result = self._suggest(fake_llm, agentic_tools=["read_file", "grep"])
+        self.assertEqual(result, "done")
+        self.assertTrue(any("not enabled" in o for o in captured_outputs))
+
+
 if __name__ == "__main__":
     unittest.main()
