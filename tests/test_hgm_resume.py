@@ -260,6 +260,48 @@ class MainLoopResumeTests(unittest.TestCase):
         _prepare_resume(self.run_dir, None)
         self.assertTrue((self.run_dir / "config.resume_002.yaml").is_file())
 
+    def test_relative_run_dir_reaches_evolve_as_an_absolute_path(self) -> None:
+        """`--resume runs/<run>` (relative to the shell's cwd) must reach the
+        manager as an absolute path: the evaluator derives each case's trace
+        and scratch paths from the round dirs and runs the case from inside
+        round_NNN/task_agent/, where a relative path no longer resolves
+        (2026-10-02: every re-evaluation of a restored node crashed with
+        FileNotFoundError on logs/trace.jsonl and scored 0)."""
+        import os
+        from types import SimpleNamespace
+        from unittest import mock
+
+        import main_loop
+
+        class _Stop(Exception):
+            pass
+
+        seen: dict = {}
+
+        def evolve(**kw):
+            seen.update(kw)
+            raise _Stop
+
+        fw = SimpleNamespace(
+            manager=SimpleNamespace(evolve=evolve), editor=None, evaluator=None, gatherer=None,
+            seed_dir=None, benchmark_dir=None, train_case_ids=None, eval_case_ids=None,
+            summarizer=None, failure_summarizer=None, block_suggester=None, unit_selector=None,
+            edit_memory=None)
+        cfg = SimpleNamespace(loop=SimpleNamespace(max_rounds=1, score_target=None))
+        cwd = os.getcwd()
+        os.chdir(self.tmp)
+        self.addCleanup(os.chdir, cwd)
+        with mock.patch.object(main_loop.cfg_mod, "load", return_value=cfg), \
+                mock.patch.object(main_loop.cfg_mod, "build_components", return_value=fw), \
+                mock.patch.object(main_loop.runtime_env, "apply_all"), \
+                mock.patch.object(main_loop, "_preflight_keys"):
+            with self.assertRaises(_Stop):
+                main_loop.run(None, resume=Path("run"))
+        self.assertTrue(seen["experiment_dir"].is_absolute())
+        self.assertEqual(seen["experiment_dir"], self.run_dir.resolve())
+        self.assertTrue(seen["resume"])
+        self.assertTrue((self.run_dir / "config.resume_001.yaml").is_file())
+
     def test_refusals(self) -> None:
         from main_loop import _prepare_resume
 

@@ -150,6 +150,11 @@ class SubprocessEvaluator:
         *,
         case_ids: Optional[list[str]] = None,
     ) -> EvaluationResult:
+        # The trace / scratch paths derived from round_dir are handed to case
+        # subprocesses that run from inside round_dir/task_agent, so they must
+        # not be relative to this process's cwd. absolute() leaves an already
+        # absolute path (every caller's normal case) exactly as it was.
+        round_dir = Path(round_dir).absolute()
         cases = load_cases(benchmark_dir)
         if case_ids is not None:
             by_id = {

@@ -227,6 +227,39 @@ class EvaluatorTests(unittest.TestCase):
         self.assertEqual(result.per_case[0].case_id, "b")
         self.assertTrue(result.per_case[0].passed)
 
+    def test_subprocess_evaluator_relative_round_dir(self) -> None:
+        """A relative round_dir still sends each case's trace and scratch
+        files to round_dir/logs/: the case runs from inside
+        round_dir/task_agent/, where the relative path would not resolve
+        (FileNotFoundError on trace.jsonl, every case scored 0)."""
+        import os
+        from meta_agent.evaluator import SubprocessEvaluator
+
+        (self.round_dir / "task_agent" / "workflow.py").write_text(
+            "import os\n"
+            "from platform_core.runner import AgentOutput\n"
+            "from platform_core.tools import call_tool\n"
+            "from platform_core.trace import log\n"
+            "def run_task(task) -> AgentOutput:\n"
+            "    log('relative_round_dir', verdict='pass')\n"
+            "    with open(os.path.join(os.environ['META_AGENT_SCRATCH_DIR'], 'touched'), 'w') as fh:\n"
+            "        fh.write('x')\n"
+            "    expr = task.description.split(':',1)[-1].strip()\n"
+            "    return AgentOutput(result=call_tool('calculate', expression=expr))\n",
+            encoding="utf-8",
+        )
+        cwd = os.getcwd()
+        os.chdir(self.tmp)
+        self.addCleanup(os.chdir, cwd)
+        ev = SubprocessEvaluator(wall_time_s_per_case=15, memory_mb=512)
+        result = ev.run(Path("round_000"), self.bench)
+        self.assertFalse(result.crashed, [c.error for c in result.per_case])
+        self.assertEqual(result.passed, 2)
+        logs = self.round_dir / "logs"
+        self.assertIn("relative_round_dir", (logs / "trace.jsonl").read_text(encoding="utf-8"))
+        self.assertTrue((logs / "scratch" / "touched").is_file())
+        self.assertFalse((self.round_dir / "task_agent" / "round_000").exists())
+
     def test_subprocess_evaluator_unknown_case_id_raises(self) -> None:
         from meta_agent.evaluator import SubprocessEvaluator
 

@@ -35,7 +35,12 @@ def run(
     unfinished run in that directory (config: ``config_path`` if given, else
     the run's own ``config.snapshot.yaml``)."""
     if resume is not None:
-        config_path = _prepare_resume(Path(resume), config_path)
+        # Absolute, like a fresh run's dir (runs_root is resolved against the
+        # repo): the evaluator derives every case's trace / scratch path from
+        # the round dirs and runs the case from inside round_NNN/task_agent/,
+        # where a relative `runs/...` no longer resolves.
+        resume = Path(resume).resolve()
+        config_path = _prepare_resume(resume, config_path)
     if config_path is None:
         raise ValueError("--config is required unless --resume is given")
     cfg = cfg_mod.load(config_path)
@@ -46,7 +51,7 @@ def run(
     fw = cfg_mod.build_components(cfg)
 
     if resume is not None:
-        experiment_dir = Path(resume)
+        experiment_dir = resume
     else:
         experiment_dir = cfg_mod.init_experiment_dir(cfg, config_path, fw.runs_root)
     resume_kwargs: dict[str, Any] = {}
