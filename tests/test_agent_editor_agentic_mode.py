@@ -126,7 +126,11 @@ class AgenticModeTests(unittest.TestCase):
         # Tool schema offered must be the agentic set, not the bundled one.
         self.assertEqual(
             {t["name"] for t in turns[0]["tools"]},
-            {"read_file", "write_file", "run_code_validators", "submit_self_improvement_summary"},
+            {
+                "read_file", "grep", "write_file", "str_replace_file",
+                "run_code_validators", "run_python", "list_cases", "show_case",
+                "submit_self_improvement_summary",
+            },
         )
 
     def test_multiple_files_separate_write_file_calls(self) -> None:

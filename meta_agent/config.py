@@ -409,15 +409,49 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         for v in cfg.validators
     ]
 
+    # Resolved here (not further down, where it conceptually "belongs" next
+    # to the AssembledFramework return) so train_ids is available below for
+    # the editor's own evaluate_variant tool (meta_agent/agent_editor.py) --
+    # the same split the manager's own EVALUATE step and the gatherer use,
+    # just computed earlier.
+    train_ids: Optional[list[str]] = None
+    eval_ids: Optional[list[str]] = None
+    if cfg.split is not None:
+        if cfg.split.train_ids or cfg.split.train_ids_path:
+            # Predetermined optimization set — bypass the seeded shuffle.
+            train_ids, eval_ids = _resolve_explicit_train_ids(cfg.split, benchmark_dir)
+        elif cfg.split.train_size is not None:
+            train_ids, eval_ids = compute_split(
+                benchmark_dir,
+                seed=cfg.split.seed,
+                train_size=cfg.split.train_size,
+                stratify_by=cfg.split.stratify_by,
+                eval_size=cfg.split.eval_size,
+            )
+        else:
+            raise ValueError(
+                "split: needs either train_size (seeded split) or "
+                "train_ids / train_ids_path (predetermined set)"
+            )
+        if cfg.split.eval_equals_train and train_ids is not None:
+            eval_ids = list(train_ids)
+
     # Static project context for the editor. tools_source + db_schema are
-    # shown in both modes; scorer_source only in whitebox. None of these
-    # read ground-truth data (data/, cases.jsonl, validation files).
+    # shown in both modes; scorer_source only in whitebox. evaluator/
+    # benchmark_dir/train_case_ids back the opt-in evaluate_variant tool
+    # (only AgentEditor declares these three params, so
+    # _build_with_injection's "only inject params the constructor actually
+    # declares" rule leaves them unused for every other injectee). None of
+    # these read ground-truth data (data/, cases.jsonl, validation files).
     editor_injections: dict[str, Any] = {
         "llm_caller": call_llm,
         "validators": validators_obj,
         "tools_source": _read_tools_source(project_root, seed_dir),
         "db_schema": _read_db_schema(project_root),
         "mutable_exclude": cfg.mutable_exclude,
+        "evaluator": evaluator_obj,
+        "benchmark_dir": benchmark_dir,
+        "train_case_ids": train_ids,
     }
     if cfg.eval_visibility == "whitebox":
         editor_injections["scorer_source"] = _read_scorer_source(benchmark_dir)
@@ -473,28 +507,6 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
             editor_obj.skills_guide = skills.prompt_text
         if block_suggester_obj is not None and hasattr(block_suggester_obj, "skills_guide"):
             block_suggester_obj.skills_guide = skills.prompt_text
-
-    train_ids: Optional[list[str]] = None
-    eval_ids: Optional[list[str]] = None
-    if cfg.split is not None:
-        if cfg.split.train_ids or cfg.split.train_ids_path:
-            # Predetermined optimization set — bypass the seeded shuffle.
-            train_ids, eval_ids = _resolve_explicit_train_ids(cfg.split, benchmark_dir)
-        elif cfg.split.train_size is not None:
-            train_ids, eval_ids = compute_split(
-                benchmark_dir,
-                seed=cfg.split.seed,
-                train_size=cfg.split.train_size,
-                stratify_by=cfg.split.stratify_by,
-                eval_size=cfg.split.eval_size,
-            )
-        else:
-            raise ValueError(
-                "split: needs either train_size (seeded split) or "
-                "train_ids / train_ids_path (predetermined set)"
-            )
-        if cfg.split.eval_equals_train and train_ids is not None:
-            eval_ids = list(train_ids)
 
     return AssembledFramework(
         config=cfg,

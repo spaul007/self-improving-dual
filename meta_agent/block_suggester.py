@@ -32,7 +32,13 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import source_context
+from . import source_context, verbose_log
+from .case_tools import (
+    LIST_CASES_TOOL,
+    SHOW_CASE_TOOL,
+    render_list_cases,
+    render_show_case,
+)
 from .error_bucket_analyzer import render_error_bucket_prevalence_for_prompt
 from .feedback_gatherer import render_metrics
 from .models import AgentFeedback
@@ -114,7 +120,7 @@ _SYSTEM_CLOSING = (
 # the curated feedback digest alone never surfaced a single concrete
 # example of.
 _SYSTEM_CLOSING_AGENTIC = (
-    "\n\nYou have two read-only tools: `read_file(path)` and "
+    "\n\nYou have four read-only tools: `read_file(path)` and "
     "`grep(path, pattern)` (grep returns a window centered on each match, "
     "not just a line's start -- use it for any file too large to read "
     "whole, especially 'logs/trace.jsonl'). Paths are alias-rooted -- call "
@@ -127,10 +133,15 @@ _SYSTEM_CLOSING_AGENTIC = (
     "the literal text, plus 'logs/trace.jsonl', real tool_call/"
     "tool_result/llm_call events -- use grep on it, it can be large), and "
     "'eval_result.json' (every case's score and, per check, its exact "
-    "pass/fail and violation message). Use these to ground your diagnosis "
-    "in a real, specific, cited example -- a concrete case_id and the "
-    "exact evidence you found for it -- rather than the feedback digest "
-    "alone.\n\n"
+    "pass/fail and violation message).\n\n"
+    "Plus `list_cases(failed_check?, limit?)` and `show_case(case_id)` -- "
+    "structured shortcuts over that same per-case evaluation data, without "
+    "needing to grep/parse 'eval_result.json' yourself: list_cases gives a "
+    "quick pass/fail/score overview (optionally filtered to cases whose "
+    "details mention a specific check label), and show_case gives one "
+    "case's full record. Use these to ground your diagnosis in a real, "
+    "specific, cited example -- a concrete case_id and the exact evidence "
+    "you found for it -- rather than the feedback digest alone.\n\n"
     "When you are ready, respond with your final answer as plain markdown "
     "text (NOT a tool call) -- stay under 400 words. If the evidence "
     "available to you is too thin to support a specific diagnosis for "
@@ -182,7 +193,12 @@ AGENTIC_GREP_TOOL: dict[str, Any] = {
     },
 }
 
-_AGENTIC_TOOLS: list[dict[str, Any]] = [AGENTIC_READ_FILE_TOOL, AGENTIC_GREP_TOOL]
+_AGENTIC_TOOLS: list[dict[str, Any]] = [
+    AGENTIC_READ_FILE_TOOL,
+    AGENTIC_GREP_TOOL,
+    LIST_CASES_TOOL,
+    SHOW_CASE_TOOL,
+]
 
 
 def _parse_strategies_md(text: str) -> dict[str, str]:
@@ -1113,6 +1129,17 @@ class BlockSuggester:
                 return None
 
             calls = getattr(response, "tool_calls", None) or []
+            if verbose_log.is_enabled():
+                verbose_log.write_json(
+                    out_dir,
+                    f"block_suggester_node_{node_id}_turn_{turn}_response.json",
+                    {
+                        "content": getattr(response, "content", None),
+                        "tool_calls": [
+                            {"name": c.name, "arguments": c.arguments} for c in calls
+                        ],
+                    },
+                )
             if not calls:
                 text = (getattr(response, "content", None) or "").strip()
                 break
@@ -1149,8 +1176,31 @@ class BlockSuggester:
                     output = self._agentic_read_file(sources, round_dir, args)
                 elif call.name == "grep":
                     output = self._agentic_grep(sources, round_dir, args)
+                elif call.name == "list_cases":
+                    if feedback is None:
+                        output = "(no evaluated cases available for this node)"
+                    else:
+                        output = render_list_cases(
+                            feedback.eval_result.per_case,
+                            failed_check=args.get("failed_check"),
+                            limit=args.get("limit"),
+                        )
+                elif call.name == "show_case":
+                    if feedback is None:
+                        output = "(no evaluated cases available for this node)"
+                    else:
+                        output = render_show_case(
+                            feedback.eval_result.per_case, args.get("case_id") or ""
+                        )
                 else:
                     output = f"ERROR: unknown tool {call.name!r}."
+
+                if verbose_log.is_enabled():
+                    verbose_log.write_json(
+                        out_dir,
+                        f"block_suggester_node_{node_id}_turn_{turn}_call_{idx}_{call.name}.json",
+                        {"arguments": args, "output": output},
+                    )
 
                 history.append({
                     "type": "function_call_output",

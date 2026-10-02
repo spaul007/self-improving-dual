@@ -16,12 +16,23 @@ for logging), not an input.
 """
 from __future__ import annotations
 
+import ast
 import json
+import os
 import re
+import subprocess
+import sys
+import uuid
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional, Protocol
 
 from . import source_context, verbose_log
+from .case_tools import (
+    LIST_CASES_TOOL,
+    SHOW_CASE_TOOL,
+    render_list_cases,
+    render_show_case,
+)
 from .editor_validators import MUTABLE_DIRS, MUTABLE_FILES, is_excluded
 from .error_bucket_analyzer import render_error_bucket_prevalence_for_prompt
 from .failure_report import render_failure_report
@@ -193,10 +204,215 @@ AGENTIC_SUBMIT_SUMMARY_TOOL: dict[str, Any] = {
     },
 }
 
+AGENTIC_GREP_TOOL: dict[str, Any] = {
+    "name": "grep",
+    "description": (
+        "Search one file for a regex pattern (case-insensitive), returning "
+        "a window centered on each match, not just the line's start -- "
+        "safe for a very long single line. Same path rules as read_file."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "pattern": {"type": "string"},
+            "max_matches": {"type": "integer"},
+        },
+        "required": ["path", "pattern"],
+    },
+}
+
+AGENTIC_STR_REPLACE_FILE_TOOL: dict[str, Any] = {
+    "name": "str_replace_file",
+    "description": (
+        "Targeted edit of a file you can write to: replace `old_str` "
+        "(must occur EXACTLY ONCE in the file's current content) with "
+        "`new_str`. Use this for a small, precise change instead of "
+        "resending a whole file's content via write_file."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "old_str": {"type": "string"},
+            "new_str": {"type": "string"},
+        },
+        "required": ["path", "old_str", "new_str"],
+    },
+}
+
+# run_python: sandboxed offline execution against this node's own evaluated
+# cases (AgentFeedback.eval_result.per_case -- generic across every project,
+# see models.py::CaseResult). Adapted from experiment_harness_redesign.py's
+# run_python (same AST import/name/attribute allow-list convention, same
+# subprocess+rlimit isolation as meta_agent/evaluator.py::Evaluator._preexec),
+# but sources its `train_data` from the feedback this call already has
+# instead of a project-specific corpus of stored case files -- keeps this
+# generic, no per-project wiring needed.
+RUN_PYTHON_ALLOWED_IMPORTS = {
+    "re", "json", "math", "datetime", "itertools", "collections", "statistics",
+    "typing", "dataclasses", "functools", "textwrap", "string", "copy", "heapq",
+    "bisect", "random", "decimal", "fractions", "operator", "enum", "abc",
+    "__future__", "time", "unicodedata",
+}
+RUN_PYTHON_BLOCKED_NAMES = {
+    "open", "exec", "eval", "compile", "__import__", "globals", "locals",
+    "vars", "getattr", "setattr", "delattr", "input", "breakpoint", "help",
+    "exit", "quit", "memoryview",
+}
+RUN_PYTHON_BLOCKED_ATTRS = {
+    "os", "sys", "subprocess", "builtins", "importlib", "shutil", "pathlib",
+    "io", "socket", "system", "popen", "environ", "getenv", "putenv",
+    "listdir", "walk", "scandir", "remove", "unlink", "rmdir", "rename",
+    "execv", "fork", "spawn", "kill", "open", "read_text", "write_text",
+    "read_bytes", "write_bytes", "modules", "load_module", "import_module",
+}
+# Defense in depth: the framework's own scorer/adapter/harness internals are
+# never a legitimate run_python import even if somehow spelled around the
+# AST import check above (e.g. via a dynamically-built module name).
+RUN_PYTHON_LEAK_PATTERNS = [r"\bscorer\b", r"\badapter\b", r"\bmeta_agent\b", r"\bbenchmark\b"]
+
+RUN_PYTHON_PRELUDE = r'''
+import sys, json, types
+_ws, _data, _codefile = sys.argv[1], sys.argv[2], sys.argv[3]
+sys.path[:0] = [_ws]
+_d = json.load(open(_data, encoding="utf-8"))
+_cases = _d["cases"]
+_m = types.ModuleType("train_data")
+_m.CASES = _cases
+def _by_id(cid):
+    for c in _cases:
+        if str(c["case_id"]) == str(cid):
+            return c
+    return None
+_m.by_id = _by_id
+def _failing(label=None):
+    return [c for c in _cases if not c["passed"]
+            and (label is None or label in json.dumps(c.get("details", {}), default=str))]
+_m.failing = _failing
+sys.modules["train_data"] = _m
+_code = open(_codefile, encoding="utf-8").read()
+exec(compile(_code, "<run_python>", "exec"), {"__name__": "__main__"})
+'''
+
+
+def _run_python_problems(code: str, ws_modules: set) -> list[str]:
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        return [f"SyntaxError: {e}"]
+    allowed = RUN_PYTHON_ALLOWED_IMPORTS | ws_modules | {"train_data"}
+    probs: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                if a.name.split(".")[0] not in allowed:
+                    probs.append(
+                        f"import {a.name!r} not allowed (allowed: stdlib "
+                        "data modules, train_data, your workspace modules)"
+                    )
+        elif isinstance(node, ast.ImportFrom):
+            if node.level or (node.module or "").split(".")[0] not in allowed:
+                probs.append(f"from {node.module!r} import ... not allowed")
+        elif isinstance(node, ast.Name) and node.id in RUN_PYTHON_BLOCKED_NAMES:
+            probs.append(f"name {node.id!r} not allowed")
+        elif isinstance(node, ast.Attribute) and (
+            node.attr.startswith("__") or node.attr in RUN_PYTHON_BLOCKED_ATTRS
+        ):
+            probs.append(f"attribute {node.attr!r} not allowed")
+    for pat in RUN_PYTHON_LEAK_PATTERNS:
+        m = re.search(pat, code, re.IGNORECASE)
+        if m:
+            probs.append(f"forbidden token {m.group(0)!r}")
+    return sorted(set(probs))[:6]
+
+
+def _run_python_preexec() -> None:
+    # POSIX-only resource caps, same convention as
+    # evaluator.py::Evaluator._preexec.
+    try:
+        import resource
+
+        resource.setrlimit(resource.RLIMIT_AS, (1 << 30, 1 << 30))  # 1GB
+        resource.setrlimit(resource.RLIMIT_CPU, (30, 30))
+    except Exception:
+        pass
+
+
+AGENTIC_RUN_PYTHON_TOOL: dict[str, Any] = {
+    "name": "run_python",
+    "description": (
+        "Run your OWN Python code offline (no LLM, no network) and see its "
+        "stdout/stderr. `import train_data` gives CASES (this node's own "
+        "evaluated cases: case_id, passed, score, error, details -- the "
+        "same per-case data list_cases/show_case expose), by_id(cid), and "
+        "failing(label_substring). You may also import your own workspace "
+        "modules (e.g. `from agents.flight import ...`) and stdlib data "
+        "modules (re, json, math, itertools, collections, statistics, "
+        "...). No file/env/network access, and no importing this "
+        "framework's own scorer/adapter/meta_agent internals. Use it to "
+        "test logic against real evaluated cases before committing to a "
+        "file edit."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "code": {"type": "string"},
+            "timeout_s": {"type": "integer"},
+        },
+        "required": ["code"],
+    },
+}
+
+# Opt-in (only offered when the editor was constructed with an `evaluator`
+# -- see AgentEditor.__init__ and config.py's editor_injections, which only
+# sets this when AgentEditor is the one declaring the param, matching the
+# "only inject params the constructor actually declares" convention used
+# for validators' evaluator/benchmark_dir injection). Mirrors
+# experiment_harness_redesign.py's own evaluate_variant: runs the CURRENT
+# workspace through the real evaluator, full TRAIN set by default (the real
+# accept/reject-quality signal) or a cheaper case_ids subset. Rate-limited
+# per EXPAND (see `evaluate_variant_max_calls`) since each call is a real
+# subprocess run of every case through the task agent -- genuine wall-clock
+# and API cost, independent of whatever evaluation the calling HGM manager
+# does of its own accord after this EXPAND returns.
+AGENTIC_EVALUATE_VARIANT_TOOL: dict[str, Any] = {
+    "name": "evaluate_variant",
+    "description": (
+        "Run your CURRENT workspace (everything written so far via "
+        "write_file/str_replace_file) through the REAL evaluator and get "
+        "back each case's score and pass/fail. Without case_ids: "
+        "evaluates the FULL TRAIN set (the real signal, but a genuine run "
+        "of the task agent on every case -- not instant). Pass case_ids "
+        "(specific TRAIN case ids) to evaluate just that subset instead -- "
+        "cheaper, useful while iterating on one failure mode. Calls are "
+        "limited per EXPAND -- form a hypothesis with read_file/grep/"
+        "run_python/list_cases/show_case first, then confirm it here."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "case_ids": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "optional: specific TRAIN case ids to evaluate instead "
+                    "of the full set"
+                ),
+            },
+        },
+    },
+}
+
 _AGENTIC_TOOLS: list[dict[str, Any]] = [
     AGENTIC_READ_FILE_TOOL,
     AGENTIC_WRITE_FILE_TOOL,
+    AGENTIC_STR_REPLACE_FILE_TOOL,
+    AGENTIC_GREP_TOOL,
     AGENTIC_RUN_VALIDATORS_TOOL,
+    AGENTIC_RUN_PYTHON_TOOL,
+    LIST_CASES_TOOL,
+    SHOW_CASE_TOOL,
     AGENTIC_SUBMIT_SUMMARY_TOOL,
 ]
 
@@ -246,6 +462,21 @@ class AgentEditor:
         # generous relative to what real trials needed (typically 3-6 turns
         # even for a genuine 4-file fix, confirmed live this session).
         agentic_max_turns: int = 20,
+        # Backs the opt-in evaluate_variant agentic tool. All three are
+        # injected by config.py's editor_injections (evaluator/benchmark_dir
+        # already exist there for validators; train_case_ids is the same
+        # split the manager's own EVALUATE step and the gatherer use).
+        # evaluator=None (default -- unchanged for every config that
+        # doesn't wire it, including every non-agentic one) disables the
+        # tool entirely: it's never added to the agentic tool list.
+        evaluator: Optional[Any] = None,
+        benchmark_dir: Optional[Path] = None,
+        train_case_ids: Optional[list[str]] = None,
+        # Hard cap on evaluate_variant calls PER EXPAND, independent of
+        # agentic_max_turns -- each call is a real subprocess run of every
+        # requested case through the task agent (genuine wall-clock + API
+        # cost), so the turn budget alone is not a cost control.
+        evaluate_variant_max_calls: int = 3,
     ) -> None:
         self.llm = llm_caller
         self.validators = list(validators)
@@ -260,6 +491,10 @@ class AgentEditor:
         self.max_output_tokens = max_output_tokens
         self.agentic_editing = agentic_editing
         self.agentic_max_turns = agentic_max_turns
+        self.evaluator = evaluator
+        self.benchmark_dir = benchmark_dir
+        self.train_case_ids = train_case_ids
+        self.evaluate_variant_max_calls = evaluate_variant_max_calls
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -893,23 +1128,127 @@ class AgentEditor:
             "\n"
         )
 
-    _AGENTIC_CLOSING = (
-        "\nYou have these tools: `read_file` to inspect any of the files "
-        "listed below before editing it; `write_file` to submit ONE file's "
-        "FULL new content (call once per changed file — never bundle "
-        "multiple files' content into one call); `run_code_validators` to "
-        "check your changes so far (syntax, imports, signatures, etc.); "
-        "and `submit_self_improvement_summary` to finish.\n\n"
-        "Work in this order: call `read_file` on each file you plan to "
-        "change (you don't need to read files you won't touch). Then call "
-        "`write_file` once per changed file with that file's complete new "
-        "content — not a diff. After writing your changes, call "
-        "`run_code_validators`; if it reports problems, fix them with "
-        "another `write_file` call to the relevant file(s) and check again. "
-        "When everything is written and validators pass, call "
-        "`submit_self_improvement_summary` with a one-line optimization_goal, "
-        "a proposed_changes summary, and a rationale to finish."
-    )
+    def _agentic_closing(self) -> str:
+        evaluate_variant_note = (
+            " `evaluate_variant` to run your current workspace through the "
+            "REAL evaluator and see each case's actual score/pass-fail -- "
+            f"limited to {self.evaluate_variant_max_calls} calls, so use it "
+            "to CONFIRM a hypothesis you've already formed with the "
+            "read-only/offline tools, not to explore blindly. You can pass "
+            "case_ids (a small handful -- e.g. the specific failing cases "
+            "your fix targets) for a fast, cheap check, or omit case_ids "
+            "for the full TRAIN set when you want the real overall signal;"
+            if self.evaluator is not None else ""
+        )
+        evaluate_variant_step = (
+            " Use `evaluate_variant` to test your code if needed -- once "
+            "you've made a change you're not fully certain about, call it "
+            "with case_ids set to a small handful of relevant TRAIN cases "
+            "(fast, cheap) to confirm the fix actually works before "
+            "spending a full-set call or finishing. Not required for a "
+            "trivial or purely cosmetic change. Expect some run-to-run "
+            "variance in the score even with no code change (the task "
+            "agent's own LLM calls are stochastic) -- don't read a small "
+            "difference between two evaluate_variant calls as proof your "
+            "edit helped or hurt; weigh it against the per-case pass/fail "
+            "pattern, not the aggregate score alone. If you want more "
+            "confidence on a borderline result, you can call "
+            "evaluate_variant again on the same case_ids and compare -- "
+            "within your remaining call budget, repeating a run is a "
+            "legitimate way to tell signal from noise."
+            if self.evaluator is not None else ""
+        )
+        return (
+            "\nYou have these tools: `read_file` to inspect any of the files "
+            "listed below before editing it; `grep` to search one file for a "
+            "regex pattern without reading it whole; `write_file` to submit "
+            "ONE file's FULL new content (call once per changed file — never "
+            "bundle multiple files' content into one call); `str_replace_file` "
+            "for a small, targeted edit instead (replace one exact-match "
+            "snippet in a file you can already write to); `list_cases` and "
+            "`show_case` to inspect this node's own evaluated cases (pass/fail, "
+            "score, and — per case — the full details the project's scorer "
+            "attached, e.g. the raw plan and failed checks); `run_python` to "
+            "run your own offline Python against those same cases (no LLM, no "
+            "network) to test a hypothesis or a snippet of logic before "
+            "committing to a file edit;" + evaluate_variant_note + " "
+            "`run_code_validators` to check your "
+            "changes so far (syntax, imports, signatures, etc.); and "
+            "`submit_self_improvement_summary` to finish.\n\n"
+            "Work in this order: call `read_file` on each file you plan to "
+            "change (you don't need to read files you won't touch) — use "
+            "`grep`/`list_cases`/`show_case`/`run_python` as needed to ground "
+            "your diagnosis in real evidence first. Then call `write_file` "
+            "(or `str_replace_file` for a small change) once per changed file. "
+            "After writing your changes, call `run_code_validators`; if it "
+            "reports problems, fix them with another `write_file`/"
+            "`str_replace_file` call to the relevant file(s) and check again."
+            + evaluate_variant_step +
+            " When everything is written and validators pass, call "
+            "`submit_self_improvement_summary` with a one-line optimization_goal, "
+            "a proposed_changes summary, and a rationale to finish."
+        )
+
+    def _run_python(
+        self,
+        agent_dir: Path,
+        out_dir: Path,
+        feedback: Optional[AgentFeedback],
+        code: str,
+        timeout_s: Optional[int],
+    ) -> str:
+        """Backing implementation for the ``run_python`` agentic tool. Runs
+        ``code`` in a subprocess with ``train_data`` (built from
+        ``feedback.eval_result.per_case``) injected via ``RUN_PYTHON_PRELUDE``,
+        ``agent_dir`` on ``sys.path`` so the model's own workspace modules
+        are importable, and no network/file access beyond that (the AST
+        checks in ``_run_python_problems`` already ran before this is
+        called). Scratch files live under ``out_dir/_run_python_scratch``,
+        a sibling of ``task_agent/`` -- outside every path ``_is_path_allowed``
+        would ever show or allow writing to, so it can never collide with a
+        real edit."""
+        scratch = out_dir / "_run_python_scratch"
+        scratch.mkdir(exist_ok=True)
+        cases = []
+        if feedback is not None:
+            for c in feedback.eval_result.per_case:
+                cases.append({
+                    "case_id": c.case_id,
+                    "passed": c.passed,
+                    "score": c.score,
+                    "error": c.error,
+                    "details": c.details,
+                })
+        data_path = scratch / "cases.json"
+        data_path.write_text(json.dumps({"cases": cases}, default=str), encoding="utf-8")
+        prelude_path = scratch / "prelude.py"
+        prelude_path.write_text(RUN_PYTHON_PRELUDE, encoding="utf-8")
+        codefile = scratch / f"user_{uuid.uuid4().hex}.py"
+        codefile.write_text(code, encoding="utf-8")
+        try:
+            timeout = max(5, min(int(timeout_s or 60), 120))
+        except (TypeError, ValueError):
+            timeout = 60
+        env = {
+            "PATH": os.environ.get("PATH", ""),
+            # Offline: any accidental LLM call fails fast rather than hanging
+            # or reaching a real endpoint.
+            "LLM_BASE_URL": "http://127.0.0.1:9/v1",
+            "OPENAI_API_KEY": "EMPTY",
+        }
+        try:
+            r = subprocess.run(
+                [sys.executable, "-B", str(prelude_path), str(agent_dir), str(data_path), str(codefile)],
+                cwd=scratch, env=env, capture_output=True, text=True, timeout=timeout,
+                preexec_fn=_run_python_preexec if os.name == "posix" else None,
+            )
+        except subprocess.TimeoutExpired:
+            return f"run_python TIMED OUT after {timeout}s"
+        out = r.stdout[-9000:] if len(r.stdout) > 9000 else r.stdout
+        err = r.stderr[-2500:]
+        return f"exit code {r.returncode}\n--- stdout ---\n{out}" + (
+            f"\n--- stderr ---\n{err}" if err.strip() else ""
+        )
 
     def _self_improve_agentic(
         self,
@@ -934,7 +1273,7 @@ class AgentEditor:
         agent_dir = out_dir / "task_agent"
         available_paths = sorted(self._read_mutable_sources(agent_dir).keys())
 
-        system = self._diagnosis_rules() + self._AGENTIC_CLOSING + self._skills_section()
+        system = self._diagnosis_rules() + self._agentic_closing() + self._skills_section()
 
         user_parts: list[str] = []
         if context:
@@ -973,11 +1312,16 @@ class AgentEditor:
             )
 
         written: dict[str, str] = {}
+        evaluate_variant_calls = 0
+        agentic_tools = (
+            [*_AGENTIC_TOOLS, AGENTIC_EVALUATE_VARIANT_TOOL]
+            if self.evaluator is not None else _AGENTIC_TOOLS
+        )
 
         for turn in range(self.agentic_max_turns):
             llm_kwargs: dict[str, Any] = {
                 "messages": history,
-                "tools": _AGENTIC_TOOLS,
+                "tools": agentic_tools,
             }
             if self.model:
                 llm_kwargs["model"] = self.model
@@ -1115,6 +1459,46 @@ class AgentEditor:
                                 output = fpath.read_text(encoding="utf-8")
                             else:
                                 output = f"(file not found: {path})"
+                    elif call.name == "grep":
+                        path = (args.get("path") or "").lstrip("/")
+                        if not self._is_path_allowed(path):
+                            output = (
+                                f"ERROR: {path!r} is not readable/editable "
+                                "here -- see the '## Files you may "
+                                "read/edit' list above for what's available."
+                            )
+                        else:
+                            fpath = agent_dir / path
+                            if not fpath.exists() or not fpath.is_file():
+                                output = f"(file not found: {path})"
+                            else:
+                                pattern = args.get("pattern") or ""
+                                try:
+                                    rx = re.compile(pattern, re.IGNORECASE)
+                                except re.error as exc:
+                                    output = f"ERROR: invalid regex {pattern!r}: {exc!r}"
+                                else:
+                                    try:
+                                        max_matches = int(args.get("max_matches") or 12)
+                                    except (TypeError, ValueError):
+                                        max_matches = 12
+                                    matches: list[str] = []
+                                    text = fpath.read_text(encoding="utf-8", errors="replace")
+                                    for i, line in enumerate(text.splitlines()):
+                                        m = rx.search(line)
+                                        if not m:
+                                            continue
+                                        start = max(0, m.start() - 150)
+                                        end = min(len(line), m.end() + 350)
+                                        prefix = "..." if start > 0 else ""
+                                        suffix = "..." if end < len(line) else ""
+                                        matches.append(
+                                            f"L{i} (char {m.start()}): "
+                                            f"{prefix}{line[start:end].strip()}{suffix}"
+                                        )
+                                        if len(matches) >= max_matches:
+                                            break
+                                    output = "\n".join(matches) if matches else "(no matches)"
                     elif call.name == "write_file":
                         path = (args.get("path") or "").lstrip("/")
                         content = args.get("content")
@@ -1142,6 +1526,157 @@ class AgentEditor:
                                 target.write_text(content, encoding="utf-8")
                                 written[path] = content
                                 output = f"written {path} ({len(content)} chars)"
+                    elif call.name == "str_replace_file":
+                        path = (args.get("path") or "").lstrip("/")
+                        old_str = args.get("old_str")
+                        new_str = args.get("new_str")
+                        if not path or old_str is None or new_str is None:
+                            output = (
+                                "ERROR: str_replace_file requires `path`, "
+                                "`old_str`, and `new_str`."
+                            )
+                        elif not self._is_path_allowed(path):
+                            output = (
+                                f"ERROR: forbidden edit path {path!r} -- allowed "
+                                f"paths are: {', '.join(available_paths) or '(none)'}"
+                            )
+                        elif not self._in_scope(path):
+                            output = self._scope_refusal(path)
+                        else:
+                            target = agent_dir / path
+                            if path in written:
+                                current_content: Optional[str] = written[path]
+                            elif target.exists() and target.is_file():
+                                current_content = target.read_text(encoding="utf-8")
+                            else:
+                                current_content = None
+                            if current_content is None:
+                                output = (
+                                    f"ERROR: {path!r} does not exist yet -- "
+                                    "use write_file to create it first."
+                                )
+                            else:
+                                count = current_content.count(old_str)
+                                if count != 1:
+                                    output = (
+                                        f"ERROR: old_str occurs {count} time(s) "
+                                        f"in {path!r} -- must occur exactly "
+                                        "once. Provide more surrounding "
+                                        "context to make it unique, or use "
+                                        "write_file for a full rewrite."
+                                    )
+                                else:
+                                    new_content = current_content.replace(old_str, new_str)
+                                    target.parent.mkdir(parents=True, exist_ok=True)
+                                    target.write_text(new_content, encoding="utf-8")
+                                    written[path] = new_content
+                                    output = (
+                                        f"replaced 1 occurrence in {path} "
+                                        f"({len(new_content)} chars)"
+                                    )
+                    elif call.name == "list_cases":
+                        if feedback is None:
+                            output = "(no evaluated cases available for this node)"
+                        else:
+                            output = render_list_cases(
+                                feedback.eval_result.per_case,
+                                failed_check=args.get("failed_check"),
+                                limit=args.get("limit"),
+                            )
+                    elif call.name == "show_case":
+                        if feedback is None:
+                            output = "(no evaluated cases available for this node)"
+                        else:
+                            output = render_show_case(
+                                feedback.eval_result.per_case, args.get("case_id") or ""
+                            )
+                    elif call.name == "run_python":
+                        code = args.get("code")
+                        if not code:
+                            output = "ERROR: run_python requires `code`."
+                        else:
+                            ws_modules: set = set()
+                            for p in available_paths:
+                                parts = Path(p).parts
+                                first = parts[0]
+                                ws_modules.add(
+                                    first[:-3] if len(parts) == 1 and first.endswith(".py")
+                                    else first
+                                )
+                            probs = _run_python_problems(code, ws_modules)
+                            if probs:
+                                output = (
+                                    "run_python REJECTED (nothing executed): "
+                                    + "; ".join(probs)
+                                )
+                            else:
+                                output = self._run_python(
+                                    agent_dir, out_dir, feedback, code, args.get("timeout_s")
+                                )
+                    elif call.name == "evaluate_variant":
+                        if self.evaluator is None:
+                            output = "ERROR: evaluate_variant is not available in this run."
+                        elif evaluate_variant_calls >= self.evaluate_variant_max_calls:
+                            output = (
+                                "ERROR: evaluate_variant call limit reached "
+                                f"({self.evaluate_variant_max_calls} per EXPAND) -- "
+                                "no more evaluation calls left; finish with what "
+                                "you've already confirmed."
+                            )
+                        else:
+                            raw_ids = args.get("case_ids")
+                            if raw_ids is not None and not isinstance(raw_ids, list):
+                                output = (
+                                    "ERROR: case_ids must be a list of strings, "
+                                    "or omit it entirely to evaluate the full "
+                                    "TRAIN set."
+                                )
+                            else:
+                                train_set = {str(c) for c in (self.train_case_ids or [])}
+                                if raw_ids:
+                                    requested = [str(c).strip() for c in raw_ids if str(c).strip()]
+                                    bad = [c for c in requested if c not in train_set]
+                                    ids: Optional[list[str]] = None
+                                    if bad:
+                                        output = (
+                                            "ERROR: case_ids not in the TRAIN "
+                                            f"split: {bad[:10]}"
+                                        )
+                                    else:
+                                        ids = requested
+                                else:
+                                    ids = list(self.train_case_ids or [])
+                                if ids is not None:
+                                    evaluate_variant_calls += 1
+                                    try:
+                                        result = self.evaluator.run(
+                                            out_dir, self.benchmark_dir, case_ids=ids
+                                        )
+                                    except Exception as exc:  # noqa: BLE001 -- an
+                                        # infrastructure failure (not a real
+                                        # quality signal) must not cost the
+                                        # editor one of its limited calls.
+                                        evaluate_variant_calls -= 1
+                                        output = (
+                                            f"evaluate_variant FAILED for an "
+                                            f"infrastructure reason ({exc!r}); "
+                                            "your call was NOT counted. Try again."
+                                        )
+                                    else:
+                                        header = (
+                                            f"score={result.score:.4f} "
+                                            f"passed={result.passed} "
+                                            f"failed={result.failed} "
+                                            f"crashed={result.crashed} "
+                                            f"(n={len(result.per_case)}, "
+                                            f"{evaluate_variant_calls}/"
+                                            f"{self.evaluate_variant_max_calls} "
+                                            "calls used)"
+                                        )
+                                        output = header + "\n" + render_list_cases(
+                                            result.per_case,
+                                            limit=len(result.per_case) or 1,
+                                        )
                     elif call.name == "run_code_validators":
                         errors = self._run_validators(out_dir, base_dir)
                         output = (
@@ -1168,6 +1703,13 @@ class AgentEditor:
                     output = (
                         f"ERROR: {call.name} raised {exc!r} on this call -- "
                         "try different arguments."
+                    )
+
+                if verbose_log.is_enabled():
+                    verbose_log.write_json(
+                        out_dir,
+                        f"editor_attempt_{attempt}_turn_{turn}_call_{idx}_{call.name}.json",
+                        {"arguments": args, "output": output},
                     )
 
                 history.append({
