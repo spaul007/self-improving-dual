@@ -1,13 +1,14 @@
 """Phase-3 live check: run real DeepSWE case(s) through the REAL evaluator + scorer path.
 
     python live_case.py --config <yaml> <case_id>[,<case_id>...] [--pier-wall S]
-                        [--eval-wall S] [--parallelism N]
+                        [--eval-wall S] [--parallelism N] [--agent-dir DIR] [--tag NAME]
 
 Assembles the framework from the config exactly as main_loop does (env exports included),
 copies the unedited seed into a fresh round dir, calls ``evaluator.run`` on the cases, and
 prints binary checks per case: envelope parsed / reward equals the trial's result.json /
 whitelisted artifacts present / no hidden grader output under the round dir / infra cases
-flagged. ``--pier-wall`` shrinks the inner watchdog (forced-kill test); ``--eval-wall``
+flagged. ``--agent-dir`` evaluates an evolved node's ``task_agent`` instead of the seed
+(held-out evaluation); ``eval_result.json`` is written next to it. ``--pier-wall`` shrinks the inner watchdog (forced-kill test); ``--eval-wall``
 shrinks the evaluator's per-case timeout (orphan test -> the sbatch trap must reap).
 """
 from __future__ import annotations
@@ -36,6 +37,8 @@ def main() -> int:
     ap.add_argument("--pier-wall", type=float)
     ap.add_argument("--eval-wall", type=float)
     ap.add_argument("--parallelism", type=int)
+    ap.add_argument("--agent-dir", type=Path)
+    ap.add_argument("--tag", default="live")
     a = ap.parse_args()
 
     cfg = cfg_mod.load(a.config)
@@ -50,14 +53,16 @@ def main() -> int:
         ev.parallelism = a.parallelism
 
     stamp = time.strftime("%Y%m%d_%H%M%S")
-    round_dir = Path(fw.runs_root) / f"live_{stamp}_{os.environ.get('SLURM_JOB_ID', 'local')}" / "round_000"
-    shutil.copytree(fw.seed_dir, round_dir / "task_agent", ignore=shutil.ignore_patterns("__pycache__"))
+    round_dir = Path(fw.runs_root) / f"{a.tag}_{stamp}_{os.environ.get('SLURM_JOB_ID', 'local')}" / "round_000"
+    src = a.agent_dir.resolve() if a.agent_dir else Path(fw.seed_dir)
+    shutil.copytree(src, round_dir / "task_agent", ignore=shutil.ignore_patterns("__pycache__"))
     ids = [c for c in a.cases.split(",") if c]
-    print(f"live: round_dir={round_dir} cases={ids} pier_wall={os.environ.get('SID_PIER_WALL_S')} "
+    print(f"live: agent={src} round_dir={round_dir} cases={ids} pier_wall={os.environ.get('SID_PIER_WALL_S')} "
           f"eval_wall={ev.wall_time_s} parallelism={ev.parallelism}", flush=True)
     t0 = time.time()
     result = ev.run(round_dir, fw.benchmark_dir, case_ids=ids)
     print(f"live: evaluator.run returned in {time.time() - t0:.0f}s", flush=True)
+    (round_dir / "eval_result.json").write_text(result.model_dump_json())
 
     fails = 0
     hidden = [str(p) for p in round_dir.rglob("*") if p.name in HIDDEN_MARKERS or "/verifier/" in str(p)]
