@@ -317,11 +317,19 @@ def _load_project_components(project_name: str) -> None:
             mod = importlib.util.module_from_spec(spec)
             try:
                 spec.loader.exec_module(mod)
-            except Exception:
-                # The evaluator will surface a real error later; here we
-                # just want side-effect-free best-effort import for the
-                # @register decorators.
-                pass
+            except Exception as exc:  # noqa: BLE001
+                # Still best effort (the module-level score() fallback may
+                # cover it), but never silent: a swallowed import error here
+                # silently replaces the project's registered scorer -- e.g. two
+                # projects each shipping a top-level ``adapter`` package, where
+                # the first one imported shadows the second in one process.
+                print(
+                    f"[config] WARNING: importing {scorer_path} failed "
+                    f"({type(exc).__name__}: {exc}); its @register'd components "
+                    "are unavailable -- check for a shadowed top-level package "
+                    "(e.g. 'adapter') or a broken import",
+                    flush=True,
+                )
 
 
 def load(path: Path) -> FrameworkConfig:
