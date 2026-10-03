@@ -9,6 +9,7 @@ unedited seed as the base round, exactly as the editor sees it) and checks the v
 from __future__ import annotations
 
 import inspect
+import os
 import shutil
 import sys
 import tempfile
@@ -76,7 +77,7 @@ def main() -> int:
         with tempfile.TemporaryDirectory(prefix="sid_mut_") as d:
             base, out = Path(d) / "base", Path(d) / "out"
             for r in (base, out):
-                shutil.copytree(PROJECT / "seed", r / "task_agent",
+                shutil.copytree(PROJECT / os.environ.get("SID_MUTATION_SEED", "seed"), r / "task_agent",
                                 ignore=shutil.ignore_patterns("__pycache__"))
             mutate(out / "task_agent")
             t0 = time.time()
