@@ -80,6 +80,11 @@ class RunPaused(Exception):
     dir is left consistent (every node's hgm_node.json/feedback.json current) so
     ``main_loop.py --resume <run_dir>`` can continue it."""
 
+# Blocks a "harness_heavy" EXPAND may not target: swapping the LLM backbone is not a
+# harness fix, and the skills block can only write the skill library (prompt-side
+# procedures), not deterministic code.
+_HARNESS_HEAVY_BLOCK_EXCLUDE = frozenset({"llm_backbone_selection", "skills"})
+
 # Rough char<->token proxy for the lineage-memory budget (avoids a hard
 # tiktoken dependency in the eval path; the budget is approximate by design).
 _CHARS_PER_TOKEN = 4
@@ -443,6 +448,22 @@ class HGMManager:
         self.implementation_strategy_reward_metric = implementation_strategy_reward_metric
         self.implementation_strategy_initial_ranking = implementation_strategy_initial_ranking
         self.implementation_strategy_initial_rank_strength = implementation_strategy_initial_rank_strength
+        # Fail fast on a block pool that some EXPAND could find empty (an empty pool
+        # used to surface mid-run as IndexError/ValueError from rng.choice / max).
+        if block_selection_strategy in ("non_adaptive", "adaptive"):
+            from ..block_suggester import default_blocks
+
+            pool = set(active_blocks) if active_blocks is not None else set(default_blocks())
+            if not pool:
+                raise ValueError("active_blocks is empty -- no block could ever be selected")
+            if implementation_strategy_selection_strategy in (
+                "harness_heavy", "non_adaptive", "adaptive"
+            ) and not (pool - _HARNESS_HEAVY_BLOCK_EXCLUDE):
+                raise ValueError(
+                    f"active_blocks {sorted(pool)} leaves no block for a harness_heavy EXPAND "
+                    f"(it excludes {sorted(_HARNESS_HEAVY_BLOCK_EXCLUDE)}) -- add another block "
+                    "or drop harness_heavy from the implementation-strategy axis"
+                )
         if not (0.0 <= curriculum_resolution_threshold <= 1.0):
             raise ValueError(
                 "curriculum_resolution_threshold must be in [0.0, 1.0], got "
@@ -913,8 +934,14 @@ class HGMManager:
                     dataclasses.asdict(self._last_implementation_strategy_selection), indent=2
                 )
             )
-        block_exclude = {"llm_backbone_selection"} if impl_strategy == "harness_heavy" else None
+        block_exclude = set(_HARNESS_HEAVY_BLOCK_EXCLUDE) if impl_strategy == "harness_heavy" else None
         block = self._select_block(parent, exclude=block_exclude)
+        if block == "skills" and impl_strategy is not None:
+            # The skills block may only write the skill library: an implementation
+            # strategy ("fix it in code" vs "in prompts") does not apply to it, and
+            # crediting/blaming that strategy for a skill-library edit would corrupt
+            # the implementation-strategy bandit. Recorded as None for this node.
+            impl_strategy = None
         self._current_action = f"expanding node {parent_id} -> node {node_id} (block {block})"
         self._write_loop_state()
         if self._last_block_selection is not None:

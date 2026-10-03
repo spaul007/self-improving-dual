@@ -120,6 +120,12 @@ class SplitSpec(BaseModel):
     eval_equals_train: bool = False
 
 
+class BlockToggle(BaseModel):
+    """One entry of the ``blocks:`` section: ``{enabled: false}`` removes that block
+    from the evolution's candidate set (see :func:`apply_blocks_to_manager_config`)."""
+    enabled: bool = True
+
+
 class SkillsSpec(BaseModel):
     """Opt-in evolvable skill library for the task agent (off by default).
 
@@ -205,6 +211,10 @@ class FrameworkConfig(BaseModel):
     task_agent: TaskAgentSpec = Field(default_factory=TaskAgentSpec)
     # Evolvable skill library (see SkillsSpec). Default: disabled.
     skills: SkillsSpec = Field(default_factory=SkillsSpec)
+    # Per-block on/off switches, e.g. ``blocks: {llm_backbone_selection: {enabled:
+    # false}, foundation_capability: {enabled: false}}``. Empty (default) = today's
+    # block set. ``skills`` here must agree with ``skills.enabled``.
+    blocks: dict[str, BlockToggle] = Field(default_factory=dict)
     env: dict[str, str] = Field(default_factory=dict)
     split: Optional[SplitSpec] = None
 
@@ -468,7 +478,12 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         )
 
     skills = resolve_skills(cfg)
-    manager_config = apply_skills_to_manager_config(dict(cfg.manager.config), skills)
+    manager_config = apply_blocks_to_manager_config(
+        dict(cfg.manager.config), cfg.blocks, skills_enabled=skills is not None
+    )
+    manager_config = apply_skills_to_manager_config(manager_config, skills)
+    if cfg.blocks or skills is not None:
+        print(f"[config] evolution blocks: {manager_config.get('active_blocks')}", flush=True)
     manager_cls = registry.get("manager", cfg.manager.type)
     if skills is not None and "active_blocks" not in inspect.signature(manager_cls).parameters:
         raise ValueError(
@@ -618,6 +633,52 @@ def apply_skills_to_manager_config(
     scopes.setdefault("skills", [skills.dir])
     manager_config["active_blocks"] = active
     manager_config["block_edit_scopes"] = scopes
+    ranking = manager_config.get("block_initial_ranking")
+    if ranking is not None and "skills" not in ranking:
+        raise ValueError(
+            "skills.enabled adds the 'skills' block, so manager.config.block_initial_ranking must "
+            f"also list it (it must be a permutation of {sorted(active)}); got {list(ranking)}"
+        )
+    strategy = manager_config.get("block_selection_strategy", "collaboration")
+    if strategy not in ("adaptive", "non_adaptive"):
+        print(
+            f"[config] WARNING: skills.enabled but block_selection_strategy={strategy!r} always "
+            "picks one fixed block -- the 'skills' block can never be selected; use "
+            "'adaptive' or 'non_adaptive'",
+            flush=True,
+        )
+    return manager_config
+
+
+def apply_blocks_to_manager_config(
+    manager_config: dict[str, Any], blocks: dict[str, "BlockToggle"], *, skills_enabled: bool
+) -> dict[str, Any]:
+    """Resolve the ``blocks:`` on/off section into ``active_blocks``.
+
+    Unknown block names, a disabled block also named in ``active_blocks``, or a
+    ``skills`` entry that disagrees with ``skills.enabled`` are errors. With no
+    explicit ``active_blocks`` the result is the default block set minus the
+    disabled ones (``skills`` itself is added later by the skills gate)."""
+    if not blocks:
+        return manager_config
+    from .block_suggester import _BLOCK_BODIES, default_blocks
+
+    unknown = sorted(set(blocks) - set(_BLOCK_BODIES))
+    if unknown:
+        raise ValueError(f"blocks: unknown block name(s) {unknown} -- valid: {sorted(_BLOCK_BODIES)}")
+    if "skills" in blocks and blocks["skills"].enabled != skills_enabled:
+        raise ValueError(
+            f"blocks.skills.enabled={blocks['skills'].enabled} disagrees with "
+            f"skills.enabled={skills_enabled} -- set them the same (or drop blocks.skills)"
+        )
+    disabled = {b for b, t in blocks.items() if not t.enabled and b != "skills"}
+    active = manager_config.get("active_blocks")
+    if active is not None:
+        clash = sorted(disabled & set(active))
+        if clash:
+            raise ValueError(f"block(s) {clash} are disabled in `blocks:` but listed in active_blocks")
+        return manager_config
+    manager_config["active_blocks"] = [b for b in default_blocks() if b not in disabled]
     return manager_config
 
 
