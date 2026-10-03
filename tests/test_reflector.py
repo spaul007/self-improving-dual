@@ -123,7 +123,9 @@ class ReflectorUnitTests(unittest.TestCase):
         r = self._make(grading_detail="none")
         st = r.reflect(self.tmp, _batch())
         self.assertEqual(st["calls"], 4)  # unsure x3 + essential x1
-        self.assertEqual(r.scorer.outcome_calls, [])
+        # Still asked for redact terms (numeric detail), but no grading text in any question.
+        self.assertEqual(set(r.scorer.outcome_calls), {"numeric"})
+        self.assertFalse(any(SECRET_TEST in m[-1]["content"] for m in self.seen))
 
     def test_lessons_only_redacts_and_hides_raw(self) -> None:
         from meta_agent.reflector import render_reflections
@@ -214,6 +216,35 @@ class ReflectorUnitTests(unittest.TestCase):
         r = Reflector(task_agent=ta)
         self.assertEqual((r.model, r.base_url, r.reasoning_effort), ("m-x", "http://h:1/v1", "medium"))
 
+
+    def test_parse_json_shaped_answers(self) -> None:
+        from meta_agent.reflector import parse_reflection
+
+        ess = '\n\n{"status": "ok", "essential": ["a"], "close_calls": ["b"],\n "keep_rules": ["Always re-read the cart", "Never guess ids"]}'
+        self.assertEqual(parse_reflection("essential", ess)["keep"], "Always re-read the cart Never guess ids")
+        post = '{"where": "x", "why": "y", "what_would_have_caught_it": "a diff check", "general_lesson": ["L1", "L2"]}'
+        p = parse_reflection("post_grading", post)
+        self.assertEqual((p["lesson"], p["catch"]), ("L1 L2", "a diff check"))
+        uns = '{"unsure_parts": [{"item": "budget edge", "confidence": 40}], "overall_confidence": 60}'
+        u = parse_reflection("unsure", uns)
+        self.assertEqual((u["items"], u["overall_confidence"]), ([{"confidence": 40, "item": "item: budget edge"}], 60))
+
+    def test_heading_must_start_a_line(self) -> None:
+        from meta_agent.reflector import parse_reflection
+
+        text = "1. ESSENTIAL: we keep the tests green\n2. CLOSE CALLS: none\n3. KEEP: run the suite last"
+        self.assertEqual(parse_reflection("essential", text)["keep"], "run the suite last")
+
+    def test_solved_case_answers_are_redacted_too(self) -> None:
+        from meta_agent.reflector import Reflector, render_reflections
+
+        def chat(msgs, max_tokens, **kw):
+            return {"content": f"1. ESSENTIAL: x\n2. CLOSE CALLS: y\n3. KEEP: always run {SECRET_TEST}",
+                    "finish_reason": "stop"}
+
+        Reflector(scorer=_FakeScorer(), chat_caller=chat, modes=["essential"]).reflect(self.tmp, _batch())
+        text = render_reflections(self.tmp, "lessons_only")
+        self.assertIn("always run [redacted]", text)
 
 class ReflectorConfigTests(unittest.TestCase):
     def test_registered_and_off_by_default(self) -> None:

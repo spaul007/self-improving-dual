@@ -111,31 +111,104 @@ def clean_messages(msgs: list[dict]) -> list[dict]:
     return out
 
 
-def _section(text: str, heading_regex: str, next_regex: str = r"\n\s*(?:\*\*)?\d\.\s") -> str:
-    m = re.search(heading_regex, text or "", re.I)
+def _section(text: str, heading: str) -> str:
+    """Body of a numbered/bold heading that STARTS a line (so a word inside prose or a
+    JSON key never matches), up to the next numbered heading."""
+    m = re.search(rf"(?mi)^[\s>#*]*(?:\d+[.)]\s*)?\**\s*{heading}\b[^\n:]*:?", text or "")
     if not m:
         return ""
     rest = text[m.end():]
-    n = re.search(next_regex, rest)
+    n = re.search(r"(?m)^[\s>#*]*\d+[.)]\s", rest)
     return (rest[: n.start()] if n else rest).strip(" :*\n")
 
 
+def _json_obj(text: str) -> Optional[dict]:
+    """The first JSON object in an answer (agents prompted to reply in JSON keep doing so)."""
+    text = re.sub(r"(?s)<think>.*?</think>", "", text or "")
+    start = text.find("{")
+    while start != -1:
+        depth, in_str, esc = 0, False, False
+        for i in range(start, len(text)):
+            ch = text[i]
+            if in_str:
+                esc = (ch == "\\") and not esc
+                if ch == '"' and not esc:
+                    in_str = False
+                continue
+            if ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        obj = json.loads(text[start:i + 1])
+                    except ValueError:
+                        break
+                    return obj if isinstance(obj, dict) else None
+        start = text.find("{", start + 1)
+    return None
+
+
+def _walk(obj: Any):
+    """(key, value) pairs of a nested dict, depth first."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield str(k).lower(), v
+            yield from _walk(v)
+
+
+def _flat(v: Any) -> str:
+    if isinstance(v, list):
+        return " ".join(_flat(x) for x in v)
+    if isinstance(v, dict):
+        return " ".join(f"{k}: {_flat(x)}" for k, x in v.items())
+    return str(v if v is not None else "").strip()
+
+
+def _from_json(obj: dict, *needles: str) -> str:
+    for k, v in _walk(obj):
+        if any(n in k for n in needles):
+            return _flat(v)
+    return ""
+
+
 def parse_reflection(mode: str, text: str) -> dict[str, Any]:
-    """Pull the parts the meta-agent may see out of a free-text answer."""
+    """Pull the parts the meta-agent may see out of an answer: numbered free text
+    (the template's own format) or a JSON object (agents whose system prompt demands
+    JSON answer the reflection in JSON too)."""
     text = text or ""
+    obj = _json_obj(text) if not re.search(r"(?m)^\s*\d+[.)]\s", text) else None
     if mode == "post_grading":
-        return {"lesson": _section(text, r"GENERAL LESSON"),
-                "catch": _section(text, r"WHAT WOULD HAVE CAUGHT IT")}
+        if obj:
+            return {"lesson": _from_json(obj, "lesson"), "catch": _from_json(obj, "caught", "catch")}
+        return {"lesson": _section(text, "GENERAL LESSON"),
+                "catch": _section(text, "WHAT WOULD HAVE CAUGHT IT")}
     if mode == "unsure":
-        items = []
-        for line in text.splitlines():
-            m = re.match(r"\s*[-*\d.)]*\s*\[?\s*(\d{1,3})\s*\]?\s*[-:)]?\s+(.+)", line)
-            if m and 0 <= int(m.group(1)) <= 100 and "OVERALL" not in line.upper():
-                items.append({"confidence": int(m.group(1)), "item": m.group(2).strip()})
-        c = re.search(r"OVERALL_CONFIDENCE:\s*\**\s*(\d{1,3})", text)
-        return {"items": items[:8], "overall_confidence": int(c.group(1)) if c else None}
+        items: list[dict] = []
+        overall = None
+        if obj:
+            for k, v in _walk(obj):
+                if "overall" in k and isinstance(v, (int, float)):
+                    overall = int(v)
+                if "unsure" in k and isinstance(v, list):
+                    for it in v:
+                        if isinstance(it, dict):
+                            c = next((x for kk, x in it.items() if "conf" in str(kk).lower()), None)
+                            body = _flat({kk: x for kk, x in it.items() if "conf" not in str(kk).lower()})
+                            if isinstance(c, (int, float)):
+                                items.append({"confidence": int(c), "item": body})
+        else:
+            for line in text.splitlines():
+                m = re.match(r"\s*[-*]?\s*\[\s*(\d{1,3})\s*\]\s*[-:)]?\s*(.+)", line)
+                if m and 0 <= int(m.group(1)) <= 100:
+                    items.append({"confidence": int(m.group(1)), "item": m.group(2).strip()})
+            c = re.search(r"OVERALL_CONFIDENCE:\s*\**\s*(\d{1,3})", text)
+            overall = int(c.group(1)) if c else None
+        return {"items": items[:8], "overall_confidence": overall}
     if mode == "essential":
-        return {"keep": _section(text, r"KEEP")}
+        return {"keep": _from_json(obj, "keep") if obj else _section(text, "KEEP")}
     return {}
 
 
@@ -285,10 +358,13 @@ class Reflector:
             fmt = sess.get("format", "chat")
             msgs = clean_messages(sess.get("messages") or []) if fmt == "chat" else list(sess.get("messages") or [])
             preamble = sess.get("preamble") or f"You are the {role} role; this is your own session."
-            grading, terms = "", []
-            if mode == "post_grading":
-                g = self.scorer.grading_outcome(case, self.grading_detail) or {}
-                grading, terms = g.get("text") or "", list(g.get("redact") or [])
+            # Redact terms for EVERY mode: a solved case's answer can quote the ground
+            # truth itself (e.g. the exact product ids). The grader's text goes into the
+            # question only for post_grading.
+            detail = self.grading_detail if self.grading_detail != "none" else "numeric"
+            g = self.scorer.grading_outcome(case, detail) or {}
+            terms = list(g.get("redact") or [])
+            grading = (g.get("text") or "") if mode == "post_grading" else ""
             turn = _TEMPLATES[mode].format(preamble=preamble, grading=grading)
             msgs = msgs + [{"role": "user", "content": turn}]
             est = int(len(json.dumps(msgs, default=str)) / self.chars_per_token)
