@@ -31,8 +31,8 @@ transcripts under `logs/scratch/<task>/<run>/`. You never see the hidden tests.
 
 - The harness has a SKILL LIBRARY: `seedling/prompts/skills/INDEX.md` lists skills as
   `- <name> | roles: <role,...> | <when to use>`, with the procedure in `seedling/prompts/skills/<name>.md`
-  (`seedling/skills.py` parses it). Each role's system prompt ends with the index lines tagged for it and the role reads
-  a skill with the `Skill` tool; every role's `skills_loaded` statistic counts those reads.
+  (`seedling/skills.py` parses it). Each role's system prompt ends with the FULL text of the skills tagged for it, so a
+  skill's wording directly changes what that role reads on every run (`role_stats.skills_inlined` lists them).
 - START FROM THE EVIDENCE: `logs/DOSSIERS.md` ranks this agent's evaluated tasks (flips vs the
   seed first, then near-misses); each entry points at a `dossier.md` with the task's requirement
   checklist vs what PATCH listed and what VERIFY enumerated/tested, VERIFY's test commands, and a
@@ -91,7 +91,7 @@ transcripts under `logs/scratch/<task>/<run>/`. You never see the hidden tests.
   in sync; skill names are lowercase letters, digits and dashes (others are ignored by the parser).
 - Role names in the index must be exactly: patch, verify, baseline. A skill tagged for the wrong role is invisible to
   the role that needed it.
-- Check `skills_loaded` in the dossiers / role statistics of the failing cases first: a relevant skill that was never
-  loaded needs a sharper "when" line; one that was loaded but did not prevent the failure needs better steps.
-- Every index line is shown to its roles on every run -- keep lines short and skills procedural (trigger, steps,
-  check), not restatements of the role prompt.
+- A skill that was in the failing role's prompt and did not prevent the failure needs better steps (concrete, with a
+  checkable final step), not a near-duplicate; a failure no skill addresses may need a new one.
+- Every skill is inlined into its roles' prompts on every run -- keep skills short and procedural (trigger, steps,
+  check), not restatements of the role prompt; retire ones that do not help.

@@ -6,10 +6,11 @@ Layout (inside prompts/ so every read goes through PROMPTS -- host-isolation rul
                                    - <name> | roles: <role>[, <role>...] | <when to use it>
     prompts/skills/<name>.md       the procedure
 
-A role's system prompt ends with the index lines tagged for it (Role.system_prompt, so the
-text is deterministic and the A0 sys_sha check still holds); the role calls the `Skill`
-tool to read one. Only names listed in INDEX.md can be read (no path is ever built from
-model input beyond a validated name). Role names: patch, verify, baseline.
+A role's system prompt ends with the FULL text of the skills tagged for it (Role.system_prompt,
+so the text is deterministic and the A0 sys_sha check still holds). The host-side `Skill`
+tool (tools/shell.py) can still read one by name, but no role is given it by default. Only
+names listed in INDEX.md can be read (no path is ever built from model input beyond a
+validated name). Role names: patch, verify, baseline.
 """
 
 from __future__ import annotations
@@ -47,15 +48,19 @@ def for_role(role: str) -> list[dict]:
 
 
 def index_text(role: str) -> str:
-    """The block appended to `role`'s system prompt ("" when it has no skills)."""
-    entries = for_role(role)
-    if not entries:
+    """The block appended to `role`'s system prompt: the FULL text of every skill tagged
+    for it ("" when it has none).
+
+    Inlined, not loaded on demand: a live check (2026-09-24) showed VERIFY never calling the
+    on-demand `Skill` tool, and travel stages never loaded theirs -- a skill the model does
+    not open is inert. Deterministic, so the A0 sys_sha check still holds.
+    """
+    parts = [t.strip() for t in (read_skill_text(e["name"]) for e in for_role(role)) if t]
+    if not parts:
         return ""
-    lines = "\n".join(f"- {e['name']}: {e['when']}" for e in entries)
-    return ("\n\n## Skills available to you\n" + lines + "\n\n"
-            "Each skill is a short, tested procedure. When your situation matches a skill's "
-            "description, call the `Skill` tool with its name and follow it BEFORE acting on "
-            "that part of the task.\n")
+    return ("\n\n## Skills (follow these procedures)\n\n"
+            "Each skill below is a short, tested procedure. When your situation matches its "
+            "**When**, follow its steps and its check.\n\n" + "\n\n".join(parts) + "\n")
 
 
 def read_skill_text(name: str) -> str | None:

@@ -795,6 +795,7 @@ class Role:
             "net_fetch": st.net_fetch, "fork_fetch": st.fork_fetch, "tests_run": st.tests_run,
             "nudges": st.nudges, "pushes": st.pushes, "transients_deleted": st.transients_deleted,
             "tool_calls": st.tool_calls, "cap_hits": st.cap_hits, "skills_loaded": st.skills_loaded,
+            "skills_inlined": [e["name"] for e in _skills.for_role(self.name)],
             "reads_without_limit": st.reads_without_limit,
             "sys_sha": sys_sha, "sys_sha_end": _sys_sha_now, "prompt_file": self.prompt_file,
             "llm_calls": rec.n_llm_calls,
@@ -862,7 +863,7 @@ class Role:
 # --------------------------------------------------------------------------------------
 PATCH = Role(
     name="patch", prompt_file="patch.md",
-    tools=["Bash", "Read", "Edit", "Write", "Skill"],
+    tools=["Bash", "Read", "Edit", "Write"],
     output={"summary": {"type": "string", "description": "What you changed and why."},
             "changed_files": {"type": "string_list", "description": "Files you edited."},
             },
@@ -882,7 +883,7 @@ VERIFY = Role(
     # files -- through the UNGUARDED path. write_file/edit_file run `denied_path` host-side
     # first, which blocks conftest.py / pytest.ini / tox.ini / lockfiles / test.sh, i.e.
     # DeepSWE's own anti-cheat tripwires. So this CHANNELS writes through the enforced path.
-    tools=["Bash", "Read", "Edit", "Write", "Skill"],
+    tools=["Bash", "Read", "Edit", "Write"],
     # EVIDENCE IS STRUCTURAL, NOT REQUESTED. There is no hard-coded gate behind this role
     # any more, so these fields are the only thing keeping a verdict honest. Both mechanisms
     # have lied: the deterministic gate false-passed a tree with 230 broken tests (4.3s,
@@ -919,7 +920,7 @@ VERIFY = Role(
 )
 
 BASELINE = Role(
-    name="baseline", prompt_file="baseline.md", tools=["Bash", "Read", "Skill"], readonly=True,
+    name="baseline", prompt_file="baseline.md", tools=["Bash", "Read"], readonly=True,
     conversation_key="verify",
     # Runs ONCE per task before PATCH attempt 1, on the unmodified repository. Why: VERIFY
     # could not tell pre-existing failures from regressions (dateutil run 8 burned an attempt
