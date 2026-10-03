@@ -753,6 +753,12 @@ class TravelCompositeScorer:
     def reflection_sessions(self, case: Any, round_dir: Path) -> dict[str, dict]:
         from meta_agent.reflection_hooks import role_by_keyword, sessions_from_log
 
+        if (case.details or {}).get("conversion_error_type"):
+            # The plan was produced but the GRADER's plan->JSON conversion failed (timeout /
+            # API error): not the agents' failure. Asking them why they failed yields invented
+            # lessons ("keep output short to avoid downstream timeouts" -- EXP-049a), so these
+            # cases are not reflected on.
+            return {}
         return sessions_from_log(round_dir, case, role_by_keyword(self._REFLECTION_ROLES))
 
     def grading_outcome(self, case: Any, detail: str) -> dict[str, Any]:

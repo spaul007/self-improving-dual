@@ -125,6 +125,10 @@ class TravelHookTests(_Tmp):
         self.assertEqual(sess["flight"]["model"], "m1")
         self.assertIn("hard:budget", s.grading_outcome(case, "full")["text"])
         self.assertNotIn("hard:budget", s.grading_outcome(case, "numeric")["text"])
+        # A grader-side conversion failure is not the agents' fault: nothing to reflect on.
+        infra = CaseResult(case_id="tc1", passed=False, score=0.0,
+                           details={"conversion_error_type": "timeout"})
+        self.assertEqual(s.reflection_sessions(infra, self.round_dir), {})
 
 
 class ShoppingHookTests(_Tmp):
