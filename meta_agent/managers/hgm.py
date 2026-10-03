@@ -36,11 +36,14 @@ from __future__ import annotations
 import dataclasses
 import json
 import random
+import re
 import shutil
+import time
 from pathlib import Path
 from typing import Optional
 
 from ..agent_editor import AgentEditor, fallback_strategy
+from ..atomic_io import atomic_write_text
 from ..block_bandit import AdaptiveStrategy, BlockBandit
 from ..curriculum import Curriculum, _combined_check_counts, infer_curriculum
 from ..implementation_strategy_bandit import (
@@ -65,6 +68,17 @@ from ..models import (
 from ..registry import register
 from ..tree_snapshot import NodeSnapshot, TreeSnapshotWriter
 from .hgm_tree import HGMNode, HGMTree
+
+# Run-control files, checked in the experiment dir before every EXPAND/EVALUATE step.
+PAUSE_FILE = "PAUSE"                # graceful pause: stop after the current step, no finalize (exit rc 3)
+FINALIZE_NOW_FILE = "FINALIZE_NOW"  # stop spending budget; run the normal finalize + LCB pick
+LOOP_STATE_FILE = "loop_state.json"  # budget counters + current action, rewritten every step
+
+
+class RunPaused(Exception):
+    """Raised by ``HGMManager.evolve`` when a PAUSE file stops the loop. The run
+    dir is left consistent (every node's hgm_node.json/feedback.json current) so
+    ``main_loop.py --resume <run_dir>`` can continue it."""
 
 # Rough char<->token proxy for the lineage-memory budget (avoids a hard
 # tiktoken dependency in the eval path; the budget is approximate by design).
@@ -502,6 +516,10 @@ class HGMManager:
         # Loop evaluations spent — excludes the root's free pre-evaluation
         # and the finalization re-evaluations.
         self._budget_spent: int = 0
+        self._free_evals: int = 0
+        self._free_by_node: dict[int, int] = {}
+        self._resume_count: int = 0
+        self._current_action: str = ""
         self._task_rng: random.Random = random.Random(seed)
         # Dedicated RNG for the "non_adaptive" block_selection_strategy
         # (uniform-random block choice per EXPAND) -- kept separate from
@@ -609,6 +627,7 @@ class HGMManager:
         failure_summarizer: Any = None,
         block_suggester: Any = None,
         unit_selector: Any = None,
+        resume: bool = False,
     ) -> EvolutionOutcome:
         self._benchmark_dir = benchmark_dir
         self._experiment_dir = experiment_dir
@@ -721,7 +740,20 @@ class HGMManager:
         # expansion parent. Then `init_expansions` unconditional EXPANDs;
         # only evaluated, positive-mean nodes are expandable, so these all
         # branch off the freshly pre-evaluated root.
-        self._run_seed(seed_dir, evaluator, gatherer)
+        self._evolving = True
+        self._resume_count = 0
+        # Uncharged (finalize top-up) evaluations of NON-root nodes, persisted in
+        # loop_state.json so a resume can separate them from budget spend.
+        self._free_evals = 0
+        self._free_by_node: dict[int, int] = {}
+        self._resume_curriculum_state: Optional[dict] = None
+        self._current_action = "starting"
+        if resume:
+            self._restore_from_disk()
+        else:
+            self._current_action = "evaluating root (node 0) on the full train set"
+            self._write_loop_state()
+            self._run_seed(seed_dir, evaluator, gatherer)
         if self.curriculum_enabled and self.curriculum_granularity == "unit":
             from ..unit_curriculum import UnitCurriculum, load_units_map
 
@@ -729,7 +761,20 @@ class HGMManager:
             seed_fb = self._feedback.get(0)
             seed_metrics = (seed_fb.project_metrics if seed_fb is not None else None) or {}
             seed_check_counts = _combined_check_counts(seed_metrics)
-            if any(seed_check_counts.values()):
+            saved_cur = self._resume_curriculum_state if resume else None
+            if saved_cur and saved_cur.get("kind") == "unit":
+                # Never re-choose on resume: with a unit_selector that is an LLM
+                # call and could switch the unit mid-run.
+                self._curriculum = UnitCurriculum.restore(
+                    saved_cur, units=units, max_attempts=self.curriculum_unit_max_attempts,
+                    resolution_threshold=self.curriculum_resolution_threshold,
+                    patience=self.curriculum_patience,
+                    check_descriptions=self._load_curriculum_check_descriptions(),
+                    unit_selector=self._unit_selector,
+                )
+                print(f"resume: unit curriculum restored on {self._curriculum.current_goal!r}",
+                      flush=True)
+            elif any(seed_check_counts.values()):
                 self._curriculum = UnitCurriculum(
                     seed_check_counts, units=units, max_attempts=self.curriculum_unit_max_attempts,
                     resolution_threshold=self.curriculum_resolution_threshold,
@@ -747,12 +792,20 @@ class HGMManager:
                     patience=self.curriculum_patience,
                     check_descriptions=self._load_curriculum_check_descriptions(),
                 )
+                saved_cur = self._resume_curriculum_state if resume else None
+                if saved_cur and saved_cur.get("kind") == "check":
+                    self._curriculum.load_state(saved_cur)
+                    print(f"resume: curriculum restored on {self._curriculum.current_goal!r}",
+                          flush=True)
             # else: nothing failing at seed time (or no project_metrics
             # support from this project's scorer) -- curriculum stays
             # None, _curriculum_directive_for_expand() no-ops gracefully,
             # identical to curriculum_enabled=False.
-        self._snapshot("seed")
-        for _ in range(self.init_expansions):
+        self._snapshot("resume" if resume else "seed")
+        n_done = max(0, len(self._tree.nodes) - 1)   # expansions already made (resume)
+        for _ in range(max(0, self.init_expansions - n_done)):
+            if self._control() is not None:
+                break
             expandable = self._expandable()
             if not expandable or self._tree.n_real_nodes() > max_rounds:
                 break
@@ -769,6 +822,8 @@ class HGMManager:
         # so the dual manager's throw-away variant trials don't distort it.
         # The root's pre-evaluation is excluded from both.
         while self._budget_spent < self.eval_budget:
+            if self._control() is not None:
+                break
             remaining = self.eval_budget - self._budget_spent
             # Early stop: if the remaining budget can't fund an expansion's
             # intra-evaluation, stop instead of spawning un-evaluated nodes that
@@ -809,7 +864,23 @@ class HGMManager:
             else:
                 break
 
-        return self._finalize(evaluator, gatherer)
+        if self._control() == "pause":
+            self._current_action = (
+                f"PAUSED at budget {self._budget_spent}/{self.eval_budget} "
+                f"(remove {PAUSE_FILE} and resume)"
+            )
+            self._snapshot("pause")
+            print(f"PAUSED at budget {self._budget_spent}/{self.eval_budget}: "
+                  f"{self._experiment_dir / PAUSE_FILE} present", flush=True)
+            raise RunPaused(str(self._experiment_dir))
+        if self._control() == "finalize":
+            print(f"FINALIZE_NOW at budget {self._budget_spent}/{self.eval_budget}", flush=True)
+        self._current_action = "finalizing (top-k top-up on the full train set, then LCB pick)"
+        self._write_loop_state()
+        outcome = self._finalize(evaluator, gatherer)
+        self._current_action = f"FINISHED: best node {outcome.best_round}"
+        self._snapshot("done")
+        return outcome
 
     # ------------------------------------------------------------------ #
     # EXPAND / EVALUATE
@@ -839,6 +910,8 @@ class HGMManager:
             )
         block_exclude = {"llm_backbone_selection"} if impl_strategy == "harness_heavy" else None
         block = self._select_block(parent, exclude=block_exclude)
+        self._current_action = f"expanding node {parent_id} -> node {node_id} (block {block})"
+        self._write_loop_state()
         if self._last_block_selection is not None:
             (out_dir / "adaptive_strategy.json").write_text(
                 json.dumps(
@@ -870,6 +943,7 @@ class HGMManager:
             self._feedback[node_id] = self._synth_failed_edit_feedback(
                 node_id, parent_id, strategy, edit_result.errors, out_dir
             )
+            self._write_node_sidecar(node)
             print(
                 f"node {node_id}: EXPAND from {parent_id} — edit FAILED "
                 f"({edit_result.errors[0][:80] if edit_result.errors else '?'})",
@@ -989,6 +1063,11 @@ class HGMManager:
         if n_take <= 0:
             return 0
         batch = self._task_rng.sample(unevaluated, n_take)
+        self._current_action = (
+            f"evaluating node {node_id} on {len(batch)} task(s) "
+            f"(has {node.n_attempted}/{len(self._train_case_ids)})"
+        )
+        self._write_loop_state()
 
         result = evaluator.run(node.round_dir, self._benchmark_dir, case_ids=batch)
         self._record_batch(node, result)
@@ -1579,7 +1658,10 @@ class HGMManager:
         no-op unless ``snapshot_tree`` is enabled. Records every node (incl.
         the seed root and edit-failed placeholders) plus a pointer to the
         current best-by-mean node, so an analyst can recover and re-evaluate
-        the best agent at any budget level (see snapshot_eval.py)."""
+        the best agent at any budget level (see snapshot_eval.py).
+
+        Also (always) rewrites loop_state.json and the human STATUS report."""
+        self._write_loop_state(event)
         if self._snapshotter is None or not self._snapshotter.enabled:
             return
         nodes = [
@@ -1744,7 +1826,13 @@ class HGMManager:
             )
             self._record_batch(node, result)
             spent += len(missing)
+            if node.node_id != 0:
+                self._free_evals += len(missing)
+                self._free_by_node[node.node_id] = (
+                    self._free_by_node.get(node.node_id, 0) + len(missing)
+                )
             self._refresh_node_feedback(node, gatherer)
+            self._write_loop_state("finalize-node")
             self._run_failure_summarizer(node)
             print(
                 f"finalize: node {node.node_id} +{len(missing)} "
@@ -1891,6 +1979,236 @@ class HGMManager:
     # ------------------------------------------------------------------ #
     # Internals
     # ------------------------------------------------------------------ #
+
+    # ------------------------------------------------------------------ #
+    # Run control: pause / finalize-now / resume
+    # ------------------------------------------------------------------ #
+
+    def _control(self) -> Optional[str]:
+        """``"pause"`` / ``"finalize"`` when the user dropped a control file in
+        the experiment dir, else None. Checked BEFORE every loop step, so the
+        step in flight always completes and the dir stays resumable."""
+        if (self._experiment_dir / PAUSE_FILE).exists():
+            return "pause"
+        if (self._experiment_dir / FINALIZE_NOW_FILE).exists():
+            return "finalize"
+        return None
+
+    # RNGs whose state is persisted in loop_state.json so a resume continues the
+    # exact draw sequence of an uninterrupted run.
+    _PERSISTED_RNGS = ("_task_rng", "_block_rng", "_implementation_strategy_rng")
+
+    def _rng_states(self) -> dict:
+        out = {}
+        for name in self._PERSISTED_RNGS:
+            rng = getattr(self, name, None)
+            if rng is not None:
+                v, internal, gauss = rng.getstate()
+                out[name] = [v, list(internal), gauss]
+        tree_rng = getattr(self._tree, "_rng", None)
+        if tree_rng is not None:
+            v, internal, gauss = tree_rng.getstate()
+            out["tree"] = [v, list(internal), gauss]
+        return out
+
+    @staticmethod
+    def _rng_from_state(state: list) -> random.Random:
+        rng = random.Random()
+        rng.setstate((state[0], tuple(state[1]), state[2]))
+        return rng
+
+    def _rebuild_bandits(self) -> None:
+        """BlockBandit / ImplementationStrategyBandit hold their RNG by reference
+        and recompute their tallies from the tree each call -- so after the RNGs are
+        replaced they only need re-binding."""
+        self._block_bandit = BlockBandit(
+            beta_prior=self.beta_prior, rng=self._block_rng,
+            reward_metric=self.block_reward_metric,
+            initial_block_ranking=self.block_initial_ranking,
+            initial_rank_strength=self.block_initial_rank_strength,
+            blocks=sorted(self.active_blocks) if self.active_blocks is not None else None,
+        )
+        self._implementation_strategy_bandit = ImplementationStrategyBandit(
+            beta_prior=self.beta_prior, rng=self._implementation_strategy_rng,
+            reward_metric=self.implementation_strategy_reward_metric,
+            initial_ranking=self.implementation_strategy_initial_ranking,
+            initial_rank_strength=self.implementation_strategy_initial_rank_strength,
+        )
+
+    def _write_loop_state(self, event: Optional[str] = None) -> None:
+        """loop_state.json (budget counters, current action) + the human STATUS
+        report. Best effort: a reporting failure must never stop the search.
+        Only inside evolve() -- unit tests drive _evaluate/_finalize directly with
+        no experiment dir, and must not get files written into the CWD."""
+        if not getattr(self, "_evolving", False):
+            return
+        state_path = self._experiment_dir / LOOP_STATE_FILE
+        try:
+            prev = json.loads(state_path.read_text()) if state_path.is_file() else {}
+        except (OSError, ValueError):
+            prev = {}
+        state = {
+            "updated": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "started": prev.get("started") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "manager": type(self).__name__,
+            "eval_budget": self.eval_budget,
+            "budget_spent": self._budget_spent,
+            "node_evals_spent": getattr(self, "_node_evals_spent", 0),
+            "free_evals_nonroot": getattr(self, "_free_evals", 0),
+            "n_train": len(self._train_case_ids),
+            "n_nodes": len(self._tree.nodes),
+            "next_id": self._next_id,
+            "current_action": getattr(self, "_current_action", ""),
+            "last_event": event or prev.get("last_event"),
+            "resume_count": getattr(self, "_resume_count", 0),
+            "control": self._control(),
+            "eval_batch_size": self.eval_batch_size,
+            "alpha": self.alpha,
+            "rng_state": self._rng_states(),
+            "curriculum_state": (
+                self._curriculum.state_dict()
+                if getattr(self, "_curriculum", None) is not None
+                and hasattr(self._curriculum, "state_dict") else None
+            ),
+        }
+        try:
+            # Atomic: a truncated loop_state.json once reset the resume counter and
+            # the uncharged-eval count (RESUMES.log read "#1, #1, #2").
+            atomic_write_text(state_path, json.dumps(state, indent=2))
+        except OSError as exc:
+            print(f"[loop_state] write failed: {exc!r}", flush=True)
+
+    def _restore_from_disk(self) -> None:
+        """Rebuild the tree, per-node tallies, feedback, budget counters, RNG states
+        and curriculum progress from an existing experiment dir (``main_loop.py
+        --resume``).
+
+        Sources: ``round_NNN/feedback.json`` (cumulative per-case results, the
+        same object ``_refresh_node_feedback`` persists) + ``hgm_node.json``
+        (tree shape, edit_failed, uncharged finalize evals) + ``loop_state.json``
+        (RNG states, curriculum progress, counters). Per-case results are re-folded
+        through the SAME exclusion rules as ``_record_batch``, then cross-checked
+        against the sidecar. A round dir with no feedback.json (killed mid-EXPAND)
+        is renamed ``*.aborted-<ts>`` and its node id reused; one whose
+        feedback.json / hgm_node.json does not parse is renamed ``*.corrupt-<ts>``
+        (warned, never a crash). An EVALUATE batch in flight at the kill was never
+        folded or charged -- it is simply re-run.
+
+        The resume count is the max of RESUMES.log and loop_state.json, so losing
+        loop_state.json can no longer reset it. RNG states are restored exactly
+        when loop_state.json has them (bit-exact continuation); otherwise the RNGs
+        are re-seeded from (seed, resume count) and that is logged."""
+        exp = self._experiment_dir
+        rounds = sorted(
+            d for d in exp.iterdir()
+            if d.is_dir() and re.fullmatch(r"round_\d{3}", d.name)
+        )
+        stamp = time.strftime("%Y%m%dT%H%M%S")
+        for rd in rounds:
+            fb_path, side_path = rd / "feedback.json", rd / "hgm_node.json"
+            if not fb_path.is_file():
+                dest = rd.with_name(f"{rd.name}.aborted-{stamp}")
+                rd.rename(dest)
+                print(f"resume: {rd.name} has no feedback.json (killed mid-EXPAND) -> {dest.name}",
+                      flush=True)
+                continue
+            try:
+                feedback = AgentFeedback.model_validate_json(fb_path.read_text(encoding="utf-8"))
+                side = json.loads(side_path.read_text()) if side_path.is_file() else {}
+            except (OSError, ValueError) as exc:
+                dest = rd.with_name(f"{rd.name}.corrupt-{stamp}")
+                rd.rename(dest)
+                print(f"resume: WARNING {rd.name} has an unreadable feedback.json/hgm_node.json "
+                      f"({type(exc).__name__}: {str(exc)[:200]}) -> {dest.name}; node dropped",
+                      flush=True)
+                continue
+            nid = int(side.get("node_id", int(rd.name.split("_")[1])))
+            parent = side.get("parent_id", None if nid == 0 else feedback.base_round)
+            node = HGMNode(node_id=nid, parent_id=parent, round_dir=rd)
+            node.edit_failed = bool(side.get("edit_failed", bool(feedback.edit_errors)))
+            for case in feedback.eval_result.per_case:
+                if (
+                    (self.exclude_flagged_cases and (case.details or {}).get("excluded"))
+                    or (self.exclude_crashed_cases and case.error)
+                ):
+                    node.record_excluded(case)
+                else:
+                    node.record(case)
+            if side and (
+                sorted(node.evaluated_case_ids) != sorted(side.get("evaluated_case_ids", []))
+                or node.n_evals != side.get("n_evals")
+            ):
+                print(
+                    f"resume: node {nid} sidecar lagged feedback.json "
+                    f"(sidecar n={side.get('n_evals')}, feedback n={node.n_evals}); "
+                    "using feedback.json (it is written first)",
+                    flush=True,
+                )
+            if side.get("n_free_evals"):
+                self._free_by_node[nid] = int(side["n_free_evals"])
+            self._tree.add(node)
+            self._feedback[nid] = feedback
+        if 0 not in self._tree.nodes:
+            raise RuntimeError(f"resume: {exp} has no usable round_000 -- nothing to resume")
+        # Re-attach children whose parent was added later (defensive; ids are monotone).
+        for n in self._tree.nodes.values():
+            if n.parent_id is not None and n.parent_id in self._tree.nodes:
+                par = self._tree.nodes[n.parent_id]
+                if n.node_id not in par.children:
+                    par.children.append(n.node_id)
+        for n in self._tree.nodes.values():
+            self._write_node_sidecar(n)
+        self._next_id = max(self._tree.nodes) + 1
+        try:
+            prev = json.loads((exp / LOOP_STATE_FILE).read_text())
+        except (OSError, ValueError):
+            prev = {}
+            print(f"resume: WARNING {LOOP_STATE_FILE} missing or unreadable -- counters "
+                  "rebuilt from node sidecars and RESUMES.log", flush=True)
+        free_sidecars = sum(v for k, v in self._free_by_node.items() if k != 0)
+        self._free_evals = max(int(prev.get("free_evals_nonroot", 0)), free_sidecars)
+        spent = sum(n.n_attempted for nid, n in self._tree.nodes.items() if nid != 0) - self._free_evals
+        self._budget_spent = spent
+        self._node_evals_spent = spent
+        try:
+            logged = sum(1 for line in (exp / "RESUMES.log").read_text().splitlines()
+                         if " RESUME #" in line)
+        except OSError:
+            logged = 0
+        self._resume_count = max(logged, int(prev.get("resume_count", 0))) + 1
+        if prev and prev.get("budget_spent") != spent:
+            print(
+                f"resume: budget from nodes = {spent}, last loop_state said "
+                f"{prev.get('budget_spent')} (a batch in flight at the kill is re-run)",
+                flush=True,
+            )
+        saved = prev.get("rng_state") or {}
+        if all(k in saved for k in (*self._PERSISTED_RNGS, "tree")):
+            for name in self._PERSISTED_RNGS:
+                setattr(self, name, self._rng_from_state(saved[name]))
+            self._tree._rng = self._rng_from_state(saved["tree"])
+            rng_note = "RNG state restored exactly"
+        else:
+            rseed = f"{self.seed}-resume-{self._resume_count}"
+            self._task_rng = random.Random(rseed)
+            self._block_rng = random.Random(rseed + "-block")
+            self._implementation_strategy_rng = random.Random(rseed + "-impl")
+            self._tree._rng = random.Random(rseed + "-tree")
+            rng_note = f"RNG re-seeded {rseed!r} (no saved state)"
+        self._rebuild_bandits()
+        self._resume_curriculum_state = prev.get("curriculum_state")
+        removed = (exp / PAUSE_FILE).exists()
+        if removed:
+            (exp / PAUSE_FILE).unlink()
+        msg = (
+            f"RESUME #{self._resume_count}: {len(self._tree.nodes)} nodes, next id {self._next_id}, "
+            f"budget {spent}/{self.eval_budget}, {rng_note}"
+            + (f"; removed {PAUSE_FILE}" if removed else "")
+        )
+        print(msg, flush=True)
+        with open(exp / "RESUMES.log", "a", encoding="utf-8") as fh:
+            fh.write(time.strftime("%Y-%m-%dT%H:%M:%SZ ", time.gmtime()) + msg + "\n")
+        self._current_action = f"resumed (#{self._resume_count})"
 
     def _run_seed(
         self, seed_dir: Path, evaluator: Evaluator, gatherer: FeedbackGatherer
@@ -2085,7 +2403,8 @@ class HGMManager:
     def _write_node_sidecar(self, node: HGMNode) -> None:
         """Authoritative per-node HGM state — survives evaluator.run
         overwriting eval_result.json, and is what a future --resume reads."""
-        (node.round_dir / "hgm_node.json").write_text(
+        atomic_write_text(
+            node.round_dir / "hgm_node.json",
             json.dumps(
                 {
                     "node_id": node.node_id,
@@ -2106,8 +2425,11 @@ class HGMManager:
                     # eval_repeats > 1, in which case this is the only place
                     # that shows how many times each case was re-run.
                     "case_eval_counts": dict(node.evaluated_case_ids),
+                    # Finalize top-up evaluations of this node (uncharged to
+                    # eval_budget) -- duplicated here so a lost loop_state.json can
+                    # never turn them into budget spend on resume.
+                    "n_free_evals": getattr(self, "_free_by_node", {}).get(node.node_id, 0),
                 },
                 indent=2,
             ),
-            encoding="utf-8",
         )

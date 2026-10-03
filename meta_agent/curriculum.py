@@ -400,6 +400,20 @@ class Curriculum:
             "regardless of which block ends up fixing it."
         )
 
+    def state_dict(self) -> dict:
+        """Mutable progress only (goals/thresholds come from the config + seed and
+        are rebuilt deterministically) -- persisted by the manager so a resumed
+        run continues on the same goal instead of restarting the curriculum."""
+        return {"kind": "check", "index": self._index,
+                "rounds_on_current": self._rounds_on_current, "resolved": list(self._resolved)}
+
+    def load_state(self, state: dict) -> None:
+        if state.get("kind") != "check":
+            raise ValueError(f"not a check-curriculum state: {state.get('kind')!r}")
+        self._index = int(state["index"])
+        self._rounds_on_current = int(state["rounds_on_current"])
+        self._resolved = list(state["resolved"])
+
     def snapshot(
         self,
         *,

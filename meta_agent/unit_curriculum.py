@@ -334,6 +334,39 @@ class UnitCurriculum:
             "up fixing it."
         )
 
+    def state_dict(self) -> dict:
+        """Mutable progress (attempts per unit, resolved order, current unit and its
+        round count) -- persisted by the manager so a resume continues on the same
+        unit. Restoring must NOT re-run ``_advance_to_next``: with a unit_selector
+        that is an LLM call and could pick a different unit."""
+        return {"kind": "unit", "attempts": dict(self._attempts), "resolved": list(self._resolved),
+                "rounds_on_current": self._rounds_on_current, "current": self._current,
+                "done": self._done}
+
+    @classmethod
+    def restore(
+        cls, state: dict, *, units: dict[str, tuple[str, ...]], max_attempts: int,
+        resolution_threshold: float = 0.15, patience: int = 5,
+        check_descriptions: Optional[dict[str, str]] = None, unit_selector: Any = None,
+    ) -> "UnitCurriculum":
+        """Rebuild from :meth:`state_dict` without choosing a unit."""
+        if state.get("kind") != "unit":
+            raise ValueError(f"not a unit-curriculum state: {state.get('kind')!r}")
+        self = cls.__new__(cls)
+        self._units = dict(units)
+        self._max_attempts = max_attempts
+        self.resolution_threshold = resolution_threshold
+        self.patience = patience
+        self._check_descriptions = check_descriptions or {}
+        self._unit_descriptions = derive_unit_descriptions(self._units, self._check_descriptions)
+        self._unit_selector = unit_selector
+        self._attempts = {str(k): int(v) for k, v in state["attempts"].items()}
+        self._resolved = list(state["resolved"])
+        self._rounds_on_current = int(state["rounds_on_current"])
+        self._current = state.get("current")
+        self._done = bool(state.get("done"))
+        return self
+
     def snapshot(
         self, *, current_failure_rate: Optional[float],
         advance_reason: Optional[str] = None,
