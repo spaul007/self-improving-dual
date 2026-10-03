@@ -113,7 +113,17 @@ _SYSTEM_CLOSING = (
 # regex bug in a harness validator, an exact prompt-rule violation) that
 # the curated feedback digest alone never surfaced a single concrete
 # example of.
-_SYSTEM_CLOSING_AGENTIC = (
+# The default (travel-shaped) description of logs/, substituted into
+# _SYSTEM_CLOSING_AGENTIC unless a project supplies ``logs_guide``.
+_LOGS_DESCRIPTION_MARK = "\x00LOGS\x00"
+_DEFAULT_LOGS_DESCRIPTION = (
+    "each "
+    "'logs/case_<id>.json' has a 'converted_plan' field with the exact "
+    "structured output that was scored and a 'raw_plan_text' field with "
+    "the literal text, plus 'logs/trace.jsonl', real tool_call/"
+    "tool_result/llm_call events -- use grep on it, it can be large"
+)
+_SYSTEM_CLOSING_AGENTIC_TEMPLATE = (
     "\n\nYou have two read-only tools: `read_file(path)` and "
     "`grep(path, pattern)` (grep returns a window centered on each match, "
     "not just a line's start -- use it for any file too large to read "
@@ -121,11 +131,9 @@ _SYSTEM_CLOSING_AGENTIC = (
     "read_file('.') is not needed, the aliases are exactly: 'harness/...' "
     "(the current mutable source you're diagnosing -- read any file "
     "before citing it, don't guess at its contents), 'logs/...' (this "
-    "parent node's own real per-case evaluation logs -- each "
-    "'logs/case_<id>.json' has a 'converted_plan' field with the exact "
-    "structured output that was scored and a 'raw_plan_text' field with "
-    "the literal text, plus 'logs/trace.jsonl', real tool_call/"
-    "tool_result/llm_call events -- use grep on it, it can be large), and "
+    "parent node's own real per-case evaluation logs -- "
+    + _LOGS_DESCRIPTION_MARK +
+    "), and "
     "'eval_result.json' (every case's score and, per check, its exact "
     "pass/fail and violation message). Use these to ground your diagnosis "
     "in a real, specific, cited example -- a concrete case_id and the "
@@ -152,6 +160,9 @@ _SYSTEM_CLOSING_AGENTIC = (
     "suggestion largely as given, not to independently resolve a "
     "conflict between 'follow the suggestion' and 'be different from "
     "siblings' -- that reconciliation is your job, not its."
+)
+_SYSTEM_CLOSING_AGENTIC = _SYSTEM_CLOSING_AGENTIC_TEMPLATE.replace(
+    _LOGS_DESCRIPTION_MARK, _DEFAULT_LOGS_DESCRIPTION
 )
 
 AGENTIC_READ_FILE_TOOL: dict[str, Any] = {
@@ -715,6 +726,10 @@ class BlockSuggester:
         # exact behavior for every existing config. See
         # _suggest_agentic and the module-level AGENTIC_*_TOOL schemas.
         agentic_access: bool = False,
+        # Opt-in: path to a project's logs guide (what lives under logs/ for THIS
+        # project). Replaces the default travel-shaped description in the agentic
+        # system prompt. None (default) = byte-identical prompt.
+        logs_guide: Optional[str] = None,
         # Bounds the agentic loop (one LLM round-trip per turn).
         agentic_max_turns: int = 20,
         # Catalog of OpenRouter slugs the llm_backbone_selection block may
@@ -744,6 +759,7 @@ class BlockSuggester:
         self.max_output_tokens = max_output_tokens
         self.strategies_path = strategies_path
         self.agentic_access = agentic_access
+        self.logs_guide = log_access.load_logs_guide(logs_guide)
         self.agentic_max_turns = agentic_max_turns
         self.backbone_catalog = backbone_catalog or _DEFAULT_BACKBONE_CATALOG
         self.readonly_reference = list(readonly_reference or [])
@@ -1034,6 +1050,16 @@ class BlockSuggester:
     # Agentic mode (opt-in via agentic_access -- see __init__)
     # ------------------------------------------------------------------ #
 
+    def _agentic_closing(self) -> str:
+        """The agentic tool instructions, with this project's logs guide (if any)
+        in place of the default description of ``logs/``."""
+        if not self.logs_guide:
+            return _SYSTEM_CLOSING_AGENTIC
+        return _SYSTEM_CLOSING_AGENTIC_TEMPLATE.replace(
+            _LOGS_DESCRIPTION_MARK,
+            "this project's layout is described below; use grep on large files",
+        ) + "\n\nLOGS LAYOUT FOR THIS PROJECT:\n" + self.logs_guide + "\n"
+
     def _suggest_agentic(
         self,
         *,
@@ -1065,7 +1091,7 @@ class BlockSuggester:
             + self._render_strategies(block)
             + self._render_skills()
             + self._render_curriculum_focus(curriculum_directive)
-            + _SYSTEM_CLOSING_AGENTIC
+            + self._agentic_closing()
         )
 
         user_parts: list[str] = source_context.format_project_context(

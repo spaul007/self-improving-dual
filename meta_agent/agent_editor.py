@@ -363,6 +363,9 @@ class AgentEditor:
         # its prompt, must cite case-level evidence, and every tool call is
         # recorded to <child round>/editor_tools.jsonl. False (default): no change.
         agentic_log_access: bool = False,
+        # Opt-in: path to a project's logs guide, appended to the log-evidence
+        # instructions when agentic_log_access is on. None = unchanged prompt.
+        logs_guide: Optional[str] = None,
     ) -> None:
         self.llm = llm_caller
         self.validators = list(validators)
@@ -380,6 +383,7 @@ class AgentEditor:
         self.agentic_edit_file = agentic_edit_file
         self.readonly_reference = list(readonly_reference or [])
         self.agentic_log_access = agentic_log_access
+        self.logs_guide = log_access.load_logs_guide(logs_guide)
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -1136,6 +1140,8 @@ class AgentEditor:
             )
         if self.agentic_log_access:
             system += _AGENTIC_LOG_EVIDENCE
+            if self.logs_guide:
+                system += "\n\nLOGS LAYOUT FOR THIS PROJECT:\n" + self.logs_guide
         system += self._skills_section()
 
         user_parts: list[str] = []

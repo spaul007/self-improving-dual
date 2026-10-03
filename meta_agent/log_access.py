@@ -127,3 +127,23 @@ def grep(sources: dict[str, str], round_dir: Path, args: dict[str, Any]) -> str:
     except (TypeError, ValueError):
         max_matches = GREP_DEFAULT_MATCHES
     return grep_text(text, args.get("pattern") or "", max_matches)
+
+
+def load_logs_guide(path: Optional[str]) -> str:
+    """Text of a project's logs guide (``logs_guide:`` on the editor / block
+    suggester config): what lives under ``logs/`` for THIS project, so the
+    meta-agent is pointed at the right evidence instead of a fixed description.
+    Relative paths resolve against the working directory (like
+    ``strategies_path``). ``""`` when unset; a set-but-unreadable path is reported
+    once and ignored (a missing guide must never fail an EXPAND)."""
+    if not path:
+        return ""
+    p = Path(path)
+    if not p.is_absolute():
+        p = Path.cwd() / p
+    try:
+        return p.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        print(f"[log_access] logs_guide {path!r} unreadable ({exc}); using the default description",
+              flush=True)
+        return ""
