@@ -218,6 +218,16 @@ def parse_reflection(mode: str, text: str) -> dict[str, Any]:
     return {}
 
 
+_REASK = ("That reply continued the task. The task is over and no tools are available. Do not plan or "
+          "make further changes: answer the numbered questions above, under their headings, now.")
+
+
+def _answered(parsed: dict) -> bool:
+    """Whether a parsed answer contains anything the meta-agent can use."""
+    return bool(parsed.get("lesson") or parsed.get("catch") or parsed.get("keep") or parsed.get("items")
+                or parsed.get("overall_confidence") is not None)
+
+
 def redact(text: str, terms: list[str]) -> str:
     """Replace every redact term (>= 4 chars, longest first) with ``[redacted]``."""
     for t in sorted({t for t in terms if t and len(t) >= 4}, key=len, reverse=True):
@@ -304,7 +314,7 @@ class Reflector:
     def reflect(self, round_dir: Path, batch: EvaluationResult, *, phase: str = "expand") -> dict:
         """Reflect on one evaluation batch of the node at ``round_dir``. Never raises;
         returns counters (logged by the manager as ``reflections=k/n``)."""
-        stats = {"cases": 0, "calls": 0, "ok": 0, "skipped": 0, "errors": 0}
+        stats = {"cases": 0, "calls": 0, "ok": 0, "off_task": 0, "skipped": 0, "errors": 0}
         if phase not in self.phases:
             return stats
         if not self.supported:
@@ -380,9 +390,20 @@ class Reflector:
                 status = "skipped"
             else:
                 resp = self._call(msgs, fmt, sess.get("model"), sess.get("base_url"))
-                rec["response"] = resp
-                rec["parsed"] = parse_reflection(mode, resp.get("content") or "")
-                status = "ok" if (resp.get("content") or "").strip() else "errors"
+                parsed = parse_reflection(mode, resp.get("content") or "")
+                if (resp.get("content") or "").strip() and not _answered(parsed):
+                    # The model CONTINUED its task ("Let me fix it ...") instead of answering
+                    # (EXP-049d, 1 of 16). Re-ask once, keeping its off-task reply in context.
+                    rec["off_task_first_reply"] = resp
+                    retry = msgs + [{"role": "assistant", "content": resp.get("content") or ""},
+                                    {"role": "user", "content": _REASK}]
+                    resp = self._call(retry, fmt, sess.get("model"), sess.get("base_url"))
+                    parsed = parse_reflection(mode, resp.get("content") or "")
+                rec["response"], rec["parsed"] = resp, parsed
+                if not (resp.get("content") or "").strip():
+                    status = "errors"
+                else:
+                    status = "ok" if _answered(parsed) else "off_task"
         except Exception as exc:  # noqa: BLE001 -- reflection must never break a batch
             rec["error"] = repr(exc)[:500]
             status = "errors"

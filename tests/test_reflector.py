@@ -240,6 +240,28 @@ class ReflectorUnitTests(unittest.TestCase):
         self.assertIn("a diff", p["catch"])
         self.assertNotIn("GENERAL LESSON", p["catch"])
 
+    def test_off_task_reply_is_reasked_then_counted(self) -> None:
+        from meta_agent.reflector import Reflector
+
+        replies = iter(["Let me fix it. I'll edit the parser now.", POST_ANSWER,
+                        "Let me fix it.", "I will now continue editing."])
+        asked = []
+
+        def chat(msgs, max_tokens, **kw):
+            asked.append(msgs[-1]["content"])
+            return {"content": next(replies), "finish_reason": "stop"}
+
+        r = Reflector(scorer=_FakeScorer(), chat_caller=chat, modes=["post_grading"],
+                      max_cases_per_batch=1)
+        st = r.reflect(self.tmp, _batch())
+        self.assertEqual((st["ok"], st["off_task"]), (1, 0))
+        self.assertIn("continued the task", asked[1])
+        rec = json.loads((self.tmp / "reflections" / "fail-near.PATCH.post_grading.json").read_text())
+        self.assertIn("off_task_first_reply", rec)
+        self.assertIn("Re-read the stated behaviour list", rec["parsed"]["lesson"])
+        st = r.reflect(self.tmp / "b", _batch())
+        self.assertEqual((st["ok"], st["off_task"]), (0, 1))
+
     def test_heading_must_start_a_line(self) -> None:
         from meta_agent.reflector import parse_reflection
 

@@ -2434,7 +2434,7 @@ class HGMManager:
             return
         print(
             f"node {node.node_id}: reflections={st.get('ok', 0)}/{st.get('calls', 0)} "
-            f"cases={st.get('cases', 0)} skipped={st.get('skipped', 0)} "
+            f"cases={st.get('cases', 0)} off_task={st.get('off_task', 0)} skipped={st.get('skipped', 0)} "
             f"errors={st.get('errors', 0)} phase={phase}",
             flush=True,
         )
