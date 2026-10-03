@@ -138,10 +138,11 @@ def run_tool_stage(
     left null there falls back to the LLM_* env-var default exactly as
     before this parameter existed."""
     backbone = get_backbone_config(agent_name)
-    if skills_for(agent_name):
-        system_prompt = with_skill_index(system_prompt, agent_name)
-        if not any(t.get("function", {}).get("name") == "read_skill" for t in schema):
-            schema = schema + filter_schema(wrapper.get_schema(), {"read_skill"})
+    # Skills are INLINED (full text of the stage's tagged skills), not offered on demand:
+    # a 3-case live check (2026-09-24) showed 0 read_skill calls across all four stages
+    # with the index + tool present -- an optional skill the model never loads is inert.
+    # with_skill_index/read_skill stay available for an on-demand design.
+    system_prompt = with_inline_skills(system_prompt, agent_name)
     messages: list = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_content},
