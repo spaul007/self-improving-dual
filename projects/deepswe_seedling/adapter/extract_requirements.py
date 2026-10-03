@@ -25,7 +25,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "requirements"
 CASES = HERE.parent / "benchmark" / "cases.jsonl"
-BASE = "http://gpu-aic-mv-02-st-p5-node-6:8001/v1"
+BASE = "http://gpu-aic-mv-02-st-p5-node-3:8010/v1"
 MODEL = "Qwen/Qwen3.8-27B"
 
 SYSTEM = (

@@ -88,6 +88,7 @@ def arg_path(args: dict) -> str:
 TEST_SHAPED_RE = _re.compile(_TEST_SHAPED, _re.I)
 from .llm import LLMError
 from .tools import for_role
+from . import skills as _skills
 
 PROMPTS = Path(__file__).parent / "prompts"
 
@@ -248,9 +249,13 @@ class Role:
     def system_prompt(self) -> str:
         p = PROMPTS / self.prompt_file
         try:
-            return p.read_text()
+            base = p.read_text()
         except OSError:
-            return f"You are the {self.name} role of a software engineering agent."
+            base = f"You are the {self.name} role of a software engineering agent."
+        # Evolvable skills tagged for this role (prompts/skills/INDEX.md, seedling/skills.py);
+        # "" with no library, so the prompt is unchanged. Deterministic -> the A0 check
+        # (sys_sha of messages[0] == hash of system_prompt()) still holds.
+        return base + _skills.index_text(self.name)
 
     def budget(self, deadline=None) -> dict:
         """Wall budget scales with the ACTUAL time granted, never a hardcoded absolute."""
@@ -788,6 +793,7 @@ class Role:
             "net_fetch": st.net_fetch, "fork_fetch": st.fork_fetch, "tests_run": st.tests_run,
             "nudges": st.nudges, "pushes": st.pushes, "transients_deleted": st.transients_deleted,
             "tool_calls": st.tool_calls, "cap_hits": st.cap_hits,
+            "skills_inlined": [e["name"] for e in _skills.for_role(self.name)],
             "reads_without_limit": st.reads_without_limit,
             "sys_sha": sys_sha, "sys_sha_end": _sys_sha_now, "prompt_file": self.prompt_file,
             "llm_calls": rec.n_llm_calls,

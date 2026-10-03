@@ -46,7 +46,7 @@ DEFAULTS = {
     "SID_PIER_JOBS_ROOT": "/groups/AIC-MV/n.tzou/sid_pier_jobs",
     "SID_EXPERIMENT": "default",
     "SID_MODEL": "openai/Qwen/Qwen3.8-27B",
-    "SID_BASE_URL": "http://gpu-aic-mv-02-st-p5-node-6:8001/v1",
+    "SID_BASE_URL": "http://gpu-aic-mv-02-st-p5-node-3:8010/v1",
     "SID_AGENT_TIMEOUT_S": "10800",
     # agent 10800 + verifier 1800 + env/image setup 900. The evaluator's
     # wall_time_s_per_case must be larger (config: this + 900).
