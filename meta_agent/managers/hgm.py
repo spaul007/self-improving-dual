@@ -113,6 +113,10 @@ class HGMManager:
         finalize_top_k: int = 5,
         full_eval_top_k: int = 0,
         snapshot_tree: bool = False,
+        # Opt-in: rewrite <run>/STATUS.md + status.json (meta_agent/status_report.py)
+        # after every step -- a human-readable live view of budget, current action and
+        # per-node utility / pass count / LCB / paired-vs-root. Default off.
+        status_report: bool = False,
         lineage_memory_token_budget: int = 15000,
         seed: int = 42,
         # Which block _select_block targets for every EXPAND (see
@@ -503,6 +507,7 @@ class HGMManager:
         # and re-evaluated later (analysis/debug). See meta_agent/tree_snapshot.py
         # and snapshot_eval.py. Off by default — zero behavior change.
         self.snapshot_tree = snapshot_tree
+        self.status_report = status_report
         self.seed = seed
 
         # Per-run state (reset at the top of evolve()).
@@ -2077,6 +2082,12 @@ class HGMManager:
             atomic_write_text(state_path, json.dumps(state, indent=2))
         except OSError as exc:
             print(f"[loop_state] write failed: {exc!r}", flush=True)
+        if self.status_report:
+            try:
+                from .. import status_report
+                status_report.write(self._experiment_dir)
+            except Exception as exc:  # noqa: BLE001 -- reporting must never stop the search
+                print(f"[status_report] skipped: {exc!r}", flush=True)
 
     def _restore_from_disk(self) -> None:
         """Rebuild the tree, per-node tallies, feedback, budget counters, RNG states
