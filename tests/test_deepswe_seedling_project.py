@@ -18,12 +18,12 @@ from pathlib import Path
 PROJECT = Path(__file__).resolve().parents[1] / "projects" / "deepswe_seedling"
 sys.path.insert(0, str(PROJECT))
 
-import benchmark.scorer as S  # noqa: E402
-from adapter import pier_case  # noqa: E402
-from adapter.categorizer import categorize_errors  # noqa: E402
-from adapter.render import MAX_LINE, render_trial, run_report  # noqa: E402
-from adapter.trial import dispatch_outputs, failure_classes, load_outcome  # noqa: E402
-from adapter.validators import check_dry_run, check_settings, scan_source  # noqa: E402
+from projects.deepswe_seedling.adapter import scorer_impl as S  # noqa: E402
+from projects.deepswe_seedling.adapter import pier_case  # noqa: E402
+from projects.deepswe_seedling.adapter.categorizer import categorize_errors  # noqa: E402
+from projects.deepswe_seedling.adapter.render import MAX_LINE, render_trial, run_report  # noqa: E402
+from projects.deepswe_seedling.adapter.trial import dispatch_outputs, failure_classes, load_outcome  # noqa: E402
+from projects.deepswe_seedling.adapter.validators import check_dry_run, check_settings, scan_source  # noqa: E402
 from meta_agent.models import CaseResult  # noqa: E402
 from platform_core.runner import AgentOutput  # noqa: E402
 
@@ -165,7 +165,7 @@ class DossierTests(unittest.TestCase):
             {"id": "r3", "text": "unknown config keys are silently ignored", "literals": []}]
 
     def _run(self, exp: Path, rnd: str, run: str, reward, tested):
-        from adapter import dossier
+        from projects.deepswe_seedling.adapter import dossier
         t = make_trial(exp / "pier" / rnd, reward=reward, f2p=1.0 if reward else 0.9)
         (t / "artifacts" / "model.patch").write_text(
             "diff --git a/cfg.ts b/cfg.ts\n+throw new ConfigValidationError('x')\n+const f = '.namerc'\n")
@@ -179,7 +179,7 @@ class DossierTests(unittest.TestCase):
 
     def test_coverage_contrast_index_and_isolation(self) -> None:
         import unittest.mock  # noqa: F401
-        from adapter import dossier
+        from projects.deepswe_seedling.adapter import dossier
         with tempfile.TemporaryDirectory() as d:
             exp = Path(d) / "exp"
             ok, _ = self._run(exp, "round_000", "a", 1,
@@ -200,7 +200,7 @@ class DossierTests(unittest.TestCase):
             self.assertIn("FLIP vs root (1 -> 0)", idx.read_text())
 
     def test_deadline_synthesized_report_does_not_erase_coverage(self) -> None:
-        from adapter.dossier import _latest_nonempty
+        from projects.deepswe_seedling.adapter.dossier import _latest_nonempty
         disp = [{"role": "verify", "output": {"behaviours": ["b1", "b2"]}},
                 {"role": "verify", "output": {"behaviours": [], "_incomplete": True}}]
         self.assertEqual(_latest_nonempty(disp, "verify", "behaviours"), ["b1", "b2"])
