@@ -122,6 +122,14 @@ class HGMManager:
         # after every step -- a human-readable live view of budget, current action and
         # per-node utility / pass count / LCB / paired-vs-root. Default off.
         status_report: bool = False,
+        # Opt-in: give every successfully-created node one evaluation batch right
+        # after its EXPAND (charged to eval_budget). With a continuous utility
+        # (e.g. a fraction of tests passed) evaluated nodes sit far above an
+        # unevaluated node's Beta(1,1) prior, so Thompson sampling almost never
+        # picks a fresh node: in one 1000-eval run 6 of 33 nodes were never
+        # evaluated (each still cost an editor call), and whole blocks got no
+        # evidence in the block bandit. Default off = unchanged schedule.
+        first_batch_on_expand: bool = False,
         lineage_memory_token_budget: int = 15000,
         seed: int = 42,
         # Which block _select_block targets for every EXPAND (see
@@ -529,6 +537,7 @@ class HGMManager:
         # and snapshot_eval.py. Off by default — zero behavior change.
         self.snapshot_tree = snapshot_tree
         self.status_report = status_report
+        self.first_batch_on_expand = first_batch_on_expand
         self.seed = seed
 
         # Per-run state (reset at the top of evolve()).
@@ -828,6 +837,12 @@ class HGMManager:
             # None, _curriculum_directive_for_expand() no-ops gracefully,
             # identical to curriculum_enabled=False.
         self._snapshot("resume" if resume else "seed")
+        if resume:
+            # first_batch_on_expand: a node expanded just before a pause never got its
+            # batch; give it now (no-op when the flag is off).
+            for nid in sorted(self._tree.nodes):
+                if nid != 0:
+                    self._first_batch(nid, evaluator, gatherer)
         n_done = max(0, len(self._tree.nodes) - 1)   # expansions already made (resume)
         for _ in range(max(0, self.init_expansions - n_done)):
             if self._control() is not None:
@@ -839,8 +854,9 @@ class HGMManager:
             # eval_budget is tiny relative to the dual expansion cost).
             if self.eval_budget - self._budget_spent < self._min_budget_to_expand():
                 break
-            self._expand(self._tree.argmax_expand(1.0, expandable), editor, gatherer)
+            new_id = self._expand(self._tree.argmax_expand(1.0, expandable), editor, gatherer)
             self._snapshot("expand")
+            self._first_batch(new_id, evaluator, gatherer)
 
         # Scheduled EXPAND/EVALUATE loop. The while-stop keys off total spend
         # (``_budget_spent``), but the widening schedule keys off
@@ -870,8 +886,9 @@ class HGMManager:
                 self._tree.schedule_favors_expand(self.alpha, self._node_evals_spent)
                 and can_grow
             ):
-                self._expand(self._tree.argmax_expand(tau, expandable), editor, gatherer)
+                new_id = self._expand(self._tree.argmax_expand(tau, expandable), editor, gatherer)
                 self._snapshot("expand")
+                self._first_batch(new_id, evaluator, gatherer)
             elif evaluable:
                 node_id = self._tree.argmax_evaluate(tau, evaluable)
                 spent = self._evaluate(node_id, evaluator, gatherer)
@@ -885,8 +902,9 @@ class HGMManager:
                     break
             elif can_grow:
                 # Nothing left to evaluate, but the tree can still widen.
-                self._expand(self._tree.argmax_expand(tau, expandable), editor, gatherer)
+                new_id = self._expand(self._tree.argmax_expand(tau, expandable), editor, gatherer)
                 self._snapshot("expand")
+                self._first_batch(new_id, evaluator, gatherer)
             else:
                 break
 
@@ -911,6 +929,25 @@ class HGMManager:
     # ------------------------------------------------------------------ #
     # EXPAND / EVALUATE
     # ------------------------------------------------------------------ #
+
+    def _first_batch(self, node_id: int, evaluator: Evaluator, gatherer: FeedbackGatherer) -> None:
+        """``first_batch_on_expand``: evaluate a freshly created node once, so it is
+        never starved by the EVALUATE bandit. No-op when the flag is off, the edit
+        failed, the node already has evaluations (the dual manager evaluates inside
+        its EXPAND) or no budget is left."""
+        if not self.first_batch_on_expand or node_id not in self._tree.nodes:
+            return
+        node = self._tree[node_id]
+        if node.edit_failed or node.n_evals > 0 or self._budget_spent >= self.eval_budget:
+            return
+        if self._control() is not None:
+            # PAUSE / FINALIZE_NOW requested: spend nothing more. A paused node is
+            # given its batch on resume (see the catch-up in evolve()).
+            return
+        spent = self._evaluate(node_id, evaluator, gatherer)
+        self._budget_spent += spent
+        self._node_evals_spent += spent
+        self._snapshot("evaluate")
 
     def _expand(
         self, parent_id: int, editor: AgentEditor, gatherer: FeedbackGatherer
