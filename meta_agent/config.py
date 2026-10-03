@@ -198,6 +198,12 @@ class FrameworkConfig(BaseModel):
     # block name. Omit (or null) to disable; existing configs keep current
     # behavior without changes.
     block_suggester: Optional[ComponentSpec] = None
+    # Optional. When set, the task agent's saved sessions are replayed after each
+    # evaluation batch with one extra question (post-grading / unsure / essential)
+    # and the parsed lessons are given to the meta-agent per ``exposure`` (see
+    # meta_agent/reflector.py). Needs the project's scorer to implement
+    # reflection_sessions/grading_outcome. Omit (or null) to disable.
+    reflector: Optional[ComponentSpec] = None
     # Optional. When set, an LLM-based unit-choosing component (see
     # meta_agent/unit_selector.py) is used by HGMManager's
     # curriculum_granularity="unit" mode to pick which unit (a group of
@@ -291,6 +297,7 @@ class AssembledFramework:
     failure_summarizer: Any = None
     block_suggester: Any = None
     unit_selector: Any = None
+    reflector: Any = None
     train_case_ids: Optional[list[str]] = None
     eval_case_ids: Optional[list[str]] = None
 
@@ -306,6 +313,7 @@ def _ensure_builtins_loaded() -> None:
     importlib.import_module("meta_agent.failure_summarizer")
     importlib.import_module("meta_agent.block_suggester")
     importlib.import_module("meta_agent.unit_selector")
+    importlib.import_module("meta_agent.reflector")
     importlib.import_module("meta_agent.managers")  # imports submodules
 
 
@@ -477,6 +485,14 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
             {"llm_caller": call_llm},
         )
 
+    reflector_obj: Any = None
+    if cfg.reflector is not None:
+        reflector_obj = _build_with_injection(
+            cfg.reflector,
+            "reflector",
+            {"llm_caller": call_llm, "scorer": scorer_obj, "task_agent": cfg.task_agent},
+        )
+
     skills = resolve_skills(cfg)
     manager_config = apply_blocks_to_manager_config(
         dict(cfg.manager.config), cfg.blocks, skills_enabled=skills is not None
@@ -537,6 +553,7 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         failure_summarizer=failure_summarizer_obj,
         block_suggester=block_suggester_obj,
         unit_selector=unit_selector_obj,
+        reflector=reflector_obj,
         train_case_ids=train_ids,
         eval_case_ids=eval_ids,
     )

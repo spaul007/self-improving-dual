@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import re
 from functools import reduce
+from pathlib import Path
 from typing import Any
 
 from meta_agent.registry import register
@@ -1095,6 +1096,36 @@ class ShoppingMasScorer:
         # self-improving prompt dump.
         details["error_log"] = _render_error_log(details)
         return {"score": composite, "passed": passed, "details": details}
+
+
+    # ------------------------------------------------------------------ #
+    # Task-agent reflection hooks (meta_agent/reflector.py; opt-in via the
+    # ``reflector:`` config section). Sessions are recorded by the immutable
+    # llm_client.chat_json through platform_core.session_log.
+    # ------------------------------------------------------------------ #
+
+    needs_session_log = True
+    _REFLECTION_ROLES = {"the requirement-parser agent": "requirement_parser",
+                         "the product-scout agent": "product_scout",
+                         "the cart-optimizer agent": "cart_optimizer",
+                         "the cart-executor agent": "cart_executor"}
+
+    def reflection_sessions(self, case: Any, round_dir: Path) -> dict[str, dict]:
+        from meta_agent.reflection_hooks import role_by_keyword, sessions_from_log
+
+        return sessions_from_log(round_dir, case, role_by_keyword(self._REFLECTION_ROLES))
+
+    def grading_outcome(self, case: Any, detail: str) -> dict[str, Any]:
+        d = case.details or {}
+        redact = [str(x) for x in (list(d.get("missing_products") or [])
+                                   + list(d.get("extra_products") or [])
+                                   + list(d.get("matched_products") or []))]
+        if detail == "numeric":
+            return {"text": f"Score {float(case.score or 0):.3f}: {d.get('matched_count')} of "
+                            f"{d.get('expected_count')} expected cart entries matched.",
+                    "redact": redact}
+        log = d.get("error_log") or d.get("error") or case.error or ""
+        return {"text": "Grader's error log for this case:\n" + str(log)[:4000], "redact": redact}
 
     # ----- round-level aggregate ----- #
 

@@ -938,6 +938,9 @@ class HGMDualManager(HGMManager):
         # failure_summarizer/block_suggester above.
         unit_selector: Any = None,
         resume: bool = False,
+        # Optional task-agent reflection (meta_agent/reflector.py); run after
+        # each committed node's evaluation by HGMManager._evaluate.
+        reflector: Any = None,
     ) -> Any:
         if resume:
             # The dual manager's budget also counts the throw-away variant trials,
@@ -977,4 +980,5 @@ class HGMDualManager(HGMManager):
             failure_summarizer=failure_summarizer,
             block_suggester=block_suggester,
             unit_selector=unit_selector,
+            reflector=reflector,
         )

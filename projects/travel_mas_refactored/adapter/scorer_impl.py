@@ -739,6 +739,37 @@ class TravelCompositeScorer:
             "conversion_error_types": conversion_error_types_ranked,
         }
 
+    # ------------------------------------------------------------------ #
+    # Task-agent reflection hooks (meta_agent/reflector.py; opt-in via the
+    # ``reflector:`` config section). Sessions come from the framework's
+    # call_llm session log, so the evolving seed cannot switch them off.
+    # ------------------------------------------------------------------ #
+
+    needs_session_log = True
+    _REFLECTION_ROLES = {"airline": "flight", "flight": "flight", "rail": "train",
+                         "train": "train", "sightseeing": "sightseeing",
+                         "accounting": "accounting"}
+
+    def reflection_sessions(self, case: Any, round_dir: Path) -> dict[str, dict]:
+        from meta_agent.reflection_hooks import role_by_keyword, sessions_from_log
+
+        return sessions_from_log(round_dir, case, role_by_keyword(self._REFLECTION_ROLES))
+
+    def grading_outcome(self, case: Any, detail: str) -> dict[str, Any]:
+        d = case.details or {}
+        if detail == "numeric":
+            return {"text": f"Composite score {float(case.score or 0):.3f} "
+                            f"(commonsense {d.get('commonsense_score')}, hard {d.get('hard_score')}).",
+                    "redact": []}
+        failed = list(d.get("failed_checks") or [])
+        if not failed:
+            reason = d.get("error") or case.error or "no plan was produced or it could not be converted"
+            return {"text": f"Grader: {str(reason)[:600]}", "redact": []}
+        sem = _load_check_semantics()
+        lines = [f"- {c}: {sem.get(c, '')}".rstrip(": ") for c in failed[:20]]
+        return {"text": f"Composite score {float(case.score or 0):.3f}. Failed checks:\n" + "\n".join(lines),
+                "redact": []}
+
 
 _NO_PLAN_RE = re.compile(r"^\s*plan conversion failed", re.IGNORECASE)
 

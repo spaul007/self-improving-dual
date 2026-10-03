@@ -146,10 +146,12 @@ class LLMClient:
                         except Exception as e:  # tool bugs must not kill the agent turn
                             result = json.dumps({"error": str(e)}, ensure_ascii=False)
                     emit({"role": "tool", "tool_call_id": tc.id, "content": result})
+                _log_session(messages, self.cfg)
                 continue
 
             raw = msg.content or ""
             emit({"role": "assistant", "content": raw})
+            _log_session(messages, self.cfg)
             try:
                 return extract_json(raw)
             except JSONParseError as e:
@@ -186,6 +188,19 @@ class LLMClient:
                             "Respond again with a single valid JSON object and nothing else."
                         ),
                     })
+
+
+def _log_session(messages, cfg) -> None:
+    """Opt-in (META_AGENT_SESSION_LOG=1, set by meta_agent/reflector.py): record
+    this agent call's conversation for post-run reflection. Never raises."""
+    try:
+        from platform_core import session_log
+    except ImportError:
+        return
+    if session_log.enabled():
+        session_log.log_session(list(messages), [], fmt="chat",
+                                meta={"model": getattr(getattr(cfg, "server", None), "served_model_name", None),
+                                      "base_url": getattr(getattr(cfg, "server", None), "url", None)})
 
 
 def extract_json(text: str) -> dict:

@@ -629,6 +629,11 @@ class HGMManager:
         # default, and always in "check" mode) makes UnitCurriculum fall
         # back to its own mechanical "most failures" heuristic.
         self._unit_selector: Any = None
+        # Optional task-agent reflection (see meta_agent/reflector.py): after a
+        # train batch the task agent's own sessions are replayed with one extra
+        # question; the parsed lessons reach the meta-agent via the consumers
+        # the reflector config lists. None keeps legacy behavior.
+        self._reflector: Any = None
         # Opt-in curriculum state (see meta_agent/curriculum.py /
         # meta_agent/unit_curriculum.py) -- built once right after the
         # seed's pre-evaluation in evolve(), None for the whole run when
@@ -663,6 +668,7 @@ class HGMManager:
         block_suggester: Any = None,
         unit_selector: Any = None,
         resume: bool = False,
+        reflector: Any = None,
     ) -> EvolutionOutcome:
         self._benchmark_dir = benchmark_dir
         self._experiment_dir = experiment_dir
@@ -671,6 +677,7 @@ class HGMManager:
         self._failure_summarizer = failure_summarizer
         self._block_suggester = block_suggester
         self._unit_selector = unit_selector
+        self._reflector = reflector
         self._tree = HGMTree(
             beta_prior=self.beta_prior,
             clade_pseudo_count=self.clade_pseudo_count,
@@ -1170,6 +1177,7 @@ class HGMManager:
                     f"[summarizer] unexpected error on node {node.node_id}: {exc!r}",
                     flush=True,
                 )
+        self._run_reflector(node, result, "expand")
         self._run_failure_summarizer(node)
         return len(batch)
 
@@ -1391,6 +1399,17 @@ class HGMManager:
                 f"\n## Failure summary — parent (node {parent.node_id}):\n{failure_summary}"
             )
 
+        # The task agent's own reflections on the parent's train runs (see
+        # meta_agent/reflector.py), when configured with the "editor" consumer.
+        editor_reflections = self._reflections_for(parent.round_dir, "editor")
+        if editor_reflections:
+            parts.append(
+                f"\n## Task-agent reflections — parent (node {parent.node_id}); "
+                "self-reported, fallible, weigh against the evidence above:\n"
+                + editor_reflections
+            )
+        suggester_reflections = self._reflections_for(parent.round_dir, "block_suggester")
+
         # Sibling edits already branched off this parent. Computed once,
         # before the block suggester call, so it can be handed the same
         # data -- see below for why the editor no longer sees this as a
@@ -1430,7 +1449,10 @@ class HGMManager:
                     out_dir=out_dir,
                     node_id=node_id,
                     feedback=self._feedback.get(parent.node_id),
-                    failure_summary=failure_summary,
+                    failure_summary=(failure_summary or "") + (
+                        "\n\n## Task-agent reflections (self-reported, fallible)\n"
+                        + suggester_reflections if suggester_reflections else ""
+                    ) or failure_summary,
                     siblings=[
                         (sib.strategy.block, sib.strategy.optimization_goal)
                         for sib in siblings
@@ -1902,6 +1924,7 @@ class HGMManager:
                 )
             self._refresh_node_feedback(node, gatherer)
             self._write_loop_state("finalize-node")
+            self._run_reflector(node, result, "finalize")
             self._run_failure_summarizer(node)
             print(
                 f"finalize: node {node.node_id} +{len(missing)} "
@@ -2318,6 +2341,7 @@ class HGMManager:
             0, 0, zero_strategy, self._build_eval_result(node), out_dir
         )
         self._write_node_sidecar(node)
+        self._run_reflector(node, result, "root")
         self._run_failure_summarizer(node)
         print(
             f"node 0: SEED pre-eval -> mean={node.mean_utility:.3f} "
@@ -2397,6 +2421,35 @@ class HGMManager:
         )
         return result
 
+    def _run_reflector(self, node: HGMNode, batch: EvaluationResult, phase: str) -> None:
+        """Task-agent reflection on one TRAIN batch (if configured and ``phase``
+        is listed in the reflector's ``phases``). Never raises; always logs one
+        ``reflections=`` line so the mechanism is observable from the run log."""
+        if self._reflector is None or not self._reflector.wants(phase):
+            return
+        try:
+            st = self._reflector.reflect(node.round_dir, batch, phase=phase)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[reflector] unexpected error on node {node.node_id}: {exc!r}", flush=True)
+            return
+        print(
+            f"node {node.node_id}: reflections={st.get('ok', 0)}/{st.get('calls', 0)} "
+            f"cases={st.get('cases', 0)} skipped={st.get('skipped', 0)} "
+            f"errors={st.get('errors', 0)} phase={phase}",
+            flush=True,
+        )
+
+    def _reflections_for(self, round_dir: Path, consumer: str) -> str:
+        """Rendered reflections of the node at ``round_dir`` for one consumer
+        (``""`` when no reflector, the consumer is not enabled, or none exist)."""
+        if self._reflector is None or consumer not in getattr(self._reflector, "consumers", ()):
+            return ""
+        try:
+            return self._reflector.render_for_steering(round_dir)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[reflector] render failed for {round_dir}: {exc!r}", flush=True)
+            return ""
+
     def _run_failure_summarizer(self, node: HGMNode) -> None:
         """Fire the failure summarizer (if configured) on a node's current
         CUMULATIVE evaluation result -- unlike the behavior summarizer, this
@@ -2407,10 +2460,12 @@ class HGMManager:
         if self._failure_summarizer is None:
             return
         try:
+            refl = self._reflections_for(node.round_dir, "failure_summarizer")
             self._failure_summarizer.summarize(
                 eval_result=self._feedback[node.node_id].eval_result,
                 round_dir=node.round_dir,
                 node_id=node.node_id,
+                **({"reflections": refl} if refl else {}),
             )
         except Exception as exc:  # noqa: BLE001
             print(

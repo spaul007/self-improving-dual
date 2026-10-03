@@ -113,6 +113,7 @@ def _evolve(fw: Any, cfg: Any, experiment_dir: Path, resume: bool) -> EvolutionO
         block_suggester=fw.block_suggester,
         unit_selector=fw.unit_selector,
         **({"resume": True} if resume else {}),
+        reflector=fw.reflector,
     )
 
 
