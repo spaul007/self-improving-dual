@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import unittest.mock
 import sys
 import tempfile
 import unittest
@@ -154,6 +155,55 @@ class ValidatorLogicTests(unittest.TestCase):
         self.assertEqual(check_settings(ok), [])
         self.assertTrue(check_settings(dict(ok, REASONING_EFFORT="high")))
         self.assertTrue(check_settings(dict(ok, wall_frac={"baseline": 0.5, "patch": 0.5, "verify": 0.5})))
+
+
+
+class DossierTests(unittest.TestCase):
+    REQS = [{"id": "r1", "text": "config() throws ConfigValidationError when name is missing",
+             "literals": ["ConfigValidationError"]},
+            {"id": "r2", "text": "rc filename is .namerc for each search path", "literals": [".namerc"]},
+            {"id": "r3", "text": "unknown config keys are silently ignored", "literals": []}]
+
+    def _run(self, exp: Path, rnd: str, run: str, reward, tested):
+        from adapter import dossier
+        t = make_trial(exp / "pier" / rnd, reward=reward, f2p=1.0 if reward else 0.9)
+        (t / "artifacts" / "model.patch").write_text(
+            "diff --git a/cfg.ts b/cfg.ts\n+throw new ConfigValidationError('x')\n+const f = '.namerc'\n")
+        (t / "agent" / "trajectory.json").write_text(json.dumps({"steps": [
+            {"extra": {"role": "verify"}, "observation": {"results": [{"content": json.dumps(
+                {"verdict": "pass", "behaviours": tested, "behaviours_tested": tested, "issues": []})}]}}]}))
+        o = load_outcome(t)
+        dest = exp / rnd / "logs" / "scratch" / "cfg-task" / run
+        with unittest.mock.patch.object(dossier, "load_requirements", lambda task: self.REQS):
+            return dossier.write(dest, "cfg-task", run, rnd, t, o, dispatch_outputs(t)), dest
+
+    def test_coverage_contrast_index_and_isolation(self) -> None:
+        import unittest.mock  # noqa: F401
+        from adapter import dossier
+        with tempfile.TemporaryDirectory() as d:
+            exp = Path(d) / "exp"
+            ok, _ = self._run(exp, "round_000", "a", 1,
+                              ["config() with no name throws ConfigValidationError",
+                               "looks for .namerc file per search path"])
+            bad, dest = self._run(exp, "round_001", "b", 0,
+                                  ["config() with no name throws ConfigValidationError"])
+            self.assertEqual(ok["coverage"]["r2"]["t"], "Y")
+            self.assertEqual(bad["coverage"]["r1"]["t"], "Y")
+            self.assertEqual(bad["coverage"]["r2"]["t"], "-")
+            self.assertEqual(bad["coverage"]["r2"]["d"], "Y")        # literal present in the diff
+            md = (dest / "dossier.md").read_text()
+            self.assertIn("NOT in VERIFY's tested list: r2", md)
+            self.assertIn("tested there but not here: r2", md)       # contrast vs the solved run
+            self.assertNotIn("HIDDEN_TEST_OUTPUT", md)
+            self.assertLessEqual(max(len(l) for l in md.splitlines()), 400)
+            idx = dossier.write_index(exp / "round_001")
+            self.assertIn("FLIP vs root (1 -> 0)", idx.read_text())
+
+    def test_deadline_synthesized_report_does_not_erase_coverage(self) -> None:
+        from adapter.dossier import _latest_nonempty
+        disp = [{"role": "verify", "output": {"behaviours": ["b1", "b2"]}},
+                {"role": "verify", "output": {"behaviours": [], "_incomplete": True}}]
+        self.assertEqual(_latest_nonempty(disp, "verify", "behaviours"), ["b1", "b2"])
 
 
 class CasesTests(unittest.TestCase):

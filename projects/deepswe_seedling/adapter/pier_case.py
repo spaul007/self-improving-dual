@@ -37,6 +37,7 @@ from typing import Any, Optional
 from platform_core import trace
 from platform_core.runner import AgentOutput
 
+from . import dossier
 from .render import render_exec_log, render_trial, run_report
 from .trial import dispatch_outputs, find_trial_dir, load_outcome
 
@@ -294,8 +295,13 @@ def _run_case(task: Any, agent_dir: Path, meta: dict, t0: float) -> AgentOutput:
     o = load_outcome(trial_dir)
     if meta["status"] in ("watchdog", "watchdog_sigkill") and o.get("reward") is None:
         o["infra_class"] = "watchdog_kill"
-    report = run_report(o, dispatch_outputs(trial_dir) if trial_dir else [])
+    dispatches = dispatch_outputs(trial_dir) if trial_dir else []
+    report = run_report(o, dispatches)
     export_artifacts(trial_dir, dest, o, report)
+    try:
+        dossier.write(dest, case_id, run_id, round_name, trial_dir, o, dispatches)
+    except Exception as exc:  # noqa: BLE001 -- evidence is optional, the case result is not
+        meta["dossier_error"] = repr(exc)[:200]
     _emit_trace(o, trial_dir)
     _index(scratch_root, case_id, run_id, report.splitlines()[0][:300])
     meta.update({"trial_dir": str(trial_dir) if trial_dir else None,

