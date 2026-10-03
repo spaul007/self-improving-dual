@@ -2,7 +2,8 @@
 
 Runs in the PARENT (evaluator) process. The utility is Pier's own binary grade,
 ``verifier_result.rewards.reward`` (user decision 2026-09-23: binary reward), re-read from
-the trial's result.json -- never trusted from the child's metadata.
+the trial's result.json -- never trusted from the child's metadata. With
+``SID_UTILITY=f2p`` the utility is the trial's f2p instead (see ``utility``).
 
 Infrastructure failures (``details["excluded"] = True``) are excluded from the node's
 utility by HGM ``exclude_flagged_cases``: docker/env start, verifier setup/timeout,
@@ -24,6 +25,20 @@ from meta_agent.registry import register
 from .trial import FAILURE_CLASSES, failure_classes, load_outcome
 
 JOBS_ROOT_ENV = "SID_PIER_JOBS_ROOT"
+# Utility knob (opt-in; default = binary reward, unchanged). "f2p": the fraction of the
+# hidden feature (fail-to-pass) tests passed -- ~2x steadier across identical runs than the
+# binary reward on DeepSWE (EXP-035 vs EXP-039). `passed` stays reward == 1 either way.
+UTILITY_ENV = "SID_UTILITY"
+UTILITIES = ("binary", "f2p")
+
+
+def utility(reward: Any, f2p: Any) -> float:
+    mode = (os.environ.get(UTILITY_ENV) or "binary").strip().lower()
+    if mode not in UTILITIES:
+        raise ValueError(f"{UTILITY_ENV}={mode!r}: expected one of {UTILITIES}")
+    if mode == "binary" or reward == 1:
+        return float(reward or 0.0)
+    return float(f2p) if isinstance(f2p, (int, float)) else 0.0
 DEFAULT_JOBS_ROOT = "/groups/AIC-MV/n.tzou/sid_pier_jobs"
 
 
@@ -49,7 +64,7 @@ class DeepSWESeedlingScorer:
             o["infra_class"] = "watchdog_kill"
         excluded = bool(o.get("infra_class"))
         reward = o.get("reward")
-        score = 0.0 if excluded else float(reward or 0.0)
+        score = 0.0 if excluded else utility(reward, o.get("f2p"))
         rs = o.get("role_stats") or []
         details = {
             "excluded": excluded,

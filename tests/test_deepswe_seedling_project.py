@@ -214,5 +214,32 @@ class CasesTests(unittest.TestCase):
         self.assertTrue(all("task_dir" in r["context"] and r["meta_info"]["language"] for r in rows))
 
 
+class F2PUtilityTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._old = os.environ.get("SID_UTILITY")
+        self.addCleanup(self._restore)
+
+    def _restore(self) -> None:
+        if self._old is None:
+            os.environ.pop("SID_UTILITY", None)
+        else:
+            os.environ["SID_UTILITY"] = self._old
+
+    def test_modes(self) -> None:
+        from projects.deepswe_seedling.adapter.scorer_impl import utility
+
+        os.environ.pop("SID_UTILITY", None)
+        self.assertEqual(utility(0, 0.9), 0.0)          # default binary unchanged
+        self.assertEqual(utility(1, 1.0), 1.0)
+        os.environ["SID_UTILITY"] = "f2p"
+        self.assertAlmostEqual(utility(0, 0.9), 0.9)
+        self.assertEqual(utility(1, None), 1.0)
+        self.assertEqual(utility(0, None), 0.0)         # dead build / missing f2p
+        self.assertEqual(utility(None, None), 0.0)
+        os.environ["SID_UTILITY"] = "bogus"
+        with self.assertRaises(ValueError):
+            utility(0, 0.5)
+
+
 if __name__ == "__main__":
     unittest.main()
