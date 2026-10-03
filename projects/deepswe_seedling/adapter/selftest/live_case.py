@@ -80,7 +80,8 @@ def main() -> int:
             "envelope_parsed": c.error is None or "timeout" in (c.error or ""),
             "reward_matches_result_json": d.get("excluded") or (d.get("reward") == truth),
             "artifacts_whitelisted": set(present) <= {"report.md", "run_summary.json", "model.patch",
-                                                      "reward.json", "exec_log.txt", "transcripts"},
+                                                      "reward.json", "exec_log.txt", "transcripts",
+                                                      "dossier.json", "dossier.md"},
             "report_present": "report.md" in present or bool(c.error),
         }
         ok = all(checks.values())
