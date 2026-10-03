@@ -229,6 +229,17 @@ class ReflectorUnitTests(unittest.TestCase):
         u = parse_reflection("unsure", uns)
         self.assertEqual((u["items"], u["overall_confidence"]), ([{"confidence": 40, "item": "item: budget edge"}], 60))
 
+    def test_bold_heading_with_numbered_list_inside(self) -> None:
+        from meta_agent.reflector import parse_reflection
+
+        text = ("**1. WHERE**\nx\n\n**3. WHAT WOULD HAVE CAUGHT IT**\n1. a test\n2. a diff\n\n"
+                "**4. GENERAL LESSON**\n\n1. Anchor formats to the codebase's own API.\n2. Re-validate.")
+        p = parse_reflection("post_grading", text)
+        self.assertIn("Anchor formats", p["lesson"])
+        self.assertIn("Re-validate", p["lesson"])
+        self.assertIn("a diff", p["catch"])
+        self.assertNotIn("GENERAL LESSON", p["catch"])
+
     def test_heading_must_start_a_line(self) -> None:
         from meta_agent.reflector import parse_reflection
 

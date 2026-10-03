@@ -111,6 +111,10 @@ def clean_messages(msgs: list[dict]) -> list[dict]:
     return out
 
 
+_HEADINGS = ("WHERE|WHY|WHAT WOULD HAVE CAUGHT IT|GENERAL LESSON|UNSURE PARTS|OVERALL|FIRST CHECK|"
+             "ESSENTIAL|CLOSE CALLS|KEEP")
+
+
 def _section(text: str, heading: str) -> str:
     """Body of a numbered/bold heading that STARTS a line (so a word inside prose or a
     JSON key never matches), up to the next numbered heading."""
@@ -118,7 +122,9 @@ def _section(text: str, heading: str) -> str:
     if not m:
         return ""
     rest = text[m.end():]
-    n = re.search(r"(?m)^[\s>#*]*\d+[.)]\s", rest)
+    # End at the next TEMPLATE heading only -- a numbered list inside the section
+    # ("**4. GENERAL LESSON**\n\n1. When ...") must not cut it short.
+    n = re.search(rf"(?mi)^[\s>#*]*\d+[.)]\s*\**\s*(?:{_HEADINGS})\b", rest)
     return (rest[: n.start()] if n else rest).strip(" :*\n")
 
 
