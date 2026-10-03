@@ -112,6 +112,16 @@ def _docker(*args: str, timeout: int = 60) -> str:
         return ""
 
 
+def trial_subdirs(job_dir: Path) -> list[Path]:
+    """Every trial dir pier created under a job dir -- INCLUDING a killed trial that never
+    wrote result.json (find_trial_dir skips those, which is why a reap keyed on it missed
+    the container of the one trial that most needs reaping; live test 377760)."""
+    try:
+        return sorted(d for d in Path(job_dir).iterdir() if d.is_dir() and "__" in d.name)
+    except OSError:
+        return []
+
+
 def reap_trial(trial_dir: Optional[Path]) -> list[str]:
     """Remove the trial's own containers/networks (compose project = trial dir name,
     lowercased). Scoped by name -- never a global prune on a shared node."""
@@ -272,7 +282,7 @@ def _run_case(task: Any, agent_dir: Path, meta: dict, t0: float) -> AgentOutput:
         trial_dir = find_trial_dir(job_dir)
         if killed:
             meta["status"] = killed
-            meta["reaped"] = reap_trial(trial_dir)
+            meta["reaped"] = [r for t in trial_subdirs(job_dir) for r in reap_trial(t)]
         else:
             meta["status"] = "ok" if proc.returncode == 0 else f"pier_rc_{proc.returncode}"
         _ledger({"event": "exit", "case": case_id, "job_dir": str(job_dir), "status": meta["status"]})
