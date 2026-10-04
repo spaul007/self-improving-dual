@@ -17,6 +17,8 @@ CONFIGS = Path(__file__).resolve().parents[1] / "configs"
 NO_MEM = CONFIGS / "hgm_travel_mas_agentic_no_editmem_X100Y180.yaml"
 MEM = CONFIGS / "hgm_travel_mas_agentic_editmem_X100Y180.yaml"
 SANITY = CONFIGS / "hgm_travel_mas_agentic_editmem_sanity.yaml"
+SCHED = CONFIGS / "hgm_travel_mas_agentic_editmem_sched_X100Y180.yaml"
+SCHED_KEYS = {"selection", "schedule_start", "schedule_step", "schedule_cap", "schedule_mc_draws"}
 
 
 def _raw(path: Path) -> dict:
@@ -110,6 +112,30 @@ class PairTests(unittest.TestCase):
                 if fw.edit_memory is not None:
                     self.assertEqual(fw.edit_memory.mutable_exclude, fw.config.mutable_exclude)
                     self.assertTrue(fw.edit_memory.forbid_case_values)
+
+
+class ScheduledConfigTests(unittest.TestCase):
+    """The Thompson + schedule run is the editmem config with only the arm
+    selection (and the name) changed."""
+
+    def test_differs_from_editmem_only_in_arm_selection_and_name(self) -> None:
+        a, b = _raw(MEM), _raw(SCHED)
+        self.assertEqual(a["edit_memory"]["config"]["selection"], "bandit")
+        self.assertEqual(b["edit_memory"]["config"]["selection"], "scheduled_bandit")
+        for d in (a, b):
+            d.pop("experiment_name")
+            for key in SCHED_KEYS:
+                d["edit_memory"]["config"].pop(key, None)
+        self.assertEqual(a, b)
+
+    def test_builds_a_scheduled_layer(self) -> None:
+        fw = C.build_components(C.load(SCHED))
+        lay = fw.edit_memory
+        self.assertEqual(lay.selection, "scheduled_bandit")
+        self.assertEqual((lay.schedule_start, lay.schedule_step, lay.schedule_cap), (0.3, 0.05, 0.7))
+        self.assertAlmostEqual(lay.schedule_floor(1), 0.3)
+        self.assertAlmostEqual(lay.schedule_floor(9), 0.7)
+        self.assertEqual(fw.config.experiment_name, "travel_mas_agentic_editmem_sched_X100Y180")
 
 
 class ConfigWiringTests(unittest.TestCase):

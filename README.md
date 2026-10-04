@@ -209,6 +209,21 @@ selection, the bandits or the curriculum. Requirements: the agentic editor, an
 `hgm` / `hgm_block_tagged` manager (`hgm_dual` refuses) and
 `manager.config.expand_eval_size > 0`.
 
+`edit_memory.config.selection` picks how the arm is chosen:
+
+- `bandit` (default): the shuffled warm-up, then Thompson sampling.
+- `always` / `never`: always / never hand the memory to the editor.
+- `scheduled_bandit`: Thompson sampling clamped to a schedule. For memory version k,
+  `P(with) = min(cap, max(floor(k), P_thompson))` with
+  `floor(k) = min(cap, schedule_start + schedule_step * (k - 1))` and `P_thompson` the
+  probability that the bandit's Thompson draw picks `with` (`schedule_mc_draws` Beta
+  pairs). The memory's share grows with every version, Thompson decides between the
+  floor and the cap, and the cap keeps the without arm alive. No warm-up
+  (`arm_min_pulls` is ignored). Each decision (floor, `P_thompson`, `P(with)`, arm, node)
+  is in `edit_memory/state.json` under `arm_decisions` and printed as an
+  `[edit_memory] arm:` line. `hgm_travel_mas_agentic_editmem_sched_X100Y180.yaml` uses
+  0.3 / 0.05 / 0.7: 30% at v1, +5% per version, capped at 70% from v9 on.
+
 Keep the bash output caps at least `memory_max_chars` (30,000): bash output longer
 than `max_tool_output_chars` keeps only its first 60% and last 40%, so an editor or
 curator that `cat`s a longer memory silently loses its middle (the end of the ranked

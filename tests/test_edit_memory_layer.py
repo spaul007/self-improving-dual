@@ -244,6 +244,135 @@ class TestBandit(LayerBase):
 
 
 # --------------------------------------------------------------------------- #
+# Thompson + schedule (selection: scheduled_bandit)
+# --------------------------------------------------------------------------- #
+
+
+def _lopsided(with_score: float, without_score: float) -> HGMTree:
+    return _tree_with([(0, None, "none", [0.5])] +
+                      [(i, 0, "with", [with_score] * 20) for i in range(1, 4)] +
+                      [(i, 0, "without", [without_score] * 20) for i in range(4, 7)])
+
+
+class TestScheduledBandit(LayerBase):
+    SCHED = dict(selection="scheduled_bandit", schedule_start=0.3, schedule_step=0.05,
+                 schedule_cap=0.7, schedule_mc_draws=2000)
+
+    def sched(self, memory_version: int = 1, **kw) -> EditMemoryLayer:
+        lay = self.layer(**{**self.SCHED, **kw})
+        lay.memory_version = memory_version
+        (lay.dir / memory_version_name(memory_version)).write_text("M")
+        return lay
+
+    def test_floor_rises_per_memory_version_and_stops_at_the_cap(self) -> None:
+        lay = self.sched()
+        self.assertAlmostEqual(lay.schedule_floor(1), 0.30)
+        self.assertAlmostEqual(lay.schedule_floor(2), 0.35)
+        self.assertAlmostEqual(lay.schedule_floor(5), 0.50)
+        self.assertAlmostEqual(lay.schedule_floor(9), 0.70)
+        self.assertAlmostEqual(lay.schedule_floor(30), 0.70)
+
+    def test_losing_memory_still_gets_the_floor(self) -> None:
+        """Thompson alone would almost never pick `with` here; the schedule
+        guarantees it floor(k) of the pulls."""
+        lay = self.sched(memory_version=5)                    # floor 0.50
+        tree = _lopsided(0.1, 0.9)
+        picks = [lay.choose_arm(tree)[0] for _ in range(400)]
+        self.assertLess(lay._pending_decision["p_thompson"], 0.05)
+        self.assertAlmostEqual(picks.count(ARM_WITH) / 400, 0.50, delta=0.07)
+        self.assertEqual(lay._pending_decision["p_with"], 0.5)
+
+    def test_winning_memory_is_capped(self) -> None:
+        lay = self.sched(memory_version=1)                    # floor 0.30, cap 0.70
+        tree = _lopsided(0.9, 0.1)
+        picks = [lay.choose_arm(tree)[0] for _ in range(400)]
+        self.assertGreater(lay._pending_decision["p_thompson"], 0.95)
+        self.assertEqual(lay._pending_decision["p_with"], 0.7)
+        self.assertAlmostEqual(picks.count(ARM_WITH) / 400, 0.70, delta=0.07)
+
+    def test_thompson_decides_between_floor_and_cap(self) -> None:
+        lay = self.sched(memory_version=1)
+        tree = _lopsided(0.5, 0.5)                            # equal arms -> ~0.5
+        lay.choose_arm(tree)
+        d = lay._pending_decision
+        self.assertAlmostEqual(d["p_thompson"], 0.5, delta=0.05)
+        self.assertEqual(d["p_with"], d["p_thompson"])
+
+    def test_no_warm_up_and_the_bandit_stream_is_untouched(self) -> None:
+        lay = self.sched(arm_min_pulls=4)
+        tree = _tree_with([(0, None, "none", [0.5])])
+        for _ in range(10):
+            lay.choose_arm(tree)
+        self.assertEqual(lay.rng_draws, 0)
+        self.assertEqual(lay.pulls[ARM_WITH] + lay.pulls[ARM_WITHOUT], 10)
+
+    def test_decisions_are_deterministic_and_survive_a_resume(self) -> None:
+        """Seeded by (seed, pull index): a rebuilt layer whose pulls were
+        recounted from the tree redraws exactly the original decisions."""
+        tree = _lopsided(0.6, 0.65)                           # nodes 1..6 = 3 with + 3 without pulls
+        opts = dict(memory_version=3, seed=9, window_size=50)  # no window closes in this test
+
+        def fresh() -> EditMemoryLayer:
+            lay = self.sched(**opts)
+            lay.pulls = {ARM_WITH: 3, ARM_WITHOUT: 3}         # what a live run counts for this tree
+            return lay
+
+        lay = fresh()
+        first = [lay.choose_arm(tree)[0] for _ in range(6)]
+        lay_b = fresh()
+        self.assertEqual([lay_b.choose_arm(tree)[0] for _ in range(6)], first)
+        # Resume after 3 pulls: their arms sit on nodes 7..9 (not yet
+        # evaluated, so no mass) and the pulls are recounted from the tree.
+        restored = _tree_with([(0, None, "none", [0.5])] +
+                              [(i, 0, "with", [0.6] * 20) for i in range(1, 4)] +
+                              [(i, 0, "without", [0.65] * 20) for i in range(4, 7)] +
+                              [(7 + i, 0, a, []) for i, a in enumerate(first[:3])])
+        lay2 = self.sched(**opts)
+        lay2._resume(restored)
+        self.assertEqual(lay2.pulls[ARM_WITH] + lay2.pulls[ARM_WITHOUT], 9)
+        rest = [lay2.choose_arm(restored)[0] for _ in range(3)]
+        self.assertEqual(rest, first[3:])
+
+    def test_decision_is_recorded_on_its_node_and_in_state(self) -> None:
+        lay = self.sched(memory_version=2)
+        tree = _lopsided(0.5, 0.5)
+        arm, version, path = lay.choose_arm(tree)
+        self.assertEqual(version, 2)
+        self.assertEqual(path, lay.dir / memory_version_name(2) if arm == ARM_WITH else None)
+        child = HGMNode(node_id=7, parent_id=0, round_dir=Path("/r/round_007"),
+                        memory_arm=arm, memory_version=2)
+        tree.add(child)
+        lay.on_event("expand", tree, node_id=7)
+        self.assertIsNone(lay._pending_decision)
+        self.assertEqual(len(lay.arm_decisions), 1)
+        d = lay.arm_decisions[0]
+        self.assertEqual((d["node_id"], d["arm"], d["memory_version"], d["pull"]), (7, arm, 2, 0))
+        self.assertAlmostEqual(d["floor"], 0.35)
+        self.assertEqual(set(d["tallies"]), {ARM_WITH, ARM_WITHOUT})
+        lay._save_state("check")
+        st = json.loads((lay.dir / "state.json").read_text())
+        self.assertEqual(st["arm_decisions"][0]["node_id"], 7)
+        self.assertEqual((st["config"]["selection"], st["config"]["schedule_cap"]), ("scheduled_bandit", 0.7))
+        # Reloaded from disk (a resume reads state.json first).
+        lay3 = self.layer(**self.SCHED)
+        self.assertEqual(lay3.arm_decisions[0]["node_id"], 7)
+
+    def test_other_modes_keep_their_state_file_unchanged(self) -> None:
+        for selection in ("bandit", "always", "never"):
+            lay = self.layer(selection=selection)
+            st = json.loads((lay.dir / "state.json").read_text())
+            self.assertNotIn("arm_decisions", st, selection)
+            self.assertNotIn("schedule_cap", st["config"], selection)
+            shutil.rmtree(lay.dir)
+
+    def test_invalid_schedules_are_refused(self) -> None:
+        for bad in (dict(schedule_start=0.8, schedule_cap=0.7), dict(schedule_cap=1.2),
+                    dict(schedule_start=-0.1), dict(schedule_step=-0.05), dict(schedule_mc_draws=0)):
+            with self.subTest(**bad), self.assertRaises(ValueError):
+                self.layer(**{**self.SCHED, **bad})
+
+
+# --------------------------------------------------------------------------- #
 # Cadence + files (layer driven directly)
 # --------------------------------------------------------------------------- #
 

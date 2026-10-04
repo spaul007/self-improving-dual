@@ -4,7 +4,9 @@ Hooks (called by ``HGMManager``):
 
 * ``setup(experiment_dir)`` once per run;
 * ``choose_arm(tree) -> (arm, memory_version, memory_path)`` before every
-  expansion — Thompson sampling over the two arms' pooled tallies;
+  expansion — Thompson sampling over the two arms' pooled tallies
+  (``selection: bandit``), optionally clamped between a per-memory-version
+  schedule floor and a cap (``selection: scheduled_bandit``);
 * ``on_event(event, tree, node_id=...)`` next to every tree snapshot:
   ``expand_eval`` of a successful child advances the window; when the
   window holds ``window_size`` nodes the memory curator runs, then — every
@@ -35,7 +37,7 @@ from .policy import build_curator_policy
 ARM_WITH = "with"
 ARM_WITHOUT = "without"
 ARM_NONE = "none"
-SELECTIONS = ("bandit", "always", "never")
+SELECTIONS = ("bandit", "always", "never", "scheduled_bandit")
 
 from ..artifact_names import INSTRUCTION_FILE, MEMORY_FILE, STATE_FILE  # noqa: E402,F401
 
@@ -88,9 +90,25 @@ class EditMemoryLayer:
         # The generator is told never to copy case-specific values (train /
         # flight numbers, hotel / restaurant / attraction names) into the memory.
         forbid_case_values: bool = False,
+        # selection "scheduled_bandit": P(with) = clamp(P_thompson,
+        # floor(k), cap) with floor(k) = min(cap, start + step * (k - 1)) for
+        # memory version k; P_thompson is estimated from mc_draws Beta pairs.
+        # No warm-up in this mode (arm_min_pulls is ignored): the floor and
+        # the cap already guarantee both arms from the first memory on.
+        schedule_start: float = 0.3,
+        schedule_step: float = 0.05,
+        schedule_cap: float = 0.7,
+        schedule_mc_draws: int = 20000,
     ) -> None:
         if selection not in SELECTIONS:
             raise ValueError(f"edit_memory.selection must be one of {SELECTIONS}, got {selection!r}")
+        if not 0.0 <= float(schedule_start) <= float(schedule_cap) <= 1.0:
+            raise ValueError("edit_memory needs 0 <= schedule_start <= schedule_cap <= 1, got "
+                             f"start={schedule_start!r} cap={schedule_cap!r}")
+        if float(schedule_step) < 0:
+            raise ValueError(f"edit_memory.schedule_step must be >= 0, got {schedule_step!r}")
+        if int(schedule_mc_draws) < 1:
+            raise ValueError(f"edit_memory.schedule_mc_draws must be >= 1, got {schedule_mc_draws!r}")
         if window_size < 1:
             raise ValueError("edit_memory.window_size must be >= 1")
         if instruction_every < 1:
@@ -102,6 +120,10 @@ class EditMemoryLayer:
         self.arm_min_pulls = int(arm_min_pulls)
         self.beta_prior = float(beta_prior)
         self.seed = int(seed)
+        self.schedule_start = float(schedule_start)
+        self.schedule_step = float(schedule_step)
+        self.schedule_cap = float(schedule_cap)
+        self.schedule_mc_draws = int(schedule_mc_draws)
         self.spec = G.LLMSpec(model=model, reasoning_effort=reasoning_effort, base_url=base_url,
                               api_key_env=api_key_env, llm_timeout_s=llm_timeout_s,
                               extra_body=extra_body, max_output_tokens=max_output_tokens)
@@ -130,6 +152,11 @@ class EditMemoryLayer:
         self.rng = random.Random(self.seed)
         self.rng_draws = 0
         self.events: list[dict[str, Any]] = []
+        # scheduled_bandit only: one record per pull (floor, Thompson
+        # probability, final probability, arm), node id attached on the
+        # node's expand / expand_eval event.
+        self.arm_decisions: list[dict[str, Any]] = []
+        self._pending_decision: Optional[dict[str, Any]] = None
         # Warm-up order: ``arm_min_pulls`` pulls of each arm, shuffled once
         # (deterministically from ``seed``, on a private RNG so the Thompson
         # stream is untouched). Consumed by position — index = pulls so far —
@@ -205,6 +232,10 @@ class EditMemoryLayer:
         if self.selection == "never":
             self.pulls[ARM_WITHOUT] += 1
             return ARM_WITHOUT, self.memory_version, None
+        if self.selection == "scheduled_bandit":
+            arm = self._scheduled_choice(tree)
+            self.pulls[arm] += 1
+            return arm, self.memory_version, (path if arm == ARM_WITH else None)
         forced = self.forced_plan
         n_forced = self.pulls[ARM_WITH] + self.pulls[ARM_WITHOUT]
         if self.selection == "always":
@@ -227,6 +258,53 @@ class EditMemoryLayer:
         self.pulls[arm] += 1
         return arm, self.memory_version, (path if arm == ARM_WITH else None)
 
+    def schedule_floor(self, memory_version: int) -> float:
+        """Minimum P(with) while memory version ``memory_version`` (>= 1) is
+        handed out: ``start`` at v1, ``+step`` per version, never above the cap."""
+        return min(self.schedule_cap,
+                   self.schedule_start + self.schedule_step * (max(1, memory_version) - 1))
+
+    def thompson_probability(self, tallies: dict[str, dict[str, float]], rng: random.Random) -> float:
+        """P(theta_with > theta_without) under the two arms' Beta posteriors
+        (the probability that a bandit Thompson draw picks ``with``),
+        estimated from ``schedule_mc_draws`` pairs of draws."""
+        a_w = tallies[ARM_WITH]["S"] + self.beta_prior
+        b_w = tallies[ARM_WITH]["F"] + self.beta_prior
+        a_o = tallies[ARM_WITHOUT]["S"] + self.beta_prior
+        b_o = tallies[ARM_WITHOUT]["F"] + self.beta_prior
+        wins = sum(rng.betavariate(a_w, b_w) > rng.betavariate(a_o, b_o)
+                   for _ in range(self.schedule_mc_draws))
+        return wins / self.schedule_mc_draws
+
+    def _scheduled_choice(self, tree: Any) -> str:
+        """Thompson sampling, clamped to [floor(k), cap]: the schedule
+        guarantees memory a share that grows with the memory version, the
+        cap keeps the other arm alive, and Thompson decides in between.
+
+        The randomness comes from a private generator seeded by (seed, pull
+        index) and not from ``self.rng``: a resumed run recounts the pulls
+        from the tree, so it redraws exactly the same decisions."""
+        n_pull = self.pulls[ARM_WITH] + self.pulls[ARM_WITHOUT]
+        rng = random.Random(self.seed * 1_000_003 + 7_919 * n_pull + 17)
+        k = self.memory_version
+        tallies = self.arm_tallies(tree)
+        floor = self.schedule_floor(k)
+        p_thompson = self.thompson_probability(tallies, rng)
+        p = min(self.schedule_cap, max(floor, p_thompson))
+        u = rng.random()
+        arm = ARM_WITH if u < p else ARM_WITHOUT
+        self._pending_decision = {
+            "node_id": None, "pull": n_pull, "memory_version": k,
+            "floor": round(floor, 4), "cap": self.schedule_cap,
+            "p_thompson": round(p_thompson, 4), "p_with": round(p, 4),
+            "u": round(u, 4), "arm": arm,
+            "tallies": {a: {"S": round(t["S"], 3), "F": round(t["F"], 3), "n_nodes": t["n_nodes"]}
+                        for a, t in tallies.items()},
+        }
+        print(f"[edit_memory] arm: memory v{k} floor {floor:.2f} cap {self.schedule_cap:.2f} "
+              f"thompson {p_thompson:.3f} -> P(with) {p:.3f} -> {arm}", flush=True)
+        return arm
+
     # ------------------------------------------------------------------ #
     # Events
     # ------------------------------------------------------------------ #
@@ -240,6 +318,10 @@ class EditMemoryLayer:
         if event in ("expand", "expand_eval") and node_id is not None:
             node = tree[node_id]
             self.node_arms[node_id] = (node.memory_arm, node.memory_version)
+            if self._pending_decision is not None:
+                self._pending_decision["node_id"] = node_id
+                self.arm_decisions.append(self._pending_decision)
+                self._pending_decision = None
             if node.memory_arm == ARM_WITH and node_id not in self.with_nodes_since_instruction:
                 self.with_nodes_since_instruction.append(node_id)
         if event == "expand" and node_id is not None and tree[node_id].edit_failed:
@@ -285,6 +367,10 @@ class EditMemoryLayer:
                 self.with_nodes_since_instruction.append(nid)
         self.pulls = {ARM_WITH: sum(1 for a, _ in self.node_arms.values() if a == ARM_WITH),
                       ARM_WITHOUT: sum(1 for a, _ in self.node_arms.values() if a == ARM_WITHOUT)}
+        # A decision whose node never made it into the tree is redrawn (same
+        # pull index, same private seed) when that node id is expanded again.
+        self.arm_decisions = [d for d in self.arm_decisions if d.get("node_id") in alive]
+        self._pending_decision = None
         self._save_state("resume", memory_version=self.memory_version,
                          window=list(self.window), pulls=dict(self.pulls), orphans=orphans)
         print(f"[edit_memory] resumed: memory v{self.memory_version}, instruction "
@@ -514,6 +600,15 @@ class EditMemoryLayer:
     # ------------------------------------------------------------------ #
 
     def state(self) -> dict[str, Any]:
+        st = self._base_state()
+        if self.selection == "scheduled_bandit":
+            # Only in this mode, so the other modes' state.json is unchanged.
+            st["config"].update(schedule_start=self.schedule_start, schedule_step=self.schedule_step,
+                                schedule_cap=self.schedule_cap, schedule_mc_draws=self.schedule_mc_draws)
+            st["arm_decisions"] = self.arm_decisions
+        return st
+
+    def _base_state(self) -> dict[str, Any]:
         return {
             "memory_version": self.memory_version,
             "instruction_version": self.instruction_version,
@@ -555,3 +650,4 @@ class EditMemoryLayer:
         self.rng_draws = int(st.get("rng_draws", 0))
         self.rng = random.Random(self.seed + 1_000_003 * self.rng_draws)
         self.events = list(st.get("events", []))
+        self.arm_decisions = list(st.get("arm_decisions", []))
