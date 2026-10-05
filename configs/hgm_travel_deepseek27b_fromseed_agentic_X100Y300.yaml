@@ -93,7 +93,18 @@ editor:
     max_output_tokens: 65536
     max_attempts: 2
     agentic_editing: true
-    agentic_max_turns: 20
+    # Raised from 20 -> 100 (2026-10-02): the original run hit the 20-turn
+    # budget on 46% of EXPANDs (12/26) -- evaluated anyway on whatever
+    # partial, unfinished multi-file edit was written when cut off, which
+    # plausibly explains both the score plateau (node 6 at 0.596, flat for
+    # 15 evaluated nodes) and its worst regression (node 11, 0.4615 --
+    # a 3-file harness_heavy edit cut off mid-write). The expanded
+    # toolset's run_python falsification step genuinely costs more turns
+    # than the original 4-tool loop 20 was sized for. The tools-sibling
+    # run (same expanded toolset, agentic_max_turns=100) shows 0%
+    # exhaustion over the same 26-EXPAND window -- direct evidence this is
+    # the fix, not a guess.
+    agentic_max_turns: 100
     # Explicit -- agentic_tools now defaults to the ORIGINAL pre-expansion
     # set (read_file/write_file/run_code_validators/submit_self_improvement_
     # summary only) unless listed here. This run was launched to exercise
@@ -126,7 +137,9 @@ block_suggester:
     reasoning_effort: "medium"
     strategies_path: "strategies.md"
     agentic_access: true
-    agentic_max_turns: 20
+    # Raised from 20 -> 100 (2026-10-02) -- see the editor's own
+    # agentic_max_turns comment above for why.
+    agentic_max_turns: 100
     # Explicit -- see the editor's own agentic_tools comment above for why.
     agentic_tools:
       - "read_file"

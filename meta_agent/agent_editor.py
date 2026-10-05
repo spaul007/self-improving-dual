@@ -381,12 +381,10 @@ AGENTIC_EVALUATE_VARIANT_TOOL: dict[str, Any] = {
         "Run your CURRENT workspace (everything written so far via "
         "write_file/str_replace_file) through the REAL evaluator and get "
         "back each case's score and pass/fail. Without case_ids: "
-        "evaluates the FULL TRAIN set (the real signal, but a genuine run "
-        "of the task agent on every case -- not instant). Pass case_ids "
-        "(specific TRAIN case ids) to evaluate just that subset instead -- "
-        "cheaper, useful while iterating on one failure mode. Calls are "
-        "limited per EXPAND -- form a hypothesis with read_file/grep/"
-        "run_python/list_cases/show_case first, then confirm it here."
+        "evaluates the FULL TRAIN set (a genuine run of the task agent "
+        "on every case -- not instant). Pass case_ids (specific TRAIN "
+        "case ids) to evaluate just that subset instead. Calls are "
+        "limited per EXPAND."
     ),
     "input_schema": {
         "type": "object",
@@ -1343,12 +1341,12 @@ class AgentEditor:
             )
         if has("evaluate_variant"):
             order_parts.append(
-                " Use `evaluate_variant` to test your code if needed -- "
-                "once you've made a change you're not fully certain about, "
-                "call it with case_ids set to a small handful of relevant "
-                "TRAIN cases (fast, cheap) to confirm the fix actually "
-                "works before spending a full-set call or finishing. Not "
-                "required for a trivial or purely cosmetic change. Expect "
+                " `evaluate_variant` runs your current workspace through "
+                "the real evaluator and returns each case's actual score "
+                "and pass/fail. Pass case_ids (specific TRAIN case ids) to "
+                "evaluate just that subset, or omit case_ids to evaluate "
+                f"the full TRAIN set. You get {self.evaluate_variant_max_calls} "
+                "calls per EXPAND -- use them as you see fit. Expect "
                 "some run-to-run variance in the score even with no code "
                 "change (the task agent's own LLM calls are stochastic) -- "
                 "don't read a small difference between two evaluate_variant "

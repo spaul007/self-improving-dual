@@ -423,6 +423,33 @@ class BlockSuggesterRunPythonTests(unittest.TestCase):
         self.assertEqual(result, "done")
         self.assertTrue(any("not enabled" in o for o in captured_outputs))
 
+    def test_hypothesis_discipline_defaults_false_and_is_byte_identical(self) -> None:
+        """hypothesis_discipline defaults to False -- every existing config
+        that doesn't set this new key gets the lean run_python description,
+        with no falsification-discipline paragraph."""
+        bs_default = BlockSuggester(
+            llm_caller=lambda **kw: None, agentic_tools=["read_file", "grep", "run_python"],
+        )
+        bs_explicit_false = BlockSuggester(
+            llm_caller=lambda **kw: None, agentic_tools=["read_file", "grep", "run_python"],
+            hypothesis_discipline=False,
+        )
+        self.assertEqual(bs_default._agentic_closing(), bs_explicit_false._agentic_closing())
+        self.assertNotIn("a hypothesis,", bs_default._agentic_closing())
+
+    def test_hypothesis_discipline_true_adds_paragraph_keeps_tool(self) -> None:
+        """hypothesis_discipline=True opts into the falsification-discipline
+        paragraph on top of run_python's own mechanical description (and
+        every other tool's), which stays untouched."""
+        bs = BlockSuggester(
+            llm_caller=lambda **kw: None, agentic_tools=["read_file", "grep", "run_python"],
+            hypothesis_discipline=True,
+        )
+        out = bs._agentic_closing()
+        self.assertIn("a hypothesis,", out)
+        self.assertIn("run_python(code)", out)
+        self.assertIn("train_data", out)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -767,6 +767,15 @@ class BlockSuggester:
         # config's behavior is unchanged unless it explicitly opts into
         # more.
         agentic_tools: Optional[list[str]] = None,
+        # Whether run_python's tool description includes the falsification-
+        # discipline paragraph ("a diagnosis backed by ONE case is a
+        # hypothesis, not a finding -- test your rule against every case
+        # where the check appears..."). False (default) -- added live in an
+        # earlier session with no controlled measurement of whether it
+        # actually improves diagnosis quality, so it defaults OFF until
+        # that's established; set True to opt back in for an A/B
+        # comparison. No effect when run_python isn't in agentic_tools.
+        hypothesis_discipline: bool = False,
     ) -> None:
         self.llm = llm_caller
         self.model = model
@@ -791,6 +800,7 @@ class BlockSuggester:
                     f"must be a subset of {sorted(_AGENTIC_TOOLS_BY_NAME)}"
                 )
             self.agentic_tool_names = list(agentic_tools)
+        self.hypothesis_discipline = hypothesis_discipline
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -989,31 +999,36 @@ class BlockSuggester:
                 "digest alone.\n"
             )
         if has("run_python"):
-            parts.append(
+            run_python_desc = (
                 "\nPlus `run_python(code)` -- run your own Python against "
                 "`train_data` (this node's own evaluated cases: `CASES`, "
                 "`by_id(cid)`, `failing(label_substring)`), offline, no "
-                "LLM/network. Use it to go one step past citing a single "
-                "example: a diagnosis backed by ONE case is a hypothesis, "
-                "not a finding. For any check you're diagnosing, state the "
-                "rule you believe it enforces, then write code that checks "
-                "that rule against every case where the check appears -- "
-                "both the ones that failed it and the ones that passed it "
-                "-- rather than just the one case you started from. Real "
-                "grading data is noisy, so a rule does not need to explain "
-                "every single instance to be worth acting on -- but you "
-                "must actually look: if your rule agrees with the outcome "
-                "on most cases, say so and report it as the diagnosis; if "
-                "there are exceptions, name them and your best read of why "
-                "(a different edge case, a scorer quirk, a second "
-                "condition you're missing) rather than silently ignoring "
-                "them or pretending the rule is airtight. If the cases are "
-                "too few or too inconsistent to support any rule at all, "
-                "say that explicitly -- 'the evidence doesn't let me pin "
-                "down the exact rule, but the pattern is X' is a "
-                "legitimate, more honest answer than a confident guess "
-                "made from one example.\n"
+                "LLM/network."
             )
+            if self.hypothesis_discipline:
+                run_python_desc += (
+                    " Use it to go one step past citing a single "
+                    "example: a diagnosis backed by ONE case is a hypothesis, "
+                    "not a finding. For any check you're diagnosing, state the "
+                    "rule you believe it enforces, then write code that checks "
+                    "that rule against every case where the check appears -- "
+                    "both the ones that failed it and the ones that passed it "
+                    "-- rather than just the one case you started from. Real "
+                    "grading data is noisy, so a rule does not need to explain "
+                    "every single instance to be worth acting on -- but you "
+                    "must actually look: if your rule agrees with the outcome "
+                    "on most cases, say so and report it as the diagnosis; if "
+                    "there are exceptions, name them and your best read of why "
+                    "(a different edge case, a scorer quirk, a second "
+                    "condition you're missing) rather than silently ignoring "
+                    "them or pretending the rule is airtight. If the cases are "
+                    "too few or too inconsistent to support any rule at all, "
+                    "say that explicitly -- 'the evidence doesn't let me pin "
+                    "down the exact rule, but the pattern is X' is a "
+                    "legitimate, more honest answer than a confident guess "
+                    "made from one example."
+                )
+            parts.append(run_python_desc + "\n")
         parts.append("\n" + _SYSTEM_CLOSING_AGENTIC_TAIL)
         return "".join(parts)
 
