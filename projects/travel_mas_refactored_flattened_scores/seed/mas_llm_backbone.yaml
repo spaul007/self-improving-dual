@@ -1,0 +1,19 @@
+# Per-agent backbone LLM config, read by agents/llm_backbone.py.
+# Every field starts null -- meaning "no override, fall back to the
+# LLM_MODEL/LLM_BASE_URL/LLM_TEMPERATURE/LLM_MAX_OUTPUT_TOKENS/
+# LLM_REASONING_EFFORT env vars", i.e. today's exact behavior. Fields here
+# only take effect once something (a human, or the HGM's
+# llm_backbone_selection block) fills them in. Per-agent entries under
+# "agents" override the matching "default" field; anything left out
+# (including a whole missing agent section) falls back to "default".
+default:
+  model: null
+  base_url: null
+  temperature: null
+  max_output_tokens: null
+  reasoning_effort: null
+agents:
+  flight: {}
+  train: {}
+  sightseeing: {}
+  accounting: {}

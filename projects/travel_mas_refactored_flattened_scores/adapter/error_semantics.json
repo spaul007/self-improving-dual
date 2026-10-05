@@ -1,0 +1,76 @@
+{
+  "_comment": "Human-readable semantics for every check/constraint this project's scorer (scorer_impl.py, delegating to benchmark/_eval/constraints_commonsense.py and constraints_hard.py) can report in failed_checks. Keys match failed_checks entries exactly: 'commonsense:{dimension}:{check_name}' or 'hard:{constraint_name}'. Extracted directly from the real check implementations (not guessed), and written in plain language a human (not just someone who's read the scorer's source) can follow -- so an LLM diagnosing a curriculum sub-goal has an accurate, concrete description of what fires and why, instead of just a bare identifier string. Loaded by meta_agent/managers/hgm.py (curriculum_check_descriptions_path) and passed into meta_agent/curriculum.py's Curriculum(check_descriptions=...) -- that module itself stays project-agnostic; this file is what makes the descriptions travel-specific.",
+
+  "commonsense:Route Consistency:valid_trip_duration": "Fires when the number of days actually planned doesn't exactly equal the trip length the traveler asked for.",
+  "commonsense:Route Consistency:closed_loop_route_structure": "Fires when the itinerary doesn't start and end in the traveler's own home city -- day 1 should depart from home, and the last day should return to it.",
+  "commonsense:Route Consistency:seamless_intercity_transfers": "Fires when the sequence of intercity legs doesn't chain together correctly -- a day's activities don't actually move the traveler from where they were left off to the city that day's plan claims to be in (a missing or wrong intercity travel activity).",
+
+  "commonsense:Sandbox Compliance:validated_accommodation": "Fires when a hotel named in the itinerary (or its stated price) doesn't match ground truth -- it isn't a real hotel actually returned by the hotel search tool for this case, or its price doesn't match that tool's result.",
+  "commonsense:Sandbox Compliance:validated_attractions": "Fires when an attraction named in the itinerary (or its stated ticket price) doesn't match ground truth -- it isn't a real attraction actually returned by the attraction search tool, or its price doesn't match that tool's result.",
+  "commonsense:Sandbox Compliance:validated_meals": "Fires when a restaurant named for a meal (or its stated price) doesn't match ground truth -- it isn't a real restaurant actually returned by the restaurant search tool, or its price doesn't match that tool's result. This is the most common way a hallucinated or generic restaurant name (a placeholder rather than a real search result) gets caught.",
+  "commonsense:Sandbox Compliance:validated_transportation": "Fires when an intercity flight or train number named in the itinerary (or its stated cost) doesn't match ground truth -- it isn't a real flight/train actually returned by the transportation search tool, or its cost doesn't match that tool's result.",
+
+  "commonsense:Itinerary Structure:traceable_accommodation": "Fires when a day (other than the last) doesn't clearly show where the traveler stayed that night; also fires if the LAST day incorrectly still shows a real accommodation (the trip should end without booking another night).",
+  "commonsense:Itinerary Structure:ends_with_accommodation": "Fires when a day (other than the last) doesn't end with returning to the hotel as its final activity -- every night except the last must close at the accommodation.",
+  "commonsense:Itinerary Structure:essential_meal_coverage": "Fires when a day doesn't have the right number of meals scheduled for its type -- a full sightseeing day needs both lunch and dinner with a real gap between them; a travel/transfer day's meal requirement depends on when the traveler arrives or departs.",
+  "commonsense:Itinerary Structure:essential_attraction_coverage": "Fires when a day doesn't have enough sightseeing content -- a full day needs a meaningful amount of attraction time or enough attractions, and even a transfer day needs at least one attraction if there's a large enough window before departing or after arriving.",
+
+  "commonsense:Time Feasibility:no_time_overlaps": "Fires when two activities scheduled on the same day have overlapping times -- the itinerary has the traveler doing two things at once.",
+  "commonsense:Time Feasibility:reasonable_transfer_time": "Fires when the time gap between two consecutive stops (hotel/attraction/meal/intercity-leg) doesn't match how long that trip would actually take by taxi -- either impossibly fast or implausibly slow with no explanation.",
+
+  "commonsense:Business Hours:attraction_visit_within_opening_hours": "Fires when an attraction is visited outside its real opening or closing hours, unless that attraction is open 24 hours.",
+  "commonsense:Business Hours:dining_within_service_hours": "Fires when a meal is scheduled outside the restaurant's actual service hours.",
+  "commonsense:Business Hours:avoidance_of_closure_days": "Fires when an attraction is visited on a day of the week it's actually closed.",
+
+  "commonsense:Duration Rationality:reasonable_duration_at_attractions": "Fires when the time spent at an attraction is shorter or longer than a realistic visit to that attraction should take.",
+  "commonsense:Duration Rationality:reasonable_meal_duration": "Fires when a meal's scheduled duration is unrealistically short (under 30 minutes) or long (over 150 minutes).",
+
+  "commonsense:Cost Calculation Accuracy:cost_calculation_correctness": "Fires when the itinerary's own stated total budget doesn't match what the listed transportation, hotel, meals, attractions, and local transit actually add up to -- the plan's math is wrong, not just its choices.",
+
+  "commonsense:Activity Diversity:diverse_meal_options": "Fires as soon as the exact same restaurant is used for a meal more than once anywhere in the trip -- meals should come from different restaurants.",
+  "commonsense:Activity Diversity:diverse_attraction_options": "Fires as soon as the exact same attraction is visited more than once anywhere in the trip.",
+
+  "hard:budget_constraint": "A hard cap: fires if the itinerary's actual total cost exceeds the traveler's maximum budget by any amount -- unlike the commonsense cost-accuracy check above, there is no tolerance margin here.",
+
+  "hard:flight_seat_class": "Fires unless BOTH the outbound and inbound flights named in the itinerary match ground truth for this case's seat-class requirement.",
+  "hard:flight_seat_status": "Fires unless BOTH the outbound and inbound flights match ground truth for this case's seat-status requirement.",
+  "hard:flight_cheapest_airline_direct": "Fires unless the outbound flight matches the actual cheapest direct flight on the required airline.",
+  "hard:flight_cheapest_direct": "Fires unless the outbound flight matches the actual cheapest direct flight for this route.",
+  "hard:flight_earliest_departure_direct": "Fires unless the outbound flight matches the actual earliest-departing direct flight for this route.",
+  "hard:flight_cheapest_manufacturer_direct": "Fires unless the outbound flight matches the actual cheapest direct flight operated with the required aircraft manufacturer.",
+  "hard:flight_shortest_duration_direct": "Fires unless the outbound or inbound flight (whichever this case requires) matches the actual shortest-duration direct flight.",
+  "hard:flight_earliest_airline_direct": "Fires unless the outbound flight matches the actual earliest-departing direct flight on the required airline.",
+  "hard:flight_departure_time_range": "Fires unless the outbound flight matches the one flight that actually departs within the traveler's requested time window.",
+  "hard:flight_arrival_time_range": "Fires unless the inbound flight matches the one flight that actually arrives within the traveler's requested time window.",
+
+  "hard:train_seat_class": "Fires unless BOTH the outbound and inbound trains named in the itinerary match ground truth for this case's seat-class requirement.",
+  "hard:train_seat_status": "Fires unless BOTH the outbound and inbound trains match ground truth for this case's seat-status requirement.",
+  "hard:train_shortest_duration_direct": "Fires unless the outbound or inbound train (whichever this case requires) matches the actual shortest-duration direct train.",
+  "hard:train_cheapest_direct": "Fires unless the outbound or inbound train (whichever this case requires) matches the actual cheapest direct train.",
+  "hard:train_earliest_departure_direct": "Fires unless the outbound train matches the actual earliest-departing train.",
+  "hard:train_latest_arrival_direct": "Fires unless the inbound train matches the actual latest-arriving train that still satisfies the case's requirement.",
+  "hard:train_cheapest_train_type": "Fires unless the outbound train matches the actual cheapest train of the required train type/class.",
+  "hard:train_departure_time_range": "Fires unless the outbound train matches the one train that actually departs within the traveler's requested time window.",
+
+  "hard:hotel_cheapest_brand": "Fires unless the itinerary's accommodation matches the actual cheapest hotel from the required brand.",
+  "hard:hotel_highest_rated": "Fires unless the itinerary's accommodation matches the actual highest-rated hotel for this case.",
+  "hard:hotel_cheapest_star": "Fires unless the itinerary's accommodation matches the actual cheapest hotel meeting the required star rating.",
+  "hard:hotel_newest_decoration": "Fires unless the itinerary's accommodation matches the most recently renovated/decorated hotel.",
+  "hard:hotel_brand_highest_rated": "Fires unless the itinerary's accommodation matches the actual highest-rated hotel of the required brand.",
+  "hard:hotel_star_highest_rated": "Fires unless the itinerary's accommodation matches the actual highest-rated hotel meeting the required star rating.",
+  "hard:hotel_price_range": "Fires unless the itinerary's accommodation matches the one correct hotel within the traveler's required price range.",
+  "hard:hotel_star_service_required": "Fires unless the itinerary's accommodation matches the one hotel meeting both the required star rating and a specific required service or amenity.",
+
+  "hard:restaurant_cheapest_nearby_attraction": "Fires unless one of the itinerary's meals is at the actual cheapest restaurant near the required attraction.",
+  "hard:restaurant_highest_rated": "Fires unless one of the itinerary's meals is at the actual highest-rated restaurant near the required attraction.",
+  "hard:restaurant_must_eat_named": "Fires unless a specific, named must-visit restaurant appears as a scheduled meal anywhere in the trip.",
+  "hard:restaurant_closest_to_attraction": "Fires unless one of the itinerary's meals is at the restaurant actually closest to the required attraction.",
+  "hard:restaurant_specific_cuisine_nearby": "Fires unless one of the itinerary's meals is at the actual restaurant of the required cuisine type near the required attraction.",
+  "hard:restaurant_specific_tag_nearby": "Fires unless one of the itinerary's meals is at the actual restaurant with the required tag or feature near the required attraction.",
+
+  "hard:attraction_must_visit_named": "Fires unless a specific, named must-visit attraction appears in the itinerary.",
+  "hard:attraction_all_of_type": "Fires unless every required attraction of the given type appears in the itinerary -- all of them, not just one.",
+  "hard:attraction_top_rated_must_visit": "Fires unless the actual top-rated attraction for this case appears in the itinerary.",
+  "hard:attraction_all_free_attractions": "Fires unless every required free attraction for this case appears in the itinerary.",
+  "hard:attraction_type_highest_rated": "Fires unless the actual highest-rated attraction of the required type appears in the itinerary."
+}

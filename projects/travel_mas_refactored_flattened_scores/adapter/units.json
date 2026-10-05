@@ -1,0 +1,16 @@
+{
+  "_comment": "unit name -> list of failed_checks label PREFIXES that belong to it (commonsense:{dimension}: or hard:{constraint}). Loaded by meta_agent/managers/hgm.py (curriculum_units_path) via meta_agent/unit_curriculum.py::load_units_map for the opt-in curriculum_granularity=\"unit\" mode. Mirrors experiment_harness_staged.py's UNITS dict content exactly, as project data rather than framework code.",
+  "Route Consistency": ["commonsense:Route Consistency:"],
+  "Itinerary Structure": ["commonsense:Itinerary Structure:"],
+  "Business Hours": ["commonsense:Business Hours:"],
+  "Time Feasibility": ["commonsense:Time Feasibility:"],
+  "Duration Rationality": ["commonsense:Duration Rationality:"],
+  "Activity Diversity": ["commonsense:Activity Diversity:"],
+  "Sandbox Compliance": ["commonsense:Sandbox Compliance:"],
+  "Cost Calculation Accuracy": ["commonsense:Cost Calculation Accuracy:"],
+  "hard constraints: transport (train/flight)": ["hard:train_", "hard:flight_"],
+  "hard constraints: restaurant": ["hard:restaurant_"],
+  "hard constraints: hotel": ["hard:hotel_"],
+  "hard constraints: attraction": ["hard:attraction_"],
+  "hard constraints: budget": ["hard:budget_"]
+}
