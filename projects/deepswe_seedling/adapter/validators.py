@@ -26,7 +26,8 @@ from typing import Optional
 from meta_agent.registry import register
 
 HERE = Path(__file__).resolve().parent
-DEFAULT_PIER_PY = "/users/n.tzou/.local/share/uv/tools/datacurve-pier/bin/python"
+# Python interpreter that can `import pier` (pier's own tool venv); set SID_PIER_PYTHON.
+DEFAULT_PIER_PY = os.environ.get("SID_PIER_PYTHON") or "python3"
 # Frozen seedling modules (also in the config's mutable_exclude). Host isolation scans
 # everything else under seedling/.
 FROZEN = {"agent.py", "execpool.py", "gitops.py", "trajectory.py", "deadline.py", "llm.py",

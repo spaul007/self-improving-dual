@@ -16,7 +16,7 @@ Contract (see projects/deepswe_seedling/README.md):
   * The scorer re-reads the trial's result.json itself (``metadata.trial_dir``).
 
 Configuration comes from env (the YAML ``env:`` block), all with safe defaults:
-  SID_PIER_BIN, SID_PIER_JOBS_ROOT, SID_EXPERIMENT, SID_MODEL, SID_BASE_URL,
+  SID_DEEPSWE_ROOT, SID_PIER_BIN, SID_PIER_JOBS_ROOT, SID_EXPERIMENT, SID_MODEL, SID_BASE_URL,
   SID_AGENT_TIMEOUT_S, SID_PIER_WALL_S, SID_LEDGER, SID_RESULT_CACHE_DIR,
   SID_RESULT_CACHE_READ.
 """
@@ -42,11 +42,13 @@ from .render import render_exec_log, render_trial, run_report
 from .trial import dispatch_outputs, find_trial_dir, load_outcome
 
 DEFAULTS = {
-    "SID_PIER_BIN": "/users/n.tzou/.local/bin/pier",
-    "SID_PIER_JOBS_ROOT": "/groups/AIC-MV/n.tzou/sid_pier_jobs",
+    # Root of the DeepSWE checkout; relative task_dir values in cases.jsonl resolve against it.
+    "SID_DEEPSWE_ROOT": "deep-swe",
+    "SID_PIER_BIN": "pier",
+    "SID_PIER_JOBS_ROOT": "sid_pier_jobs",
     "SID_EXPERIMENT": "default",
     "SID_MODEL": "openai/Qwen/Qwen3.8-27B",
-    "SID_BASE_URL": "http://gpu-aic-mv-02-st-p5-node-3:8010/v1",
+    "SID_BASE_URL": "http://localhost:8000/v1",
     "SID_AGENT_TIMEOUT_S": "10800",
     # agent 10800 + verifier 1800 + env/image setup 900. The evaluator's
     # wall_time_s_per_case must be larger (config: this + 900).
@@ -219,6 +221,8 @@ def run_case(task: Any, agent_dir: Path) -> AgentOutput:
 def _run_case(task: Any, agent_dir: Path, meta: dict, t0: float) -> AgentOutput:
     case_id = str(task.case_id)
     task_dir = Path((task.context or {}).get("task_dir") or "")
+    if not task_dir.is_absolute():
+        task_dir = Path(_cfg("SID_DEEPSWE_ROOT")) / task_dir
     if not (task_dir / "task.toml").is_file():
         meta.update({"status": "bad_task_dir", "task_dir": str(task_dir)})
         return AgentOutput(result=f"INFRA-EXCLUDED (bad task_dir {task_dir})", metadata=meta)

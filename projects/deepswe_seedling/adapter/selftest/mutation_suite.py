@@ -60,7 +60,7 @@ MUTATIONS = [
     ("drop a role_stats key", sub("seedling/roles.py", '"wall_terminated": (not end_turn)', '"_wt": (not end_turn)'), True),
     ("reasoning effort = high", sub("seedling/settings.py", 'REASONING_EFFORT = "medium"', 'REASONING_EFFORT = "high"'), True),
     ("read a host file", sub("seedling/pipeline.py", "async def solve(",
-                             "_LEAK = open('/groups/AIC-MV/n.tzou/swe/deep-swe/tasks/x/tests/test.patch').read()\n\n\nasync def solve("), True),
+                             "_LEAK = open('/data/deep-swe/tasks/x/tests/test.patch').read()\n\n\nasync def solve("), True),
     ("edit DENY_WRITE_GLOBS (frozen)", sub("seedling/tools/__init__.py", "DENY_WRITE_GLOBS = [", "DENY_WRITE_GLOBS = [] and ["), True),
     ("benign: patch prompt wording", sub("seedling/prompts/patch.md", "Your job is to FIND the code and EDIT it.",
                                          "Your job is to FIND the relevant code and EDIT it carefully."), False),

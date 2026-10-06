@@ -39,7 +39,7 @@ def utility(reward: Any, f2p: Any) -> float:
     if mode == "binary" or reward == 1:
         return float(reward or 0.0)
     return float(f2p) if isinstance(f2p, (int, float)) else 0.0
-DEFAULT_JOBS_ROOT = "/groups/AIC-MV/n.tzou/sid_pier_jobs"
+DEFAULT_JOBS_ROOT = "sid_pier_jobs"   # same default as pier_case.SID_PIER_JOBS_ROOT
 
 
 def _trusted(trial_dir: str | None) -> Path | None:

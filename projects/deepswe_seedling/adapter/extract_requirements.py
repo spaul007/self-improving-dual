@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import threading
@@ -25,8 +26,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "requirements"
 CASES = HERE.parent / "benchmark" / "cases.jsonl"
-BASE = "http://gpu-aic-mv-02-st-p5-node-3:8010/v1"
-MODEL = "Qwen/Qwen3.8-27B"
+BASE = os.environ.get("SID_BASE_URL") or "http://localhost:8000/v1"
+MODEL = (os.environ.get("SID_MODEL") or "Qwen/Qwen3.8-27B").removeprefix("openai/")
 
 SYSTEM = (
     "You turn a software task statement into a checklist of atomic, independently testable "

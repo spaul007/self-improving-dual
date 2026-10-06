@@ -5,21 +5,23 @@ dir also holds README/manifest files). Case contract (runner.Task):
   id          bare task directory name (Pier's task_name is "datacurve/<id>")
   input       instruction.md -- the problem statement; ALSO what the feedback
               gatherer shows the meta-agent as the case "query"
-  context     {"task_dir": <abs path>} -- the only thing workflow.py needs
+  context     {"task_dir": "tasks/<id>"} -- relative to SID_DEEPSWE_ROOT; the only
+              thing workflow.py needs
   meta_info   {"language", "category", "repository_url"} -- never reaches the
               agent (runner keeps meta_info off the Task); used for
               split.stratify_by and the per-language breakdown
 
-    python3 projects/deepswe_seedling/adapter/make_cases.py [DEEPSWE_ROOT]
+    python3 projects/deepswe_seedling/adapter/make_cases.py [DEEPSWE_ROOT]   # default: $SID_DEEPSWE_ROOT
 """
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tomllib
 from pathlib import Path
 
-DEFAULT_ROOT = Path("/groups/AIC-MV/n.tzou/swe/deep-swe")
+DEFAULT_ROOT = Path(os.environ.get("SID_DEEPSWE_ROOT") or "deep-swe")
 OUT = Path(__file__).resolve().parents[1] / "benchmark" / "cases.jsonl"
 
 
@@ -32,7 +34,7 @@ def main(root: Path = DEFAULT_ROOT) -> int:
         rows.append({
             "id": name,
             "input": (tdir / "instruction.md").read_text(encoding="utf-8"),
-            "context": {"task_dir": str(tdir)},
+            "context": {"task_dir": f"tasks/{name}"},
             "meta_info": {
                 "language": meta.get("language"),
                 "category": meta.get("category"),
