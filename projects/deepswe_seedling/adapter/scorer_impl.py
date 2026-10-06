@@ -15,7 +15,9 @@ signals -- never test names or test output.
 """
 from __future__ import annotations
 
+import json
 import os
+import re
 from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
@@ -129,6 +131,104 @@ class DeepSWESeedlingScorer:
             "no_plan_rate": rate(scored, lambda cd: not cd[1].get("patch_bytes")),
         }
 
+
+    # ------------------------------------------------------------------ #
+    # Task-agent reflection hooks (meta_agent/reflector.py; opt-in via the
+    # ``reflector:`` config section). Sessions are pier's own per-role
+    # conversation snapshots (agent/conv/<role>.<attempt>.json); the grading
+    # outcome is read from the trial's verifier/ -- hidden test names go INTO the
+    # task agent's question and are returned as redact terms, so under
+    # ``exposure: lessons_only`` they never reach the meta-agent.
+    # ------------------------------------------------------------------ #
+
+    REFLECTION_ROLES = ("patch", "verify")
+    _WHO = {"patch": "You are the PATCH role; this is your own session and your patch is the one "
+                     "that was submitted.",
+            "verify": "You are the VERIFY role; this is your own session and your last verdict stands."}
+
+    @staticmethod
+    def _trial(case: Any) -> Path | None:
+        meta = (case.details or {}).get("agent_metadata") or {}
+        return _trusted(meta.get("trial_dir"))
+
+    def reflection_sessions(self, case: Any, round_dir: Path) -> dict[str, dict]:
+        trial = self._trial(case)
+        if trial is None:
+            return {}
+        out = {}
+        for role in self.REFLECTION_ROLES:
+            files = sorted(trial.glob(f"agent/conv/{role}.*.json"),
+                           key=lambda p: int(p.stem.split(".")[1]) if p.stem.split(".")[1].isdigit() else -1)
+            conv = _read_json(files[-1]) if files else None
+            if conv and conv.get("messages"):
+                out[role] = {"messages": conv["messages"], "format": "chat",
+                             "preamble": self._WHO.get(role, f"You are the {role.upper()} role.")}
+        return out
+
+    def grading_outcome(self, case: Any, detail: str) -> dict[str, Any]:
+        d = case.details or {}
+        f2p = f"{d.get('f2p_passed')}/{d.get('f2p_total')}"
+        p2p = f"{d.get('p2p_passed')}/{d.get('p2p_total')}"
+        head = (f"Result: NOT resolved (reward 0). Hidden feature tests passed: {f2p}. "
+                f"Pre-existing tests passed: {p2p}.")
+        trial = self._trial(case)
+        if detail == "numeric" or trial is None:
+            return {"text": head, "redact": []}
+        ctrf = _read_json(trial / "verifier" / "ctrf.json") or {}
+        tests = ((ctrf.get("results") or {}).get("tests")) or []
+        fails = [str(t.get("name", "?")) for t in tests if t.get("status") != "passed"]
+        lines = [head, "", f"Hidden tests that FAILED ({len(fails)} total; up to {_MAX_FAILING} listed):"]
+        lines += [f"  - {n}" for n in fails[:_MAX_FAILING]]
+        exc = _excerpts(trial, fails)
+        if exc:
+            lines += ["", "Test-output excerpts for some of them (best effort, may be truncated):"]
+            for n, e in list(exc.items())[:8]:
+                lines += [f"--- {n}", e.strip(), ""]
+        redact = set()
+        for n in fails:
+            redact.add(n)
+            bare = _bare_test_name(n)
+            redact.add(bare)
+            # The unqualified test/function name too (Go pkg.TestX, pytest a.py::T::test_x,
+            # jest "suite > case"): a lesson naming just that must still be redacted.
+            # Identifier-like only (has a capital, digit or underscore), so a plain English
+            # word from a jest description never gets blanked out of every lesson.
+            redact.update(p for p in re.split(r"::|[./#>\s]+", bare)[-2:]
+                          if len(p) >= 6 and re.search(r"[A-Z0-9_]", p))
+            redact.update(p for p in re.findall(r"[\w./-]+\.(?:go|rs|py|ts|tsx|js|jsx|java|rb)\b", n))
+        return {"text": "\n".join(lines), "redact": sorted(x for x in redact if len(x) >= 4)}
+
+
+_MAX_FAILING = 25
+_EXCERPT_CHARS = 600
+
+
+def _read_json(p: Path) -> Any:
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _bare_test_name(name: str) -> str:
+    return re.sub(r"^\[(f2p|p2p)\]\s*", "", name).split(" ")[-1]
+
+
+def _excerpts(trial: Path, names: list[str]) -> dict[str, str]:
+    """Short test-output excerpt per failing test, located by its bare name (best effort)."""
+    try:
+        out = (trial / "verifier" / "test-stdout.txt").read_text(errors="replace")
+    except OSError:
+        return {}
+    got = {}
+    for n in names[:_MAX_FAILING]:
+        bare = _bare_test_name(n)
+        if len(bare) < 4:
+            continue
+        i = out.find(bare)
+        if i >= 0:
+            got[n] = out[max(0, i - 100): i + _EXCERPT_CHARS].replace("\r", "")
+    return got
 
 _SCORER = DeepSWESeedlingScorer()
 
