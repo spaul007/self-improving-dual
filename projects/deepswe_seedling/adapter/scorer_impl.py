@@ -187,14 +187,7 @@ class DeepSWESeedlingScorer:
         redact = set()
         for n in fails:
             redact.add(n)
-            bare = _bare_test_name(n)
-            redact.add(bare)
-            # The unqualified test/function name too (Go pkg.TestX, pytest a.py::T::test_x,
-            # jest "suite > case"): a lesson naming just that must still be redacted.
-            # Identifier-like only (has a capital, digit or underscore), so a plain English
-            # word from a jest description never gets blanked out of every lesson.
-            redact.update(p for p in re.split(r"::|[./#>\s]+", bare)[-2:]
-                          if len(p) >= 6 and re.search(r"[A-Z0-9_]", p))
+            redact.update(_test_name_terms(n))
             redact.update(p for p in re.findall(r"[\w./-]+\.(?:go|rs|py|ts|tsx|js|jsx|java|rb)\b", n))
         return {"text": "\n".join(lines), "redact": sorted(x for x in redact if len(x) >= 4)}
 
@@ -211,7 +204,30 @@ def _read_json(p: Path) -> Any:
 
 
 def _bare_test_name(name: str) -> str:
-    return re.sub(r"^\[(f2p|p2p)\]\s*", "", name).split(" ")[-1]
+    """The test id without the ``[f2p]``/``[p2p]`` tag and without a pytest-style
+    parametrisation suffix (``test_x[a=1, b=2]`` -> ``test_x``; the parameters may contain
+    spaces, so never split on whitespace first)."""
+    s = re.sub(r"^\[(f2p|p2p)\]\s*", "", name).strip()
+    if s.endswith("]") and "[" in s:
+        s = s[: s.index("[")]
+    return s.strip()
+
+
+def _unqualified(base: str) -> list[str]:
+    """Identifier-like trailing segments of a test id: Go ``pkg.TestX`` -> TestX, pytest
+    ``a.b.TestCls.test_x`` / ``a.py::T::test_x`` -> T, test_x, jest ``suite > case``
+    -> its identifier-like words. Plain English words (no capital, digit or underscore)
+    are never returned, so they are never blanked out of a lesson."""
+    return [p for p in re.split(r"::|[./#>\s]+", base)[-2:]
+            if len(p) >= 6 and re.search(r"[A-Z0-9_]", p)]
+
+
+def _test_name_terms(name: str) -> set[str]:
+    """Every form of a failing test's name a lesson might use: tag-less id, parameter-less
+    id, and the unqualified test/function name(s)."""
+    s = re.sub(r"^\[(f2p|p2p)\]\s*", "", name).strip()
+    base = _bare_test_name(name)
+    return {x for x in (s, base, *_unqualified(base)) if len(x) >= 4}
 
 
 def _excerpts(trial: Path, names: list[str]) -> dict[str, str]:
@@ -222,10 +238,9 @@ def _excerpts(trial: Path, names: list[str]) -> dict[str, str]:
         return {}
     got = {}
     for n in names[:_MAX_FAILING]:
-        bare = _bare_test_name(n)
-        if len(bare) < 4:
-            continue
-        i = out.find(bare)
+        base = _bare_test_name(n)
+        keys = [k for k in (*reversed(_unqualified(base)), base) if len(k) >= 4]
+        i = next((j for j in (out.find(k) for k in keys) if j >= 0), -1)
         if i >= 0:
             got[n] = out[max(0, i - 100): i + _EXCERPT_CHARS].replace("\r", "")
     return got

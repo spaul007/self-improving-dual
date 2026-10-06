@@ -75,6 +75,17 @@ class DeepSWEReflectionHookTests(unittest.TestCase):
         red = self.s.grading_outcome(self.case, "full")["redact"]
         for term in ("TestPinningMixedRefs", "test_roundtrip_unicode", "TestCls"):
             self.assertIn(term, red)
+
+    def test_pytest_parametrised_name_with_spaces(self) -> None:
+        ctrf = self.trial / "verifier" / "ctrf.json"
+        n = ("[f2p] tests.models.test_cookie_store.test_cookie_store_supports_combined_set_cookie_header"
+             "[a=1; Expires=Wed, 21 Oct 2099 07:28:00 GMT, b=2-a=1; b=2]")
+        ctrf.write_text(json.dumps({"results": {"tests": [{"name": n, "status": "failed"}]}}))
+        red = self.s.grading_outcome(self.case, "full")["redact"]
+        self.assertIn("test_cookie_store_supports_combined_set_cookie_header", red)
+        self.assertIn("tests.models.test_cookie_store.test_cookie_store_supports_combined_set_cookie_header", red)
+        self.assertIn("test_cookie_store", red)
+        self.assertFalse(any(x in red for x in ("b=2]", "GMT", "Expires=Wed")))
         num = self.s.grading_outcome(self.case, "numeric")
         self.assertIn("1/2", num["text"])
         self.assertNotIn("TestParseWidget", num["text"])
