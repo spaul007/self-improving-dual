@@ -209,6 +209,27 @@ selection, the bandits or the curriculum. Requirements: the agentic editor, an
 `hgm` / `hgm_block_tagged` manager (`hgm_dual` refuses) and
 `manager.config.expand_eval_size > 0`.
 
+**TextGrad instruction optimizer** (`edit_memory.config.instruction_optimizer: textgrad`,
+`meta_agent/edit_memory/textgrad_opt.py`, needs `textgrad` from `requirements.txt`).
+The instruction curator still writes `q.md`. The one-call addendum updater is replaced
+by a TextGrad step:
+- For each memory version the audited editors read, the run replays the generator call
+  (addendum → system prompt → memory). It uses the inputs saved in
+  `window_NNN/generation_inputs.json`, so no extra generation call is made.
+- A critic judges that memory against the audit, the curation and the previous memory.
+- The critique is back-propagated to the addendum, and one textual-gradient-descent
+  step writes the next addendum.
+
+The critic labels each issue [INSTRUCTION] / [COMPLIANCE] / [INPUT]. [INPUT] items are
+stripped before the backward pass (`critique_vNNN_propagated.md`), so only problems the
+instruction can fix drive the update. Facts from the run may illustrate an addendum rule
+but not replace it; the facts themselves belong in the memory. Each step costs three calls per critiqued
+version and one optimizer call. Knobs under `textgrad:` are `max_versions` (2),
+`past_feedback` (2) and `fallback` (`updater` | `keep`). Artifacts go to
+`instruction_update_NNN/textgrad/`: `critique_vNNN.md`, `memory_feedback_vNNN.md`,
+`addendum_feedback.md`, `calls.jsonl` (every call in full) and `summary.json`.
+Config: `hgm_travel_mas_agentic_editmem_textgrad_X100Y180.yaml`.
+
 **Manager knobs** (`manager.config`, all default off):
 
 - `expand_eval_size: N` evaluates every successful child on N train cases right

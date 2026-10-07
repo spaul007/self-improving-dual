@@ -36,6 +36,7 @@ ARM_WITH = "with"
 ARM_WITHOUT = "without"
 ARM_NONE = "none"
 SELECTIONS = ("bandit", "always", "never")
+INSTRUCTION_OPTIMIZERS = ("updater", "textgrad")
 
 from ..artifact_names import INSTRUCTION_FILE, MEMORY_FILE, STATE_FILE  # noqa: E402,F401
 
@@ -88,6 +89,11 @@ class EditMemoryLayer:
         # The generator is told never to copy case-specific values (train /
         # flight numbers, hotel / restaurant / attraction names) into the memory.
         forbid_case_values: bool = False,
+        # How I_k -> I_{k+1} is computed from the audit: "updater" (one LLM
+        # call over Q) or "textgrad" (critic + textual gradient descent over
+        # the memory versions the audited editors read; textgrad_opt.py).
+        instruction_optimizer: str = "updater",
+        textgrad: Optional[dict[str, Any]] = None,
     ) -> None:
         if selection not in SELECTIONS:
             raise ValueError(f"edit_memory.selection must be one of {SELECTIONS}, got {selection!r}")
@@ -95,6 +101,11 @@ class EditMemoryLayer:
             raise ValueError("edit_memory.window_size must be >= 1")
         if instruction_every < 1:
             raise ValueError("edit_memory.instruction_every must be >= 1")
+        if instruction_optimizer not in INSTRUCTION_OPTIMIZERS:
+            raise ValueError(f"edit_memory.instruction_optimizer must be one of "
+                             f"{INSTRUCTION_OPTIMIZERS}, got {instruction_optimizer!r}")
+        if textgrad and instruction_optimizer != "textgrad":
+            raise ValueError('edit_memory.textgrad is set but instruction_optimizer is not "textgrad"')
         self.llm = llm_caller
         self.window_size = int(window_size)
         self.instruction_every = int(instruction_every)
@@ -107,6 +118,12 @@ class EditMemoryLayer:
                               extra_body=extra_body, max_output_tokens=max_output_tokens)
         self.mutable_exclude = list(mutable_exclude) if mutable_exclude is not None else None
         self.forbid_case_values = bool(forbid_case_values)
+        self.instruction_optimizer = instruction_optimizer
+        self.textgrad_cfg: Any = None
+        if instruction_optimizer == "textgrad":
+            # Imported here: textgrad is optional and slow to import.
+            from .textgrad_opt import TextGradConfig
+            self.textgrad_cfg = TextGradConfig(**(textgrad or {}))
         self.curator_cfg = CuratorConfig(**(curator or {}))
         self.memory_max_chars = int(memory_max_chars)
         self.instruction_addendum_max_chars = int(instruction_addendum_max_chars)
@@ -148,6 +165,9 @@ class EditMemoryLayer:
     def setup(self, experiment_dir: Path) -> None:
         self.dir = Path(experiment_dir) / MEMORY_DIR_NAME
         self.dir.mkdir(parents=True, exist_ok=True)
+        if self.instruction_optimizer == "textgrad":
+            from .textgrad_opt import redirect_logs
+            redirect_logs(self.dir / "textgrad_logs")
         state_path = self.dir / STATE_FILE
         if state_path.exists():
             self._load_state(json.loads(state_path.read_text(encoding="utf-8")))
@@ -401,15 +421,16 @@ class EditMemoryLayer:
             self._update_instruction(tree)
 
         # 3. memory generator (one call), under the current addendum
+        previous_memory, addendum = self._memory_text(), self._addendum()
+        window_meta = {"window_index": j, "nodes": [
+            {"node_id": m["node_id"], "memory_arm": m["memory_arm"],
+             "memory_version": m["memory_version"],
+             **({"block": m["block"], "implementation_strategy": m.get("implementation_strategy")}
+                if m.get("block") else {})}
+            for m in nodes_meta if not m["edit_failed"]]}
         new_memory, memory_errors = G.generate_memory(
-            self.llm, self.spec, previous_memory=self._memory_text(), curation=curation,
-            addendum=self._addendum(),
-            window_meta={"window_index": j, "nodes": [
-                {"node_id": m["node_id"], "memory_arm": m["memory_arm"],
-                 "memory_version": m["memory_version"],
-                 **({"block": m["block"], "implementation_strategy": m.get("implementation_strategy")}
-                    if m.get("block") else {})}
-                for m in nodes_meta if not m["edit_failed"]]},
+            self.llm, self.spec, previous_memory=previous_memory, curation=curation,
+            addendum=addendum, window_meta=window_meta,
             max_chars=self.memory_max_chars, record_path=workspace / "memory_call.json",
             verbose_dir=workspace, forbid_case_values=self.forbid_case_values,
         )
@@ -425,6 +446,18 @@ class EditMemoryLayer:
                   f"{memory_errors[:2]}", flush=True)
         self.memory_version += 1
         (self.dir / memory_version_name(self.memory_version)).write_text(new_memory, encoding="utf-8")
+        if self.instruction_optimizer == "textgrad":
+            # The TextGrad step replays this generation: record its inputs
+            # and the instruction version it ran under.
+            messages = P.render_memory_generation_messages(
+                previous_memory=previous_memory, curation=curation, addendum=addendum,
+                window_meta=window_meta, max_chars=self.memory_max_chars,
+                forbid_case_values=self.forbid_case_values)
+            (workspace / "generation_inputs.json").write_text(json.dumps({
+                "memory_version": self.memory_version, "window_index": j,
+                "instruction_version": self.instruction_version,
+                "system": messages[0]["content"], "user": messages[1]["content"],
+            }, indent=2, ensure_ascii=False), encoding="utf-8")
         shutil.copyfile(self.dir / memory_version_name(self.memory_version), self.dir / MEMORY_FILE)
         self.versions_since_instruction += 1
         print(f"[edit_memory] window {j}: wrote {memory_version_name(self.memory_version)} "
@@ -486,13 +519,29 @@ class EditMemoryLayer:
             pq = self.dir / f"instruction_update_{i:03d}" / P.Q_FILE
             if pq.exists():
                 previous_q.append(pq.read_text(encoding="utf-8"))
-        new_addendum, addendum_errors = G.update_instruction(
-            self.llm, self.spec, addendum=self._addendum(), q=q, previous_q=previous_q,
-            max_chars=self.instruction_addendum_max_chars,
-            record_path=workspace / "update_call.json", verbose_dir=workspace,
-            assignments=P.window_has_assignments(nodes_meta),
-            forbid_case_values=self.forbid_case_values,
-        )
+        new_addendum: Optional[str] = None
+        addendum_errors: list[str] = []
+        method = "updater"
+        if self.instruction_optimizer == "textgrad":
+            new_addendum, addendum_errors = self._textgrad_step(tree, workspace, q, with_ids, nodes_meta)
+            method = "textgrad"
+            if new_addendum is None:
+                print(f"[edit_memory] instruction update {k}: textgrad step produced no addendum "
+                      f"({addendum_errors[:1]}); fallback: {self.textgrad_cfg.fallback}", flush=True)
+                self._save_state("textgrad_failed", update=k, errors=addendum_errors[:3],
+                                 fallback=self.textgrad_cfg.fallback)
+                if self.textgrad_cfg.fallback == "keep":
+                    self._save_state("instruction_failed", update=k, errors=addendum_errors)
+                    return
+        if new_addendum is None:
+            method = "updater"
+            new_addendum, addendum_errors = G.update_instruction(
+                self.llm, self.spec, addendum=self._addendum(), q=q, previous_q=previous_q,
+                max_chars=self.instruction_addendum_max_chars,
+                record_path=workspace / "update_call.json", verbose_dir=workspace,
+                assignments=P.window_has_assignments(nodes_meta),
+                forbid_case_values=self.forbid_case_values,
+            )
         if new_addendum is None:
             print(f"[edit_memory] instruction update {k}: failed ({addendum_errors[:1]}); keeping "
                   f"v{self.instruction_version:03d}", flush=True)
@@ -506,8 +555,77 @@ class EditMemoryLayer:
         (self.dir / INSTRUCTION_FILE).write_text(new_addendum, encoding="utf-8")
         self.with_nodes_since_instruction = []
         print(f"[edit_memory] instruction update {k}: wrote {instruction_version_name(k)} "
-              f"({len(new_addendum)} chars)", flush=True)
-        self._save_state("instruction_written", update=k, check_errors=addendum_errors)
+              f"({len(new_addendum)} chars, {method})", flush=True)
+        self._save_state("instruction_written", update=k, check_errors=addendum_errors,
+                         **({"optimizer": method} if self.instruction_optimizer != "updater" else {}))
+
+    def _textgrad_step(self, tree: Any, workspace: Path, q: str, with_ids: list[int],
+                       nodes_meta: list[dict[str, Any]]) -> tuple[Optional[str], list[str]]:
+        """One TextGrad step on the addendum (``textgrad_opt``): critique
+        the memory versions the audited editors read, newest first, keeping
+        only those generated under the current addendum (the gradient must
+        reach the instruction that produced them)."""
+        from . import textgrad_opt as T
+        assert self.dir is not None
+        inputs: dict[int, tuple[Path, dict[str, Any]]] = {}
+        for gi in sorted(self.dir.glob(f"window_*/{T.GENERATION_INPUTS_FILE}")):
+            data = _read_json(gi)
+            if "memory_version" in data:
+                inputs[int(data["memory_version"])] = (gi.parent, data)
+        seen = sorted({tree[nid].memory_version for nid in with_ids
+                       if tree[nid].memory_version is not None}, reverse=True)
+        samples: list[Any] = []
+        skipped: list[str] = []
+        for v in seen:
+            if v not in inputs:
+                skipped.append(f"v{v:03d}: no recorded generation inputs")
+                continue
+            window_dir, data = inputs[v]
+            if int(data.get("instruction_version", -1)) != self.instruction_version:
+                skipped.append(f"v{v:03d}: generated under instruction "
+                               f"v{int(data.get('instruction_version', -1)):03d}")
+                continue
+            readers = [m for m in nodes_meta if m["memory_version"] == v]
+            usage = "\n".join(
+                f"- node {m['node_id']} (parent {m['parent_id']}"
+                + (f", assignment {P.assignment_label(m)}" if P.assignment_label(m) else "")
+                + f"); changed files: {', '.join(m['changed_files']) or 'none'}"
+                for m in readers) or "(no audited node read this version)"
+            prev = self.dir / memory_version_name(v - 1)
+            curation_path = window_dir / P.CURATION_FILE
+            samples.append(T.CritiqueSample(
+                memory_version=v,
+                memory=(self.dir / memory_version_name(v)).read_text(encoding="utf-8"),
+                previous_memory=prev.read_text(encoding="utf-8") if v > 1 and prev.exists() else "",
+                curation=curation_path.read_text(encoding="utf-8") if curation_path.exists() else "",
+                system_prompt=data["system"], user_prompt=data["user"], usage=usage,
+            ))
+            if len(samples) >= self.textgrad_cfg.max_versions:
+                break
+        if skipped:
+            print(f"[edit_memory] textgrad: skipped {skipped}", flush=True)
+        if not samples:
+            return None, ["no memory version read by the audited nodes was generated under the "
+                          f"current instruction with recorded inputs ({'; '.join(skipped) or 'none read'})"]
+        # Momentum: the addendum feedback of the most recent earlier steps.
+        past: list[str] = []
+        for i in range(self.instruction_version, 0, -1):
+            if len(past) >= self.textgrad_cfg.past_feedback:
+                break
+            fb = self.dir / f"instruction_update_{i:03d}" / T.TEXTGRAD_DIR / T.ADDENDUM_FEEDBACK_FILE
+            if fb.exists() and fb.read_text(encoding="utf-8").strip():
+                past.insert(0, fb.read_text(encoding="utf-8"))
+        print(f"[edit_memory] instruction update {self.instruction_version + 1}: textgrad over "
+              f"memory {[f'v{s.memory_version:03d}' for s in samples]}", flush=True)
+        new_addendum, errors, _ = T.optimize_addendum(
+            self.llm, self.spec, addendum=self._addendum(), samples=samples, audit=q,
+            core=P.memory_core_instruction(self.memory_max_chars,
+                                           assignments=P.window_has_assignments(nodes_meta),
+                                           forbid_case_values=self.forbid_case_values),
+            past_feedback=past, max_chars=self.instruction_addendum_max_chars,
+            out_dir=workspace / T.TEXTGRAD_DIR, forbid_case_values=self.forbid_case_values,
+        )
+        return new_addendum, errors
 
     # ------------------------------------------------------------------ #
     # State
@@ -530,6 +648,8 @@ class EditMemoryLayer:
                 "window_size": self.window_size, "instruction_every": self.instruction_every,
                 "selection": self.selection, "arm_min_pulls": self.arm_min_pulls,
                 "beta_prior": self.beta_prior, "seed": self.seed,
+                **({"instruction_optimizer": self.instruction_optimizer}
+                   if self.instruction_optimizer != "updater" else {}),
             },
             "events": self.events,
         }

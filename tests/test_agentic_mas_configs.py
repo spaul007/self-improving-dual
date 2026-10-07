@@ -17,6 +17,7 @@ CONFIGS = Path(__file__).resolve().parents[1] / "configs"
 NO_MEM = CONFIGS / "hgm_travel_mas_agentic_no_editmem_X100Y180.yaml"
 MEM = CONFIGS / "hgm_travel_mas_agentic_editmem_X100Y180.yaml"
 SANITY = CONFIGS / "hgm_travel_mas_agentic_editmem_sanity.yaml"
+TEXTGRAD = CONFIGS / "hgm_travel_mas_agentic_editmem_textgrad_X100Y180.yaml"
 
 
 def _raw(path: Path) -> dict:
@@ -98,6 +99,19 @@ class PairTests(unittest.TestCase):
                 if fw.edit_memory is not None:
                     self.assertEqual(fw.edit_memory.mutable_exclude, fw.config.mutable_exclude)
                     self.assertTrue(fw.edit_memory.forbid_case_values)
+                    self.assertEqual(fw.edit_memory.instruction_optimizer, "updater")
+
+    def test_textgrad_variant_differs_only_in_the_optimizer_and_name(self) -> None:
+        a, b = _raw(MEM), _raw(TEXTGRAD)
+        tg = b["edit_memory"]["config"]
+        self.assertEqual(tg.pop("instruction_optimizer"), "textgrad")
+        self.assertIn("max_versions", tg.pop("textgrad"))
+        for d in (a, b):
+            d.pop("experiment_name")
+        self.assertEqual(a, b)
+        fw = C.build_components(C.load(TEXTGRAD))
+        self.assertEqual(fw.edit_memory.instruction_optimizer, "textgrad")
+        self.assertEqual(fw.edit_memory.textgrad_cfg.fallback, "updater")
 
 
 class ConfigWiringTests(unittest.TestCase):
