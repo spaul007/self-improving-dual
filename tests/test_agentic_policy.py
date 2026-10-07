@@ -175,6 +175,35 @@ class TestReadSurface(PolicyBase):
         self.assertFalse(any("benchmark" in str(r) or r.name == "data"
                              for r in self.policy.read_roots))
 
+    def test_run_snapshots_never_readable(self) -> None:
+        """$RUN_DIR/snapshots/ holds snapshot_eval.py's full-benchmark runs
+        (per-case logs of held-out cases): denied in both scopes, hidden from
+        listings, and masked in the sandbox like edit_memory/."""
+        from meta_agent.agentic.sandbox import bwrap_argv
+
+        snap = self.run / "snapshots"
+        logs = snap / "eval_runs" / "lcb_full_benchmark" / "budget_100" / "run_1" / "round_001" / "logs"
+        logs.mkdir(parents=True)
+        held_out = logs / "case_99.json"
+        held_out.write_text('{"case_id": "99"}')
+        (snap / "tree_snapshots.jsonl").write_text("{}\n")
+        (snap / "eval_at_budget_100.json").write_text("{}")
+        for scope in ("run", "parent"):
+            pol = build_policy(out_dir=self.out, base_dir=self.base, repo_root=self.repo,
+                               project_root=self.proj, read_scope=scope)
+            for p in (held_out, snap / "tree_snapshots.jsonl", snap / "eval_at_budget_100.json", snap):
+                self.assertFalse(pol.can_read(self.r(p)), f"{scope} {p}")
+        pol = build_policy(out_dir=self.out, base_dir=self.base, repo_root=self.repo,
+                           project_root=self.proj)
+        self.assertTrue(pol.can_read(self.r(self.base / "logs" / "case_7.json")))
+        self.assertNotIn("snapshots/", pol.list_dir(self.run, depth=1).splitlines())
+        argv = bwrap_argv(pol, command="true", prefixes=[])
+        masks = [argv[k + 1] for k in range(len(argv) - 1) if argv[k] == "--tmpfs"]
+        self.assertIn(str(self.r(snap)), masks)
+        # The in-process check also covers a snapshots/ dir created after the
+        # policy was built (the policy is not rebuilt mid-session).
+        self.assertFalse(self.policy.can_read(self.r(held_out)))
+
     def test_deny_list_beats_a_misconfigured_root(self) -> None:
         # Even if a run were placed inside the project dir, benchmark/ and
         # cases.jsonl stay unreadable.

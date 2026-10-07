@@ -20,7 +20,10 @@ plus, in both scopes, ``platform_core/`` and the project's tool
 implementations + database schema (needed to ``import workflow`` and to
 understand the tools). The project's ``benchmark/`` (scorer, cases) and
 ``data/`` are never readable — they are not roots, and a deny-list guards
-against a misconfigured root.
+against a misconfigured root. Neither is the run's ``snapshots/`` directory
+(tree snapshots and ``snapshot_eval.py``'s full-benchmark evaluations, whose
+per-case logs include the held-out cases), although it sits under
+``$RUN_DIR``.
 
 Edit memory: the run-level ``edit_memory/`` directory is always denied to
 the editor (both arms of the with/without-memory bandit must not browse it);
@@ -48,6 +51,9 @@ from ..editor_validators import MUTABLE_DIRS, MUTABLE_FILES, is_excluded
 # The file the framework writes at the run root (see main_loop.py); walking
 # up from any round / variant dir to it locates the run.
 RUN_ROOT_MARKER = "config.snapshot.yaml"
+# The run root's snapshot dir (tree_snapshot.py, snapshot_eval.py): denied to
+# every editor, in both read scopes.
+RUN_SNAPSHOTS_DIR = "snapshots"
 # Repo root: meta_agent/agentic/policy.py -> parents[2].
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SCRATCH_SUBDIR = ("agentic", "scratch")
@@ -487,6 +493,8 @@ def build_policy(
     if project_root is not None:
         deny += [project_root / "benchmark", project_root / "data", project_root / "adapter"]
         deny += sorted(project_root.glob("*_error_categorizer.py"))
+    if run_root is not None:
+        deny.append(run_root / RUN_SNAPSHOTS_DIR)
     memory_dir_r = _real(Path(memory_dir)) if memory_dir else None
     if memory_dir_r is not None:
         deny.append(memory_dir_r)
