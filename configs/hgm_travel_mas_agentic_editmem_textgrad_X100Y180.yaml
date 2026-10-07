@@ -1,0 +1,201 @@
+# Block HGM with the agentic editor and the edit memory, with the memory
+# generator's instruction addendum optimized by TextGrad. Identical to
+# hgm_travel_mas_agentic_editmem_X100Y180.yaml except experiment_name and
+# edit_memory.config.{instruction_optimizer, textgrad}
+# (tests/test_agentic_mas_configs.py asserts this); see that file's header for
+# everything else.
+#
+# instruction_optimizer "textgrad" (meta_agent/edit_memory/textgrad_opt.py):
+# the agentic instruction curator still audits the with-memory nodes (q.md);
+# instead of one updater call, a critic judges the memory versions those
+# editors read (against the audit, the curation and the previous memory),
+# the critique is back-propagated through the generator to the addendum, and
+# one textual-gradient-descent step writes the next addendum. Same model as
+# every other meta-agent call; about 3 extra calls per critiqued version plus
+# one optimizer call per update. Needs `pip install textgrad` (requirements.txt).
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_travel_mas_agentic_editmem_textgrad_X100Y180.yaml
+
+experiment_name: "travel_mas_agentic_editmem_textgrad_X100Y180"
+project: "travel_mas_refactored"
+seed_dir_name: "seed_qwen27b_nothink"
+
+mutable_exclude:
+  - "workflow.py"
+  - "benchmark/"
+  - "agents/immutable/"
+
+loop:
+  max_rounds: 130
+  score_target: 1.0
+
+task_agent:
+  model: "Qwen/Qwen3.8-27B"
+  temperature: 0.2
+  max_output_tokens: 16384
+  base_url: "http://gpu-aic-mv-02-st-p5-node-3:8010/v1"
+
+manager:
+  type: "hgm_block_tagged"
+  config:
+    eval_budget: 18000
+    init_expansions: 3
+    alpha: 0.470005
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 32
+    eval_repeats: 2
+    finalize_top_k: 5
+    full_eval_top_k: 0
+    seed: 42
+    block_selection_strategy: "adaptive"
+    active_blocks:
+      - "individual_subagent"
+      - "collaboration_workflow"
+      - "foundation_capability"
+      - "verifiers"
+      - "mixed"
+    curriculum_enabled: false
+    implementation_strategy_selection_strategy: null
+    expand_eval_size: 32
+    max_consecutive_edit_failures: 5
+    snapshot_tree: true
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 3600
+    memory_mb: 2048
+    parallelism: 32
+    scorer: "travel_mas_refactored_default"
+
+gatherer:
+  type: "default"
+  config:
+    error_categorizer: "projects.travel.travel_error_categorizer:categorize_errors"
+    n_hard_cases: 1
+    # The gatherer's only LLM call: the error-bucket classification of failing
+    # cases (feedback.json "error_bucket_prevalence"). Unset, it would fall back
+    # to the task agent's model. error_bucket_analysis: false turns it off.
+    error_bucket_model: "deepseek/deepseek-v4-pro-0813"
+    error_bucket_base_url: "https://openrouter.ai/api/v1"
+    error_bucket_reasoning_effort: "medium"
+    error_bucket_api_key_env: "OpenRouter_API_KEY"
+    error_bucket_extra_body:
+      provider:
+        order: ["StreamLake", "Alibaba"]
+        allow_fallbacks: false
+
+editor:
+  type: "agentic"
+  config:
+    model: "deepseek/deepseek-v4-pro-0813"
+    reasoning_effort: "medium"
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OpenRouter_API_KEY"
+    extra_body:
+      provider:
+        order: ["StreamLake", "Alibaba"]
+        allow_fallbacks: false
+    llm_timeout_s: 600
+    # Without it the editor's calls inherit the task agent's 16384 cap.
+    max_output_tokens: 32768
+    max_attempts: 3
+    max_llm_calls: 150
+    timeout_s: 5400
+    bash_timeout_s: 120
+    max_tool_output_chars: 20000
+    max_view_chars: 40000
+    sandbox: "bwrap"
+    read_scope: "run"
+    steering: "assignment"
+    # The `validate` tool skips smoke_test (a real benchmark case); submit runs it.
+    validate_exclude: ["smoke_test"]
+    strategies_path: "strategies.md"
+    project_overview_path: "projects/travel_mas_refactored/adapter/agentic_editor_overview.md"
+
+edit_memory:
+  type: "agentic"
+  config:
+    window_size: 4
+    instruction_every: 1
+    selection: "bandit"           # bandit | always | never
+    arm_min_pulls: 4
+    beta_prior: 1.0
+    seed: 42
+    model: "deepseek/deepseek-v4-pro-0813"
+    reasoning_effort: "medium"
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OpenRouter_API_KEY"
+    extra_body:
+      provider:
+        order: ["StreamLake", "Alibaba"]
+        allow_fallbacks: false
+    llm_timeout_s: 600
+    max_output_tokens: 32768
+    # The generator is told never to copy case-specific values into the memory.
+    forbid_case_values: true
+    curator:
+      max_llm_calls: 60
+      timeout_s: 2400
+      bash_timeout_s: 120
+      max_tool_output_chars: 20000
+      max_view_chars: 40000
+      sandbox: "bwrap"
+      max_attempts: 2
+    memory_max_chars: 30000
+    instruction_addendum_max_chars: 8000
+    # I_k -> I_{k+1} by TextGrad instead of the one-call updater.
+    instruction_optimizer: "textgrad"
+    textgrad:
+      max_versions: 2             # memory versions critiqued per update (newest first)
+      past_feedback: 2            # earlier steps' feedback shown to the optimizer
+      fallback: "updater"         # if the step yields nothing: updater | keep
+
+# No behavior summarizer (summarizer:) in this experiment.
+
+# failure_summary.md for every node.
+failure_summarizer:
+  type: "default"
+  config:
+    model: "deepseek/deepseek-v4-pro-0813"
+    reasoning_effort: "medium"
+    base_url: "https://openrouter.ai/api/v1"
+    api_key_env: "OpenRouter_API_KEY"
+    extra_body:
+      provider:
+        order: ["StreamLake", "Alibaba"]
+        allow_fallbacks: false
+    max_output_tokens: 32768
+
+env:
+  META_AGENT_STRIP_REASONING: "1"
+  TRAVEL_CONVERT_MODEL: "Qwen/Qwen3.8-27B"
+  TRAVEL_CONVERT_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-3:8010/v1"
+  TRAVEL_CONVERT_ENABLE_THINKING: "false"
+
+split:
+  seed: 42
+  train_size: 60
+  eval_size: 60
+  stratify_by: "meta_info.days"
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+    config:
+      workflow_filenames: ["workflow.py", "mas_workflow.py"]
+  - type: "imports"
+  - type: "schema_wrapper_consistency"
+  - type: "mutable_tool_imports"
+  - type: "mutable_tool_routing"
+  - type: "immutable_files"
+  - type: "load_test"
+  - type: "undefined_names"
+  - type: "hardcoded_answers"
+    config:
+      extractor: "projects.travel_mas_refactored.adapter.answer_literals:answer_literals"
+      forbidden_patterns: ["cases\\.jsonl", "hard_constraints"]
+  # LAST: the only validator that runs the agent on a real case.
+  - type: "smoke_test"

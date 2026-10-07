@@ -13,3 +13,7 @@ pyflakes>=3.0
 # so it stays valid at the small counts / extreme rates a per-check
 # parent-vs-child failure-rate comparison often lands in.
 scipy>=1.10
+# Optional: edit_memory.config.instruction_optimizer: "textgrad"
+# (meta_agent/edit_memory/textgrad_opt.py) optimizes the memory generator's
+# instruction addendum with TextGrad's textual gradient descent.
+textgrad>=0.1.8
