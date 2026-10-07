@@ -34,8 +34,16 @@ train evaluation, then DefaultFeedbackGatherer.compile(...) -- which is the
 sole writer of strategy.json/eval_result.json/feedback.json, so every round
 directory this script produces is byte-shape-identical to a live HGM
 round's. No tree, no bandits, no branching: round_000 (seed) -> round_001 ->
-... -> round_012, one linear chain, each step's out_dir becoming the next
-step's base_dir.
+... -> round_020, one linear chain, each step's out_dir becoming the next
+step's base_dir. 20 steps, not the original 12 -- each formerly-bundled
+step (Sightseeing's selection+scheduling+compliance in one EXPAND, the two
+foundation_capability substrate steps' diagnose+build+migrate-everywhere,
+seat-count/scheduling-density covering both Flight+Train or both general+
+arrival-departure at once) was split into narrower, single-concern EXPANDs
+after every real attempt at the original monolithic Sightseeing step
+regressed below its parent (confirmed across 6+ independent attempts this
+session) while the narrowest incremental fix tried came closest to
+succeeding -- direct evidence for splitting further, not a guess.
 
 Resumable: a step whose round_NNN/eval_result.json already exists is
 skipped (its persisted feedback is loaded and used as the next step's
@@ -162,73 +170,218 @@ STEPS: list[Step] = [
         "diagnosis bears this out.",
     ),
     Step(
-        "05_sightseeing_harness_heavy",
+        "05_sightseeing_daycount",
         "individual_subagent",
         "harness_heavy",
         "Step 5 of the same scripted sequence. Flight, Train, and "
         "Accounting have already been converted this way -- do not "
-        "re-diagnose any of them. For THIS EXPAND, scope your diagnosis "
-        "specifically to the Sightseeing stage/role (attraction/restaurant "
-        "selection and day-by-day scheduling). Propose moving selection "
-        "and scheduling logic to deterministic code, keeping the LLM call "
-        "narrow (requirement extraction from the free-text request only).",
+        "re-diagnose any of them, and do not touch Sightseeing's "
+        "selection or scheduling logic yet -- later EXPANDs in this "
+        "sequence handle those separately, on purpose. For THIS EXPAND, "
+        "scope your diagnosis specifically and ONLY to day-count "
+        "correctness: confirmed live, the Sightseeing LLM call sometimes "
+        "produces the wrong number of 'Day N:' sections for the trip's "
+        "actual length (e.g. 6 or 18 days instead of 7). Compute the "
+        "exact calendar-day span directly from the request's stated "
+        "dates in code, and inject it into the system prompt as an "
+        "explicit instruction (e.g. 'this trip spans exactly N days, "
+        "produce exactly N Day sections'). This is a pure prompt-"
+        "injection fix -- do not restructure how attractions/restaurants/"
+        "hotels are selected or how the day-by-day schedule is built.",
     ),
     Step(
-        "06_tool_call_substrate",
-        "foundation_capability",
+        "06_sightseeing_selection",
+        "individual_subagent",
         "harness_heavy",
-        "Step 6 of the same scripted sequence. Flight/Train already share "
-        "a raw-tool-result normalization module (added two EXPANDs ago) -- "
-        "do not redo that part. The four prior EXPANDs converted "
-        "Flight/Train/Accounting/Sightseeing to deterministic, code-driven "
-        "selection logic, and each likely independently reimplements the "
-        "surrounding tool-invocation-and-error-handling pattern (call a "
-        "tool, handle an empty or malformed result, retry/log on failure) "
-        "separately from the data-normalization module. For THIS EXPAND, "
-        "diagnose whether THAT pattern is duplicated verbatim-or-near-"
-        "verbatim across those stages' own code, and propose extracting "
-        "the shared tool-call/empty-result-handling logic into ONE module "
-        "imported by all of them. This is a foundation_capability "
-        "diagnosis specifically -- it must be about logic shared across "
-        "roles, not any one role's own remaining behavior.",
+        "Step 6 of the same scripted sequence. For THIS EXPAND, scope "
+        "your diagnosis specifically to Sightseeing's hotel/attraction/"
+        "restaurant SELECTION only -- not scheduling, which stays "
+        "exactly as it is today and is handled three EXPANDs from now. "
+        "Apply the same two-step pattern already proven for Flight/"
+        "Train: a narrow LLM call extracts the traveler's stated "
+        "requirements (hotel constraints, must-visit attractions, "
+        "cuisine/meal preferences, named restaurants) from the free-text "
+        "request, then deterministic code queries the relevant tools "
+        "directly and selects/filters results (e.g. highest-rated hotel "
+        "matching constraints, deduplicate attractions, ensure every "
+        "must-visit item is covered). The output of this EXPAND is a "
+        "reliable, deterministic set of selected hotel/attractions/"
+        "restaurants -- feed that into the EXISTING scheduling loop "
+        "unchanged for now. Do not convert day-by-day scheduling itself "
+        "to deterministic code in this EXPAND.",
     ),
     Step(
-        "07_entity_resolution_substrate",
+        "07_sightseeing_restaurant_pool",
+        "individual_subagent",
+        "harness_heavy",
+        "Step 7 of the same scripted sequence. The prior EXPAND made "
+        "restaurant selection deterministic -- do not re-diagnose that "
+        "logic. For THIS EXPAND, scope your diagnosis specifically and "
+        "ONLY to restaurant POOL SIZE and SOURCING: confirmed live, a "
+        "pool capped around 12 restaurants runs dry on 5+ day trips that "
+        "need 2 meals/day, causing some days to end up with zero "
+        "scheduled meals. Raise the pool target high enough for the "
+        "longest trips this benchmark produces (e.g. ~20, covering every "
+        "full day's lunch+dinner plus arrival/departure-day meals with "
+        "margin), and gather candidates from MULTIPLE coordinate sources "
+        "(the hotel AND each selected attraction), not a single query "
+        "point. Do not touch day-by-day scheduling logic in this EXPAND.",
+    ),
+    Step(
+        "08_sightseeing_scheduling_clock",
+        "individual_subagent",
+        "harness_heavy",
+        "Step 8 of the same scripted sequence. Hotel/attraction/"
+        "restaurant selection, including pool sizing, is now "
+        "deterministic and reliable -- do not re-diagnose that. For "
+        "THIS EXPAND, scope your diagnosis specifically to the day-by-"
+        "day SCHEDULING step: convert it from an LLM-driven tool-calling "
+        "loop to deterministic code that computes every activity's "
+        "HH:MM time slot by actually advancing a running clock using "
+        "REAL tool-returned travel durations (query_road_route_info) "
+        "between consecutive activities -- never a fixed or forced meal/"
+        "attraction time that leaves an unaccounted gap. Ground this "
+        "precisely: the grader's transfer-time check compares the "
+        "elapsed wall-clock gap between consecutive ANCHOR activities "
+        "(hotel/attraction/meal/intercity-leg; travel_city/buffer lines "
+        "are NOT anchors and are not read by this check) against an "
+        "independently-queried real commute duration between those two "
+        "anchors' locations -- so the clock must actually advance by "
+        "that real duration across whatever travel_city/buffer lines sit "
+        "between them, with no silent jump. Do not add meal-count/"
+        "business-hours/day-structure compliance rules in this EXPAND -- "
+        "that is the next step, once the clock arithmetic is correct.",
+    ),
+    Step(
+        "09_sightseeing_compliance",
+        "individual_subagent",
+        "harness_heavy",
+        "Step 9 of the same scripted sequence. Scheduling now advances "
+        "the clock correctly using real commute durations -- do not "
+        "re-diagnose that. For THIS EXPAND, scope your diagnosis "
+        "specifically to layering compliance rules on top of the now-"
+        "correct schedule: (a) enforce a minimum 2-hour gap between "
+        "lunch end and dinner start, (b) apply arrival/departure-day "
+        "meal tiers (e.g. arrive before 10:00 needs both meals, after "
+        "15:00 at most one), (c) check restaurant/attraction business "
+        "hours against the tool-returned opening/closing times before "
+        "scheduling a visit at that slot, and (d) on the FINAL day "
+        "specifically, write the literal line 'Accommodation: -' rather "
+        "than omitting the Accommodation line entirely -- confirmed "
+        "live, omitting it is NOT enough: the plan-to-JSON converter can "
+        "still infer an accommodation value from a 'Check-out' "
+        "activity's hotel name when the line is simply missing, and "
+        "only the literal '-' reliably suppresses it. Do not touch "
+        "selection or clock-advancement logic in this EXPAND.",
+    ),
+    Step(
+        "10_tool_call_substrate_build",
         "foundation_capability",
         "harness_heavy",
-        "Step 7 of the same scripted sequence. The role rewrites made "
+        "Step 10 of the same scripted sequence. Flight/Train/Accounting/"
+        "Sightseeing have all been converted to deterministic, code-"
+        "driven logic over the preceding EXPANDs, and each likely "
+        "independently reimplements the surrounding tool-invocation-and-"
+        "error-handling pattern (call a tool, handle an empty or "
+        "malformed result, retry/log on failure). For THIS EXPAND, "
+        "diagnose whether that pattern is duplicated verbatim-or-near-"
+        "verbatim across those stages' own code, and if so, BUILD one "
+        "new shared module containing that logic, with its own clear "
+        "interface. Do NOT migrate any existing stage's code to use the "
+        "new module in this EXPAND -- that is the next step's job, once "
+        "the module itself is proven correct in isolation (e.g. via "
+        "run_python checks against representative tool responses, "
+        "including malformed/empty ones). This is a foundation_"
+        "capability diagnosis: the module's design must be driven by "
+        "what's actually shared across roles, not any one role's "
+        "remaining behavior.",
+    ),
+    Step(
+        "11_tool_call_substrate_migrate",
+        "foundation_capability",
+        "harness_heavy",
+        "Step 11 of the same scripted sequence. The prior EXPAND built a "
+        "shared tool-call/error-handling module but did not wire it in "
+        "anywhere -- do not redesign that module or revisit whether it's "
+        "the right abstraction. For THIS EXPAND, migrate Flight/Train/"
+        "Accounting/Sightseeing's own duplicated tool-call-and-error-"
+        "handling code to call the shared module instead, one stage at "
+        "a time if needed, verifying via run_code_validators/"
+        "evaluate_variant after each migration that behavior is "
+        "unchanged before moving to the next stage. This is a mechanical "
+        "refactor -- the goal is zero behavior change, just removing "
+        "duplication.",
+    ),
+    Step(
+        "12_entity_resolution_build",
+        "foundation_capability",
+        "harness_heavy",
+        "Step 12 of the same scripted sequence. The role rewrites made "
         "entity selection (flights/trains/hotels/restaurants/attractions) "
         "deterministic and code-driven, but likely still compare entity "
         "names/identities with exact-string matching against tool "
-        "results. Diagnose whether this now causes hard-constraint "
-        "failures when the correct, well-formed entity a stage picks "
-        "doesn't match the grader's expected name exactly (e.g. a "
-        "transliteration/partial-name/quoted-name variant). If so, "
-        "propose a SHARED fuzzy/approximate name-resolution utility "
-        "usable by every stage's selection code -- not scoped to one "
-        "stage -- since the same resolution gap would recur across "
-        "flight/train/hotel/restaurant/attraction matching alike. This is "
-        "a foundation_capability diagnosis: ground it in which stages "
-        "would all need this, not just one.",
+        "results. For THIS EXPAND, diagnose whether this causes hard-"
+        "constraint failures when a correct, well-formed entity a stage "
+        "picks doesn't match the grader's expected name exactly (e.g. a "
+        "transliteration/partial-name/quoted-name variant), and if so, "
+        "BUILD one new shared fuzzy/approximate name-resolution utility "
+        "with its own clear interface and test it in isolation (e.g. via "
+        "run_python against representative name-variant pairs). Do NOT "
+        "wire this utility into any stage's call sites in this EXPAND -- "
+        "that is the next step's job. This is a foundation_capability "
+        "diagnosis: ground the utility's design in which stages would "
+        "all need it, not just one.",
     ),
     Step(
-        "08_seat_count_integration",
-        "individual_subagent",
+        "13_entity_resolution_migrate",
+        "foundation_capability",
         "harness_heavy",
-        "Step 8 of the same scripted sequence. A shared entity-resolution "
-        "utility was just added in the prior EXPAND. For THIS EXPAND, "
-        "scope your diagnosis specifically to the Train/Flight "
-        "role's selection logic: check whether it verifies that a chosen "
-        "seat/ticket option actually has enough remaining capacity for "
-        "the traveler's whole party before selecting it, and propose "
-        "adding that as an explicit filter condition in its deterministic "
-        "selection code.",
+        "Step 13 of the same scripted sequence. The prior EXPAND built a "
+        "shared fuzzy name-resolution utility but did not wire it in "
+        "anywhere -- do not redesign it in this EXPAND. For THIS EXPAND, "
+        "migrate each stage's own exact-string entity matching to call "
+        "the shared utility instead, one stage at a time if needed, "
+        "verifying via run_code_validators/evaluate_variant after each "
+        "migration that nothing regresses before moving to the next "
+        "stage. This is a mechanical refactor -- zero behavior change "
+        "for already-correct matches, only recovering previously-missed "
+        "ones.",
     ),
     Step(
-        "09_hotel_tie_break",
+        "14_flight_seat_count",
         "individual_subagent",
         "harness_heavy",
-        "Step 9 of the same scripted sequence. For THIS EXPAND, scope "
+        "Step 14 of the same scripted sequence. A shared entity-"
+        "resolution utility now exists and is wired in -- do not "
+        "revisit it. For THIS EXPAND, scope your diagnosis specifically "
+        "and ONLY to the Flight stage's deterministic selection code: "
+        "confirmed live, it can select a cheaper flight with fewer "
+        "remaining seats than the traveler's full party size over a "
+        "pricier flight with enough seats, because the extracted "
+        "passenger count is never checked against each candidate's "
+        "remaining-seat field. Add that as an explicit filter/preference "
+        "condition in Flight's selection logic. Do not touch Train in "
+        "this EXPAND -- that is the next step.",
+    ),
+    Step(
+        "15_train_seat_count",
+        "individual_subagent",
+        "harness_heavy",
+        "Step 15 of the same scripted sequence. The prior EXPAND fixed "
+        "this exact issue for Flight -- do not re-diagnose Flight. For "
+        "THIS EXPAND, scope your diagnosis specifically and ONLY to the "
+        "Train stage's deterministic selection code: check whether it "
+        "has the identical gap (choosing a cheaper/faster train option "
+        "without verifying enough remaining seats for the full party), "
+        "and if so, add the same kind of explicit filter condition, "
+        "following Flight's own fix as a model but written for Train's "
+        "own code.",
+    ),
+    Step(
+        "16_hotel_tie_break",
+        "individual_subagent",
+        "harness_heavy",
+        "Step 16 of the same scripted sequence. For THIS EXPAND, scope "
         "your diagnosis specifically to the Hotel/lodging selection "
         "logic: when multiple hotel results satisfy the stated filters "
         "equally, check how ties are currently broken, and propose a "
@@ -236,46 +389,62 @@ STEPS: list[Step] = [
         "highest-rated option among ties).",
     ),
     Step(
-        "10_restaurant_filter_relax",
+        "17_restaurant_filter_relax",
         "individual_subagent",
         "harness_heavy",
-        "Step 10 of the same scripted sequence. For THIS EXPAND, scope "
-        "your diagnosis specifically to the Restaurant selection logic: "
-        "check whether an overly strict filter (e.g. an exact cuisine-"
-        "class match) is dropping otherwise-valid matches, and whether "
-        "restaurant opening hours are checked against the scheduled meal "
-        "time at all. Propose relaxing the over-strict filter and adding "
-        "an opening-hours check in its place.",
+        "Step 17 of the same scripted sequence. Restaurant business-"
+        "hours checking was already added several EXPANDs ago (the "
+        "Sightseeing compliance step) -- do not re-diagnose that. For "
+        "THIS EXPAND, scope your diagnosis specifically and ONLY to the "
+        "Restaurant selection logic's cuisine/tag filter: check whether "
+        "an overly strict match (e.g. an exact cuisine-class match) is "
+        "dropping otherwise-valid, well-matched restaurants, and propose "
+        "relaxing it (e.g. partial/substring match, or matching against "
+        "any one of several stated tags rather than requiring all).",
     ),
     Step(
-        "11_sightseeing_scheduling_density",
+        "18_sightseeing_density_general",
         "individual_subagent",
         "harness_heavy",
-        "Step 11 of the same scripted sequence. For THIS EXPAND, scope "
-        "your diagnosis specifically to the Sightseeing stage's "
-        "scheduling logic (not its selection logic, already addressed in "
-        "an earlier step): check whether a request with many required "
-        "attractions is scheduled densely enough to fit them all, and "
-        "whether arrival/departure days correctly reserve slots for "
-        "required attractions rather than being left mostly empty. "
-        "Propose concrete scheduling-density fixes.",
+        "Step 18 of the same scripted sequence. For THIS EXPAND, scope "
+        "your diagnosis specifically to Sightseeing's scheduling logic "
+        "(not selection, already addressed in earlier EXPANDs): check "
+        "whether a request with many required attractions is scheduled "
+        "densely enough across the available days to fit them all, "
+        "without under-filling a day that has room for more. Propose "
+        "concrete scheduling-density fixes for this general case only -- "
+        "arrival/departure-day specific slot reservation is the next "
+        "EXPAND's job.",
     ),
     Step(
-        "12_pseudo_place_mixed",
+        "19_sightseeing_density_arrival_departure",
+        "individual_subagent",
+        "harness_heavy",
+        "Step 19 of the same scripted sequence. The prior EXPAND "
+        "addressed general scheduling density -- do not re-diagnose "
+        "that. For THIS EXPAND, scope your diagnosis specifically to "
+        "arrival and departure days: check whether they correctly "
+        "reserve slots for required attractions when there's enough "
+        "time window before departing or after arriving, rather than "
+        "being left mostly empty by default. Propose concrete fixes "
+        "scoped to arrival/departure-day slotting only.",
+    ),
+    Step(
+        "20_pseudo_place_mixed",
         "mixed",
         "harness_heavy",
-        "Step 12, the final step of this scripted sequence. Earlier "
-        "EXPANDs added a shared entity-resolution utility "
-        "(foundation_capability) and converted Sightseeing's own "
-        "selection/scheduling logic to code (individual_subagent). For "
-        "THIS EXPAND, diagnose whether an ambiguous 'located pseudo-place' "
-        "reference (e.g. a district/area name standing in for a specific "
-        "venue in a tool result or request) can defeat BOTH the shared "
-        "resolver AND Sightseeing's own call site at once -- i.e. a fix "
-        "confined to only one of those two layers would be incomplete. "
-        "Use the mixed block only if this is genuinely true; if your "
-        "diagnosis actually fits cleanly in one layer, say so and use "
-        "that block's territory in your proposed change instead.",
+        "Step 20, the final step of this scripted sequence. Earlier "
+        "EXPANDs added shared foundation_capability utilities (tool-call "
+        "handling, entity resolution) and converted each role's own "
+        "selection/scheduling logic to code. For THIS EXPAND, diagnose "
+        "whether an ambiguous 'located pseudo-place' reference (e.g. a "
+        "district/area name standing in for a specific venue in a tool "
+        "result or request) can defeat BOTH a shared resolver AND a "
+        "role's own call site at once -- i.e. a fix confined to only "
+        "one of those two layers would be incomplete. Use the mixed "
+        "block only if this is genuinely true; if your diagnosis "
+        "actually fits cleanly in one layer, say so and use that "
+        "block's territory in your proposed change instead.",
     ),
 ]
 

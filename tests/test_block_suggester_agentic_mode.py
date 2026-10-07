@@ -155,6 +155,77 @@ class BlockSuggesterAgenticModeTests(unittest.TestCase):
         # A window, not the whole 1006-char line.
         self.assertTrue(all(len(o) < 600 for o in outputs))
 
+    def test_read_file_can_reach_parent_round_dirs_full_metrics(self) -> None:
+        (self.round_dir / "full_metrics.json").write_text(
+            '{"hard:flight_seat_status": {"fail_rate": 0.5}}', encoding="utf-8"
+        )
+        turns = iter([
+            SimpleNamespace(
+                content=None,
+                tool_calls=[_call("read_file", {"path": "full_metrics.json"}, "c1")],
+            ),
+            SimpleNamespace(content="rate was 0.5", tool_calls=[]),
+        ])
+
+        def fake_llm(**kwargs):
+            return next(turns)
+
+        result = self._suggest(fake_llm)
+        self.assertEqual(result, "rate was 0.5")
+
+    def test_read_file_full_metrics_absent_is_a_clear_not_found_not_a_crash(self) -> None:
+        turns = iter([
+            SimpleNamespace(
+                content=None,
+                tool_calls=[_call("read_file", {"path": "full_metrics.json"}, "c1")],
+            ),
+            SimpleNamespace(content="none available", tool_calls=[]),
+        ])
+        outputs: list[str] = []
+
+        def fake_llm(**kwargs):
+            for item in kwargs["messages"]:
+                if item.get("type") == "function_call_output":
+                    outputs.append(item["output"])
+            return next(turns)
+
+        result = self._suggest(fake_llm)
+        self.assertEqual(result, "none available")
+        self.assertTrue(any("not found" in o for o in outputs))
+
+    def test_read_file_hard_character_ceiling_on_a_huge_single_line(self) -> None:
+        """read_file's line-count limit alone doesn't bound worst-case
+        size -- a real trace.jsonl event can be one enormous physical
+        line (a full LLM call payload; these files run 100MB+ in
+        production). The hard character ceiling must still cut it,
+        separately from -- and in addition to -- the line-count cap."""
+        from meta_agent.block_suggester import _READ_FILE_MAX_CHARS
+
+        (self.round_dir / "logs" / "trace.jsonl").write_text(
+            "x" * (_READ_FILE_MAX_CHARS * 3), encoding="utf-8"
+        )
+        outputs: list[str] = []
+        turns = iter([
+            SimpleNamespace(
+                content=None,
+                tool_calls=[_call("read_file", {"path": "logs/trace.jsonl"}, "c1")],
+            ),
+            SimpleNamespace(content="too big to read whole", tool_calls=[]),
+        ])
+
+        def fake_llm(**kwargs):
+            for item in kwargs["messages"]:
+                if item.get("type") == "function_call_output":
+                    outputs.append(item["output"])
+            return next(turns)
+
+        result = self._suggest(fake_llm)
+        self.assertEqual(result, "too big to read whole")
+        self.assertTrue(outputs)
+        self.assertLess(len(outputs[0]), _READ_FILE_MAX_CHARS * 3)
+        self.assertIn(f"cut at {_READ_FILE_MAX_CHARS} characters", outputs[0])
+        self.assertIn("grep", outputs[0])
+
     def test_forbidden_harness_path_is_rejected(self) -> None:
         outputs: list[str] = []
         turns = iter([

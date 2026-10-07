@@ -164,9 +164,17 @@ _SYSTEM_CLOSING_AGENTIC_TAIL = (
     "siblings' -- that reconciliation is your job, not its."
 )
 
+# Hard ceiling in CHARACTERS for one read_file call, on top of its own
+# line-count limit (see _agentic_read_file) -- a single line can be
+# enormous (e.g. one logs/trace.jsonl event holding a full LLM call
+# payload; those files run 100MB+ in this project), so the line cap
+# alone doesn't bound worst-case size. Matches AgentEditor's own
+# _READ_FILE_MAX_CHARS (meta_agent/agent_editor.py) for consistency.
+_READ_FILE_MAX_CHARS = 100_000
+
 AGENTIC_READ_FILE_TOOL: dict[str, Any] = {
     "name": "read_file",
-    "description": "Read a text file. Paths are alias-rooted: 'harness/<rel>', 'logs/<rel>', or 'eval_result.json'.",
+    "description": "Read a text file. Paths are alias-rooted: 'harness/<rel>', 'logs/<rel>', 'eval_result.json', or 'full_metrics.json' (every single commonsense check and hard constraint's real fail_rate across all evaluated cases, not just the top few in project_metrics -- only present if the project's scorer defines full_metrics()). Capped per call -- for a large file (e.g. logs/trace.jsonl), use `grep` to search for a specific pattern instead of reading it whole.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -1426,6 +1434,14 @@ class BlockSuggester:
         path = (path or "").strip().lstrip("/")
         if path == "eval_result.json":
             return "file", round_dir / "eval_result.json"
+        if path == "full_metrics.json":
+            # Same convention as eval_result.json above -- the uncapped,
+            # denominator-aware per-constraint fail_rate breakdown (see
+            # scorer_impl.py::full_metrics), opt-in per project scorer.
+            # Existence (not a flag) gates whether this is actually
+            # readable; _agentic_read_file's own "(file not found: ...)"
+            # handles the case where the project's scorer doesn't define it.
+            return "file", round_dir / "full_metrics.json"
         if path.startswith("harness/"):
             rel = path[len("harness/"):]
             if rel not in sources:
@@ -1443,7 +1459,8 @@ class BlockSuggester:
             return "file", target
         return None, (
             f"ERROR: unrecognized path {path!r} -- paths must be exactly "
-            "'eval_result.json' or start with 'harness/' or 'logs/'."
+            "'eval_result.json' or 'full_metrics.json', or start with "
+            "'harness/' or 'logs/'."
         )
 
     def _agentic_read_file(
@@ -1472,10 +1489,21 @@ class BlockSuggester:
         chunk_lines = lines[offset:offset + limit]
         chunk = "\n".join(f"L{offset + i}: {line}" for i, line in enumerate(chunk_lines))
         remaining = len(lines) - (offset + limit)
-        if remaining > 0:
+        if len(chunk) > _READ_FILE_MAX_CHARS:
+            chunk = (
+                chunk[:_READ_FILE_MAX_CHARS]
+                + f"\n\n[... cut at {_READ_FILE_MAX_CHARS} characters -- "
+                "at least one of these lines is very long (e.g. a "
+                "trace.jsonl event). For a large file like this, use "
+                "`grep` to search for a specific pattern instead of "
+                "reading it line-by-line.]"
+            )
+        elif remaining > 0:
             chunk += (
                 f"\n\n[... {remaining} more lines -- call read_file again "
-                f"with offset={offset + limit} ...]"
+                f"with offset={offset + limit} to continue, or use `grep` "
+                "to search a large file (e.g. trace.jsonl) for a specific "
+                "pattern instead ...]"
             )
         return chunk if chunk else "(empty file or offset past end)"
 

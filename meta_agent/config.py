@@ -447,6 +447,7 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         "llm_caller": call_llm,
         "validators": validators_obj,
         "tools_source": _read_tools_source(project_root, seed_dir),
+        "tools_dir": (project_root / "tools") if (project_root / "tools").is_dir() else None,
         "db_schema": _read_db_schema(project_root),
         "mutable_exclude": cfg.mutable_exclude,
         "evaluator": evaluator_obj,

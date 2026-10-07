@@ -220,5 +220,51 @@ class RegistrationCollisionGuardTests(unittest.TestCase):
         self.assertEqual(registered.__name__, "TravelCompositeScorer")
 
 
+class FullMetricsClonedTests(unittest.TestCase):
+    """TravelFlattenedScoresScorer.full_metrics() -- an independent copy
+    of the original's (not inherited; this project has no import
+    relationship to the original, same as aggregate()), walking the
+    native (continuous) dimension_details/hard_constraints. A check's
+    own pass/fail boolean is identical under continuous or gated scoring
+    (only the dimension/hard-level AGGREGATE differs -- see the scorer's
+    own docstring), so this must give the same per-check counts as the
+    original on an identical fixture."""
+
+    def _case(self, case_id, *, dimension_details=None, hard_constraints=None):
+        from meta_agent.models import CaseResult
+
+        details: dict = {}
+        if dimension_details is not None:
+            details["dimension_details"] = dimension_details
+        if hard_constraints is not None:
+            details["hard_constraints"] = hard_constraints
+        return CaseResult(case_id=case_id, passed=False, score=0.0, details=details)
+
+    def test_matches_original_on_an_identical_fixture(self) -> None:
+        per_case = [
+            self._case(
+                "0",
+                dimension_details={
+                    "Time Feasibility": {
+                        "checks": [{"name": "reasonable_transfer_time", "passed": False}]
+                    }
+                },
+                hard_constraints={"flight_seat_status": {"passed": True}},
+            ),
+            self._case(
+                "1",
+                dimension_details={
+                    "Time Feasibility": {
+                        "checks": [{"name": "reasonable_transfer_time", "passed": True}]
+                    }
+                },
+                hard_constraints={"flight_seat_status": {"passed": False}},
+            ),
+        ]
+        cloned = scorer_impl.TravelFlattenedScoresScorer().full_metrics(per_case)
+        original = original_scorer_impl.TravelCompositeScorer().full_metrics(per_case)
+        self.assertEqual(cloned, original)
+
+
 if __name__ == "__main__":
     unittest.main()

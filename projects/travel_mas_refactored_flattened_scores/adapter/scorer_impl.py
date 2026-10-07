@@ -838,6 +838,64 @@ class TravelFlattenedScoresScorer:
             "conversion_error_types": conversion_error_types_ranked,
         }
 
+    def full_metrics(self, per_case: list[Any]) -> dict[str, Any]:
+        """Uncapped, denominator-aware per-constraint breakdown across
+        every evaluated case -- a true fail_rate (failed/applicable),
+        not the raw occurrence count ``aggregate()``'s own
+        ``top_failed_checks`` truncates to the top 15. Written to
+        ``round_dir/full_metrics.json`` by the gatherer (detected the
+        same way ``aggregate`` is -- see feedback_gatherer.py's
+        ``_write_full_metrics``) and deliberately NEVER merged into
+        ``project_metrics``/the prompt, which stays capped by design --
+        read on demand via read_file/grep (the 'full_metrics.json'
+        alias) when the editor/block_suggester wants a specific
+        constraint's real rate instead of guessing from the top-N
+        digest or a single case's anecdote.
+
+        Walks each case's own native (continuous) ``dimension_details``/
+        ``hard_constraints`` -- every check, pass or fail, not just
+        ``failed_checks`` -- since an individual check's own pass/fail
+        boolean is identical under continuous or gated scoring (only
+        the dimension/hard-level AGGREGATE differs); this method never
+        touches the ``gated_*`` companions at all. Same naming
+        convention as ``aggregate()``'s own ``failed_checks`` entries
+        (``commonsense:<dim>:<check>``, ``hard:<name>``)."""
+        tally: dict[str, dict[str, int]] = {}
+
+        def _bump(name: str, passed: bool) -> None:
+            t = tally.setdefault(name, {"passed": 0, "failed": 0})
+            t["passed" if passed else "failed"] += 1
+
+        for case in per_case:
+            details = getattr(case, "details", None) or {}
+            err = details.get("error")
+            if isinstance(err, str) and _NO_PLAN_RE.search(err):
+                continue
+            dim_details = details.get("dimension_details") or {}
+            if isinstance(dim_details, dict):
+                for dim_name, dim in dim_details.items():
+                    if not isinstance(dim, dict):
+                        continue
+                    for check in dim.get("checks") or []:
+                        if isinstance(check, dict) and isinstance(check.get("name"), str):
+                            _bump(f"commonsense:{dim_name}:{check['name']}", bool(check.get("passed")))
+            hard_constraints = details.get("hard_constraints") or {}
+            if isinstance(hard_constraints, dict):
+                for cname, cinfo in hard_constraints.items():
+                    if isinstance(cinfo, dict):
+                        _bump(f"hard:{cname}", bool(cinfo.get("passed")))
+
+        out: dict[str, dict[str, Any]] = {}
+        for name, counts in tally.items():
+            applicable = counts["passed"] + counts["failed"]
+            out[name] = {
+                "passed": counts["passed"],
+                "failed": counts["failed"],
+                "applicable": applicable,
+                "fail_rate": counts["failed"] / applicable if applicable else 0.0,
+            }
+        return dict(sorted(out.items(), key=lambda kv: (-kv[1]["fail_rate"], kv[0])))
+
 
 _NO_PLAN_RE = re.compile(r"^\s*plan conversion failed", re.IGNORECASE)
 

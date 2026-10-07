@@ -20,6 +20,7 @@ import ast
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import uuid
@@ -152,12 +153,36 @@ SELF_IMPROVEMENT_TOOL: dict[str, Any] = {
 # specifically and eliminated by switching to one-file-per-call. Kept
 # deliberately model-agnostic (no diagnosis content, no provider-specific
 # wording) so this works the same for GPT, Qwen, or DeepSeek editors.
+# Line-based default for read_file, mirroring BlockSuggester's own
+# proven pagination (meta_agent/block_suggester.py::_agentic_read_file).
+# Bigger than that component's 200-line default because AgentEditor's
+# read_file is the primary way the editor reads a WHOLE source file
+# before editing it, and real post-edit files in this project routinely
+# exceed 200 lines (confirmed: flight.py grew to 643 lines after one
+# EXPAND) -- 2000 avoids forcing an extra paginated call for ordinary
+# files while still bounding the common case.
+_READ_FILE_DEFAULT_LINE_LIMIT = 2000
+# Hard ceiling in CHARACTERS, applied on top of the line slice above --
+# see _paginated_read's docstring for why the line cap alone isn't
+# enough. 100_000 comfortably covers any real source file at the
+# 2000-line default above.
+_READ_FILE_MAX_CHARS = 100_000
+
 AGENTIC_READ_FILE_TOOL: dict[str, Any] = {
     "name": "read_file",
-    "description": "Read one file's current content from the task agent workspace.",
+    "description": (
+        "Read one file's current content from the task agent workspace. "
+        "Capped per call (see offset/limit) -- for a large file (e.g. "
+        "internal_runs/trace.jsonl), use `grep` to search for a specific "
+        "pattern instead of reading it whole."
+    ),
     "input_schema": {
         "type": "object",
-        "properties": {"path": {"type": "string"}},
+        "properties": {
+            "path": {"type": "string"},
+            "offset": {"type": "integer", "description": "Starting line number (0-indexed)."},
+            "limit": {"type": "integer", "description": "Max lines to return."},
+        },
         "required": ["path"],
     },
 }
@@ -315,7 +340,23 @@ def _run_python_problems(code: str, ws_modules: set) -> list[str]:
             if node.level or (node.module or "").split(".")[0] not in allowed:
                 probs.append(f"from {node.module!r} import ... not allowed")
         elif isinstance(node, ast.Name) and node.id in RUN_PYTHON_BLOCKED_NAMES:
-            probs.append(f"name {node.id!r} not allowed")
+            if node.id == "open":
+                # Confirmed live: the model reached for open() to read a
+                # file's content (e.g. internal_runs/case_N.json) from
+                # inside run_python -- a reasonable instinct, but
+                # run_python has no file I/O at all. Bare "name 'open'
+                # not allowed" gives no path forward; say what to use
+                # instead rather than just what's blocked.
+                probs.append(
+                    "name 'open' not allowed -- run_python has no file "
+                    "I/O. Use the read_file tool to read a file's "
+                    "content instead (e.g. read_file('internal_runs/"
+                    "case_<id>.json')), or train_data.by_id(cid)/"
+                    "train_data.failing(label) for the case data already "
+                    "loaded here."
+                )
+            else:
+                probs.append(f"name {node.id!r} not allowed")
         elif isinstance(node, ast.Attribute) and (
             node.attr.startswith("__") or node.attr in RUN_PYTHON_BLOCKED_ATTRS
         ):
@@ -444,6 +485,11 @@ _DEFAULT_AGENTIC_TOOL_NAMES: tuple[str, ...] = (
 )
 
 _AGENTIC_TURN_BUDGET_GOAL = "(editor exceeded agentic turn budget without submitting a summary)"
+# Distinct from the above: the model itself stopped emitting tool calls
+# (a totally empty turn -- no content, no tool_calls) well before
+# agentic_max_turns was reached, rather than genuinely running out of
+# budget. See `stopped_early` in _self_improve_agentic.
+_AGENTIC_EMPTY_RESPONSE_GOAL = "(editor's model stopped responding -- no tool call -- before submitting a summary)"
 _AGENTIC_MALFORMED_SUMMARY_GOAL = "(summary call had malformed JSON; edits below were still applied)"
 _AGENTIC_LLM_CALL_FAILED_GOAL_PREFIX = "(editor's LLM call failed mid-conversation"
 
@@ -534,6 +580,33 @@ class AgentEditor:
         tools_source: Optional[str] = None,
         db_schema: Optional[str] = None,
         scorer_source: Optional[str] = None,
+        # Directory backing read_file/grep's "tools/<rel>" alias (the
+        # project's own tool implementation, e.g.
+        # projects/<p>/tools/roadroute.py) -- populated by build_components
+        # whenever the project has a tools/ dir, same convention as
+        # tools_source below, independent of whether the alias is actually
+        # enabled (see tools_dir_alias_enabled). None when the project has
+        # no tools/ dir at all.
+        tools_dir: Optional[Path] = None,
+        # Opt-in gate for the alias above -- False (default) is ZERO
+        # behavior change for every existing config. Confirmed live this
+        # is a real, legitimate gap worth A/B testing, not just adding
+        # unconditionally: tools_source above is a single upfront bundle
+        # capped at config._SOURCE_BUNDLE_CAP (24000 chars) and
+        # concatenated alphabetically, so a project with enough tool files
+        # (travel_mas_refactored: 34279 chars across 9 files) silently
+        # omits whichever ones sort last -- the editor correctly reasoning
+        # that a tool it's trying to optimize against is part of its own
+        # harness, and reaching for it, found it simply wasn't there
+        # (round_005: roadroute.py was the one omitted; the editor then
+        # tried importing it directly inside run_python, which rejected
+        # it, since that sandbox is for the task agent's OWN workspace
+        # modules, not project-level tool implementations). Set True to
+        # give read_file/grep on-demand, paginated access to any tools/
+        # file actually present -- kept behind this flag (rather than
+        # always-on whenever tools_dir is set) specifically so a config
+        # can run the same project both ways for an ablation.
+        tools_dir_alias_enabled: bool = False,
         # `None` (default) = legacy include-list mode (MUTABLE_FILES/
         # MUTABLE_DIRS). A list = exclude-list mode: everything under the
         # seed dir is editable except these paths. See
@@ -554,6 +627,23 @@ class AgentEditor:
         # generous relative to what real trials needed (typically 3-6 turns
         # even for a genuine 4-file fix, confirmed live this session).
         agentic_max_turns: int = 20,
+        # Retries, WITHOUT consuming a turn slot, when the model returns a
+        # genuinely empty response -- no content AND no tool_calls, and no
+        # exception either (that's the pre-existing, separately-handled
+        # LLM-call-failure path just above). Confirmed live: this can
+        # happen mid-session after a long, substantive, clearly-not-done
+        # turn (the model's own text ended with "let me test ... now" --
+        # it was mid-flow, not winding down) -- a bare API/generation
+        # glitch, not reasoning-stripped-to-nothing (that turn's own text
+        # proves ordinary content comes through fine in the same
+        # session). Retrying the IDENTICAL call relies on ordinary
+        # sampling randomness to recover, the same "repeating a run is a
+        # legitimate way to tell signal from noise" principle this file's
+        # own evaluate_variant guidance already states. 2 is small enough
+        # that a persistently-broken connection still gives up quickly and
+        # falls through to the existing _AGENTIC_EMPTY_RESPONSE_GOAL path
+        # unchanged.
+        max_empty_response_retries: int = 2,
         # Backs the opt-in evaluate_variant agentic tool. All three are
         # injected by config.py's editor_injections (evaluator/benchmark_dir
         # already exist there for validators; train_case_ids is the same
@@ -588,10 +678,13 @@ class AgentEditor:
         self.tools_source = tools_source
         self.db_schema = db_schema
         self.scorer_source = scorer_source
+        self.tools_dir = Path(tools_dir) if tools_dir is not None else None
+        self.tools_dir_alias_enabled = tools_dir_alias_enabled
         self.mutable_exclude = mutable_exclude
         self.max_output_tokens = max_output_tokens
         self.agentic_editing = agentic_editing
         self.agentic_max_turns = agentic_max_turns
+        self.max_empty_response_retries = max_empty_response_retries
         self.evaluator = evaluator
         self.benchmark_dir = benchmark_dir
         self.train_case_ids = train_case_ids
@@ -1239,19 +1332,48 @@ class AgentEditor:
             "\n"
         )
 
-    def _agentic_closing(self) -> str:
+    def _agentic_closing(self, *, base_dir: Optional[Path] = None) -> str:
         """Describes only the tools actually enabled (self.agentic_tool_names,
         plus the evaluate_variant/evaluator gate) -- telling the model about
         a tool it can't call would be actively misleading, not just unused
         filler, so every sentence below is conditional on the tool it
-        describes actually being offered."""
+        describes actually being offered. ``base_dir`` (the parent round's
+        dir) gates the 'full_metrics.json' mention the same way -- checked
+        by existence, not a static flag, since whether it exists depends
+        on the PROJECT's scorer (full_metrics() is opt-in per scorer), not
+        on anything AgentEditor itself configures."""
         has = lambda name: (  # noqa: E731
             name in self.agentic_tool_names
             and (name != "evaluate_variant" or self.evaluator is not None)
         )
+        full_metrics_available = bool(
+            base_dir is not None and (base_dir / "full_metrics.json").exists()
+        )
 
         descriptions = {
-            "read_file": "`read_file` to inspect any of the files listed below before editing it",
+            "read_file": (
+                "`read_file` to inspect any of the files listed below "
+                "before editing it (capped per call with offset/limit "
+                "to page through a big one -- for a large file like "
+                "internal_runs/trace.jsonl, `grep` it for a specific "
+                "pattern instead of reading it whole)"
+                + (
+                    ". You can also read the project's own tool "
+                    "implementation (read-only) at 'tools/<filename>.py' "
+                    "-- the actual code behind the tools you call, e.g. "
+                    "'tools/roadroute.py' for query_road_route_info"
+                    if self.tools_dir_alias_enabled else ""
+                )
+                + (
+                    ". 'full_metrics.json' has the PARENT round's real "
+                    "fail_rate for every single commonsense check and "
+                    "hard constraint it saw (not just the top few in the "
+                    "project metrics above) -- read it if you want a "
+                    "specific constraint's actual rate instead of "
+                    "guessing from a handful of cases"
+                    if full_metrics_available else ""
+                )
+            ),
             "grep": "`grep` to search one file for a regex pattern without reading it whole",
             "write_file": (
                 "`write_file` to submit ONE file's FULL new content (call "
@@ -1268,19 +1390,25 @@ class AgentEditor:
             # other is absent -- a config enabling only one of the two is
             # unusual but valid, and the prose must not silently omit it.
             "list_cases": (
-                "`list_cases` and `show_case` to inspect this node's own "
-                "evaluated cases (pass/fail, score, and — per case — the "
+                "`list_cases` and `show_case` to inspect the PARENT "
+                "node's own evaluated cases -- the results from BEFORE "
+                "any edit you make this round, not a live view of your "
+                "current work (pass/fail, score, and — per case — the "
                 "full details the project's scorer attached, e.g. the raw "
                 "plan and failed checks)"
                 if has("show_case") else
-                "`list_cases` for a pass/fail/score overview of this "
-                "node's own evaluated cases"
+                "`list_cases` for a pass/fail/score overview of the "
+                "PARENT node's own evaluated cases -- the results from "
+                "BEFORE any edit you make this round, not a live view of "
+                "your current work"
             ),
             "show_case": (
                 None  # merged into list_cases's sentence above when both present
                 if has("list_cases") else
-                "`show_case` to inspect one of this node's own evaluated "
-                "cases in full (pass/fail, score, and the full details the "
+                "`show_case` to inspect one of the PARENT node's own "
+                "evaluated cases in full -- the results from BEFORE any "
+                "edit you make this round, not a live view of your "
+                "current work (pass/fail, score, and the full details the "
                 "project's scorer attached)"
             ),
             "run_python": (
@@ -1289,15 +1417,21 @@ class AgentEditor:
                 "snippet of logic before committing to a file edit"
             ),
             "evaluate_variant": (
-                "`evaluate_variant` to run your current workspace through "
-                "the REAL evaluator and see each case's actual score/"
-                f"pass-fail -- limited to {self.evaluate_variant_max_calls} "
-                "calls, so use it to CONFIRM a hypothesis you've already "
-                "formed with the read-only/offline tools, not to explore "
-                "blindly. You can pass case_ids (a small handful -- e.g. "
-                "the specific failing cases your fix targets) for a fast, "
-                "cheap check, or omit case_ids for the full TRAIN set when "
-                "you want the real overall signal"
+                "`evaluate_variant` to run your CURRENT in-progress "
+                "workspace through the REAL evaluator and see each case's "
+                "actual score/pass-fail for THIS round's own edit -- "
+                "unlike list_cases/show_case, which only ever show the "
+                "parent's older results. Pass case_ids (specific TRAIN "
+                "case ids) to evaluate just that subset, or omit case_ids "
+                "to evaluate the full TRAIN set. You get "
+                f"{self.evaluate_variant_max_calls} calls per EXPAND -- "
+                "use them as you see fit."
+                + (
+                    " Each call's own logs are then readable via "
+                    "read_file/grep at 'internal_runs/trace.jsonl' and "
+                    "'internal_runs/case_<id>.json'"
+                    if has("read_file") or has("grep") else ""
+                )
             ),
             "run_code_validators": (
                 "`run_code_validators` to check your changes so far "
@@ -1316,6 +1450,17 @@ class AgentEditor:
 
         grounding_tools = [n for n in ("grep", "list_cases", "show_case", "run_python") if has(n)]
         order_parts = []
+        if has("list_cases"):
+            order_parts.append(
+                "Before deciding what to fix, call `list_cases` to see "
+                "the full set of the parent's currently-failing cases, "
+                "and look at more than one of them"
+                + (" (with `show_case`)" if has("show_case") else "")
+                + " before committing to a diagnosis -- picking a fix "
+                "based on only the first failing case you happen to "
+                "notice risks missing a different failure that actually "
+                "affects more of the score. "
+            )
         if has("read_file"):
             order_parts.append(
                 "Work in this order: call `read_file` on each file you "
@@ -1412,7 +1557,7 @@ class AgentEditor:
         agent_dir = out_dir / "task_agent"
         available_paths = sorted(self._read_mutable_sources(agent_dir).keys())
 
-        system = self._diagnosis_rules() + self._agentic_closing() + self._skills_section()
+        system = self._diagnosis_rules() + self._agentic_closing(base_dir=base_dir) + self._skills_section()
 
         user_parts: list[str] = []
         if context:
@@ -1452,6 +1597,27 @@ class AgentEditor:
 
         written: dict[str, str] = {}
         evaluate_variant_calls = 0
+        # Set after each successful evaluate_variant call to that call's
+        # OWN isolated out_dir/internal_runs/call_<n>/logs/ dir -- never
+        # out_dir/logs/ itself, which is reserved for the real, framework-
+        # triggered evaluation that happens later, after this EXPAND
+        # finishes. Keeps every self-triggered run fully separate from
+        # both that real evaluation AND from each other (each call gets
+        # its own call_<n> dir, so a 2nd call can never clobber the 1st's
+        # trace the way writing straight into out_dir/logs/ used to).
+        last_variant_logs_dir: Optional[Path] = None
+        # Set when the loop exits via "model returned no tool calls" (see
+        # `if not calls: break` below) on a turn well before the real
+        # budget ran out -- distinguishes that from true exhaustion of
+        # self.agentic_max_turns for the fallback label below. Confirmed
+        # live: DeepSeek v4 can return a totally empty turn (no content,
+        # no tool_calls -- plausibly an all-reasoning response left empty
+        # by META_AGENT_STRIP_REASONING) at turn 38 of a 100-turn budget,
+        # after already writing a real edit and spending 18 more turns
+        # verifying it -- mislabeling that as "(editor exceeded agentic
+        # turn budget...)" is simply false and corrupts the lineage
+        # memory text later EXPANDs read as this round's own history.
+        stopped_early = False
         agentic_tools = [
             _AGENTIC_TOOLS_BY_NAME[name] for name in self.agentic_tool_names
             if name != "evaluate_variant" or self.evaluator is not None
@@ -1504,6 +1670,57 @@ class AgentEditor:
                 files = [{"path": p, "content": c} for p, c in written.items()]
                 return strategy, files
 
+            # Retry (without consuming a turn slot) when the model comes
+            # back with literally nothing -- no content, no tool_calls,
+            # and no exception (that's the separately-handled path just
+            # above). See max_empty_response_retries' own docstring for
+            # why a bare retry on the identical call is the right fix
+            # here, not a different prompt or a turn-budget change.
+            empty_retries = 0
+            while (
+                not (getattr(response, "tool_calls", None) or [])
+                and not getattr(response, "content", None)
+                and empty_retries < self.max_empty_response_retries
+            ):
+                empty_retries += 1
+                print(
+                    f"[editor] warning: turn {turn} got a completely empty "
+                    f"response (no content, no tool_calls) -- retrying "
+                    f"({empty_retries}/{self.max_empty_response_retries})",
+                    flush=True,
+                )
+                if verbose_log.is_enabled():
+                    verbose_log.write_json(
+                        out_dir,
+                        f"editor_attempt_{attempt}_turn_{turn}_empty_retry_{empty_retries}.json",
+                        {"content": None, "tool_calls": []},
+                    )
+                try:
+                    response = self.llm(**llm_kwargs)
+                except Exception as exc:  # noqa: BLE001 -- same as above;
+                    # a retry attempt can fail too, and must be handled
+                    # identically rather than propagating uncaught.
+                    print(
+                        f"[editor] warning: LLM call failed mid-conversation "
+                        f"({exc!r}) -- returning {len(written)} file(s) "
+                        "written so far",
+                        flush=True,
+                    )
+                    if verbose_log.is_enabled():
+                        verbose_log.write_text(
+                            out_dir,
+                            f"editor_attempt_{attempt}_turn_{turn}_llm_error.txt",
+                            repr(exc),
+                        )
+                    strategy = EvolutionStrategy(
+                        target_files=sorted(written),
+                        optimization_goal=f"{_AGENTIC_LLM_CALL_FAILED_GOAL_PREFIX}: {exc!r})"[:300],
+                        proposed_changes="",
+                        rationale="",
+                    )
+                    files = [{"path": p, "content": c} for p, c in written.items()]
+                    return strategy, files
+
             calls = getattr(response, "tool_calls", None) or []
             if verbose_log.is_enabled():
                 verbose_log.write_json(
@@ -1517,6 +1734,7 @@ class AgentEditor:
                     },
                 )
             if not calls:
+                stopped_early = turn < self.agentic_max_turns - 1
                 break
 
             for idx, call in enumerate(calls):
@@ -1570,15 +1788,15 @@ class AgentEditor:
                             "run (not in the configured agentic_tools)."
                         )
                     elif call.name == "read_file":
-                        path = (args.get("path") or "").lstrip("/")
-                        if not self._is_path_allowed(path):
-                            output = (
-                                f"ERROR: {path!r} is not readable/editable "
-                                "here -- see the '## Files you may "
-                                "read/edit' list above for what's available."
-                            )
+                        fpath, path_err = self._resolve_agentic_read_path(
+                            args.get("path") or "", agent_dir=agent_dir,
+                            internal_run_logs_dir=last_variant_logs_dir,
+                            base_dir=base_dir,
+                        )
+                        if fpath is None:
+                            output = path_err
                         else:
-                            fpath = agent_dir / path
+                            path = args.get("path") or ""
                             if fpath.is_dir():
                                 # A real, reproducible crash otherwise: the
                                 # model can ask for a bare directory name
@@ -1601,19 +1819,19 @@ class AgentEditor:
                                     "instead: " + (", ".join(entries) or "(empty)")
                                 )
                             elif fpath.exists():
-                                output = fpath.read_text(encoding="utf-8")
+                                output = self._paginated_read(fpath, args)
                             else:
                                 output = f"(file not found: {path})"
                     elif call.name == "grep":
-                        path = (args.get("path") or "").lstrip("/")
-                        if not self._is_path_allowed(path):
-                            output = (
-                                f"ERROR: {path!r} is not readable/editable "
-                                "here -- see the '## Files you may "
-                                "read/edit' list above for what's available."
-                            )
+                        fpath, path_err = self._resolve_agentic_read_path(
+                            args.get("path") or "", agent_dir=agent_dir,
+                            internal_run_logs_dir=last_variant_logs_dir,
+                            base_dir=base_dir,
+                        )
+                        if fpath is None:
+                            output = path_err
                         else:
-                            fpath = agent_dir / path
+                            path = args.get("path") or ""
                             if not fpath.exists() or not fpath.is_file():
                                 output = f"(file not found: {path})"
                             else:
@@ -1727,6 +1945,12 @@ class AgentEditor:
                                 feedback.eval_result.per_case,
                                 failed_check=args.get("failed_check"),
                                 limit=args.get("limit"),
+                            ) + (
+                                "\n\n[PARENT's evaluation, from BEFORE any edit "
+                                "you've made this round -- this does NOT "
+                                "reflect your write_file/str_replace_file "
+                                "changes. To see your current code's real "
+                                "effect, use evaluate_variant.]"
                             )
                     elif call.name == "show_case":
                         if feedback is None:
@@ -1734,6 +1958,12 @@ class AgentEditor:
                         else:
                             output = render_show_case(
                                 feedback.eval_result.per_case, args.get("case_id") or ""
+                            ) + (
+                                "\n\n[PARENT's evaluation, from BEFORE any edit "
+                                "you've made this round -- this does NOT "
+                                "reflect your write_file/str_replace_file "
+                                "changes. To see your current code's real "
+                                "effect, use evaluate_variant.]"
                             )
                     elif call.name == "run_python":
                         code = args.get("code")
@@ -1793,9 +2023,32 @@ class AgentEditor:
                                     ids = list(self.train_case_ids or [])
                                 if ids is not None:
                                     evaluate_variant_calls += 1
+                                    # Isolated per-call dir, NEVER out_dir
+                                    # itself -- out_dir/logs/ is reserved for
+                                    # the real, framework-triggered
+                                    # evaluation that happens later (after
+                                    # this EXPAND finishes); writing straight
+                                    # into it here would both collide with
+                                    # that later run AND (since evaluator.run
+                                    # truncates trace.jsonl on every call)
+                                    # clobber an earlier evaluate_variant
+                                    # call's own logs within this same turn
+                                    # loop. A fresh task_agent/ copy is needed
+                                    # per call since evaluator.run executes
+                                    # from <round_dir>/task_agent.
+                                    variant_dir = (
+                                        out_dir / "internal_runs"
+                                        / f"call_{evaluate_variant_calls}"
+                                    )
                                     try:
+                                        if variant_dir.exists():
+                                            shutil.rmtree(variant_dir)
+                                        shutil.copytree(
+                                            out_dir / "task_agent",
+                                            variant_dir / "task_agent",
+                                        )
                                         result = self.evaluator.run(
-                                            out_dir, self.benchmark_dir, case_ids=ids
+                                            variant_dir, self.benchmark_dir, case_ids=ids
                                         )
                                     except Exception as exc:  # noqa: BLE001 -- an
                                         # infrastructure failure (not a real
@@ -1808,6 +2061,7 @@ class AgentEditor:
                                             "your call was NOT counted. Try again."
                                         )
                                     else:
+                                        last_variant_logs_dir = variant_dir / "logs"
                                         header = (
                                             f"score={result.score:.4f} "
                                             f"passed={result.passed} "
@@ -1822,6 +2076,24 @@ class AgentEditor:
                                             result.per_case,
                                             limit=len(result.per_case) or 1,
                                         )
+                                        if "read_file" in offered_tool_names or "grep" in offered_tool_names:
+                                            output += (
+                                                "\n\nThis call's own logs are now "
+                                                "readable via read_file/grep at "
+                                                "'internal_runs/trace.jsonl' "
+                                                "(tool_call/tool_result/llm_call "
+                                                "events) and "
+                                                "'internal_runs/case_<id>.json' "
+                                                "(one per case above) -- NOT the "
+                                                "parent's logs (see list_cases/"
+                                                "show_case for those), and NOT "
+                                                "the real scored evaluation "
+                                                "(that happens separately, after "
+                                                "you finish this EXPAND). A "
+                                                "later evaluate_variant call "
+                                                "replaces what 'internal_runs/' "
+                                                "points at with ITS OWN run."
+                                            )
                     elif call.name == "run_code_validators":
                         errors = self._run_validators(out_dir, base_dir)
                         output = (
@@ -1869,11 +2141,17 @@ class AgentEditor:
         # really happened" principle as _self_improve's own fallbacks.
         # Naturally degrades to target_files=[]/files=[] (handled by
         # apply()'s existing "editor returned no file edits" branch) when
-        # nothing was ever written.
+        # nothing was ever written. Label distinguishes a true budget
+        # exhaustion from the model going silent early (see
+        # `stopped_early` above) -- both keep whatever was written, only
+        # the recorded explanation differs.
         files = [{"path": p, "content": c} for p, c in written.items()]
         strategy = EvolutionStrategy(
             target_files=sorted(written),
-            optimization_goal=_AGENTIC_TURN_BUDGET_GOAL,
+            optimization_goal=(
+                _AGENTIC_EMPTY_RESPONSE_GOAL if stopped_early
+                else _AGENTIC_TURN_BUDGET_GOAL
+            ),
             proposed_changes="",
             rationale="",
         )
@@ -2107,6 +2385,141 @@ class AgentEditor:
             f"edit scope violation: {r} changed outside {', '.join(self._edit_scope)}"
             for r in changed if not self._in_scope(r)
         ]
+
+    def _resolve_agentic_read_path(
+        self, raw_path: str, *, agent_dir: Path,
+        internal_run_logs_dir: Optional[Path],
+        base_dir: Optional[Path] = None,
+    ) -> tuple[Optional[Path], Optional[str]]:
+        """Resolve a read_file/grep path in agentic mode.
+        ``'internal_runs/<rel>'`` reads from the MOST RECENT
+        evaluate_variant call's own, isolated logs dir
+        (``internal_run_logs_dir``, set by the dispatch loop after each
+        successful call to ``out_dir/internal_runs/call_<n>/logs``) --
+        never ``out_dir/logs/`` itself, which is reserved for the real,
+        framework-triggered evaluation that happens later, after this
+        EXPAND finishes, and never the parent's own logs either (see
+        ``list_cases``/``show_case`` for those). ``None`` when no
+        evaluate_variant call has been made yet this round.
+
+        ``'tools/<rel>'`` reads from ``self.tools_dir`` (the project's own
+        tool implementation) when ``tools_dir_alias_enabled`` is True --
+        off by default (an ablation-testable opt-in; see that flag's own
+        docstring in ``__init__``). Every other path resolves against
+        ``agent_dir`` exactly as before, still gated by
+        ``_is_path_allowed`` -- this is purely additive, read-only, and
+        does not change what ``write_file``/``str_replace_file`` can
+        touch. Returns ``(path, None)`` on success or
+        ``(None, error_message)``."""
+        path = (raw_path or "").lstrip("/")
+        if path.startswith("internal_runs/"):
+            if internal_run_logs_dir is None:
+                return None, (
+                    "ERROR: no evaluate_variant call has been made yet "
+                    "this round -- call it first, then "
+                    "'internal_runs/...' paths become readable."
+                )
+            rel = path[len("internal_runs/"):]
+            logs_root = internal_run_logs_dir.resolve()
+            target = (internal_run_logs_dir / rel).resolve()
+            if target != logs_root and logs_root not in target.parents:
+                return None, f"ERROR: {raw_path!r} escapes the internal_runs/ root."
+            return target, None
+        if path.startswith("tools/"):
+            if not self.tools_dir_alias_enabled:
+                return None, (
+                    "ERROR: 'tools/...' paths are not enabled for this "
+                    "run (tools_dir_alias_enabled is off)."
+                )
+            if self.tools_dir is None:
+                return None, (
+                    "ERROR: no tools/ directory is configured for this "
+                    "project -- 'tools/...' paths aren't readable here."
+                )
+            rel = path[len("tools/"):]
+            tools_root = self.tools_dir.resolve()
+            target = (self.tools_dir / rel).resolve()
+            if target != tools_root and tools_root not in target.parents:
+                return None, f"ERROR: {raw_path!r} escapes the tools/ root."
+            return target, None
+        if path == "full_metrics.json":
+            # Bare-filename alias (same convention BlockSuggester already
+            # uses for its own "eval_result.json") -- the PARENT round's
+            # uncapped, denominator-aware per-constraint breakdown (see
+            # scorer_impl.py::full_metrics / feedback_gatherer.py::
+            # _write_full_metrics). base_dir is the parent's own round
+            # dir (apply()'s own param), not agent_dir (agent_dir/task_agent
+            # has no such file). None when no project scorer opts into
+            # full_metrics() -- not an error, just nothing to read yet.
+            if base_dir is None or not (base_dir / "full_metrics.json").exists():
+                return None, (
+                    "ERROR: 'full_metrics.json' is not available for the "
+                    "parent round -- this project's scorer may not "
+                    "define full_metrics(), or the parent was never "
+                    "evaluated."
+                )
+            return base_dir / "full_metrics.json", None
+        if not self._is_path_allowed(path):
+            return None, (
+                f"ERROR: {path!r} is not readable/editable here -- see "
+                "the '## Files you may read/edit' list above for what's "
+                "available."
+            )
+        return agent_dir / path, None
+
+    def _paginated_read(self, fpath: Path, args: dict[str, Any]) -> str:
+        """Backing implementation for the ``read_file`` tool: line-sliced
+        by offset/limit (mirrors BlockSuggester's own
+        ``_agentic_read_file``), plus a hard character ceiling that no
+        line-count limit alone can guarantee -- a single line can be
+        enormous (confirmed live: a ``read_file`` call on
+        ``internal_runs/trace.jsonl`` -- one JSON line per LLM call --
+        returned 47,258,272 characters and blew past OpenRouter's 8MB
+        total-request-size limit on the very next turn, ending that
+        EXPAND early). ``_READ_FILE_MAX_CHARS`` makes that impossible
+        regardless of line count.
+
+        Deliberately returns plain text with NO line-number prefix
+        (unlike BlockSuggester's version, which is diagnostic-only) --
+        this output can end up verbatim inside a later
+        ``str_replace_file`` call, and an "L123: " prefix would corrupt
+        that exact-match."""
+        try:
+            text = fpath.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            return f"ERROR reading file: {exc!r}"
+        # keepends=True + "".join(...) (not "\n".join(lines.splitlines()))
+        # so an untruncated read reconstructs the file's EXACT original
+        # bytes, trailing newline included -- str_replace_file does
+        # exact-text matching downstream, so silently dropping a
+        # trailing "\n" here would be a real (if small) fidelity bug.
+        lines = text.splitlines(keepends=True)
+        offset = max(0, int(args.get("offset") or 0))
+        limit = args.get("limit")
+        limit = int(limit) if limit else _READ_FILE_DEFAULT_LINE_LIMIT
+        chunk_lines = lines[offset:offset + limit]
+        chunk = "".join(chunk_lines)
+        remaining = len(lines) - (offset + limit)
+        note = None
+        if len(chunk) > _READ_FILE_MAX_CHARS:
+            chunk = chunk[:_READ_FILE_MAX_CHARS]
+            note = (
+                f"\n\n[... cut at {_READ_FILE_MAX_CHARS} characters -- "
+                "at least one of these lines is very long (e.g. a "
+                "trace.jsonl event). For a large file like this, use "
+                "`grep` to search for a specific pattern instead of "
+                "reading it line-by-line.]"
+            )
+        elif remaining > 0:
+            note = (
+                f"\n\n[... {remaining} more line(s) -- call read_file "
+                f"again with offset={offset + limit} to continue, or "
+                "use `grep` to search a large file (e.g. trace.jsonl) "
+                "for a specific pattern instead.]"
+            )
+        if not chunk:
+            return "(empty file or offset past end)"
+        return chunk + (note or "")
 
     def _is_path_allowed(self, rel_path: str) -> bool:
         parts = Path(rel_path).parts

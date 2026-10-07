@@ -152,6 +152,98 @@ class AggregateHarnessChecksTests(unittest.TestCase):
         self.assertAlmostEqual(m["no_plan_rate"], 0.5)
 
 
+class FullMetricsTests(unittest.TestCase):
+    """TravelCompositeScorer.full_metrics(): the uncapped,
+    denominator-aware per-constraint fail_rate breakdown written to
+    round_dir/full_metrics.json -- unlike aggregate()'s own
+    top_failed_checks (a raw count capped to the top 15), this walks
+    every case's dimension_details/hard_constraints (every check, pass
+    or fail) so a rate can actually be computed, and never truncates."""
+
+    def _case(self, case_id, *, error=None, dimension_details=None,
+              hard_constraints=None):
+        from meta_agent.models import CaseResult
+
+        details: dict = {}
+        if error is not None:
+            details["error"] = error
+        if dimension_details is not None:
+            details["dimension_details"] = dimension_details
+        if hard_constraints is not None:
+            details["hard_constraints"] = hard_constraints
+        return CaseResult(case_id=case_id, passed=False, score=0.0, details=details)
+
+    def test_computes_a_true_rate_not_just_a_count(self) -> None:
+        scorer = scorer_impl.TravelCompositeScorer()
+        dims = {
+            "Time Feasibility": {
+                "checks": [{"name": "reasonable_transfer_time", "passed": False}]
+            }
+        }
+        per_case = [
+            self._case("0", dimension_details=dims),
+            self._case("1", dimension_details=dims),
+            self._case(
+                "2",
+                dimension_details={
+                    "Time Feasibility": {
+                        "checks": [{"name": "reasonable_transfer_time", "passed": True}]
+                    }
+                },
+            ),
+        ]
+        fm = scorer.full_metrics(per_case)
+        entry = fm["commonsense:Time Feasibility:reasonable_transfer_time"]
+        self.assertEqual(entry, {"passed": 1, "failed": 2, "applicable": 3, "fail_rate": 2 / 3})
+
+    def test_not_capped_at_15_unlike_top_failed_checks(self) -> None:
+        scorer = scorer_impl.TravelCompositeScorer()
+        dims = {
+            f"Dim{i}": {"checks": [{"name": f"check_{i}", "passed": False}]}
+            for i in range(20)
+        }
+        per_case = [self._case("0", dimension_details=dims)]
+        fm = scorer.full_metrics(per_case)
+        self.assertEqual(len(fm), 20)
+
+    def test_hard_constraint_rate_uses_only_cases_it_applied_to(self) -> None:
+        scorer = scorer_impl.TravelCompositeScorer()
+        per_case = [
+            self._case("0", hard_constraints={"flight_seat_status": {"passed": False}}),
+            self._case("1", hard_constraints={"flight_seat_status": {"passed": True}}),
+            # Constraint doesn't apply to this case at all -- must not
+            # count toward its denominator either way.
+            self._case("2", hard_constraints={"hotel_star_highest_rated": {"passed": False}}),
+        ]
+        fm = scorer.full_metrics(per_case)
+        self.assertEqual(
+            fm["hard:flight_seat_status"],
+            {"passed": 1, "failed": 1, "applicable": 2, "fail_rate": 0.5},
+        )
+
+    def test_no_plan_cases_excluded_same_as_aggregate(self) -> None:
+        scorer = scorer_impl.TravelCompositeScorer()
+        per_case = [
+            self._case(
+                "0", error="plan conversion failed: agent produced no plan",
+                dimension_details={"D": {"checks": [{"name": "x", "passed": False}]}},
+            ),
+        ]
+        fm = scorer.full_metrics(per_case)
+        self.assertEqual(fm, {})
+
+    def test_sorted_worst_fail_rate_first(self) -> None:
+        scorer = scorer_impl.TravelCompositeScorer()
+        per_case = [
+            self._case("0", hard_constraints={
+                "always_fails": {"passed": False},
+                "always_passes": {"passed": True},
+            }),
+        ]
+        fm = scorer.full_metrics(per_case)
+        self.assertEqual(list(fm.keys())[0], "hard:always_fails")
+
+
 class AggregateCheckSemanticsTests(unittest.TestCase):
     """project_metrics["check_semantics"]: pairs each check/harness flag
     actually appearing in top_failed_checks/harness_checks with its

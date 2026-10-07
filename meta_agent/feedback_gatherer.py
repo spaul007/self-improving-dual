@@ -281,6 +281,7 @@ class DefaultFeedbackGatherer:
             trace_n_cases=len(trace_case_ids),
         )
         persist_round_artifacts(round_dir, feedback)
+        self._write_full_metrics(round_dir, eval_result)
 
         if verbose_log.is_enabled():
             rendered_metrics = (
@@ -333,6 +334,58 @@ class DefaultFeedbackGatherer:
             )
             return {}
         return dict(result or {})
+
+    def _write_full_metrics(
+        self, round_dir: Path, eval_result: EvaluationResult
+    ) -> None:
+        """Dispatch to the scorer's optional ``full_metrics(per_case)``
+        method -- the same opt-in detection convention as ``aggregate``
+        above, but the result is written straight to
+        ``round_dir/full_metrics.json`` rather than merged into
+        ``project_metrics``. Deliberate split: ``project_metrics`` feeds
+        the prompt and stays capped by design (``render_metrics``'s own
+        top-N rendering); ``full_metrics`` is the SAME kind of per-check
+        roll-up but uncapped, so it has to live outside the
+        automatically-injected context -- on disk, readable on demand
+        via read_file/grep's 'full_metrics.json' alias, exactly the
+        'accessible but not force-fed' pattern internal_runs/ and
+        tools/ already use. No-op when the scorer doesn't define
+        ``full_metrics`` (every existing project, unless it opts in)."""
+        full_metrics = getattr(self.scorer, "full_metrics", None) if self.scorer else None
+        if full_metrics is None:
+            return
+        if not eval_result.per_case:
+            # Not evaluated at all yet -- compile() is also called right
+            # after EXPAND, before any EVALUATE, to persist a placeholder
+            # round folder (see hgm.py's own "fresh child starts
+            # unevaluated" comment). Writing an empty {} here would be a
+            # content-free artifact, not information -- genuinely
+            # different from a node that WAS evaluated and had zero
+            # tallyable cases (e.g. every case crashed), which still
+            # writes below. The real file appears once _evaluate()
+            # calls compile() again with actual per_case data.
+            return
+        try:
+            result = full_metrics(eval_result.per_case)
+        except Exception as exc:  # noqa: BLE001
+            # Same "never crash the round" principle as _project_metrics
+            # above -- a broken full_metrics() just means the file isn't
+            # written this round, not a failed EXPAND.
+            print(
+                f"[gatherer] warning: scorer.full_metrics() raised {exc!r}; "
+                "full_metrics.json not written",
+                flush=True,
+            )
+            return
+        try:
+            (round_dir / "full_metrics.json").write_text(
+                json.dumps(dict(result or {}), indent=2), encoding="utf-8"
+            )
+        except OSError as exc:
+            print(
+                f"[gatherer] warning: could not write full_metrics.json: {exc!r}",
+                flush=True,
+            )
 
     def _failure_report(self, eval_result: EvaluationResult) -> dict[str, Any]:
         """Build the generic, example-driven failure report (query → plan →

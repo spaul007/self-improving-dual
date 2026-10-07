@@ -99,6 +99,11 @@ editor:
     max_attempts: 2
     agentic_editing: true
     agentic_max_turns: 100
+    # Hard cap on real evaluator.run calls per EXPAND via evaluate_variant,
+    # independent of agentic_max_turns -- each call is genuine wall-clock +
+    # API cost (a real subprocess run of every requested case through the
+    # task agent). Default is 3; capped tighter here per explicit request.
+    evaluate_variant_max_calls: 2
     agentic_tools:
       - "read_file"
       - "write_file"
