@@ -86,7 +86,25 @@ DEFAULT_RETRIES = 31
 # the WHOLE retry loop, checked every iteration, independent of how many of
 # the 31 attempts have run -- confirmed live: a real run stalled 6.6+ hours
 # on this exact loop despite the existing 300s per-attempt timeout.
-CONVERT_OVERALL_TIMEOUT_S = 600.0
+#
+# Raised 600 -> 3600 (confirmed live, 2026-10-08): at 600s with a 300s
+# per-attempt timeout, a genuinely CONTENDED (not dead) backend only ever
+# gets 2 attempts, each blocking for the full per-attempt timeout before
+# failing -- the exponential backoff between attempts (min(2**attempt, 8),
+# see the loop below) is negligible next to that, so it never gets a
+# chance to actually space retries out. Confirmed live: every single
+# conversion that timed out this way during a real startup contention
+# spike (multiple HGM processes' seed pre-evals landing on the same
+# backend at once) succeeded immediately when the exact same plan text
+# was re-converted minutes later, outside the contention window -- i.e.
+# the backend was slow, not down, and simply needed more wall-clock
+# room to drain. 3600s x up to 12 attempts gives that room while staying
+# well short of the 6.6+ hour pathological stall above. This trades a
+# higher worst-case per-case stall (up to ~1h instead of ~10min) if the
+# backend is genuinely dead rather than contended -- an increasingly rare
+# case now that TRAVEL_CONVERT_BASE_URL points at a load-balanced server
+# pool rather than a single node.
+CONVERT_OVERALL_TIMEOUT_S = 3600.0
 # Smaller than the overall ceiling on purpose, so more than one attempt can
 # actually fit inside CONVERT_OVERALL_TIMEOUT_S -- a 300s per-attempt
 # timeout with a 300s overall ceiling would only ever allow a single try.
