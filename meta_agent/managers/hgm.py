@@ -168,6 +168,25 @@ class HGMManager:
         # len(batch), independent of node.record()) -- only removes a
         # corrupted data point from the node's own Beta tallies.
         exclude_llm_call_failures: bool = False,
+        # Opt-in, project-agnostic infra exclusion: when True, any case whose
+        # scorer set ``details["excluded"] = True`` (the project's own
+        # judgement that the case failed for INFRASTRUCTURE reasons -- e.g. a
+        # docker/image/verifier failure -- not because of the agent) is
+        # recorded via HGMNode.record_excluded: attempted (not resampled,
+        # counts toward "fully evaluated") but with no utility. Unlike
+        # exclude_llm_call_failures it does not depend on trace.jsonl, so it
+        # works for task agents that bring their own LLM client. False
+        # (default): every case is recorded exactly as before.
+        exclude_flagged_cases: bool = False,
+        # Opt-in companion to exclude_flagged_cases: also treat a case with a
+        # top-level ``CaseResult.error`` (evaluator-level failure -- per-case
+        # timeout, child exit code, unparseable output, ``ok:false``
+        # envelope, scorer exception; the scorer never produced a verdict)
+        # as an excluded infrastructure failure. Only appropriate when the
+        # project's entry point is frozen (``mutable_exclude``) and cannot
+        # raise, so such a failure can never be the edited agent's fault.
+        # False (default): recorded exactly as before.
+        exclude_crashed_cases: bool = False,
         # Always-on (independent of exclude_llm_call_failures above):
         # print a loud warning, and flag it in llm_failure_health.json,
         # whenever a round's LLM-call failure incidence rate
@@ -371,6 +390,8 @@ class HGMManager:
         self.block_edit_scopes = dict(block_edit_scopes or {})
         self.block_reward_metric = block_reward_metric
         self.exclude_llm_call_failures = exclude_llm_call_failures
+        self.exclude_flagged_cases = exclude_flagged_cases
+        self.exclude_crashed_cases = exclude_crashed_cases
         self.llm_call_failure_threshold_pct = llm_call_failure_threshold_pct
         self.block_initial_ranking = block_initial_ranking
         self.block_initial_rank_strength = block_initial_rank_strength
@@ -900,15 +921,30 @@ class HGMManager:
             else set()
         )
         n_excluded = 0
+        n_flagged = 0
         for case in result.per_case:
             if case.case_id in excluded:
                 n_excluded += 1
+                continue
+            if (
+                (self.exclude_flagged_cases and (case.details or {}).get("excluded"))
+                or (self.exclude_crashed_cases and case.error)
+            ):
+                n_flagged += 1
+                node.record_excluded(case)
                 continue
             node.record(case)
         if n_excluded:
             print(
                 f"node {node.node_id}: excluded {n_excluded} case(s) from reward "
                 f"(OpenRouter LLM-call terminal failure, see {trace_path})",
+                flush=True,
+            )
+        if n_flagged:
+            print(
+                f"node {node.node_id}: excluded {n_flagged} case(s) from reward "
+                f"(infrastructure failure: scorer-flagged details.excluded "
+                f"or evaluator-level crash)",
                 flush=True,
             )
 
@@ -1625,14 +1661,8 @@ class HGMManager:
         # Select only among fully-train-evaluated nodes (the root + the
         # finalists `_finalize_top_k` just topped up). A thinly-evaluated
         # non-finalist's optimistic partial estimate must not win.
-        n_train = len(self._train_case_ids)
-        fully_evaluated = {
-            nid
-            for nid, n in self._tree.nodes.items()
-            if not n.edit_failed and n.n_evals >= n_train
-        }
         best_id = self._tree.lcb_select(
-            self.epsilon, restrict_to=fully_evaluated
+            self.epsilon, restrict_to=self._fully_evaluated_ids()
         )
         if self._eval_case_ids:
             self._run_eval_split(best_id, evaluator)
@@ -1651,6 +1681,19 @@ class HGMManager:
         return EvolutionOutcome(
             rounds=rounds, best_round=best_id, final_score=final_score
         )
+
+    def _fully_evaluated_ids(self) -> set[int]:
+        """Nodes whose train split is fully ATTEMPTED (the LCB candidates).
+        ``n_attempted`` equals ``n_evals`` unless ``exclude_flagged_cases``
+        excluded something: an infra-excluded case was attempted and is never
+        re-run, so it must not disqualify a finalist -- otherwise any single
+        exclusion silently drops the node from final selection."""
+        n_train = len(self._train_case_ids)
+        return {
+            nid
+            for nid, n in self._tree.nodes.items()
+            if not n.edit_failed and n.n_evals > 0 and n.n_attempted >= n_train
+        }
 
     def _finalize_top_k(
         self, evaluator: Evaluator, gatherer: FeedbackGatherer
@@ -1996,6 +2039,7 @@ class HGMManager:
                     "children": node.children,
                     "edit_failed": node.edit_failed,
                     "n_evals": node.n_evals,
+                    "n_excluded": node.n_excluded,
                     "mean_utility": node.mean_utility,
                     "n_success": node.n_success,
                     "n_failure": node.n_failure,
