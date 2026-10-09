@@ -332,7 +332,8 @@ class Reflector:
         max_steering_chars: int = 6000,
         probe_questions: bool = True,
         case_files: bool = True,
-        max_case_file_chars: int = 20000,
+        max_case_file_chars: int = 60000,
+        max_case_field_chars: Optional[int] = 600,
         seed: int = 0,
         chat_caller: Optional[Callable[..., dict]] = None,
     ) -> None:
@@ -363,6 +364,7 @@ class Reflector:
         self.max_steering_chars = max_steering_chars
         self.probe_questions, self.case_files = bool(probe_questions), bool(case_files)
         self.max_case_file_chars = max_case_file_chars
+        self.max_case_field_chars = max_case_field_chars
         self._rng = random.Random(seed)
         self._chat_caller = chat_caller or self._openai_chat
         self._warned_unsupported = False
@@ -631,9 +633,18 @@ def _oneline(s: Any) -> str:
     return " ".join(str(s or "").split())
 
 
-def render_record(rec: dict, exposure: str, extra_terms: Optional[list[str]] = None) -> list[str]:
+def _field(v: Any, terms: list[str], cap: Optional[int]) -> str:
+    """One answer field on one line: redacted FIRST (a cut must never leave half a
+    redact term behind), then clipped to ``cap`` characters."""
+    text = redact(_oneline(v), terms)
+    return text if not cap or len(text) <= cap else text[: max(1, cap - 1)].rstrip() + "\u2026"
+
+
+def render_record(rec: dict, exposure: str, extra_terms: Optional[list[str]] = None,
+                  max_field_chars: Optional[int] = None) -> list[str]:
     """Lines describing ONE reflection record for the meta-agent, redacted. ``lessons_only``
-    shows only the parsed fields; ``full`` the whole answers."""
+    shows only the parsed fields (each clipped to ``max_field_chars`` when set); ``full`` the
+    whole answers."""
     terms = list(rec.get("redact_terms") or []) + list(extra_terms or [])
     if exposure == "full":
         lines = []
@@ -642,22 +653,23 @@ def render_record(rec: dict, exposure: str, extra_terms: Optional[list[str]] = N
             if body:
                 lines.append(f"[{t.get('name')}] {redact(body, terms)}")
         return lines
+    cap = max_field_chars
     p = rec.get("parsed") or {}
     lines = []
     if p.get("overall_confidence") is not None:
         lines.append(f"blind confidence: {p['overall_confidence']}")
     for it in (p.get("unsure_items") or [])[:4]:
         if it.get("confidence", 100) < 70:
-            lines.append(f"unsure ({it['confidence']}): {redact(_oneline(it.get('item')), terms)}")
+            lines.append(f"unsure ({it['confidence']}): {_field(it.get('item'), terms, cap)}")
     if p.get("first_check"):
-        lines.append(f"first check: {redact(_oneline(p['first_check']), terms)}")
+        lines.append(f"first check: {_field(p['first_check'], terms, cap)}")
     for key, label in (("lesson", "lesson"), ("catch", "would have caught it"), ("essential", "essential"),
                        ("close_calls", "close calls"), ("keep", "keep")):
         if p.get(key):
-            lines.append(f"{label}: {redact(_oneline(p[key]), terms)}")
+            lines.append(f"{label}: {_field(p[key], terms, cap)}")
     for i, pq in enumerate(p.get("probes") or [], 1):
         if pq.get("a"):
-            lines.append(f"probe {i} -- {redact(_oneline(pq.get('q')), terms)} => {redact(_oneline(pq['a']), terms)}")
+            lines.append(f"probe {i} -- {_field(pq.get('q'), terms, None)} => {_field(pq['a'], terms, cap)}")
     return lines
 
 

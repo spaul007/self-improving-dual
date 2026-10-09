@@ -80,7 +80,8 @@ def _node_rows(nodes: list[Any]) -> dict[int, dict]:
     return rows
 
 
-def render_case(case_id: str, ent: dict, rows: dict[int, dict], exposure: str, max_chars: int) -> str:
+def render_case(case_id: str, ent: dict, rows: dict[int, dict], exposure: str, max_chars: int,
+                max_field_chars: Optional[int] = 600) -> str:
     evals = ent["evals"]
     recs = sorted(ent["records"], key=lambda r: (float(r.get("ts") or 0), r.get("node_id") or 0,
                                                   r.get("eval_index") or 0, str(r.get("role"))))
@@ -125,7 +126,7 @@ def render_case(case_id: str, ent: dict, rows: dict[int, dict], exposure: str, m
                  if isinstance(score, (int, float)) else
                  f"### node {nid} · eval {k} · {'PASSED' if g0.get('passed') else 'FAILED'}"]
         for r in grp:
-            body = render_record(r, exposure, terms)
+            body = render_record(r, exposure, terms, max_field_chars)
             body = [redact(x, terms) for x in body]
             status = r.get("status") or ""
             lines.append(f"**{r.get('role')}**" + (f" ({status})" if status not in ("", "ok") else ""))
@@ -147,7 +148,8 @@ def render_case(case_id: str, ent: dict, rows: dict[int, dict], exposure: str, m
 
 
 def build_case_files(run_dir: Path, nodes: Iterable[Any], *, exposure: str = "lessons_only",
-                     max_chars_per_case: int = 20000) -> dict[str, dict]:
+                     max_chars_per_case: int = 60000,
+                     max_field_chars: Optional[int] = 600) -> dict[str, dict]:
     """Rebuild ``<run_dir>/case_reflections/``. Returns ``{case_id: {"evals", "passes",
     "file"}}``. Never raises past an OSError on the directory itself."""
     nodes = list(nodes)
@@ -159,7 +161,8 @@ def build_case_files(run_dir: Path, nodes: Iterable[Any], *, exposure: str = "le
     written: set[str] = set()
     for cid, ent in cases.items():
         name = case_file_name(cid)
-        _atomic_write(out / name, render_case(cid, ent, rows, exposure, max_chars_per_case))
+        _atomic_write(out / name, render_case(cid, ent, rows, exposure, max_chars_per_case,
+                                                       max_field_chars))
         written.add(name)
         summary[cid] = {"evals": len(ent["evals"]), "passes": sum(p for _, p, _ in ent["evals"]),
                         "nodes": len({n for n, _, _ in ent["evals"]}), "reflections": len(ent["records"]),

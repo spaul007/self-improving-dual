@@ -126,6 +126,35 @@ class CaseFileBuilderTests(unittest.TestCase):
         self.assertIn("· eval 2 ·", a)              # newest kept
         self.assertNotIn("check the brief", a)      # oldest dropped
 
+    def test_fields_clipped_after_redaction(self) -> None:
+        from meta_agent.reflector import render_record
+
+        long = "x" * 590 + SECRET + " tail " * 50     # the term straddles the 600-char cut
+        rec = _rec(0, None, "A", "PATCH", 1, False, 0.4, lesson=long, terms=[SECRET])
+        lines = render_record(rec, "lessons_only", None, 600)
+        lesson = next(x for x in lines if x.startswith("lesson: "))[len("lesson: "):]
+        self.assertLessEqual(len(lesson), 600)
+        self.assertTrue(lesson.endswith("\u2026"))
+        self.assertNotIn(SECRET[:8], lesson)   # no half-term survives the cut
+        self.assertIn("[redac", lesson)
+        unclipped = render_record(rec, "lessons_only", None, None)
+        self.assertIn(" tail", next(x for x in unclipped if x.startswith("lesson: ")))
+
+    def test_defaults_keep_many_nodes_per_case(self) -> None:
+        from meta_agent.case_reflections import build_case_files
+
+        big = "word " * 2000
+        n0 = self.nodes[0]
+        for k in range(2, 12):   # 10 more evaluations of A on the root, each with long answers
+            n0.case_results.append(CaseResult(case_id="A", passed=False, score=0.3))
+            r = _rec(0, None, "A", "PATCH", k, False, 0.3, lesson=big, keep=big, conf=50, ts=10 + k,
+                     probes=[("q?", big)])
+            (n0.round_dir / "reflections" / f"A.PATCH.e{k}.json").write_text(json.dumps(r))
+        build_case_files(self.run, self.nodes)
+        a = (self.run / "case_reflections" / "A.md").read_text()
+        self.assertGreaterEqual(a.count("### node "), 12)   # nothing dropped at the 60K default
+        self.assertIn("pass rate: 2/14", a)
+
     def test_rebuild_is_pure_and_removes_stale_files(self) -> None:
         self._build()
         out = self.run / "case_reflections"
