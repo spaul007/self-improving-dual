@@ -2473,7 +2473,7 @@ class HGMManager:
                 self._experiment_dir, list(self._tree.nodes.values()),
                 exposure=self._reflector.exposure,
                 max_chars_per_case=getattr(self._reflector, "max_case_file_chars", 60000),
-                max_field_chars=getattr(self._reflector, "max_case_field_chars", 600))
+                max_field_chars=getattr(self._reflector, "max_case_field_chars", 400))
         except Exception as exc:  # noqa: BLE001
             print(f"[reflector] case files rebuild failed: {exc!r}", flush=True)
             return

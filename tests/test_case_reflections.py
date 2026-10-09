@@ -28,7 +28,7 @@ def _rec(node, parent, case, role, k, passed, score, *, lesson="", keep="", conf
         parsed["probes"] = [{"q": q, "a": a} for q, a in probes]
     return {"version": 2, "node_id": node, "parent_id": parent, "case_id": case, "role": role,
             "eval_index": k, "passed": passed, "score": score, "ts": ts, "status": "ok",
-            "redact_terms": list(terms), "parsed": parsed,
+            "redact_terms": list(terms), "parsed": parsed, "probe_questions": [q for q, _ in probes],
             "turns": [{"name": "blind", "question": "q", "response": {"content": f"FULL blind {SECRET}"}},
                       {"name": "graded", "question": "q", "response": {"content": "FULL graded"}}]}
 
@@ -95,7 +95,8 @@ class CaseFileBuilderTests(unittest.TestCase):
         self.assertIn("### node 1 (parent 0) · eval 1 · score 1.00 · PASSED", a)
         self.assertIn("### node 2 (parent 1) · eval 2 · score 1.00 · PASSED", a)
         self.assertIn("keep: keep the interface read", a)
-        self.assertIn("probe 1 -- Did you use the checklist? => yes, step 3", a)
+        self.assertIn("probe questions (written by the editor for this node's edit): [1] Did you use the checklist?", a)
+        self.assertIn("probe 1: yes, step 3", a)
         self.assertLess(a.index("### node 0"), a.index("### node 1"))       # oldest first
         self.assertLess(a.index("· eval 1 · score 0.60"), a.index("· eval 2 ·"))
         idx = (out / "INDEX.md").read_text()

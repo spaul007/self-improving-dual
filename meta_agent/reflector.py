@@ -333,7 +333,7 @@ class Reflector:
         probe_questions: bool = True,
         case_files: bool = True,
         max_case_file_chars: int = 60000,
-        max_case_field_chars: Optional[int] = 600,
+        max_case_field_chars: Optional[int] = 400,
         seed: int = 0,
         chat_caller: Optional[Callable[..., dict]] = None,
     ) -> None:
@@ -641,7 +641,7 @@ def _field(v: Any, terms: list[str], cap: Optional[int]) -> str:
 
 
 def render_record(rec: dict, exposure: str, extra_terms: Optional[list[str]] = None,
-                  max_field_chars: Optional[int] = None) -> list[str]:
+                  max_field_chars: Optional[int] = None, probe_questions: bool = True) -> list[str]:
     """Lines describing ONE reflection record for the meta-agent, redacted. ``lessons_only``
     shows only the parsed fields (each clipped to ``max_field_chars`` when set); ``full`` the
     whole answers."""
@@ -669,7 +669,8 @@ def render_record(rec: dict, exposure: str, extra_terms: Optional[list[str]] = N
             lines.append(f"{label}: {_field(p[key], terms, cap)}")
     for i, pq in enumerate(p.get("probes") or [], 1):
         if pq.get("a"):
-            lines.append(f"probe {i} -- {_field(pq.get('q'), terms, None)} => {_field(pq['a'], terms, cap)}")
+            q = f" -- {_field(pq.get('q'), terms, None)} =>" if probe_questions else ":"
+            lines.append(f"probe {i}{q} {_field(pq['a'], terms, cap)}")
     return lines
 
 

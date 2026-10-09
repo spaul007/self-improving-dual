@@ -81,7 +81,7 @@ def _node_rows(nodes: list[Any]) -> dict[int, dict]:
 
 
 def render_case(case_id: str, ent: dict, rows: dict[int, dict], exposure: str, max_chars: int,
-                max_field_chars: Optional[int] = 600) -> str:
+                max_field_chars: Optional[int] = 400) -> str:
     evals = ent["evals"]
     recs = sorted(ent["records"], key=lambda r: (float(r.get("ts") or 0), r.get("node_id") or 0,
                                                   r.get("eval_index") or 0, str(r.get("role"))))
@@ -125,8 +125,12 @@ def render_case(case_id: str, ent: dict, rows: dict[int, dict], exposure: str, m
                  f"· eval {k} · score {float(score):.2f} · {'PASSED' if g0.get('passed') else 'FAILED'}"
                  if isinstance(score, (int, float)) else
                  f"### node {nid} · eval {k} · {'PASSED' if g0.get('passed') else 'FAILED'}"]
+        qs = next((r.get("probe_questions") for r in grp if r.get("probe_questions")), None)
+        if qs and exposure != "full":   # asked of every role of this node: shown once
+            lines.append("probe questions (written by the editor for this node's edit): "
+                         + " ".join(f"[{i}] {redact(_oneline(q), terms)}" for i, q in enumerate(qs, 1)))
         for r in grp:
-            body = render_record(r, exposure, terms, max_field_chars)
+            body = render_record(r, exposure, terms, max_field_chars, probe_questions=not qs)
             body = [redact(x, terms) for x in body]
             status = r.get("status") or ""
             lines.append(f"**{r.get('role')}**" + (f" ({status})" if status not in ("", "ok") else ""))
@@ -149,7 +153,7 @@ def render_case(case_id: str, ent: dict, rows: dict[int, dict], exposure: str, m
 
 def build_case_files(run_dir: Path, nodes: Iterable[Any], *, exposure: str = "lessons_only",
                      max_chars_per_case: int = 60000,
-                     max_field_chars: Optional[int] = 600) -> dict[str, dict]:
+                     max_field_chars: Optional[int] = 400) -> dict[str, dict]:
     """Rebuild ``<run_dir>/case_reflections/``. Returns ``{case_id: {"evals", "passes",
     "file"}}``. Never raises past an OSError on the directory itself."""
     nodes = list(nodes)
