@@ -49,6 +49,7 @@ from ..implementation_strategy_bandit import (
 )
 from ..evaluator import Evaluator, load_cases
 from ..feedback_gatherer import FeedbackGatherer, persist_round_artifacts, render_metrics
+from .. import root_cache
 from ..llm_failure_health import (
     DEFAULT_INCIDENCE_THRESHOLD_PCT,
     analyze_trace_file,
@@ -199,6 +200,13 @@ class HGMManager:
         # baseline (a healthy round is normally <1%; a real provider
         # outage was seen at 70%+).
         llm_call_failure_threshold_pct: float = DEFAULT_INCIDENCE_THRESHOLD_PCT,
+        # Opt-in cache of the ROOT (round_000) evaluation across experiments
+        # (meta_agent/root_cache.py). Unset (default): the root is evaluated
+        # as before. Set: an identical seed tree + train set + config
+        # fingerprint replays the stored root instead of re-evaluating, and
+        # a fresh root evaluation is stored. root_cache_read=False only writes.
+        root_cache_dir: Optional[str] = None,
+        root_cache_read: bool = True,
         # Opt-in curriculum layer: decomposes "maximize composite score"
         # into an ORDERED list of sub-goals -- one per failing check in the
         # seed's own top_failed_checks ranking (computed ONCE, right after
@@ -393,6 +401,11 @@ class HGMManager:
         self.exclude_flagged_cases = exclude_flagged_cases
         self.exclude_crashed_cases = exclude_crashed_cases
         self.llm_call_failure_threshold_pct = llm_call_failure_threshold_pct
+        self.root_cache_dir = root_cache_dir
+        self.root_cache_read = root_cache_read
+        # Set by meta_agent.config.build_components (project, scorer, LLM
+        # spec, evaluator config, env, cases digest); part of the cache key.
+        self.root_cache_fingerprint: dict = {}
         self.block_initial_ranking = block_initial_ranking
         self.block_initial_rank_strength = block_initial_rank_strength
         allowed_implementation_strategy_selection_strategies = {
@@ -1899,9 +1912,7 @@ class HGMManager:
         # initial-agent evaluation this is free — not charged to
         # eval_budget — and gives the root a real score so it is an
         # eligible expansion parent for the init expansions.
-        result = evaluator.run(
-            out_dir, self._benchmark_dir, case_ids=self._train_case_ids
-        )
+        result = self._root_eval_cached(out_dir, agent_dst, evaluator)
         self._record_batch(node, result)
 
         zero_strategy = EvolutionStrategy(
@@ -1949,6 +1960,49 @@ class HGMManager:
         without the parameter keep working for every unscoped EXPAND)."""
         scope = self.block_edit_scopes.get(block) if block else None
         return {"edit_scope": list(scope)} if scope else {}
+
+    def _root_eval_cached(
+        self, out_dir: Path, agent_dir: Path, evaluator: Evaluator
+    ) -> EvaluationResult:
+        """The root's evaluation: replayed from ``root_cache_dir`` on an exact
+        key match, else run (and stored when the cache is configured)."""
+        if not self.root_cache_dir:
+            return evaluator.run(
+                out_dir, self._benchmark_dir, case_ids=self._train_case_ids
+            )
+        key, parts = root_cache.cache_key(
+            agent_dir, self._train_case_ids, self.root_cache_fingerprint
+        )
+        if self.root_cache_read:
+            hit = root_cache.load(Path(self.root_cache_dir), key)
+            if hit is not None:
+                result, logs_src, manifest = hit
+                shutil.copytree(logs_src, out_dir / "logs", symlinks=True,
+                                dirs_exist_ok=True)
+                print(
+                    f"node 0: root CACHE HIT {key[:12]} from "
+                    f"{manifest.get('source')} ({len(result.per_case)} cases, "
+                    f"created {manifest.get('created')})",
+                    flush=True,
+                )
+                return result
+        result = evaluator.run(
+            out_dir, self._benchmark_dir, case_ids=self._train_case_ids
+        )
+        if result.crashed:
+            print(f"node 0: root cache NOT stored ({key[:12]}): evaluation crashed",
+                  flush=True)
+            return result
+        stored = root_cache.store(
+            Path(self.root_cache_dir), key, parts, result, out_dir / "logs",
+            source=str(self._experiment_dir),
+        )
+        print(
+            f"node 0: root cache {'STORED' if stored else 'not stored (exists or write failed)'} "
+            f"{key[:12]}",
+            flush=True,
+        )
+        return result
 
     def _run_failure_summarizer(self, node: HGMNode) -> None:
         """Fire the failure summarizer (if configured) on a node's current

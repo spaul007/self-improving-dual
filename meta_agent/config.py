@@ -6,6 +6,7 @@ for each named component class and instantiates it.
 """
 from __future__ import annotations
 
+import hashlib
 import importlib
 import importlib.util
 import inspect
@@ -475,6 +476,8 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
             f"{cfg.manager.type!r} has no active_blocks"
         )
     manager_obj = manager_cls(**manager_config)
+    if getattr(manager_obj, "root_cache_dir", None):
+        manager_obj.root_cache_fingerprint = _root_cache_fingerprint(cfg, benchmark_dir)
     if skills is not None:
         manager_obj.skills_library = {"dir": skills.dir, "index_header": skills.index_header}
         if hasattr(editor_obj, "skills_guide"):
@@ -616,6 +619,30 @@ def apply_skills_to_manager_config(
     manager_config["active_blocks"] = active
     manager_config["block_edit_scopes"] = scopes
     return manager_config
+
+
+def _root_cache_fingerprint(cfg: FrameworkConfig, benchmark_dir: Path) -> dict[str, Any]:
+    """Everything besides the seed tree and train ids that a root evaluation's result
+    depends on (see meta_agent/root_cache.py). Parallelism is excluded: it changes
+    wall time, not what is measured (a caveat for wall-budgeted agents under load)."""
+    cases = benchmark_dir / "cases.jsonl"
+    try:
+        cases_digest = hashlib.sha256(cases.read_bytes()).hexdigest() if cases.exists() else None
+    except OSError:
+        cases_digest = None
+    ev = {k: v for k, v in (cfg.evaluator.config or {}).items() if k != "parallelism"}
+    return {
+        "project": cfg.project,
+        "evaluator_type": cfg.evaluator.type,
+        "evaluator": ev,
+        "task_agent": cfg.task_agent.model_dump() if cfg.task_agent is not None else None,
+        # Secret-looking values enter the key (and the stored manifest) only as a digest.
+        "env": {k: (hashlib.sha256(str(v).encode()).hexdigest()[:16]
+                    if any(t in k.upper() for t in ("KEY", "TOKEN", "SECRET", "PASSWORD"))
+                    else v)
+                for k, v in (cfg.env or {}).items()},
+        "cases_digest": cases_digest,
+    }
 
 
 def _build_with_injection(
