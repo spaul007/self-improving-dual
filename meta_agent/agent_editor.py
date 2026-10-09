@@ -21,12 +21,13 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional, Protocol
 
-from . import source_context, verbose_log
+from . import log_access, source_context, verbose_log
 from .editor_validators import MUTABLE_DIRS, MUTABLE_FILES, is_excluded
 from .error_bucket_analyzer import render_error_bucket_prevalence_for_prompt
 from .failure_report import render_failure_report
 from .feedback_gatherer import render_metrics
 from .models import AgentFeedback, EditResult, EvolutionStrategy
+from .reflector import clean_probes
 from .registry import register
 from .workspace import reset_workspace
 
@@ -113,6 +114,24 @@ SELF_IMPROVEMENT_TOOL: dict[str, Any] = {
             "optimization_goal": {"type": "string"},
             "proposed_changes": {"type": "string"},
             "rationale": {"type": "string"},
+            "probe_questions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "question": {"type": "string"},
+                        "roles": {"type": "array", "items": {"type": "string"},
+                                  "description": "Task-agent roles to ask; omit or [] to ask every role."},
+                    },
+                    "required": ["question"],
+                },
+                "description": (
+                    "Optional, at most 3: short questions to ask the task agent after its next "
+                    "evaluated runs, whose answers would show whether this edit changed its "
+                    "behaviour as intended (about its own steps, never hidden tests). Name the "
+                    "role(s) each question is for, so roles the edit does not touch are not asked."
+                ),
+            },
             "files": {
                 "type": "array",
                 "items": {
@@ -188,6 +207,24 @@ AGENTIC_SUBMIT_SUMMARY_TOOL: dict[str, Any] = {
             "optimization_goal": {"type": "string"},
             "proposed_changes": {"type": "string"},
             "rationale": {"type": "string"},
+            "probe_questions": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "question": {"type": "string"},
+                        "roles": {"type": "array", "items": {"type": "string"},
+                                  "description": "Task-agent roles to ask; omit or [] to ask every role."},
+                    },
+                    "required": ["question"],
+                },
+                "description": (
+                    "Optional, at most 3: short questions to ask the task agent after its next "
+                    "evaluated runs, whose answers would show whether this edit changed its "
+                    "behaviour as intended (about its own steps, never hidden tests). Name the "
+                    "role(s) each question is for, so roles the edit does not touch are not asked."
+                ),
+            },
         },
         "required": ["optimization_goal", "proposed_changes", "rationale"],
     },
@@ -224,6 +261,63 @@ AGENTIC_EDIT_FILE_TOOL: dict[str, Any] = {
         "required": ["path", "old_string", "new_string"],
     },
 }
+
+
+# Opt-in (``agentic_log_access=True``): the parent node's evaluation logs become
+# readable, with the same alias rules, paging and centred-grep as the
+# BlockSuggester (meta_agent/log_access.py). Code files keep the plain
+# read_file behaviour (whole file) so edits can quote them verbatim.
+AGENTIC_LOG_READ_FILE_TOOL: dict[str, Any] = {
+    "name": "read_file",
+    "description": (
+        "Read a file. Editable/reference source files: pass their path as listed "
+        "(returns the whole file). Evaluation evidence of the PARENT agent you are "
+        "improving: 'logs/<rel>' (per-case logs, dossiers, transcripts) or "
+        "'eval_result.json'; per-test-case reflections across every node of the run: "
+        "'cases/INDEX.md' and 'cases/<file>' (when listed) -- paged by line: use "
+        "offset/limit (default 200 lines)."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "offset": {"type": "integer", "description": "Starting line (0-indexed), logs only."},
+            "limit": {"type": "integer", "description": "Max lines, logs only."},
+        },
+        "required": ["path"],
+    },
+}
+
+AGENTIC_GREP_TOOL: dict[str, Any] = {
+    "name": "grep",
+    "description": (
+        "Regex-search ONE file (a source file path as listed, 'logs/<rel>', "
+        "'cases/<file>' or 'eval_result.json'); returns a window centred on each match."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string"},
+            "pattern": {"type": "string"},
+            "max_matches": {"type": "integer"},
+        },
+        "required": ["path", "pattern"],
+    },
+}
+
+_AGENTIC_LOG_EVIDENCE = (
+    "\n\nEVALUATION EVIDENCE. You can read the parent agent's real evaluation "
+    "results, not just the summary above: `read_file`/`grep` on 'logs/<rel>' and "
+    "'eval_result.json' (read_file('logs/') lists the case files). If "
+    "'logs/DOSSIERS.md' exists, start there -- it ranks the "
+    "failing cases and points at each case's 'dossier.md' (outcome, requirement "
+    "coverage, key excerpts, contrast with other agents' runs of the same task); "
+    "then open the specific transcript, patch or exec-log lines a dossier cites. "
+    "Read the evidence before you decide what to change. In your summary's "
+    "`rationale`, cite the specific case(s) and the evidence your change is based "
+    "on (e.g. 'task X: requirement r7 was never tested by VERIFY, see dossier'), "
+    "or state explicitly that no case-level evidence was used."
+)
 
 
 def apply_string_edit(
@@ -303,6 +397,14 @@ class AgentEditor:
         # -- e.g. frozen modules (listed in mutable_exclude) whose APIs the
         # editable code calls. None (default): no change.
         readonly_reference: Optional[list[str]] = None,
+        # Opt-in: the agentic editor may read/grep the PARENT node's evaluation
+        # logs ('logs/...', 'eval_result.json'; paged, read-only), is told so in
+        # its prompt, must cite case-level evidence, and every tool call is
+        # recorded to <child round>/editor_tools.jsonl. False (default): no change.
+        agentic_log_access: bool = False,
+        # Opt-in: path to a project's logs guide, appended to the log-evidence
+        # instructions when agentic_log_access is on. None = unchanged prompt.
+        logs_guide: Optional[str] = None,
     ) -> None:
         self.llm = llm_caller
         self.validators = list(validators)
@@ -319,6 +421,8 @@ class AgentEditor:
         self.agentic_max_turns = agentic_max_turns
         self.agentic_edit_file = agentic_edit_file
         self.readonly_reference = list(readonly_reference or [])
+        self.agentic_log_access = agentic_log_access
+        self.logs_guide = log_access.load_logs_guide(logs_guide)
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -970,6 +1074,73 @@ class AgentEditor:
         "a proposed_changes summary, and a rationale to finish."
     )
 
+    def _agentic_tool_list(self) -> list[dict[str, Any]]:
+        tools = list(_AGENTIC_TOOLS)
+        if self.agentic_log_access:
+            tools = [AGENTIC_LOG_READ_FILE_TOOL if t is AGENTIC_READ_FILE_TOOL else t for t in tools]
+        if self.agentic_edit_file:
+            tools.append(AGENTIC_EDIT_FILE_TOOL)
+        if self.agentic_log_access:
+            tools.append(AGENTIC_GREP_TOOL)
+        return tools
+
+    @staticmethod
+    def _logs_listing(base_dir: Path, cap: int = 40) -> str:
+        """Top-level names under the parent's logs/, so the editor can open a case log
+        without guessing its name (EXP-034: it never found one)."""
+        try:
+            # Directories and index files first: they must survive the cap.
+            names = sorted((e.name + ("/" if e.is_dir() else "")
+                            for e in (base_dir / "logs").iterdir()),
+                           key=lambda n: (not (n.endswith("/") or n.endswith(".md")), n))
+        except OSError:
+            return ""
+        if not names:
+            return ""
+        more = f" ... (+{len(names) - cap} more)" if len(names) > cap else ""
+        return "  logs/ contains: " + ", ".join(names[:cap]) + more + "\n"
+
+    @staticmethod
+    def _cases_listing(base_dir: Path, cap: int = 40) -> str:
+        """The run's per-test-case reflection files (meta_agent/case_reflections.py) for the
+        cases the PARENT was evaluated on, when the reflector writes them; ``""`` otherwise."""
+        return log_access.cases_listing(base_dir, cap)
+
+    @staticmethod
+    def _is_log_path(path: Any) -> bool:
+        p = str(path or "").strip().lstrip("/")
+        return p in ("eval_result.json", "logs", "cases") or p.startswith(("logs/", "cases/"))
+
+    def _agentic_grep(
+        self, agent_dir: Path, base_dir: Path, args: dict[str, Any], readonly_paths: list[str]
+    ) -> str:
+        """grep over a parent log file, or over one readable source file."""
+        raw = str(args.get("path") or "").strip().lstrip("/")
+        if self._is_log_path(raw):
+            return log_access.grep({}, base_dir, args)
+        rel = raw[len("harness/"):] if raw.startswith("harness/") else raw
+        if not (self._is_path_allowed(rel) or rel in readonly_paths):
+            return (f"ERROR: {raw!r} is not readable here -- use a listed source file, "
+                    "'logs/<rel>', 'cases/<file>' or 'eval_result.json'.")
+        f = agent_dir / rel
+        if not f.is_file():
+            return f"(file not found: {raw})"
+        try:
+            max_matches = int(args.get("max_matches") or log_access.GREP_DEFAULT_MATCHES)
+        except (TypeError, ValueError):
+            max_matches = log_access.GREP_DEFAULT_MATCHES
+        return log_access.grep_text(f.read_text(encoding="utf-8", errors="replace"),
+                                    args.get("pattern") or "", max_matches)
+
+    @staticmethod
+    def _record_tool_call(out_dir: Path, row: dict[str, Any]) -> None:
+        """Append one agentic tool call to <child round>/editor_tools.jsonl. Never raises."""
+        try:
+            with open(Path(out_dir) / "editor_tools.jsonl", "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row) + "\n")
+        except OSError:
+            pass
+
     def _readonly_reference_paths(self, agent_dir: Path) -> list[str]:
         """Existing files matching ``readonly_reference`` globs, relative to
         ``agent_dir`` (sorted; never includes an editable path)."""
@@ -1012,6 +1183,10 @@ class AgentEditor:
                 "one file). Prefer it over `write_file` for changes to large "
                 "files: copy `old_string` verbatim from `read_file` output."
             )
+        if self.agentic_log_access:
+            system += _AGENTIC_LOG_EVIDENCE
+            if self.logs_guide:
+                system += "\n\nLOGS LAYOUT FOR THIS PROJECT:\n" + self.logs_guide
         system += self._skills_section()
 
         user_parts: list[str] = []
@@ -1037,6 +1212,19 @@ class AgentEditor:
                 f"{ro_listing}\n\n"
                 "These define APIs the editable code calls. You may `read_file` "
                 "them; any write/edit to them is refused.\n"
+            )
+        if self.agentic_log_access:
+            ev = [p for p in ("logs/DOSSIERS.md", "logs/scratch/INDEX.md")
+                  if (base_dir / p).is_file()]
+            ev.append("eval_result.json")
+            user_parts.append(
+                "## Evaluation evidence you can read (parent agent)\n"
+                + "\n".join(f"  - {p}" for p in ev)
+                + "\n  - logs/<rel> -- any file under the parent's logs/ "
+                "(per-case JSON, logs/scratch/<case>/<run>/...); "
+                "read_file('logs/') or any logs/ subdirectory lists its files\n"
+                + self._logs_listing(base_dir)
+                + self._cases_listing(base_dir)
             )
         user_parts.extend(self._format_edit_scope())
         if prior_errors:
@@ -1064,10 +1252,7 @@ class AgentEditor:
         for turn in range(self.agentic_max_turns):
             llm_kwargs: dict[str, Any] = {
                 "messages": history,
-                "tools": (
-                    _AGENTIC_TOOLS + [AGENTIC_EDIT_FILE_TOOL]
-                    if self.agentic_edit_file else _AGENTIC_TOOLS
-                ),
+                "tools": self._agentic_tool_list(),
             }
             if self.model:
                 llm_kwargs["model"] = self.model
@@ -1170,8 +1355,13 @@ class AgentEditor:
                             "backslashes, and newlines properly escaped. Retry "
                             f"this {call.name} call."
                         )
+                    elif call.name == "read_file" and self.agentic_log_access and \
+                            self._is_log_path(args.get("path")):
+                        output = log_access.read_file({}, base_dir, args)
                     elif call.name == "read_file":
                         path = (args.get("path") or "").lstrip("/")
+                        if self.agentic_log_access and path.startswith("harness/"):
+                            path = path[len("harness/"):]
                         if not (
                             self._is_path_allowed(path)
                             or path in readonly_paths
@@ -1208,6 +1398,13 @@ class AgentEditor:
                                 output = fpath.read_text(encoding="utf-8")
                             else:
                                 output = f"(file not found: {path})"
+                    elif call.name in ("write_file", "edit_file") and \
+                            self.agentic_log_access and self._is_log_path(args.get("path")):
+                        # 'logs/...' and 'eval_result.json' name the PARENT's evaluation
+                        # evidence; without this guard a write would silently create a
+                        # decoy file of that name inside the child agent's own tree.
+                        output = (f"ERROR: {args.get('path')!r} is read-only evaluation "
+                                  "evidence -- edit the agent's source files instead.")
                     elif call.name == "write_file":
                         path = (args.get("path") or "").lstrip("/")
                         content = args.get("content")
@@ -1258,6 +1455,8 @@ class AgentEditor:
                                 target.write_text(new_text, encoding="utf-8")
                                 written[path] = new_text
                                 output = f"{output} in {path}"
+                    elif call.name == "grep" and self.agentic_log_access:
+                        output = self._agentic_grep(agent_dir, base_dir, args, readonly_paths)
                     elif call.name == "run_code_validators":
                         errors = self._run_validators(out_dir, base_dir)
                         output = (
@@ -1270,6 +1469,7 @@ class AgentEditor:
                             optimization_goal=_coerce_str(args.get("optimization_goal")),
                             proposed_changes=_coerce_str(args.get("proposed_changes")),
                             rationale=_coerce_str(args.get("rationale")),
+                            probe_questions=clean_probes(args.get("probe_questions")),
                         )
                         files = [{"path": p, "content": c} for p, c in written.items()]
                         return strategy, files
@@ -1286,6 +1486,13 @@ class AgentEditor:
                         "try different arguments."
                     )
 
+                if self.agentic_log_access:
+                    a_ = args if isinstance(args, dict) else {}
+                    self._record_tool_call(out_dir, {
+                        "turn": turn, "tool": call.name, "path": a_.get("path"),
+                        "pattern": a_.get("pattern"), "out_chars": len(output or ""),
+                        "error": str(output or "").startswith("ERROR"),
+                    })
                 history.append({
                     "type": "function_call_output",
                     "call_id": call_id,
@@ -1328,6 +1535,7 @@ class AgentEditor:
             optimization_goal=_coerce_str(args.get("optimization_goal")),
             proposed_changes=_coerce_str(args.get("proposed_changes")),
             rationale=_coerce_str(args.get("rationale")),
+            probe_questions=clean_probes(args.get("probe_questions")),
         )
         return strategy, files
 

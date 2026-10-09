@@ -624,6 +624,21 @@ def call_llm(
             },
         )
 
+    from . import session_log
+
+    if session_log.enabled():
+        # Opt-in (META_AGENT_SESSION_LOG=1, set by meta_agent/reflector.py):
+        # record this conversation for post-run task-agent reflection.
+        session_log.log_session(
+            messages,
+            [o for o in (getattr(response, "output", None) or [])
+             if getattr(o, "type", None) != "reasoning"],
+            fmt="responses",
+            meta={"model": resolved_model, "base_url": resolved_base_url,
+                  "reasoning_effort": resolved_effort,
+                  "tools": [t["name"] for t in norm_tools]},
+        )
+
     return LLMResponse(
         content=content,
         tool_calls=tool_calls,

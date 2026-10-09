@@ -6,6 +6,7 @@ for each named component class and instantiates it.
 """
 from __future__ import annotations
 
+import hashlib
 import importlib
 import importlib.util
 import inspect
@@ -119,6 +120,12 @@ class SplitSpec(BaseModel):
     eval_equals_train: bool = False
 
 
+class BlockToggle(BaseModel):
+    """One entry of the ``blocks:`` section: ``{enabled: false}`` removes that block
+    from the evolution's candidate set (see :func:`apply_blocks_to_manager_config`)."""
+    enabled: bool = True
+
+
 class SkillsSpec(BaseModel):
     """Opt-in evolvable skill library for the task agent (off by default).
 
@@ -191,6 +198,12 @@ class FrameworkConfig(BaseModel):
     # block name. Omit (or null) to disable; existing configs keep current
     # behavior without changes.
     block_suggester: Optional[ComponentSpec] = None
+    # Optional. When set, the task agent's saved sessions are replayed after each
+    # evaluation batch with one extra question (post-grading / unsure / essential)
+    # and the parsed lessons are given to the meta-agent per ``exposure`` (see
+    # meta_agent/reflector.py). Needs the project's scorer to implement
+    # reflection_sessions/grading_outcome. Omit (or null) to disable.
+    reflector: Optional[ComponentSpec] = None
     # Optional. When set, an LLM-based unit-choosing component (see
     # meta_agent/unit_selector.py) is used by HGMManager's
     # curriculum_granularity="unit" mode to pick which unit (a group of
@@ -204,6 +217,10 @@ class FrameworkConfig(BaseModel):
     task_agent: TaskAgentSpec = Field(default_factory=TaskAgentSpec)
     # Evolvable skill library (see SkillsSpec). Default: disabled.
     skills: SkillsSpec = Field(default_factory=SkillsSpec)
+    # Per-block on/off switches, e.g. ``blocks: {llm_backbone_selection: {enabled:
+    # false}, foundation_capability: {enabled: false}}``. Empty (default) = today's
+    # block set. ``skills`` here must agree with ``skills.enabled``.
+    blocks: dict[str, BlockToggle] = Field(default_factory=dict)
     env: dict[str, str] = Field(default_factory=dict)
     split: Optional[SplitSpec] = None
 
@@ -280,6 +297,7 @@ class AssembledFramework:
     failure_summarizer: Any = None
     block_suggester: Any = None
     unit_selector: Any = None
+    reflector: Any = None
     train_case_ids: Optional[list[str]] = None
     eval_case_ids: Optional[list[str]] = None
 
@@ -295,6 +313,7 @@ def _ensure_builtins_loaded() -> None:
     importlib.import_module("meta_agent.failure_summarizer")
     importlib.import_module("meta_agent.block_suggester")
     importlib.import_module("meta_agent.unit_selector")
+    importlib.import_module("meta_agent.reflector")
     importlib.import_module("meta_agent.managers")  # imports submodules
 
 
@@ -466,8 +485,21 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
             {"llm_caller": call_llm},
         )
 
+    reflector_obj: Any = None
+    if cfg.reflector is not None:
+        reflector_obj = _build_with_injection(
+            cfg.reflector,
+            "reflector",
+            {"llm_caller": call_llm, "scorer": scorer_obj, "task_agent": cfg.task_agent},
+        )
+
     skills = resolve_skills(cfg)
-    manager_config = apply_skills_to_manager_config(dict(cfg.manager.config), skills)
+    manager_config = apply_blocks_to_manager_config(
+        dict(cfg.manager.config), cfg.blocks, skills_enabled=skills is not None
+    )
+    manager_config = apply_skills_to_manager_config(manager_config, skills)
+    if cfg.blocks or skills is not None:
+        print(f"[config] evolution blocks: {manager_config.get('active_blocks')}", flush=True)
     manager_cls = registry.get("manager", cfg.manager.type)
     if skills is not None and "active_blocks" not in inspect.signature(manager_cls).parameters:
         raise ValueError(
@@ -475,6 +507,8 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
             f"{cfg.manager.type!r} has no active_blocks"
         )
     manager_obj = manager_cls(**manager_config)
+    if getattr(manager_obj, "root_cache_dir", None):
+        manager_obj.root_cache_fingerprint = _root_cache_fingerprint(cfg, benchmark_dir)
     if skills is not None:
         manager_obj.skills_library = {"dir": skills.dir, "index_header": skills.index_header}
         if hasattr(editor_obj, "skills_guide"):
@@ -519,6 +553,7 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
         failure_summarizer=failure_summarizer_obj,
         block_suggester=block_suggester_obj,
         unit_selector=unit_selector_obj,
+        reflector=reflector_obj,
         train_case_ids=train_ids,
         eval_case_ids=eval_ids,
     )
@@ -615,7 +650,77 @@ def apply_skills_to_manager_config(
     scopes.setdefault("skills", [skills.dir])
     manager_config["active_blocks"] = active
     manager_config["block_edit_scopes"] = scopes
+    ranking = manager_config.get("block_initial_ranking")
+    if ranking is not None and "skills" not in ranking:
+        raise ValueError(
+            "skills.enabled adds the 'skills' block, so manager.config.block_initial_ranking must "
+            f"also list it (it must be a permutation of {sorted(active)}); got {list(ranking)}"
+        )
+    strategy = manager_config.get("block_selection_strategy", "collaboration")
+    if strategy not in ("adaptive", "non_adaptive"):
+        print(
+            f"[config] WARNING: skills.enabled but block_selection_strategy={strategy!r} always "
+            "picks one fixed block -- the 'skills' block can never be selected; use "
+            "'adaptive' or 'non_adaptive'",
+            flush=True,
+        )
     return manager_config
+
+
+def apply_blocks_to_manager_config(
+    manager_config: dict[str, Any], blocks: dict[str, "BlockToggle"], *, skills_enabled: bool
+) -> dict[str, Any]:
+    """Resolve the ``blocks:`` on/off section into ``active_blocks``.
+
+    Unknown block names, a disabled block also named in ``active_blocks``, or a
+    ``skills`` entry that disagrees with ``skills.enabled`` are errors. With no
+    explicit ``active_blocks`` the result is the default block set minus the
+    disabled ones (``skills`` itself is added later by the skills gate)."""
+    if not blocks:
+        return manager_config
+    from .block_suggester import _BLOCK_BODIES, default_blocks
+
+    unknown = sorted(set(blocks) - set(_BLOCK_BODIES))
+    if unknown:
+        raise ValueError(f"blocks: unknown block name(s) {unknown} -- valid: {sorted(_BLOCK_BODIES)}")
+    if "skills" in blocks and blocks["skills"].enabled != skills_enabled:
+        raise ValueError(
+            f"blocks.skills.enabled={blocks['skills'].enabled} disagrees with "
+            f"skills.enabled={skills_enabled} -- set them the same (or drop blocks.skills)"
+        )
+    disabled = {b for b, t in blocks.items() if not t.enabled and b != "skills"}
+    active = manager_config.get("active_blocks")
+    if active is not None:
+        clash = sorted(disabled & set(active))
+        if clash:
+            raise ValueError(f"block(s) {clash} are disabled in `blocks:` but listed in active_blocks")
+        return manager_config
+    manager_config["active_blocks"] = [b for b in default_blocks() if b not in disabled]
+    return manager_config
+
+
+def _root_cache_fingerprint(cfg: FrameworkConfig, benchmark_dir: Path) -> dict[str, Any]:
+    """Everything besides the seed tree and train ids that a root evaluation's result
+    depends on (see meta_agent/root_cache.py). Parallelism is excluded: it changes
+    wall time, not what is measured (a caveat for wall-budgeted agents under load)."""
+    cases = benchmark_dir / "cases.jsonl"
+    try:
+        cases_digest = hashlib.sha256(cases.read_bytes()).hexdigest() if cases.exists() else None
+    except OSError:
+        cases_digest = None
+    ev = {k: v for k, v in (cfg.evaluator.config or {}).items() if k != "parallelism"}
+    return {
+        "project": cfg.project,
+        "evaluator_type": cfg.evaluator.type,
+        "evaluator": ev,
+        "task_agent": cfg.task_agent.model_dump() if cfg.task_agent is not None else None,
+        # Secret-looking values enter the key (and the stored manifest) only as a digest.
+        "env": {k: (hashlib.sha256(str(v).encode()).hexdigest()[:16]
+                    if any(t in k.upper() for t in ("KEY", "TOKEN", "SECRET", "PASSWORD"))
+                    else v)
+                for k, v in (cfg.env or {}).items()},
+        "cases_digest": cases_digest,
+    }
 
 
 def _build_with_injection(

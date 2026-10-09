@@ -32,7 +32,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from . import source_context
+from . import log_access, source_context
 from .error_bucket_analyzer import render_error_bucket_prevalence_for_prompt
 from .feedback_gatherer import render_metrics
 from .models import AgentFeedback
@@ -113,7 +113,17 @@ _SYSTEM_CLOSING = (
 # regex bug in a harness validator, an exact prompt-rule violation) that
 # the curated feedback digest alone never surfaced a single concrete
 # example of.
-_SYSTEM_CLOSING_AGENTIC = (
+# The default (travel-shaped) description of logs/, substituted into
+# _SYSTEM_CLOSING_AGENTIC unless a project supplies ``logs_guide``.
+_LOGS_DESCRIPTION_MARK = "\x00LOGS\x00"
+_DEFAULT_LOGS_DESCRIPTION = (
+    "each "
+    "'logs/case_<id>.json' has a 'converted_plan' field with the exact "
+    "structured output that was scored and a 'raw_plan_text' field with "
+    "the literal text, plus 'logs/trace.jsonl', real tool_call/"
+    "tool_result/llm_call events -- use grep on it, it can be large"
+)
+_SYSTEM_CLOSING_AGENTIC_TEMPLATE = (
     "\n\nYou have two read-only tools: `read_file(path)` and "
     "`grep(path, pattern)` (grep returns a window centered on each match, "
     "not just a line's start -- use it for any file too large to read "
@@ -121,11 +131,9 @@ _SYSTEM_CLOSING_AGENTIC = (
     "read_file('.') is not needed, the aliases are exactly: 'harness/...' "
     "(the current mutable source you're diagnosing -- read any file "
     "before citing it, don't guess at its contents), 'logs/...' (this "
-    "parent node's own real per-case evaluation logs -- each "
-    "'logs/case_<id>.json' has a 'converted_plan' field with the exact "
-    "structured output that was scored and a 'raw_plan_text' field with "
-    "the literal text, plus 'logs/trace.jsonl', real tool_call/"
-    "tool_result/llm_call events -- use grep on it, it can be large), and "
+    "parent node's own real per-case evaluation logs -- "
+    + _LOGS_DESCRIPTION_MARK +
+    "), and "
     "'eval_result.json' (every case's score and, per check, its exact "
     "pass/fail and violation message). Use these to ground your diagnosis "
     "in a real, specific, cited example -- a concrete case_id and the "
@@ -153,10 +161,13 @@ _SYSTEM_CLOSING_AGENTIC = (
     "conflict between 'follow the suggestion' and 'be different from "
     "siblings' -- that reconciliation is your job, not its."
 )
+_SYSTEM_CLOSING_AGENTIC = _SYSTEM_CLOSING_AGENTIC_TEMPLATE.replace(
+    _LOGS_DESCRIPTION_MARK, _DEFAULT_LOGS_DESCRIPTION
+)
 
 AGENTIC_READ_FILE_TOOL: dict[str, Any] = {
     "name": "read_file",
-    "description": "Read a text file. Paths are alias-rooted: 'harness/<rel>', 'logs/<rel>', or 'eval_result.json'.",
+    "description": "Read a text file. Paths are alias-rooted: 'harness/<rel>', 'logs/<rel>', 'cases/<file>' (per-test-case reflections, when listed), or 'eval_result.json'.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -715,6 +726,10 @@ class BlockSuggester:
         # exact behavior for every existing config. See
         # _suggest_agentic and the module-level AGENTIC_*_TOOL schemas.
         agentic_access: bool = False,
+        # Opt-in: path to a project's logs guide (what lives under logs/ for THIS
+        # project). Replaces the default travel-shaped description in the agentic
+        # system prompt. None (default) = byte-identical prompt.
+        logs_guide: Optional[str] = None,
         # Bounds the agentic loop (one LLM round-trip per turn).
         agentic_max_turns: int = 20,
         # Catalog of OpenRouter slugs the llm_backbone_selection block may
@@ -744,6 +759,7 @@ class BlockSuggester:
         self.max_output_tokens = max_output_tokens
         self.strategies_path = strategies_path
         self.agentic_access = agentic_access
+        self.logs_guide = log_access.load_logs_guide(logs_guide)
         self.agentic_max_turns = agentic_max_turns
         self.backbone_catalog = backbone_catalog or _DEFAULT_BACKBONE_CATALOG
         self.readonly_reference = list(readonly_reference or [])
@@ -1034,6 +1050,16 @@ class BlockSuggester:
     # Agentic mode (opt-in via agentic_access -- see __init__)
     # ------------------------------------------------------------------ #
 
+    def _agentic_closing(self) -> str:
+        """The agentic tool instructions, with this project's logs guide (if any)
+        in place of the default description of ``logs/``."""
+        if not self.logs_guide:
+            return _SYSTEM_CLOSING_AGENTIC
+        return _SYSTEM_CLOSING_AGENTIC_TEMPLATE.replace(
+            _LOGS_DESCRIPTION_MARK,
+            "this project's layout is described below; use grep on large files",
+        ) + "\n\nLOGS LAYOUT FOR THIS PROJECT:\n" + self.logs_guide + "\n"
+
     def _suggest_agentic(
         self,
         *,
@@ -1065,7 +1091,7 @@ class BlockSuggester:
             + self._render_strategies(block)
             + self._render_skills()
             + self._render_curriculum_focus(curriculum_directive)
-            + _SYSTEM_CLOSING_AGENTIC
+            + self._agentic_closing()
         )
 
         user_parts: list[str] = source_context.format_project_context(
@@ -1085,6 +1111,7 @@ class BlockSuggester:
             "logs and trace.jsonl) and 'eval_result.json' (every case's "
             "pass/fail and violation messages) -- see the tool "
             "instructions above.\n"
+            + log_access.cases_listing(round_dir)
         )
         user_parts.append(self._format_feedback_digest(feedback, failure_summary))
         if siblings:
@@ -1168,6 +1195,17 @@ class BlockSuggester:
                 else:
                     output = f"ERROR: unknown tool {call.name!r}."
 
+                # Observability: which evidence did the diagnosis actually read?
+                # Without this record, "the suggester grounded itself in real
+                # per-case logs" is unverifiable from any artifact (only the
+                # prompt and the final text were persisted).
+                a = args if isinstance(args, dict) else {}
+                self._record_tool_call(out_dir, {
+                    "turn": turn, "tool": call.name, "path": a.get("path"),
+                    "pattern": a.get("pattern"), "out_chars": len(output or ""),
+                    "error": (output or "").startswith("ERROR"),
+                })
+
                 history.append({
                     "type": "function_call_output",
                     "call_id": call_id,
@@ -1216,117 +1254,25 @@ class BlockSuggester:
     def _resolve_alias_path(
         self, path: str, *, sources: dict[str, str], round_dir: Path
     ) -> tuple[Optional[str], Any]:
-        """Resolve an alias-rooted path to either ``("harness", text)``
-        (served straight from the already-read ``sources`` dict, no disk
-        access) or ``("file", Path)`` (a real path under ``round_dir``,
-        still unresolved/unchecked-for-existence). Returns ``(None, error)``
-        when ``path`` doesn't match any known alias or a 'logs/' path
-        would escape its own root."""
-        path = (path or "").strip().lstrip("/")
-        if path == "eval_result.json":
-            return "file", round_dir / "eval_result.json"
-        if path.startswith("harness/"):
-            rel = path[len("harness/"):]
-            if rel not in sources:
-                return None, (
-                    f"ERROR: {path!r} not found -- available harness "
-                    f"files: {', '.join(sorted(sources)) or '(none)'}"
-                )
-            return "harness", sources[rel]
-        if path.startswith("logs/"):
-            rel = path[len("logs/"):]
-            logs_root = (round_dir / "logs").resolve()
-            target = (round_dir / "logs" / rel).resolve()
-            if target != logs_root and logs_root not in target.parents:
-                return None, f"ERROR: {path!r} escapes the logs/ root."
-            return "file", target
-        return None, (
-            f"ERROR: unrecognized path {path!r} -- paths must be exactly "
-            "'eval_result.json' or start with 'harness/' or 'logs/'."
-        )
+        """Alias resolution -- shared with the editor (meta_agent/log_access.py)."""
+        return log_access.resolve(path, sources=sources, round_dir=round_dir)
+
+    @staticmethod
+    def _record_tool_call(out_dir: Path, row: dict[str, Any]) -> None:
+        """Append one agentic read_file/grep call to
+        ``<child round>/block_suggestion_tools.jsonl``. Never raises."""
+        try:
+            with open(Path(out_dir) / "block_suggestion_tools.jsonl", "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(row) + "\n")
+        except OSError:
+            pass
 
     def _agentic_read_file(
         self, sources: dict[str, str], round_dir: Path, args: dict[str, Any]
     ) -> str:
-        raw_path = args.get("path") or ""
-        kind, payload = self._resolve_alias_path(
-            raw_path, sources=sources, round_dir=round_dir
-        )
-        if kind is None:
-            return payload
-        if kind == "harness":
-            text = payload
-        else:
-            fpath = payload
-            if not fpath.exists() or not fpath.is_file():
-                return f"(file not found: {raw_path})"
-            try:
-                text = fpath.read_text(encoding="utf-8", errors="replace")
-            except OSError as exc:
-                return f"ERROR reading {raw_path}: {exc!r}"
-        lines = text.splitlines()
-        offset = max(0, int(args.get("offset") or 0))
-        limit = args.get("limit")
-        limit = int(limit) if limit else 200
-        chunk_lines = lines[offset:offset + limit]
-        chunk = "\n".join(f"L{offset + i}: {line}" for i, line in enumerate(chunk_lines))
-        remaining = len(lines) - (offset + limit)
-        if remaining > 0:
-            chunk += (
-                f"\n\n[... {remaining} more lines -- call read_file again "
-                f"with offset={offset + limit} ...]"
-            )
-        return chunk if chunk else "(empty file or offset past end)"
+        return log_access.read_file(sources, round_dir, args)
 
     def _agentic_grep(
         self, sources: dict[str, str], round_dir: Path, args: dict[str, Any]
     ) -> str:
-        raw_path = args.get("path") or ""
-        kind, payload = self._resolve_alias_path(
-            raw_path, sources=sources, round_dir=round_dir
-        )
-        if kind is None:
-            return payload
-        pattern = args.get("pattern") or ""
-        try:
-            rx = re.compile(pattern)
-        except re.error as exc:
-            return f"ERROR: invalid regex {pattern!r}: {exc!r}"
-        try:
-            max_matches = int(args.get("max_matches") or 12)
-        except (TypeError, ValueError):
-            max_matches = 12
-
-        matches: list[str] = []
-        if kind == "harness":
-            line_iter = enumerate(payload.splitlines())
-        else:
-            fpath = payload
-            if not fpath.exists() or not fpath.is_file():
-                return f"(file not found: {raw_path})"
-            try:
-                line_iter = enumerate(
-                    fpath.read_text(encoding="utf-8", errors="replace").splitlines()
-                )
-            except OSError as exc:
-                return f"ERROR reading {raw_path}: {exc!r}"
-
-        # Window CENTERED on the match, not the line's start -- a line can
-        # be thousands of chars long (e.g. a JSON string value holding an
-        # entire multi-day itinerary on one physical "line"), and the
-        # match can land far from its beginning. Confirmed live this
-        # session: returning only a line's first N chars made a real match
-        # deep in such a line undiscoverable.
-        for i, line in line_iter:
-            m = rx.search(line)
-            if not m:
-                continue
-            start = max(0, m.start() - 150)
-            end = min(len(line), m.end() + 350)
-            prefix = "..." if start > 0 else ""
-            suffix = "..." if end < len(line) else ""
-            snippet = f"{prefix}{line[start:end].strip()}{suffix}"
-            matches.append(f"L{i} (char {m.start()}): {snippet}")
-            if len(matches) >= max_matches:
-                break
-        return "\n".join(matches) if matches else "(no matches)"
+        return log_access.grep(sources, round_dir, args)

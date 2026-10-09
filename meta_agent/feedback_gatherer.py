@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional, Protocol
 
 from . import error_bucket_analyzer, verbose_log
+from .atomic_io import atomic_write_text
 from .failure_report import FailureReportConfig, build_failure_report
 from .models import AgentFeedback, EvaluationResult, EvolutionStrategy
 from .registry import register
@@ -45,15 +46,11 @@ def persist_round_artifacts(round_dir: Path, feedback: AgentFeedback) -> None:
     writer of these files; called by ``DefaultFeedbackGatherer.compile`` and
     by the managers' failed-edit synth path."""
     round_dir.mkdir(parents=True, exist_ok=True)
-    (round_dir / "feedback.json").write_text(
-        feedback.model_dump_json(indent=2), encoding="utf-8"
-    )
-    (round_dir / "eval_result.json").write_text(
-        feedback.eval_result.model_dump_json(indent=2), encoding="utf-8"
-    )
-    (round_dir / "strategy.json").write_text(
-        feedback.strategy.model_dump_json(indent=2), encoding="utf-8"
-    )
+    # Atomic: a resume rebuilds the tree from feedback.json, so a half-written one
+    # (kill / full filesystem mid-write) must never be possible.
+    atomic_write_text(round_dir / "feedback.json", feedback.model_dump_json(indent=2))
+    atomic_write_text(round_dir / "eval_result.json", feedback.eval_result.model_dump_json(indent=2))
+    atomic_write_text(round_dir / "strategy.json", feedback.strategy.model_dump_json(indent=2))
 
 
 _ERROR_PREVIEW_RE = re.compile(r'^Error\b|"error"\s*:', re.IGNORECASE)

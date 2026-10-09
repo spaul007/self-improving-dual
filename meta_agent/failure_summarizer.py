@@ -147,7 +147,12 @@ class FailureSummarizer:
     # ------------------------------------------------------------------ #
 
     def summarize(
-        self, *, eval_result: EvaluationResult, round_dir: Path, node_id: int
+        self,
+        *,
+        eval_result: EvaluationResult,
+        round_dir: Path,
+        node_id: int,
+        reflections: str = "",
     ) -> Optional[Path]:
         """Produce (or refresh) ``failure_summary.md`` for ``round_dir``.
 
@@ -157,6 +162,10 @@ class FailureSummarizer:
         ``eval_result`` passed in already reflects every case the node has
         seen so far), so it stays current across batches without needing an
         UPDATE-mode prompt variant.
+
+        ``reflections`` (optional; see meta_agent/reflector.py) is the task
+        agent's own account of its runs, already filtered for exposure; it is
+        appended to the prompt as a separate, explicitly fallible section.
         """
         cases = list(eval_result.per_case or [])
         failing = [c for c in cases if (not c.passed) or float(c.score) < 1.0]
@@ -184,6 +193,11 @@ class FailureSummarizer:
             pass
 
         prompt_user, prompt_system = self._build_prompt(aggregate)
+        if reflections:
+            prompt_user += (
+                "\n\n## The task agent's own reflections (self-reported; may be wrong -- "
+                "use them as hypotheses, confirm against the data above)\n" + reflections
+            )
         try:
             (round_dir / "failure_summary_prompt.txt").write_text(
                 f"### SYSTEM\n{prompt_system}\n\n### USER\n{prompt_user}",

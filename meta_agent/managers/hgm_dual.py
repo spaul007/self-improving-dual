@@ -937,7 +937,19 @@ class HGMDualManager(HGMManager):
         # this is accepted purely to avoid crashing on main_loop.py's unconditional kwarg, same as
         # failure_summarizer/block_suggester above.
         unit_selector: Any = None,
+        resume: bool = False,
+        # Optional task-agent reflection (meta_agent/reflector.py); run after
+        # each committed node's evaluation by HGMManager._evaluate.
+        reflector: Any = None,
     ) -> Any:
+        if resume:
+            # The dual manager's budget also counts the throw-away variant trials,
+            # which _restore_from_disk cannot rebuild from node files -- refuse
+            # clearly rather than resume with a wrong budget.
+            raise NotImplementedError(
+                "--resume is not supported for hgm_dual (variant-trial spend is not "
+                "reconstructible from the round dirs); start a new run instead"
+            )
         # Stash the evaluator so _expand can call _evaluate_candidate
         # without changing the HGMManager._expand signature.
         self._evaluator = evaluator  # type: ignore[attr-defined]
@@ -968,4 +980,5 @@ class HGMDualManager(HGMManager):
             failure_summarizer=failure_summarizer,
             block_suggester=block_suggester,
             unit_selector=unit_selector,
+            reflector=reflector,
         )

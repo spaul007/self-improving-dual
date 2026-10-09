@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any, Optional
 
@@ -25,16 +26,78 @@ from meta_agent import runtime_env
 from meta_agent.models import EvolutionOutcome
 
 
-def run(config_path: Path) -> EvolutionOutcome:
+# Config keys a resume may change (everything else must match the run's snapshot, or
+# the continued search would silently mix two experiments).
+RESUME_MUTABLE_KEYS = {
+    ("evaluator", "config", "parallelism"),
+    ("loop", "max_rounds"),
+    ("manager", "config", "eval_budget"),
+}
+
+
+def _flatten(d: Any, prefix: tuple = ()) -> dict[tuple, Any]:
+    if isinstance(d, dict):
+        out: dict[tuple, Any] = {}
+        for k, v in d.items():
+            out.update(_flatten(v, prefix + (k,)))
+        return out
+    return {prefix: d}
+
+
+def resume_config_diff(snapshot_text: str, new_text: str) -> tuple[list, list]:
+    """(allowed_changes, forbidden_changes) between a run's config snapshot and a
+    config offered on resume, as lists of (key-path, old, new)."""
+    import yaml
+    a = _flatten(yaml.safe_load(snapshot_text) or {})
+    b = _flatten(yaml.safe_load(new_text) or {})
+    allowed, forbidden = [], []
+    for k in sorted(set(a) | set(b), key=str):
+        if a.get(k) != b.get(k):
+            (allowed if k in RESUME_MUTABLE_KEYS else forbidden).append((".".join(map(str, k)), a.get(k), b.get(k)))
+    return allowed, forbidden
+
+
+def run(config_path: Optional[Path], resume_dir: Optional[Path] = None) -> EvolutionOutcome:
+    if resume_dir is not None:
+        resume_dir = Path(resume_dir).resolve()
+        snap = resume_dir / "config.snapshot.yaml"
+        if not snap.is_file():
+            raise SystemExit(f"--resume: {snap} not found")
+        if config_path is not None:
+            allowed, forbidden = resume_config_diff(snap.read_text(), Path(config_path).read_text())
+            if forbidden:
+                raise SystemExit("--resume: config differs from the run's snapshot in keys a resume may "
+                                 f"not change: {forbidden}")
+            for k, old, new in allowed:
+                print(f"resume: config change {k}: {old} -> {new}", flush=True)
+        else:
+            config_path = snap
     cfg = cfg_mod.load(config_path)
 
     runtime_env.apply_all(cfg)
 
     fw = cfg_mod.build_components(cfg)
 
-    experiment_dir = cfg_mod.init_experiment_dir(cfg, config_path, fw.runs_root)
+    if resume_dir is not None:
+        experiment_dir = resume_dir
+        if Path(config_path).resolve() != snap.resolve():
+            n = len(list(resume_dir.glob("config.resume-*.yaml"))) + 1
+            (resume_dir / f"config.resume-{n}.yaml").write_text(Path(config_path).read_text())
+    else:
+        experiment_dir = cfg_mod.init_experiment_dir(cfg, config_path, fw.runs_root)
+    print(f"Experiment dir: {experiment_dir}", flush=True)
 
-    outcome = fw.manager.evolve(
+    from meta_agent.managers.hgm import RunPaused
+    try:
+        outcome = _evolve(fw, cfg, experiment_dir, resume=resume_dir is not None)
+    except RunPaused:
+        print(f"PAUSED -- resume with: main_loop.py --resume {experiment_dir}", flush=True)
+        sys.exit(3)
+    return _after(experiment_dir, outcome)
+
+
+def _evolve(fw: Any, cfg: Any, experiment_dir: Path, resume: bool) -> EvolutionOutcome:
+    return fw.manager.evolve(
         editor=fw.editor,
         evaluator=fw.evaluator,
         gatherer=fw.gatherer,
@@ -49,8 +112,12 @@ def run(config_path: Path) -> EvolutionOutcome:
         failure_summarizer=fw.failure_summarizer,
         block_suggester=fw.block_suggester,
         unit_selector=fw.unit_selector,
+        **({"resume": True} if resume else {}),
+        reflector=fw.reflector,
     )
 
+
+def _after(experiment_dir: Path, outcome: EvolutionOutcome) -> EvolutionOutcome:
     summary_path: Optional[Path] = None
     try:
         summary_path = _write_run_summary(experiment_dir, outcome)
@@ -275,6 +342,11 @@ def _write_run_summary(experiment_dir: Path, outcome: EvolutionOutcome) -> Path:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the meta-agent self-evolution loop.")
-    parser.add_argument("--config", type=Path, required=True, help="Path to YAML config")
+    parser.add_argument("--config", type=Path, help="Path to YAML config")
+    parser.add_argument("--resume", type=Path, metavar="RUN_DIR",
+                        help="Continue an existing (paused or killed) run dir. --config is optional "
+                             "and may only change parallelism, max_rounds or eval_budget.")
     args = parser.parse_args()
-    run(args.config)
+    if args.config is None and args.resume is None:
+        parser.error("--config is required (unless --resume)")
+    run(args.config, resume_dir=args.resume)
