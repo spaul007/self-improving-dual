@@ -115,11 +115,21 @@ SELF_IMPROVEMENT_TOOL: dict[str, Any] = {
             "proposed_changes": {"type": "string"},
             "rationale": {"type": "string"},
             "probe_questions": {
-                "type": "array", "items": {"type": "string"},
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "question": {"type": "string"},
+                        "roles": {"type": "array", "items": {"type": "string"},
+                                  "description": "Task-agent roles to ask; omit or [] to ask every role."},
+                    },
+                    "required": ["question"],
+                },
                 "description": (
                     "Optional, at most 3: short questions to ask the task agent after its next "
                     "evaluated runs, whose answers would show whether this edit changed its "
-                    "behaviour as intended (about its own steps, never hidden tests)."
+                    "behaviour as intended (about its own steps, never hidden tests). Name the "
+                    "role(s) each question is for, so roles the edit does not touch are not asked."
                 ),
             },
             "files": {
@@ -198,11 +208,21 @@ AGENTIC_SUBMIT_SUMMARY_TOOL: dict[str, Any] = {
             "proposed_changes": {"type": "string"},
             "rationale": {"type": "string"},
             "probe_questions": {
-                "type": "array", "items": {"type": "string"},
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "question": {"type": "string"},
+                        "roles": {"type": "array", "items": {"type": "string"},
+                                  "description": "Task-agent roles to ask; omit or [] to ask every role."},
+                    },
+                    "required": ["question"],
+                },
                 "description": (
                     "Optional, at most 3: short questions to ask the task agent after its next "
                     "evaluated runs, whose answers would show whether this edit changed its "
-                    "behaviour as intended (about its own steps, never hidden tests)."
+                    "behaviour as intended (about its own steps, never hidden tests). Name the "
+                    "role(s) each question is for, so roles the edit does not touch are not asked."
                 ),
             },
         },

@@ -2,7 +2,37 @@ from __future__ import annotations
 
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+MAX_PROBES = 3
+MAX_PROBE_CHARS = 300
+
+
+def normalize_probes(qs: Any) -> list[dict[str, Any]]:
+    """Probe questions in canonical form ``{"q": str, "roles": [str, ...]}`` (empty
+    ``roles`` = ask every role). Accepts plain strings (every role) or objects with
+    ``question``/``q`` and ``roles``/``role``; at most ``MAX_PROBES`` distinct, single-line
+    questions of at most ``MAX_PROBE_CHARS`` characters -- anything else is dropped."""
+    out: list[dict[str, Any]] = []
+    if isinstance(qs, (str, dict)):
+        qs = [qs]
+    for item in qs if isinstance(qs, list) else []:
+        roles: Any = []
+        if isinstance(item, dict):
+            q = item.get("question", item.get("q"))
+            roles = item.get("roles", item.get("role")) or []
+        else:
+            q = item
+        q = " ".join(str(q or "").split())[:MAX_PROBE_CHARS]
+        if isinstance(roles, str):
+            roles = [roles]
+        roles = [" ".join(str(r).split())[:40] for r in roles if str(r or "").strip()][:8] \
+            if isinstance(roles, list) else []
+        if q and q.lower() not in {x["q"].lower() for x in out}:
+            out.append({"q": q, "roles": roles})
+        if len(out) >= MAX_PROBES:
+            break
+    return out
 
 
 class EvolutionStrategy(BaseModel):
@@ -37,7 +67,14 @@ class EvolutionStrategy(BaseModel):
     # edit; the reflector asks them in this node's post-grading reflections
     # (reflector.probe_questions). Empty for the seed and when the editor
     # wrote none -- the reflections then carry only the fixed questions.
-    probe_questions: list[str] = Field(default_factory=list)
+    # Each: {"q": question, "roles": [role, ...]} -- the roles it is asked of (empty =
+    # every role). Plain strings (older strategy.json files) load as every-role probes.
+    probe_questions: list[dict[str, Any]] = Field(default_factory=list)
+
+    @field_validator("probe_questions", mode="before")
+    @classmethod
+    def _norm_probes(cls, v: Any) -> list[dict[str, Any]]:
+        return normalize_probes(v)
 
 
 class TraceEvent(BaseModel):

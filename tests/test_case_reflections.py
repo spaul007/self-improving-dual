@@ -95,7 +95,7 @@ class CaseFileBuilderTests(unittest.TestCase):
         self.assertIn("### node 1 (parent 0) · eval 1 · score 1.00 · PASSED", a)
         self.assertIn("### node 2 (parent 1) · eval 2 · score 1.00 · PASSED", a)
         self.assertIn("keep: keep the interface read", a)
-        self.assertIn("probe questions (written by the editor for this node's edit): [1] Did you use the checklist?", a)
+        self.assertIn("probe questions (written by the editor for this node's edit): [1] (all roles) Did you use the checklist?", a)
         self.assertIn("probe 1: yes, step 3", a)
         self.assertLess(a.index("### node 0"), a.index("### node 1"))       # oldest first
         self.assertLess(a.index("· eval 1 · score 0.60"), a.index("· eval 2 ·"))
@@ -155,6 +155,22 @@ class CaseFileBuilderTests(unittest.TestCase):
         a = (self.run / "case_reflections" / "A.md").read_text()
         self.assertGreaterEqual(a.count("### node "), 12)   # nothing dropped at the 60K default
         self.assertIn("pass rate: 2/14", a)
+
+    def test_probe_line_names_target_roles_and_keeps_node_numbering(self) -> None:
+        n1 = self.nodes[1]
+        r = _rec(1, 0, "A", "VERIFY", 1, True, 1.0, keep="k", ts=2.5)
+        r["probe_questions"] = [{"q": "Did PATCH read X?", "roles": ["PATCH"]}, {"q": "Did VERIFY run Y?", "roles": ["VERIFY"]}]
+        r["parsed"]["probes"] = [{"n": 2, "q": "Did VERIFY run Y?", "a": "yes, Y ran"}]
+        (n1.round_dir / "reflections" / "A.VERIFY.e1.json").write_text(json.dumps(r))
+        p = json.loads((n1.round_dir / "reflections" / "A.PATCH.e1.json").read_text())
+        p["probe_questions"] = r["probe_questions"]
+        p["parsed"]["probes"] = [{"n": 1, "q": "Did PATCH read X?", "a": "read X"}]
+        (n1.round_dir / "reflections" / "A.PATCH.e1.json").write_text(json.dumps(p))
+        self._build()
+        a = (self.run / "case_reflections" / "A.md").read_text()
+        self.assertIn("[1] (PATCH) Did PATCH read X? [2] (VERIFY) Did VERIFY run Y?", a)
+        self.assertIn("probe 1: read X", a)
+        self.assertIn("probe 2: yes, Y ran", a)
 
     def test_rebuild_is_pure_and_removes_stale_files(self) -> None:
         self._build()

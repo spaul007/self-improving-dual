@@ -53,7 +53,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from .models import CaseResult, EvaluationResult
+from .models import MAX_PROBE_CHARS, MAX_PROBES, CaseResult, EvaluationResult, normalize_probes
 from .registry import register
 
 MODES = ("post_grading", "unsure", "essential")
@@ -63,8 +63,6 @@ CONSUMERS = ("failure_summarizer", "block_suggester", "editor")
 PHASES = ("root", "expand", "finalize")
 REFLECTIONS_DIR = "reflections"
 RECORD_VERSION = 2
-MAX_PROBES = 3
-MAX_PROBE_CHARS = 300
 
 _BLIND = """=== NEW TURN: self-assessment before grading. No tools are available; do not call any tool. ===
 The final submission has NOT been graded yet. {preamble}
@@ -128,18 +126,31 @@ def clean_messages(msgs: list[dict]) -> list[dict]:
     return out
 
 
-def clean_probes(qs: Any) -> list[str]:
-    """At most ``MAX_PROBES`` distinct, non-empty, single-line questions of at most
-    ``MAX_PROBE_CHARS`` characters (anything else the meta-agent emitted is dropped)."""
-    out: list[str] = []
-    if isinstance(qs, str):
-        qs = [qs]
-    for q in qs if isinstance(qs, list) else []:
-        q = " ".join(str(q or "").split())[:MAX_PROBE_CHARS]
-        if q and q.lower() not in {x.lower() for x in out}:
-            out.append(q)
-        if len(out) >= MAX_PROBES:
-            break
+def clean_probes(qs: Any) -> list[dict[str, Any]]:
+    """Canonical probe list (see ``models.normalize_probes``)."""
+    return normalize_probes(qs)
+
+
+def _role_matches(role: str, wanted: list[str]) -> bool:
+    """Whether a session role (``"sightseeing"``, ``"patch"``, ``"flight.2"``...) is one of
+    ``wanted`` (case-insensitive; a ``.N`` repeat suffix is ignored)."""
+    base = role.split(".")[0].lower()
+    return any(w.lower() in (base, role.lower()) for w in wanted)
+
+
+def probes_for_role(probes: list[dict[str, Any]], role: str, case_roles: list[str]
+                    ) -> list[tuple[int, dict[str, Any], bool]]:
+    """``(n, probe, unmatched)`` for the node's probes this role is asked: untargeted
+    probes, probes naming this role, and -- so a misnamed role never silently drops a
+    question -- probes whose roles match NO role of this case (``unmatched=True``).
+    ``n`` is the probe's 1-based number on the node."""
+    out = []
+    for n, p in enumerate(probes, 1):
+        roles = p.get("roles") or []
+        if not roles or _role_matches(role, roles):
+            out.append((n, p, False))
+        elif not any(_role_matches(r, roles) for r in case_roles):
+            out.append((n, p, True))
     return out
 
 
@@ -383,7 +394,7 @@ class Reflector:
     # ------------------------------------------------------------------ main entry
     def reflect(self, round_dir: Path, batch: EvaluationResult, *, phase: str = "expand",
                 node_id: Optional[int] = None, parent_id: Optional[int] = None,
-                probes: Optional[list[str]] = None) -> dict:
+                probes: Optional[list[Any]] = None) -> dict:
         """Reflect on one evaluation batch of the node at ``round_dir``: one two-turn
         session per (case, role). Never raises; returns counters (logged by the manager as
         ``reflections=ok/calls``; ``calls`` counts sessions, ``llm_calls`` model calls)."""
@@ -409,6 +420,7 @@ class Reflector:
                 print(f"[reflector] {case.case_id}: reflection_sessions failed: {exc!r}", flush=True)
                 stats["errors"] += 1
                 continue
+            case_roles = [r for r in sessions if not self.roles or r in self.roles]
             for role, sess in sessions.items():
                 if self.roles and role not in self.roles:
                     continue
@@ -417,7 +429,7 @@ class Reflector:
                 k = len(list(out.glob(f"{_safe(case.case_id)}.{_safe(role)}.e*.json"))) + 1
                 dest = out / f"{_safe(case.case_id)}.{_safe(role)}.e{k}.json"
                 meta = {"node_id": node_id, "parent_id": parent_id, "phase": phase, "eval_index": k}
-                jobs.append((dest, case, role, sess, probes, meta))
+                jobs.append((dest, case, role, sess, probes, case_roles, meta))
         with cf.ThreadPoolExecutor(max_workers=self.concurrency) as ex:
             for status, n_calls in ex.map(lambda j: self._session(*j), jobs):
                 stats["calls"] += 1
@@ -469,11 +481,15 @@ class Reflector:
         msgs = msgs + [{"role": "assistant", "content": resp.get("content") or ""}]
         return resp, parsed, calls, msgs
 
-    def _session(self, dest: Path, case: CaseResult, role: str, sess: dict, probes: list[str],
-                 meta: dict) -> tuple[str, int]:
+    def _session(self, dest: Path, case: CaseResult, role: str, sess: dict, node_probes: list[dict],
+                 case_roles: list[str], meta: dict) -> tuple[str, int]:
+        asked = probes_for_role(node_probes, role, case_roles)
+        probes = [p["q"] for _, p, _ in asked]
         rec: dict[str, Any] = {"version": RECORD_VERSION, "case_id": case.case_id, "role": role,
                                "passed": bool(case.passed), "score": case.score,
-                               "grading_detail": self.grading_detail, "probe_questions": probes,
+                               "grading_detail": self.grading_detail, "probe_questions": node_probes,
+                               "probes_asked": [n for n, _, _ in asked],
+                               "probes_unmatched_role": [n for n, _, u in asked if u],
                                "ts": time.time(), **meta}
         calls = 0
         status = "errors"
@@ -521,7 +537,8 @@ class Reflector:
                                 parsed[k] = p2[k]
                         if probes:
                             ans = p2.get("probe_answers") or [""] * len(probes)
-                            parsed["probes"] = [{"q": q, "a": a} for q, a in zip(probes, ans)]
+                            parsed["probes"] = [{"n": n, "q": p["q"], "a": a}
+                                                for (n, p, _), a in zip(asked, ans)]
                 rec["turns"], rec["parsed"] = turns, parsed
                 contents = [(t["response"].get("content") or "").strip() for t in turns]
                 if not turns:
@@ -670,7 +687,7 @@ def render_record(rec: dict, exposure: str, extra_terms: Optional[list[str]] = N
     for i, pq in enumerate(p.get("probes") or [], 1):
         if pq.get("a"):
             q = f" -- {_field(pq.get('q'), terms, None)} =>" if probe_questions else ":"
-            lines.append(f"probe {i}{q} {_field(pq['a'], terms, cap)}")
+            lines.append(f"probe {pq.get('n', i)}{q} {_field(pq['a'], terms, cap)}")
     return lines
 
 

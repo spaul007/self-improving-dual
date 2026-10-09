@@ -46,6 +46,7 @@ from ..agent_editor import AgentEditor, fallback_strategy
 from ..atomic_io import atomic_write_text
 from ..block_bandit import AdaptiveStrategy, BlockBandit
 from ..case_reflections import build_case_files, excerpt_for_cases
+from ..reflector import load_records
 from ..curriculum import Curriculum, _combined_check_counts, infer_curriculum
 from ..implementation_strategy_bandit import (
     AdaptiveImplementationStrategy,
@@ -1514,14 +1515,18 @@ class HGMManager:
 
         if self._reflector is not None and getattr(self._reflector, "probe_questions", False) \
                 and self._reflector.wants("expand"):
+            roles = sorted({str(r.get("role", "")).split(".")[0] for r in load_records(parent.round_dir)} - {""})
             parts.append(
                 "\n## Probe questions for this edit (optional field `probe_questions`)\n"
-                "After this node is evaluated, the task agent is asked about each run it did. When you "
-                "submit, you may add 1-3 short `probe_questions` it will also be asked -- questions whose "
-                "answers would show whether THIS edit changed its behaviour the way you intend (e.g. "
-                "\"Did you use <the new step> before submitting? What did it show?\"). Ask about its own "
-                "steps and reasoning, never about hidden tests or the grader. The answers appear in the "
-                "per-test-case reflection files (cases/) linked to this node."
+                "After this node is evaluated, each task-agent role is asked about each run it did. When "
+                "you submit, you may add 1-3 short `probe_questions` -- questions whose answers would show "
+                "whether THIS edit changed the agent's behaviour the way you intend (e.g. \"Did you use "
+                "<the new step> before submitting? What did it show?\"). Give each one the `roles` it is "
+                "for -- the role(s) whose behaviour the edit is meant to change -- so roles the edit does "
+                "not touch are not asked; omit `roles` only for a question every role can answer. "
+                + (f"The task agent's roles: {', '.join(roles)}. " if roles else "")
+                + "Ask about the agent's own steps and reasoning, never about hidden tests or the grader. "
+                "The answers appear in the per-test-case reflection files (cases/) linked to this node."
             )
         parts.append(
             "\nMake targeted improvement to this parent agent. Keep the "

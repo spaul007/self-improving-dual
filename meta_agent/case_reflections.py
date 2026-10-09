@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Iterable, Optional
 
 from .log_access import CASES_DIR
+from .models import normalize_probes
 from .reflector import _atomic_write, _oneline, _safe, load_records, redact, render_record
 
 INDEX = "INDEX.md"
@@ -125,10 +126,11 @@ def render_case(case_id: str, ent: dict, rows: dict[int, dict], exposure: str, m
                  f"· eval {k} · score {float(score):.2f} · {'PASSED' if g0.get('passed') else 'FAILED'}"
                  if isinstance(score, (int, float)) else
                  f"### node {nid} · eval {k} · {'PASSED' if g0.get('passed') else 'FAILED'}"]
-        qs = next((r.get("probe_questions") for r in grp if r.get("probe_questions")), None)
-        if qs and exposure != "full":   # asked of every role of this node: shown once
-            lines.append("probe questions (written by the editor for this node's edit): "
-                         + " ".join(f"[{i}] {redact(_oneline(q), terms)}" for i, q in enumerate(qs, 1)))
+        qs = normalize_probes(next((r.get("probe_questions") for r in grp if r.get("probe_questions")), None))
+        if qs and exposure != "full":   # the node's probes, shown once with whom each was asked
+            lines.append("probe questions (written by the editor for this node's edit): " + " ".join(
+                f"[{i}] ({', '.join(p['roles']) or 'all roles'}) {redact(_oneline(p['q']), terms)}"
+                for i, p in enumerate(qs, 1)))
         for r in grp:
             body = render_record(r, exposure, terms, max_field_chars, probe_questions=not qs)
             body = [redact(x, terms) for x in body]

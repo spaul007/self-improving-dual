@@ -155,11 +155,45 @@ class ReflectorUnitTests(unittest.TestCase):
         self.assertTrue(all("PROBE 3: " + "x" * 300 + "\n" not in t for t in graded))
         rec = _rec(self.tmp, "fail-near.PATCH.e1.json")
         self.assertEqual(len(rec["probe_questions"]), 3)       # deduped (case-insensitive), capped at 3
-        self.assertEqual(len(rec["probe_questions"][2]), 300)  # each capped at 300 chars
+        self.assertEqual(len(rec["probe_questions"][2]["q"]), 300)  # each capped at 300 chars
+        self.assertEqual(rec["probe_questions"][0], {"q": "Did you run the new checklist?", "roles": []})
+        self.assertEqual(rec["probes_asked"], [1, 2, 3])
         self.assertEqual(rec["parsed"]["probes"][0],
-                         {"q": "Did you run the new checklist?", "a": "yes, I ran the new checklist before finishing."})
+                         {"n": 1, "q": "Did you run the new checklist?",
+                          "a": "yes, I ran the new checklist before finishing."})
         for t in [m[-1]["content"] for m in self.seen if "NEW TURN: self-assessment" in m[-1]["content"]]:
             self.assertNotIn("PROBE", t)                          # probes never leak into the blind turn
+
+    def test_probes_go_only_to_their_roles(self) -> None:
+        from meta_agent.reflector import Reflector
+
+        class TwoRoles(_FakeScorer):
+            def reflection_sessions(self, case, round_dir):
+                one = super().reflection_sessions(case, round_dir)["PATCH"]
+                return {"patch": dict(one, preamble="You are PATCH."), "verify": dict(one, preamble="You are VERIFY.")}
+
+        seen: list = []
+        probes = [{"question": "Did the new verify skill fire?", "roles": ["VERIFY"]},
+                  {"question": "Everyone: what did you read first?"},
+                  {"question": "Typo role?", "roles": ["verifier"]}]
+        Reflector(scorer=TwoRoles(), chat_caller=_fake_chat(seen)).reflect(self.tmp, _batch(), probes=probes)
+        checked = {"patch": 0, "verify": 0}
+        for msgs in seen:
+            if "NEW TURN: self-assessment" in msgs[-1]["content"]:
+                continue                                    # blind turn: no probes at all
+            name = "verify" if "You are VERIFY." in msgs[-3]["content"] else "patch"
+            turn = msgs[-1]["content"]
+            self.assertEqual("Did the new verify skill fire?" in turn, name == "verify", name)
+            self.assertIn("Everyone: what did you read first?", turn)
+            self.assertIn("Typo role?", turn)               # an unmatched role never drops a question
+            checked[name] += 1
+        self.assertEqual(checked, {"patch": 3, "verify": 3})
+        rp = _rec(self.tmp, "fail-near.patch.e1.json")
+        rv = _rec(self.tmp, "fail-near.verify.e1.json")
+        self.assertEqual((rp["probes_asked"], rv["probes_asked"]), ([2, 3], [1, 2, 3]))
+        self.assertEqual(rp["probes_unmatched_role"], [3])
+        self.assertEqual([p["n"] for p in rp["parsed"]["probes"]], [2, 3])  # node-level numbering kept
+        self.assertEqual(len(rp["probe_questions"]), 3)                     # the node's full list is recorded
 
     def test_probes_off_by_config(self) -> None:
         self._make(probe_questions=False).reflect(self.tmp, _batch(), probes=["Did you X?"])
@@ -369,10 +403,22 @@ class ProbeQuestionEditorTests(unittest.TestCase):
         strat, _ = ed._parse_self_improvement({
             "optimization_goal": "g", "proposed_changes": "p", "files": [],
             "probe_questions": ["Q1?", "  Q1?  ", "Q2?", "Q3?", "Q4?"]})
-        self.assertEqual(strat.probe_questions, ["Q1?", "Q2?", "Q3?"])
+        self.assertEqual([p["q"] for p in strat.probe_questions], ["Q1?", "Q2?", "Q3?"])
+        self.assertTrue(all(p["roles"] == [] for p in strat.probe_questions))
         strat, _ = ed._parse_self_improvement({"optimization_goal": "g", "proposed_changes": "p",
                                                "files": [], "probe_questions": "only one?"})
-        self.assertEqual(strat.probe_questions, ["only one?"])
+        self.assertEqual(strat.probe_questions, [{"q": "only one?", "roles": []}])
+        strat, _ = ed._parse_self_improvement({"optimization_goal": "g", "proposed_changes": "p", "files": [],
+                                               "probe_questions": [{"question": "V?", "roles": ["verify"]},
+                                                                   {"q": "P?", "role": "patch"}]})
+        self.assertEqual(strat.probe_questions, [{"q": "V?", "roles": ["verify"]}, {"q": "P?", "roles": ["patch"]}])
+        items = SELF_IMPROVEMENT_TOOL["input_schema"]["properties"]["probe_questions"]["items"]
+        self.assertEqual((items["type"], items["required"]), ("object", ["question"]))
+        self.assertIn("roles", items["properties"])
+        # strategy.json written before role targeting (plain strings) still loads
+        legacy = EvolutionStrategy.model_validate({"optimization_goal": "g", "proposed_changes": "p",
+                                                   "probe_questions": ["old?"]})
+        self.assertEqual(legacy.probe_questions, [{"q": "old?", "roles": []}])
         strat, _ = ed._parse_self_improvement({"optimization_goal": "g", "proposed_changes": "p",
                                                "files": [], "probe_questions": {"bad": 1}})
         self.assertEqual(strat.probe_questions, [])
@@ -413,7 +459,8 @@ class ReflectorHGMWiringTests(unittest.TestCase):
                 res = super().apply(feedback, base_dir, out_dir, context=context,
                                     has_suggestion=has_suggestion)
                 if probes and res.strategy is not None:
-                    res.strategy.probe_questions = list(probes)
+                    from meta_agent.models import normalize_probes
+                    res.strategy.probe_questions = normalize_probes(probes)
                 return res
 
         exp = self.tmp / tag
@@ -444,7 +491,7 @@ class ReflectorHGMWiringTests(unittest.TestCase):
                 rec = json.loads(f.read_text())
                 self.assertEqual((rec["node_id"], rec["parent_id"]), (n.node_id, n.parent_id))
                 if n.node_id != 0:
-                    self.assertEqual(rec["probe_questions"], ["Did you run the new checklist?"])
+                    self.assertEqual(rec["probe_questions"], [{"q": "Did you run the new checklist?", "roles": []}])
                 else:
                     self.assertEqual(rec["probe_questions"], [])
         cases = exp / "case_reflections"
