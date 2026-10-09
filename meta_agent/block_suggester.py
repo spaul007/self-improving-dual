@@ -167,7 +167,7 @@ _SYSTEM_CLOSING_AGENTIC = _SYSTEM_CLOSING_AGENTIC_TEMPLATE.replace(
 
 AGENTIC_READ_FILE_TOOL: dict[str, Any] = {
     "name": "read_file",
-    "description": "Read a text file. Paths are alias-rooted: 'harness/<rel>', 'logs/<rel>', or 'eval_result.json'.",
+    "description": "Read a text file. Paths are alias-rooted: 'harness/<rel>', 'logs/<rel>', 'cases/<file>' (per-test-case reflections, when listed), or 'eval_result.json'.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -1111,6 +1111,7 @@ class BlockSuggester:
             "logs and trace.jsonl) and 'eval_result.json' (every case's "
             "pass/fail and violation messages) -- see the tool "
             "instructions above.\n"
+            + log_access.cases_listing(round_dir)
         )
         user_parts.append(self._format_feedback_digest(feedback, failure_summary))
         if siblings:

@@ -1,42 +1,44 @@
 """Task-agent self-reflection as evolution evidence (opt-in, off by default).
 
-After a node's evaluation batch, the task agent's own saved sessions are replayed with
-ONE extra user turn (no tools) and the answers are given to the meta-agent:
+After a node's evaluation batch, every evaluated test case gets one reflection PER ROLE: the
+role's own saved session is replayed (the LLM is stateless, so the saved message list plus new
+turns IS the continued session) and asked two turns, with no tools:
 
-* ``post_grading`` (failed cases): the role is told the task was not solved and -- per
-  ``grading_detail`` -- what the grader reported, then asked WHERE / WHY it went wrong,
-  WHAT WOULD HAVE CAUGHT IT and the GENERAL LESSON.
-* ``unsure`` (any case, blind -- nothing about grading): which parts of its submission it
-  is unsure of, each with a 0-100 confidence.
-* ``essential`` (resolved cases): what was essential, and the rules the next version of
-  the harness must KEEP.
+* **turn 1 -- blind** (nothing about grading yet): which parts of its team's submission it is
+  unsure of, each with a 0-100 confidence, an ``OVERALL_CONFIDENCE`` and the FIRST CHECK it
+  would make with more time;
+* **turn 2 -- graded** (the outcome is revealed in the same conversation):
+  - a FAILED case is told it was not solved and -- per ``grading_detail`` -- what the grader
+    reported, then asked WHERE / WHY it went wrong, WHAT WOULD HAVE CAUGHT IT and the GENERAL
+    LESSON;
+  - a SOLVED case is asked what was ESSENTIAL, its CLOSE CALLS and what a rewrite must KEEP;
+  - plus the node's **probe questions**: 1-3 questions the meta-agent wrote when it created this
+    node, to test its own hypothesis about the edit (``EvolutionStrategy.probe_questions``).
 
-The LLM is stateless, so replaying the saved message list plus one turn IS the continued
-session. Pilots on a coding agent found the post-grading answers grounded, mostly correct
-and stable across samples; the blind "unsure" list often named the real defect; agents'
-own "was it my fault" verdicts over-blame themselves (hence: only lessons are passed on by
-default, never verdicts).
+Pilots on a coding agent found post-grading answers grounded, mostly correct and stable across
+samples; the blind list often named the real defect; agents' own "was it my fault" verdicts
+over-blame themselves (hence: under ``exposure: lessons_only`` only lessons and the parsed
+fields are passed on, never verdicts).
 
-Projects opt in by giving their scorer two optional methods (same pattern as
-``aggregate``):
+Projects opt in by giving their scorer two optional methods (same pattern as ``aggregate``):
 
 * ``reflection_sessions(case, round_dir) -> {role: {"messages": [...], "format":
-  "chat"|"responses", "preamble": str, "model"?: str, "base_url"?: str}}`` -- the role's
-  saved conversation as it was sent to the model (``model``/``base_url``: the endpoint it ran
-  on, used when the reflector config does not name one);
-* ``grading_outcome(case, detail) -> {"text": str, "redact": [str, ...]}`` -- what the
-  grader reported (``detail`` is ``"full"`` or ``"numeric"``) and the terms (hidden test
-  names, file paths...) that must never reach the meta-agent under ``exposure:
-  lessons_only``.
+  "chat"|"responses", "preamble": str, "model"?: str, "base_url"?: str}}``;
+* ``grading_outcome(case, detail) -> {"text": str, "redact": [str, ...]}`` -- what the grader
+  reported (``detail`` is ``"full"`` or ``"numeric"``) and the terms (hidden test names, file
+  paths...) that must never reach the meta-agent.
 
-A project without them is reported once as unsupported and nothing else happens. A
-scorer whose sessions come from ``platform_core.session_log`` also sets
-``needs_session_log = True``; the reflector then exports ``META_AGENT_SESSION_LOG=1``
-(inherited by every case subprocess). See meta_agent/reflection_hooks.py.
+A project without them is reported once as unsupported and nothing else happens. A scorer whose
+sessions come from ``platform_core.session_log`` also sets ``needs_session_log = True``; the
+reflector then exports ``META_AGENT_SESSION_LOG=1``. See meta_agent/reflection_hooks.py.
 
-Storage: ``<round_dir>/reflections/<case>.<role>.<mode>.json`` -- deliberately OUTSIDE
-``logs/`` so agentic meta-agent roles (which may read ``logs/``) never see raw answers.
-What the meta-agent sees is :meth:`Reflector.render_for_steering` under ``exposure``.
+Storage: one record per (node, case, role, evaluation) at
+``<round_dir>/reflections/<case>.<role>.e<k>.json`` (``k`` = the k-th evaluation of that case on
+that node, so a re-evaluation never overwrites an earlier one) -- deliberately OUTSIDE ``logs/``,
+so agentic meta-agent roles never see raw answers. What the meta-agent sees is redacted and
+rendered: :meth:`Reflector.render_for_steering` (the parent node's own reflections) and the
+per-test-case files built by :mod:`meta_agent.case_reflections` (every node's reflections on one
+case, plus that case's pass rate across nodes).
 """
 from __future__ import annotations
 
@@ -45,8 +47,8 @@ import hashlib
 import json
 import os
 import random
-import tempfile
 import re
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -60,14 +62,24 @@ DETAILS = ("full", "numeric", "none")
 CONSUMERS = ("failure_summarizer", "block_suggester", "editor")
 PHASES = ("root", "expand", "finalize")
 REFLECTIONS_DIR = "reflections"
+RECORD_VERSION = 2
+MAX_PROBES = 3
+MAX_PROBE_CHARS = 300
 
-_POST_GRADING = """=== NEW TURN: post-grading review. No tools are available in this turn; do not call any tool. ===
+_BLIND = """=== NEW TURN: self-assessment before grading. No tools are available; do not call any tool. ===
+The final submission has NOT been graded yet. {preamble}
+1. UNSURE PARTS: list the specific behaviours, requirements, edge cases or interface details you are unsure your
+   team's final submission handles correctly. For each: why you are unsure, and a confidence 0-100 that it is
+   handled correctly. List at most 8, most doubtful first, one per line as `- [<confidence>] <item>`.
+2. OVERALL: on its own line write `OVERALL_CONFIDENCE: <0-100>`.
+3. FIRST CHECK: if you had 30 more minutes, the single thing you would check first."""
+
+_GRADED_FAILED = """=== NEW TURN: post-grading review. No tools are available in this turn; do not call any tool. ===
 
 Your team's final submission for this task has now been graded: NOT solved.
 {grading}
-{preamble}
 
-Using only what you can see in this session, answer under these four headings:
+Using only what you can see in this session (including your self-assessment above), answer under these headings:
 
 1. WHERE: the specific step(s) or decision(s) in this session where your work went wrong or where you missed
    the problem. Quote a few words of your own message so it can be located.
@@ -76,24 +88,29 @@ Using only what you can see in this session, answer under these four headings:
 3. WHAT WOULD HAVE CAUGHT IT: a concrete change to your instructions, your tools, the handoff between roles, or
    your time budget. Say which of those, and what exactly.
 4. GENERAL LESSON: one or two rules that would help on OTHER tasks. Do not name this task's specific files,
-   functions, tests or APIs. If you cannot give a general lesson, say so."""
+   functions, tests or APIs. If you cannot give a general lesson, say so.{probes}"""
 
-_UNSURE = """=== NEW TURN: self-assessment before grading. No tools are available; do not call any tool. ===
-The final submission has NOT been graded yet, and you will not be told the result. {preamble}
-1. UNSURE PARTS: list the specific behaviours, requirements, edge cases or interface details you are unsure your
-   team's final submission handles correctly. For each: why you are unsure, and a confidence 0-100 that it is
-   handled correctly. List at most 8, most doubtful first, one per line as `- [<confidence>] <item>`.
-2. OVERALL: on its own line write `OVERALL_CONFIDENCE: <0-100>`.
-3. FIRST CHECK: if you had 30 more minutes, the single thing you would check first."""
+_GRADED_PASSED = """=== NEW TURN: the final submission was graded and PASSED. No tools are available; do not call any tool. ===
 
-_ESSENTIAL = """=== NEW TURN: the final submission was graded and PASSED. No tools are available; do not call any tool. ===
-{preamble}
+Using only what you can see in this session (including your self-assessment above), answer under these headings:
+
 1. ESSENTIAL: which of your steps or decisions in this session were essential to getting it right? Quote them briefly.
 2. CLOSE CALLS: where were you closest to getting it wrong, and what saved you?
 3. KEEP: if someone rewrites your instructions or the harness, what behaviour must they NOT lose? One or two
-   rules, without this task's specific names."""
+   rules, without this task's specific names.{probes}"""
 
-_TEMPLATES = {"post_grading": _POST_GRADING, "unsure": _UNSURE, "essential": _ESSENTIAL}
+_GRADED_PROBES_ONLY = """=== NEW TURN: the final submission was graded: {verdict}. No tools are available; do not call any tool. ===
+
+Using only what you can see in this session, answer under these headings:{probes}"""
+
+_PROBES_INTRO = ("\n\nThe people who last changed your instructions or tools asked these questions about this change. "
+                 "Answer each under its own heading, from what you actually did in this session (say so if it "
+                 "does not apply):\n")
+
+# Legacy single-turn templates (records written before the two-turn design; parse_reflection
+# still reads them so older runs render).
+_POST_GRADING, _UNSURE = _GRADED_FAILED, _BLIND
+_TEMPLATES = {"unsure": _BLIND, "post_grading": _GRADED_FAILED, "essential": _GRADED_PASSED}
 
 
 def clean_messages(msgs: list[dict]) -> list[dict]:
@@ -111,8 +128,30 @@ def clean_messages(msgs: list[dict]) -> list[dict]:
     return out
 
 
+def clean_probes(qs: Any) -> list[str]:
+    """At most ``MAX_PROBES`` distinct, non-empty, single-line questions of at most
+    ``MAX_PROBE_CHARS`` characters (anything else the meta-agent emitted is dropped)."""
+    out: list[str] = []
+    if isinstance(qs, str):
+        qs = [qs]
+    for q in qs if isinstance(qs, list) else []:
+        q = " ".join(str(q or "").split())[:MAX_PROBE_CHARS]
+        if q and q.lower() not in {x.lower() for x in out}:
+            out.append(q)
+        if len(out) >= MAX_PROBES:
+            break
+    return out
+
+
+def _probe_block(probes: list[str], first_number: int) -> str:
+    if not probes:
+        return ""
+    lines = [f"{first_number + i}. PROBE {i + 1}: {q}" for i, q in enumerate(probes)]
+    return _PROBES_INTRO + "\n".join(lines)
+
+
 _HEADINGS = ("WHERE|WHY|WHAT WOULD HAVE CAUGHT IT|GENERAL LESSON|UNSURE PARTS|OVERALL|FIRST CHECK|"
-             "ESSENTIAL|CLOSE CALLS|KEEP")
+             r"ESSENTIAL|CLOSE CALLS|KEEP|PROBE \d+")
 
 
 def _section(text: str, heading: str) -> str:
@@ -180,24 +219,32 @@ def _from_json(obj: dict, *needles: str) -> str:
     return ""
 
 
-def parse_reflection(mode: str, text: str) -> dict[str, Any]:
-    """Pull the parts the meta-agent may see out of an answer: numbered free text
-    (the template's own format) or a JSON object (agents whose system prompt demands
-    JSON answer the reflection in JSON too)."""
+def parse_reflection(mode: str, text: str, n_probes: int = 0) -> dict[str, Any]:
+    """Pull the parts the meta-agent may see out of an answer: numbered free text (the
+    template's own format) or a JSON object (agents whose system prompt demands JSON answer
+    the reflection in JSON too). ``mode``: ``unsure`` (turn 1), ``post_grading`` (turn 2,
+    failed) or ``essential`` (turn 2, solved); ``n_probes`` probe answers are parsed too."""
     text = text or ""
     obj = _json_obj(text) if not re.search(r"(?m)^\s*\d+[.)]\s", text) else None
+    out: dict[str, Any] = {}
     if mode == "post_grading":
         if obj:
-            return {"lesson": _from_json(obj, "lesson"), "catch": _from_json(obj, "caught", "catch")}
-        return {"lesson": _section(text, "GENERAL LESSON"),
-                "catch": _section(text, "WHAT WOULD HAVE CAUGHT IT")}
-    if mode == "unsure":
+            out = {"lesson": _from_json(obj, "lesson"), "catch": _from_json(obj, "caught", "catch"),
+                   "where": _from_json(obj, "where"), "why": _from_json(obj, "why")}
+        else:
+            out = {"lesson": _section(text, "GENERAL LESSON"),
+                   "catch": _section(text, "WHAT WOULD HAVE CAUGHT IT"),
+                   "where": _section(text, "WHERE"), "why": _section(text, "WHY")}
+    elif mode == "unsure":
         items: list[dict] = []
         overall = None
+        first = ""
         if obj:
             for k, v in _walk(obj):
                 if "overall" in k and isinstance(v, (int, float)):
                     overall = int(v)
+                if "first" in k and isinstance(v, str):
+                    first = v.strip()
                 if "unsure" in k and isinstance(v, list):
                     for it in v:
                         if isinstance(it, dict):
@@ -212,10 +259,23 @@ def parse_reflection(mode: str, text: str) -> dict[str, Any]:
                     items.append({"confidence": int(m.group(1)), "item": m.group(2).strip()})
             c = re.search(r"OVERALL_CONFIDENCE:\s*\**\s*(\d{1,3})", text)
             overall = int(c.group(1)) if c else None
-        return {"items": items[:8], "overall_confidence": overall}
-    if mode == "essential":
-        return {"keep": _from_json(obj, "keep") if obj else _section(text, "KEEP")}
-    return {}
+            first = _section(text, "FIRST CHECK")
+        out = {"items": items[:8], "overall_confidence": overall, "first_check": first}
+    elif mode == "essential":
+        if obj:
+            out = {"keep": _from_json(obj, "keep"), "essential": _from_json(obj, "essential"),
+                   "close_calls": _from_json(obj, "close")}
+        else:
+            out = {"keep": _section(text, "KEEP"), "essential": _section(text, "ESSENTIAL"),
+                   "close_calls": _section(text, "CLOSE CALLS")}
+    if n_probes:
+        answers = []
+        for i in range(n_probes):
+            a = _from_json(obj, f"probe {i + 1}", f"probe_{i + 1}", f"probe{i + 1}") if obj \
+                else _section(text, rf"PROBE {i + 1}")
+            answers.append(a)
+        out["probe_answers"] = answers
+    return out
 
 
 _REASK = ("That reply continued the task. The task is over and no tools are available. Do not plan or "
@@ -225,7 +285,8 @@ _REASK = ("That reply continued the task. The task is over and no tools are avai
 def _answered(parsed: dict) -> bool:
     """Whether a parsed answer contains anything the meta-agent can use."""
     return bool(parsed.get("lesson") or parsed.get("catch") or parsed.get("keep") or parsed.get("items")
-                or parsed.get("overall_confidence") is not None)
+                or parsed.get("essential") or parsed.get("overall_confidence") is not None
+                or any(parsed.get("probe_answers") or []))
 
 
 def redact(text: str, terms: list[str]) -> str:
@@ -251,7 +312,7 @@ class Reflector:
         modes: list[str] = list(MODES),
         on_failed: bool = True,
         on_resolved: bool = True,
-        max_cases_per_batch: int = 8,
+        max_cases_per_batch: Optional[int] = None,
         roles: Optional[list[str]] = None,
         model: Optional[str] = None,
         base_url: Optional[str] = None,
@@ -269,6 +330,9 @@ class Reflector:
         consumers: list[str] = list(CONSUMERS),
         phases: list[str] = ["expand"],
         max_steering_chars: int = 6000,
+        probe_questions: bool = True,
+        case_files: bool = True,
+        max_case_file_chars: int = 20000,
         seed: int = 0,
         chat_caller: Optional[Callable[..., dict]] = None,
     ) -> None:
@@ -281,6 +345,8 @@ class Reflector:
             raise ValueError(f"reflector.exposure must be one of {EXPOSURES}, got {exposure!r}")
         if grading_detail not in DETAILS:
             raise ValueError(f"reflector.grading_detail must be one of {DETAILS}, got {grading_detail!r}")
+        if max_cases_per_batch is not None and int(max_cases_per_batch) < 1:
+            raise ValueError("reflector.max_cases_per_batch must be >= 1 or null (all cases)")
         self.llm_caller, self.scorer = llm_caller, scorer
         self.modes, self.on_failed, self.on_resolved = list(modes), on_failed, on_resolved
         self.max_cases_per_batch, self.roles = max_cases_per_batch, roles
@@ -295,6 +361,8 @@ class Reflector:
         self.grading_detail, self.exposure = grading_detail, exposure
         self.consumers, self.phases = list(consumers), list(phases)
         self.max_steering_chars = max_steering_chars
+        self.probe_questions, self.case_files = bool(probe_questions), bool(case_files)
+        self.max_case_file_chars = max_case_file_chars
         self._rng = random.Random(seed)
         self._chat_caller = chat_caller or self._openai_chat
         self._warned_unsupported = False
@@ -311,10 +379,14 @@ class Reflector:
         return phase in self.phases and (consumer is None or consumer in self.consumers)
 
     # ------------------------------------------------------------------ main entry
-    def reflect(self, round_dir: Path, batch: EvaluationResult, *, phase: str = "expand") -> dict:
-        """Reflect on one evaluation batch of the node at ``round_dir``. Never raises;
-        returns counters (logged by the manager as ``reflections=k/n``)."""
-        stats = {"cases": 0, "calls": 0, "ok": 0, "off_task": 0, "skipped": 0, "errors": 0}
+    def reflect(self, round_dir: Path, batch: EvaluationResult, *, phase: str = "expand",
+                node_id: Optional[int] = None, parent_id: Optional[int] = None,
+                probes: Optional[list[str]] = None) -> dict:
+        """Reflect on one evaluation batch of the node at ``round_dir``: one two-turn
+        session per (case, role). Never raises; returns counters (logged by the manager as
+        ``reflections=ok/calls``; ``calls`` counts sessions, ``llm_calls`` model calls)."""
+        stats = {"cases": 0, "calls": 0, "ok": 0, "off_task": 0, "skipped": 0, "errors": 0,
+                 "llm_calls": 0}
         if phase not in self.phases:
             return stats
         if not self.supported:
@@ -323,6 +395,9 @@ class Reflector:
                       "-- reflection disabled", flush=True)
                 self._warned_unsupported = True
             return stats
+        probes = clean_probes(probes) if self.probe_questions else []
+        out = Path(round_dir) / REFLECTIONS_DIR
+        out.mkdir(parents=True, exist_ok=True)
         jobs = []
         for case in self._select(batch.per_case or []):
             stats["cases"] += 1
@@ -335,80 +410,133 @@ class Reflector:
             for role, sess in sessions.items():
                 if self.roles and role not in self.roles:
                     continue
-                for mode in self._modes_for(case):
-                    jobs.append((case, role, sess, mode))
-        out = Path(round_dir) / REFLECTIONS_DIR
-        out.mkdir(parents=True, exist_ok=True)
+                # The evaluation index is fixed HERE (single-threaded), so two sessions can
+                # never pick the same file.
+                k = len(list(out.glob(f"{_safe(case.case_id)}.{_safe(role)}.e*.json"))) + 1
+                dest = out / f"{_safe(case.case_id)}.{_safe(role)}.e{k}.json"
+                meta = {"node_id": node_id, "parent_id": parent_id, "phase": phase, "eval_index": k}
+                jobs.append((dest, case, role, sess, probes, meta))
         with cf.ThreadPoolExecutor(max_workers=self.concurrency) as ex:
-            for res in ex.map(lambda j: self._one(out, *j), jobs):
+            for status, n_calls in ex.map(lambda j: self._session(*j), jobs):
                 stats["calls"] += 1
-                stats[res] += 1
+                stats["llm_calls"] += n_calls
+                stats[status] += 1
         return stats
 
     def _select(self, cases: list[CaseResult]) -> list[CaseResult]:
-        """Failed (nearest misses first) then resolved, up to ``max_cases_per_batch``.
-        Infra-excluded cases are never reflected on."""
+        """Every usable case of the batch, failed (nearest misses first) then solved;
+        capped only when ``max_cases_per_batch`` is set. Infra-excluded or errored cases
+        are never reflected on (there is no meaningful session)."""
         usable = [c for c in cases if not (c.details or {}).get("excluded") and not c.error]
         failed = sorted([c for c in usable if not c.passed], key=lambda c: -float(c.score or 0.0))
         passed = [c for c in usable if c.passed]
         self._rng.shuffle(passed)
         picked = (failed if self.on_failed else []) + (passed if self.on_resolved else [])
-        return picked[: self.max_cases_per_batch]
+        return picked if self.max_cases_per_batch is None else picked[: int(self.max_cases_per_batch)]
 
-    def _modes_for(self, case: CaseResult) -> list[str]:
-        out = []
-        if "unsure" in self.modes:
-            out.append("unsure")
-        if not case.passed and "post_grading" in self.modes and self.grading_detail != "none":
-            out.append("post_grading")
+    def _graded_turn(self, case: CaseResult, grading: str, probes: list[str]) -> tuple[Optional[str], str]:
+        """(turn text, parse mode) for turn 2, or (None, "") when nothing is asked."""
         if case.passed and "essential" in self.modes:
-            out.append("essential")
-        return out
+            return _GRADED_PASSED.format(probes=_probe_block(probes, 4)), "essential"
+        if not case.passed and "post_grading" in self.modes:
+            return _GRADED_FAILED.format(grading=grading, probes=_probe_block(probes, 5)), "post_grading"
+        if probes:
+            verdict = "PASSED" if case.passed else "NOT solved"
+            return _GRADED_PROBES_ONLY.format(verdict=verdict, probes=_probe_block(probes, 1)), "probes"
+        return None, ""
 
-    def _one(self, out: Path, case: CaseResult, role: str, sess: dict, mode: str) -> str:
-        dest = out / f"{_safe(case.case_id)}.{_safe(role)}.{mode}.json"
-        rec: dict[str, Any] = {"case_id": case.case_id, "role": role, "mode": mode,
+    def _ask(self, msgs: list[dict], turn: str, mode: str, n_probes: int, sess: dict, fmt: str
+             ) -> tuple[dict, dict, int, list[dict]]:
+        """One question turn with the off-task re-ask. Returns (response, parsed, model
+        calls, the messages including this turn and its answer)."""
+        msgs = msgs + [{"role": "user", "content": turn}]
+        resp = self._call(msgs, fmt, sess.get("model"), sess.get("base_url"))
+        calls = 1
+        parse_mode = "post_grading" if mode == "probes" else mode
+        parsed = parse_reflection(parse_mode, resp.get("content") or "", n_probes)
+        if (resp.get("content") or "").strip() and not _answered(parsed):
+            # The model CONTINUED its task ("Let me fix it ...") instead of answering
+            # (EXP-049d, 1 of 16). Re-ask once, keeping its off-task reply in context.
+            first = resp.get("content") or ""
+            msgs = msgs + [{"role": "assistant", "content": first},
+                           {"role": "user", "content": _REASK}]
+            resp = self._call(msgs, fmt, sess.get("model"), sess.get("base_url"))
+            resp["off_task_first_reply"] = first
+            calls += 1
+            parsed = parse_reflection(parse_mode, resp.get("content") or "", n_probes)
+        msgs = msgs + [{"role": "assistant", "content": resp.get("content") or ""}]
+        return resp, parsed, calls, msgs
+
+    def _session(self, dest: Path, case: CaseResult, role: str, sess: dict, probes: list[str],
+                 meta: dict) -> tuple[str, int]:
+        rec: dict[str, Any] = {"version": RECORD_VERSION, "case_id": case.case_id, "role": role,
                                "passed": bool(case.passed), "score": case.score,
-                               "grading_detail": self.grading_detail}
+                               "grading_detail": self.grading_detail, "probe_questions": probes,
+                               "ts": time.time(), **meta}
+        calls = 0
+        status = "errors"
         try:
             fmt = sess.get("format", "chat")
             msgs = clean_messages(sess.get("messages") or []) if fmt == "chat" else list(sess.get("messages") or [])
             preamble = sess.get("preamble") or f"You are the {role} role; this is your own session."
-            # Redact terms for EVERY mode: a solved case's answer can quote the ground
-            # truth itself (e.g. the exact product ids). The grader's text goes into the
-            # question only for post_grading.
+            # Redact terms for EVERY case: a solved case's answer can quote the ground
+            # truth itself (e.g. the exact product ids). The grader's text is shown only
+            # for a failed case.
             detail = self.grading_detail if self.grading_detail != "none" else "numeric"
             g = self.scorer.grading_outcome(case, detail) or {}
-            terms = list(g.get("redact") or [])
-            grading = (g.get("text") or "") if mode == "post_grading" else ""
-            turn = _TEMPLATES[mode].format(preamble=preamble, grading=grading)
-            msgs = msgs + [{"role": "user", "content": turn}]
+            rec["redact_terms"] = list(g.get("redact") or [])
+            # grading_detail "none": the verdict alone (NOT solved), no grader text.
+            grading = (g.get("text") or "") if not case.passed and self.grading_detail != "none" else ""
+            turns: list[dict] = []
+            parsed: dict[str, Any] = {}
             est = int(len(json.dumps(msgs, default=str)) / self.chars_per_token)
-            rec.update(redact_terms=terms, est_tokens=est, turn=turn)
-            if est + self.max_output_tokens > self.ctx_tokens:
+            rec["est_tokens"] = est
+            if est + 2 * self.max_output_tokens > self.ctx_tokens:
                 rec["skipped"] = f"too long ({est} est tokens)"
                 status = "skipped"
             else:
-                resp = self._call(msgs, fmt, sess.get("model"), sess.get("base_url"))
-                parsed = parse_reflection(mode, resp.get("content") or "")
-                if (resp.get("content") or "").strip() and not _answered(parsed):
-                    # The model CONTINUED its task ("Let me fix it ...") instead of answering
-                    # (EXP-049d, 1 of 16). Re-ask once, keeping its off-task reply in context.
-                    rec["off_task_first_reply"] = resp
-                    retry = msgs + [{"role": "assistant", "content": resp.get("content") or ""},
-                                    {"role": "user", "content": _REASK}]
-                    resp = self._call(retry, fmt, sess.get("model"), sess.get("base_url"))
-                    parsed = parse_reflection(mode, resp.get("content") or "")
-                rec["response"], rec["parsed"] = resp, parsed
-                if not (resp.get("content") or "").strip():
+                if "unsure" in self.modes:
+                    t1 = _BLIND.format(preamble=preamble)
+                    resp, p1, n, msgs = self._ask(msgs, t1, "unsure", 0, sess, fmt)
+                    calls += n
+                    turns.append({"name": "blind", "question": t1, "response": resp})
+                    parsed.update({"unsure_items": p1.get("items") or [],
+                                   "overall_confidence": p1.get("overall_confidence"),
+                                   "first_check": p1.get("first_check") or ""})
+                t2, mode2 = self._graded_turn(case, grading, probes)
+                if t2 is not None:
+                    if not turns:
+                        t2 = f"{preamble}\n\n{t2}"
+                    est2 = int(len(json.dumps(msgs, default=str)) / self.chars_per_token)
+                    if est2 + self.max_output_tokens > self.ctx_tokens:
+                        rec["graded_skipped"] = f"too long ({est2} est tokens)"
+                    else:
+                        resp, p2, n, msgs = self._ask(msgs, t2, mode2, len(probes), sess, fmt)
+                        calls += n
+                        turns.append({"name": "graded", "question": t2, "response": resp})
+                        for k in ("lesson", "catch", "where", "why", "keep", "essential", "close_calls"):
+                            if p2.get(k):
+                                parsed[k] = p2[k]
+                        if probes:
+                            ans = p2.get("probe_answers") or [""] * len(probes)
+                            parsed["probes"] = [{"q": q, "a": a} for q, a in zip(probes, ans)]
+                rec["turns"], rec["parsed"] = turns, parsed
+                contents = [(t["response"].get("content") or "").strip() for t in turns]
+                if not turns:
+                    status = "skipped"
+                elif not any(contents):
                     status = "errors"
                 else:
-                    status = "ok" if _answered(parsed) else "off_task"
+                    useful = (parsed.get("unsure_items") or parsed.get("overall_confidence") is not None
+                              or any(parsed.get(k) for k in ("lesson", "catch", "keep", "essential"))
+                              or any(p.get("a") for p in parsed.get("probes") or []))
+                    status = "ok" if useful else "off_task"
         except Exception as exc:  # noqa: BLE001 -- reflection must never break a batch
             rec["error"] = repr(exc)[:500]
             status = "errors"
+        rec["status"] = status
         _atomic_write(dest, json.dumps(rec, indent=1, default=str))
-        return status
+        return status, calls
 
     def _call(self, msgs: list[dict], fmt: str, model: Optional[str] = None,
               base_url: Optional[str] = None) -> dict:
@@ -465,38 +593,107 @@ class Reflector:
         return render_reflections(Path(round_dir), self.exposure, self.max_steering_chars)
 
 
-def render_reflections(round_dir: Path, exposure: str = "lessons_only", max_chars: int = 6000) -> str:
-    """Module-level so analysis tools can render a run without a configured reflector."""
-    if exposure == "off":
-        return ""
-    files = sorted((round_dir / REFLECTIONS_DIR).glob("*.json"))
-    lessons, keeps, unsure, full = [], [], [], []
-    for f in files:
+def load_records(round_dir: Path) -> list[dict]:
+    """Every reflection record of one node, sorted by file name (legacy single-turn records
+    are converted to the two-turn shape: ``mode`` folded into ``parsed``)."""
+    out = []
+    for f in sorted((Path(round_dir) / REFLECTIONS_DIR).glob("*.json")):
         try:
             rec = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             continue
-        p = rec.get("parsed") or {}
-        terms = rec.get("redact_terms") or []
-        tag = f"{rec.get('case_id')}/{rec.get('role')}"
-        if exposure == "full":
-            body = ((rec.get("response") or {}).get("content") or "").strip()
-            if body:
-                full.append(f"### {tag} ({rec.get('mode')})\n{redact(body, terms)}")
+        if not isinstance(rec, dict):
             continue
-        if rec.get("mode") == "post_grading" and p.get("lesson"):
-            lessons.append(f"- ({tag}) {redact(' '.join(p['lesson'].split()), terms)}")
-            if p.get("catch"):
-                lessons.append(f"  would have caught it: {redact(' '.join(p['catch'].split()), terms)}")
-        elif rec.get("mode") == "essential" and p.get("keep"):
-            keeps.append(f"- ({tag}) {redact(' '.join(p['keep'].split()), terms)}")
-        elif rec.get("mode") == "unsure":
-            for it in (p.get("items") or [])[:3]:
-                if it.get("confidence", 100) < 70:
-                    unsure.append(f"- ({tag}, {it['confidence']}) {redact(it['item'], terms)}")
+        rec.setdefault("_file", f.name)
+        if rec.get("version") != RECORD_VERSION:
+            rec = _upgrade_legacy(rec)
+        out.append(rec)
+    return out
+
+
+def _upgrade_legacy(rec: dict) -> dict:
+    p = rec.get("parsed") or {}
+    mode = rec.get("mode")
+    parsed: dict[str, Any] = {}
+    if mode == "unsure":
+        parsed = {"unsure_items": p.get("items") or [], "overall_confidence": p.get("overall_confidence")}
+    elif mode == "post_grading":
+        parsed = {k: p[k] for k in ("lesson", "catch") if p.get(k)}
+    elif mode == "essential":
+        parsed = {"keep": p["keep"]} if p.get("keep") else {}
+    body = ((rec.get("response") or {}).get("content") or "")
+    turns = [{"name": "blind" if mode == "unsure" else "graded", "question": rec.get("turn", ""),
+              "response": rec.get("response") or {}}] if body else []
+    return {**rec, "parsed": parsed, "turns": turns, "legacy_mode": mode}
+
+
+def _oneline(s: Any) -> str:
+    return " ".join(str(s or "").split())
+
+
+def render_record(rec: dict, exposure: str, extra_terms: Optional[list[str]] = None) -> list[str]:
+    """Lines describing ONE reflection record for the meta-agent, redacted. ``lessons_only``
+    shows only the parsed fields; ``full`` the whole answers."""
+    terms = list(rec.get("redact_terms") or []) + list(extra_terms or [])
     if exposure == "full":
-        text = "\n\n".join(full)
+        lines = []
+        for t in rec.get("turns") or []:
+            body = ((t.get("response") or {}).get("content") or "").strip()
+            if body:
+                lines.append(f"[{t.get('name')}] {redact(body, terms)}")
+        return lines
+    p = rec.get("parsed") or {}
+    lines = []
+    if p.get("overall_confidence") is not None:
+        lines.append(f"blind confidence: {p['overall_confidence']}")
+    for it in (p.get("unsure_items") or [])[:4]:
+        if it.get("confidence", 100) < 70:
+            lines.append(f"unsure ({it['confidence']}): {redact(_oneline(it.get('item')), terms)}")
+    if p.get("first_check"):
+        lines.append(f"first check: {redact(_oneline(p['first_check']), terms)}")
+    for key, label in (("lesson", "lesson"), ("catch", "would have caught it"), ("essential", "essential"),
+                       ("close_calls", "close calls"), ("keep", "keep")):
+        if p.get(key):
+            lines.append(f"{label}: {redact(_oneline(p[key]), terms)}")
+    for i, pq in enumerate(p.get("probes") or [], 1):
+        if pq.get("a"):
+            lines.append(f"probe {i} -- {redact(_oneline(pq.get('q')), terms)} => {redact(_oneline(pq['a']), terms)}")
+    return lines
+
+
+def render_reflections(round_dir: Path, exposure: str = "lessons_only", max_chars: int = 6000) -> str:
+    """One node's reflections for the meta-agent (module-level so analysis tools can render
+    a run without a configured reflector)."""
+    if exposure == "off":
+        return ""
+    recs = load_records(Path(round_dir))
+    if exposure == "full":
+        blocks = []
+        for rec in recs:
+            body = "\n".join(render_record(rec, "full"))
+            if body:
+                blocks.append(f"### {rec.get('case_id')}/{rec.get('role')} "
+                              f"({'PASSED' if rec.get('passed') else 'FAILED'})\n{body}")
+        text = "\n\n".join(blocks)
     else:
+        lessons, keeps, unsure, probes = [], [], [], []
+        for rec in recs:
+            p = rec.get("parsed") or {}
+            terms = rec.get("redact_terms") or []
+            tag = f"{rec.get('case_id')}/{rec.get('role')}"
+            if p.get("lesson"):
+                lessons.append(f"- ({tag}) {redact(_oneline(p['lesson']), terms)}")
+                if p.get("catch"):
+                    lessons.append(f"  would have caught it: {redact(_oneline(p['catch']), terms)}")
+            if p.get("keep"):
+                keeps.append(f"- ({tag}) {redact(_oneline(p['keep']), terms)}")
+            for it in (p.get("unsure_items") or [])[:3]:
+                if it.get("confidence", 100) < 70:
+                    unsure.append(f"- ({tag}, {it['confidence']}) {redact(_oneline(it.get('item')), terms)}")
+            for pq in p.get("probes") or []:
+                if pq.get("a"):
+                    probes.append(f"- ({tag}) {redact(_oneline(pq.get('q')), terms)} => "
+                                  f"{redact(_oneline(pq['a']), terms)}")
         parts = []
         if lessons:
             parts.append("Lessons the task agent drew from its FAILED runs (its own account -- fallible, "
@@ -507,6 +704,8 @@ def render_reflections(round_dir: Path, exposure: str = "lessons_only", max_char
         if unsure:
             parts.append("Parts the task agent itself was UNSURE of before grading (confidence 0-100):\n"
                          + "\n".join(unsure))
+        if probes:
+            parts.append("Answers to the probe questions written for this node's edit:\n" + "\n".join(probes))
         text = "\n\n".join(parts)
     if len(text) > max_chars:
         text = text[: max_chars - 40].rstrip() + "\n[... truncated]"

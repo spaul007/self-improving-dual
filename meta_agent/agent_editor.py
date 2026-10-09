@@ -27,6 +27,7 @@ from .error_bucket_analyzer import render_error_bucket_prevalence_for_prompt
 from .failure_report import render_failure_report
 from .feedback_gatherer import render_metrics
 from .models import AgentFeedback, EditResult, EvolutionStrategy
+from .reflector import clean_probes
 from .registry import register
 from .workspace import reset_workspace
 
@@ -113,6 +114,14 @@ SELF_IMPROVEMENT_TOOL: dict[str, Any] = {
             "optimization_goal": {"type": "string"},
             "proposed_changes": {"type": "string"},
             "rationale": {"type": "string"},
+            "probe_questions": {
+                "type": "array", "items": {"type": "string"},
+                "description": (
+                    "Optional, at most 3: short questions to ask the task agent after its next "
+                    "evaluated runs, whose answers would show whether this edit changed its "
+                    "behaviour as intended (about its own steps, never hidden tests)."
+                ),
+            },
             "files": {
                 "type": "array",
                 "items": {
@@ -188,6 +197,14 @@ AGENTIC_SUBMIT_SUMMARY_TOOL: dict[str, Any] = {
             "optimization_goal": {"type": "string"},
             "proposed_changes": {"type": "string"},
             "rationale": {"type": "string"},
+            "probe_questions": {
+                "type": "array", "items": {"type": "string"},
+                "description": (
+                    "Optional, at most 3: short questions to ask the task agent after its next "
+                    "evaluated runs, whose answers would show whether this edit changed its "
+                    "behaviour as intended (about its own steps, never hidden tests)."
+                ),
+            },
         },
         "required": ["optimization_goal", "proposed_changes", "rationale"],
     },
@@ -236,7 +253,9 @@ AGENTIC_LOG_READ_FILE_TOOL: dict[str, Any] = {
         "Read a file. Editable/reference source files: pass their path as listed "
         "(returns the whole file). Evaluation evidence of the PARENT agent you are "
         "improving: 'logs/<rel>' (per-case logs, dossiers, transcripts) or "
-        "'eval_result.json' -- paged by line: use offset/limit (default 200 lines)."
+        "'eval_result.json'; per-test-case reflections across every node of the run: "
+        "'cases/INDEX.md' and 'cases/<file>' (when listed) -- paged by line: use "
+        "offset/limit (default 200 lines)."
     ),
     "input_schema": {
         "type": "object",
@@ -252,8 +271,8 @@ AGENTIC_LOG_READ_FILE_TOOL: dict[str, Any] = {
 AGENTIC_GREP_TOOL: dict[str, Any] = {
     "name": "grep",
     "description": (
-        "Regex-search ONE file (a source file path as listed, 'logs/<rel>' or "
-        "'eval_result.json'); returns a window centred on each match."
+        "Regex-search ONE file (a source file path as listed, 'logs/<rel>', "
+        "'cases/<file>' or 'eval_result.json'); returns a window centred on each match."
     ),
     "input_schema": {
         "type": "object",
@@ -1062,9 +1081,15 @@ class AgentEditor:
         return "  logs/ contains: " + ", ".join(names[:cap]) + more + "\n"
 
     @staticmethod
+    def _cases_listing(base_dir: Path, cap: int = 40) -> str:
+        """The run's per-test-case reflection files (meta_agent/case_reflections.py) for the
+        cases the PARENT was evaluated on, when the reflector writes them; ``""`` otherwise."""
+        return log_access.cases_listing(base_dir, cap)
+
+    @staticmethod
     def _is_log_path(path: Any) -> bool:
         p = str(path or "").strip().lstrip("/")
-        return p in ("eval_result.json", "logs") or p.startswith("logs/")
+        return p in ("eval_result.json", "logs", "cases") or p.startswith(("logs/", "cases/"))
 
     def _agentic_grep(
         self, agent_dir: Path, base_dir: Path, args: dict[str, Any], readonly_paths: list[str]
@@ -1076,7 +1101,7 @@ class AgentEditor:
         rel = raw[len("harness/"):] if raw.startswith("harness/") else raw
         if not (self._is_path_allowed(rel) or rel in readonly_paths):
             return (f"ERROR: {raw!r} is not readable here -- use a listed source file, "
-                    "'logs/<rel>' or 'eval_result.json'.")
+                    "'logs/<rel>', 'cases/<file>' or 'eval_result.json'.")
         f = agent_dir / rel
         if not f.is_file():
             return f"(file not found: {raw})"
@@ -1179,6 +1204,7 @@ class AgentEditor:
                 "(per-case JSON, logs/scratch/<case>/<run>/...); "
                 "read_file('logs/') or any logs/ subdirectory lists its files\n"
                 + self._logs_listing(base_dir)
+                + self._cases_listing(base_dir)
             )
         user_parts.extend(self._format_edit_scope())
         if prior_errors:
@@ -1423,6 +1449,7 @@ class AgentEditor:
                             optimization_goal=_coerce_str(args.get("optimization_goal")),
                             proposed_changes=_coerce_str(args.get("proposed_changes")),
                             rationale=_coerce_str(args.get("rationale")),
+                            probe_questions=clean_probes(args.get("probe_questions")),
                         )
                         files = [{"path": p, "content": c} for p, c in written.items()]
                         return strategy, files
@@ -1488,6 +1515,7 @@ class AgentEditor:
             optimization_goal=_coerce_str(args.get("optimization_goal")),
             proposed_changes=_coerce_str(args.get("proposed_changes")),
             rationale=_coerce_str(args.get("rationale")),
+            probe_questions=clean_probes(args.get("probe_questions")),
         )
         return strategy, files
 

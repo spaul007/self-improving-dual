@@ -7,6 +7,7 @@ pause -> truncated loop_state -> resume cycle, with stub editor/evaluator and a 
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import tempfile
 import unittest
@@ -41,8 +42,7 @@ class AllFlagsIntegrationTests(unittest.TestCase):
         m = HGMManager(eval_budget=40, init_expansions=2, eval_batch_size=4, alpha=0.6, seed=7,
                        snapshot_tree=True, first_batch_on_expand=True, status_report=True,
                        exclude_flagged_cases=True)
-        refl = Reflector(scorer=_FakeScorer(), chat_caller=_fake_chat([]), phases=["root", "expand"],
-                         max_cases_per_batch=2)
+        refl = Reflector(scorer=_FakeScorer(), chat_caller=_fake_chat([]), phases=["root", "expand"])
         out = m.evolve(editor=Editor(), evaluator=_HookEvaluator(exp, hook),
                        gatherer=DefaultFeedbackGatherer(), seed_dir=self.seed,
                        benchmark_dir=self.tmp / "bench", experiment_dir=exp, max_rounds=30,
@@ -53,6 +53,15 @@ class AllFlagsIntegrationTests(unittest.TestCase):
     @staticmethod
     def _sig(m):
         return {nid: (n.parent_id, tuple(sorted(n.evaluated_case_ids))) for nid, n in m._tree.nodes.items()}
+
+    @staticmethod
+    def _index_rows(exp: Path) -> dict:
+        rows = {}
+        for line in (exp / "case_reflections" / "INDEX.md").read_text().splitlines():
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            if len(cells) == 7 and cells[2].isdigit():
+                rows[cells[0]] = (int(cells[2]), int(cells[3]))   # evals, passed
+        return rows
 
     def _pause_at(self, n):
         def hook(call, e):
@@ -82,6 +91,13 @@ class AllFlagsIntegrationTests(unittest.TestCase):
             self.assertTrue(any("Task-agent reflections" in c for c in contexts))
             self.assertFalse(any(SECRET_TEST in c for c in contexts))    # lessons_only redaction
             self.assertIn("rng_state", json.loads((exp / "loop_state.json").read_text()))
+            # per-test-case files: rebuilt across the resume, same pass rates as the straight run,
+            # entries from the root AND children, and no hidden-test name anywhere
+            self.assertEqual(self._index_rows(exp), self._index_rows(straight_dir), pause_call)
+            texts = [f.read_text() for f in (exp / "case_reflections").glob("*.md")]
+            self.assertTrue(any("### node 0 " in t for t in texts))
+            self.assertTrue(any(re.search(r"### node [1-9]", t) for t in texts))
+            self.assertFalse(any(SECRET_TEST in t for t in texts))
 
     def test_corrupt_loop_state_still_spends_exact_budget(self) -> None:
         """RNG state lives in loop_state.json, so a corrupt one cannot continue the

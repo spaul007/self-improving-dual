@@ -45,6 +45,7 @@ from typing import Optional
 from ..agent_editor import AgentEditor, fallback_strategy
 from ..atomic_io import atomic_write_text
 from ..block_bandit import AdaptiveStrategy, BlockBandit
+from ..case_reflections import build_case_files, excerpt_for_cases
 from ..curriculum import Curriculum, _combined_check_counts, infer_curriculum
 from ..implementation_strategy_bandit import (
     AdaptiveImplementationStrategy,
@@ -1511,6 +1512,17 @@ class HGMManager:
         if memory_block:
             parts.append(memory_block)
 
+        if self._reflector is not None and getattr(self._reflector, "probe_questions", False) \
+                and self._reflector.wants("expand"):
+            parts.append(
+                "\n## Probe questions for this edit (optional field `probe_questions`)\n"
+                "After this node is evaluated, the task agent is asked about each run it did. When you "
+                "submit, you may add 1-3 short `probe_questions` it will also be asked -- questions whose "
+                "answers would show whether THIS edit changed its behaviour the way you intend (e.g. "
+                "\"Did you use <the new step> before submitting? What did it show?\"). Ask about its own "
+                "steps and reasoning, never about hidden tests or the grader. The answers appear in the "
+                "per-test-case reflection files (cases/) linked to this node."
+            )
         parts.append(
             "\nMake targeted improvement to this parent agent. Keep the "
             "scope small enough to apply correctly in one pass."
@@ -2304,6 +2316,7 @@ class HGMManager:
             + (f"; removed {PAUSE_FILE}" if removed else "")
         )
         print(msg, flush=True)
+        self._rebuild_case_files()
         with open(exp / "RESUMES.log", "a", encoding="utf-8") as fh:
             fh.write(time.strftime("%Y-%m-%dT%H:%M:%SZ ", time.gmtime()) + msg + "\n")
         self._current_action = f"resumed (#{self._resume_count})"
@@ -2425,19 +2438,46 @@ class HGMManager:
         """Task-agent reflection on one TRAIN batch (if configured and ``phase``
         is listed in the reflector's ``phases``). Never raises; always logs one
         ``reflections=`` line so the mechanism is observable from the run log."""
-        if self._reflector is None or not self._reflector.wants(phase):
+        if self._reflector is None:
             return
+        if not self._reflector.wants(phase):
+            self._rebuild_case_files()  # pass rates count every evaluation, reflected on or not
+            return
+        fb = self._feedback.get(node.node_id)
+        probes = list(getattr(getattr(fb, "strategy", None), "probe_questions", None) or [])
+        t0 = time.time()
         try:
-            st = self._reflector.reflect(node.round_dir, batch, phase=phase)
+            st = self._reflector.reflect(node.round_dir, batch, phase=phase, node_id=node.node_id,
+                                         parent_id=node.parent_id, probes=probes)
         except Exception as exc:  # noqa: BLE001
             print(f"[reflector] unexpected error on node {node.node_id}: {exc!r}", flush=True)
             return
         print(
             f"node {node.node_id}: reflections={st.get('ok', 0)}/{st.get('calls', 0)} "
             f"cases={st.get('cases', 0)} off_task={st.get('off_task', 0)} skipped={st.get('skipped', 0)} "
-            f"errors={st.get('errors', 0)} phase={phase}",
+            f"errors={st.get('errors', 0)} llm_calls={st.get('llm_calls', 0)} probes={len(probes)} "
+            f"wall={time.time() - t0:.0f}s phase={phase}",
             flush=True,
         )
+        self._rebuild_case_files()
+
+    def _rebuild_case_files(self) -> None:
+        """Rebuild ``<run>/case_reflections/`` (meta_agent/case_reflections.py) from every
+        node's records + case results, when the reflector writes case files. Main thread
+        only; never raises; logs one ``case_files=`` line."""
+        if self._reflector is None or not getattr(self._reflector, "case_files", False) \
+                or not self._reflector.supported:
+            return
+        try:
+            summary = build_case_files(
+                self._experiment_dir, list(self._tree.nodes.values()),
+                exposure=self._reflector.exposure,
+                max_chars_per_case=getattr(self._reflector, "max_case_file_chars", 20000))
+        except Exception as exc:  # noqa: BLE001
+            print(f"[reflector] case files rebuild failed: {exc!r}", flush=True)
+            return
+        print(f"case_files={len(summary)} reflections={sum(v['reflections'] for v in summary.values())} "
+              f"evals={sum(v['evals'] for v in summary.values())}", flush=True)
 
     def _reflections_for(self, round_dir: Path, consumer: str) -> str:
         """Rendered reflections of the node at ``round_dir`` for one consumer
@@ -2461,6 +2501,15 @@ class HGMManager:
             return
         try:
             refl = self._reflections_for(node.round_dir, "failure_summarizer")
+            if self._reflector is not None and getattr(self._reflector, "case_files", False) \
+                    and "failure_summarizer" in getattr(self._reflector, "consumers", ()):
+                failing = [c.case_id for c in sorted(node.case_results, key=lambda c: float(c.score or 0))
+                           if not c.passed and not (c.details or {}).get("excluded") and not c.error]
+                cross = excerpt_for_cases(self._experiment_dir, failing[:8],
+                                          getattr(self._reflector, "max_steering_chars", 6000))
+                if cross:
+                    refl += ("\n\n## The same failing cases across ALL nodes of this run (pass rate across "
+                             "nodes + newest reflections; from cases/<case>.md)\n" + cross)
             self._failure_summarizer.summarize(
                 eval_result=self._feedback[node.node_id].eval_result,
                 round_dir=node.round_dir,

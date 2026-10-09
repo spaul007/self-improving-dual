@@ -33,6 +33,11 @@ class EvolutionStrategy(BaseModel):
     # is None, the default) -- zero behavior change for every existing
     # config/run.
     implementation_strategy: Optional[str] = None
+    # 0-3 questions the editor wrote to test its OWN hypothesis about this
+    # edit; the reflector asks them in this node's post-grading reflections
+    # (reflector.probe_questions). Empty for the seed and when the editor
+    # wrote none -- the reflections then carry only the fixed questions.
+    probe_questions: list[str] = Field(default_factory=list)
 
 
 class TraceEvent(BaseModel):

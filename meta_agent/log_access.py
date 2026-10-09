@@ -5,8 +5,9 @@ Shared by the BlockSuggester (``agentic_access``) and the AgentEditor
 
 * alias-rooted paths -- ``harness/<rel>`` (the current source, served from an
   in-memory ``sources`` dict), ``logs/<rel>`` (the node's real per-case
-  evaluation logs under ``<round_dir>/logs``; escaping that root is refused) and
-  ``eval_result.json``;
+  evaluation logs under ``<round_dir>/logs``; escaping that root is refused),
+  ``eval_result.json`` and ``cases/<rel>`` (the run's per-test-case reflection
+  files, ``<run_dir>/case_reflections`` -- see meta_agent/case_reflections.py);
 * ``read_file`` pages by line (``offset``/``limit``, default 200 lines) so a
   large log never floods the context;
 * ``grep`` returns a window CENTERED on each match (a single JSON line can hold
@@ -16,12 +17,14 @@ Pure functions; never write anything.
 """
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import Any, Optional
 
 READ_PAGE_LINES = 200
 GREP_DEFAULT_MATCHES = 12
+CASES_DIR = "case_reflections"  # == case_reflections.CASES_DIR (no import: this module stays leaf)
 
 
 def resolve(
@@ -46,9 +49,18 @@ def resolve(
         if target != logs_root and logs_root not in target.parents:
             return None, f"ERROR: {path!r} escapes the logs/ root."
         return "file", target
+    if path == "cases" or path.startswith("cases/"):
+        rel = path[len("cases/"):] if path.startswith("cases/") else ""
+        cases_root = (round_dir.parent / CASES_DIR).resolve()
+        target = (round_dir.parent / CASES_DIR / rel).resolve()
+        if target != cases_root and cases_root not in target.parents:
+            return None, f"ERROR: {path!r} escapes the cases/ root."
+        if not cases_root.is_dir():
+            return None, "ERROR: no per-test-case reflection files in this run (cases/ is empty)."
+        return "file", target
     return None, (
         f"ERROR: unrecognized path {path!r} -- paths must be exactly "
-        "'eval_result.json' or start with 'harness/' or 'logs/'."
+        "'eval_result.json' or start with 'harness/', 'logs/' or 'cases/'."
     )
 
 
@@ -127,6 +139,28 @@ def grep(sources: dict[str, str], round_dir: Path, args: dict[str, Any]) -> str:
     except (TypeError, ValueError):
         max_matches = GREP_DEFAULT_MATCHES
     return grep_text(text, args.get("pattern") or "", max_matches)
+
+
+def cases_listing(round_dir: Path, cap: int = 40) -> str:
+    """Prompt lines pointing at ``cases/INDEX.md`` and the case files of the cases the node at
+    ``round_dir`` was evaluated on (from its ``eval_result.json``); ``""`` when the run has no
+    per-test-case files."""
+    root = Path(round_dir).parent / CASES_DIR
+    if not (root / "INDEX.md").is_file():
+        return ""
+    try:
+        ids = [c.get("case_id") for c in
+               json.loads((Path(round_dir) / "eval_result.json").read_text(encoding="utf-8")).get("per_case") or []]
+    except (OSError, ValueError, AttributeError):
+        ids = []
+    from .reflector import _safe  # lazy: keeps this module importable on its own
+    names = [n for n in dict.fromkeys(f"{_safe(i)}.md" for i in ids if i is not None) if (root / n).is_file()]
+    more = f" ... (+{len(names) - cap} more)" if len(names) > cap else ""
+    return ("  - cases/INDEX.md -- every test case of this run, hardest first: its pass rate across ALL "
+            "evaluated nodes and the task agent's reflections on each evaluation, linked to the node "
+            "(which edit it carried). Self-reported and fallible; the pass rates are measured.\n"
+            + (("  cases/ files for the parent's evaluated cases: " + ", ".join(names[:cap]) + more + "\n")
+               if names else ""))
 
 
 def load_logs_guide(path: Optional[str]) -> str:
