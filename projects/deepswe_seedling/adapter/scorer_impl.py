@@ -188,7 +188,9 @@ class DeepSWESeedlingScorer:
         for n in fails:
             redact.add(n)
             redact.update(_test_name_terms(n))
-            redact.update(p for p in re.findall(r"[\w./-]+\.(?:go|rs|py|ts|tsx|js|jsx|java|rb)\b", n))
+            for path in re.findall(r"[\w./-]+\.(?:go|rs|py|ts|tsx|js|jsx|java|rb)\b", n):
+                # the bare file name too: an answer that says only "parser_test.go" names it
+                redact.update((path, path.rsplit("/", 1)[-1]))
         return {"text": "\n".join(lines), "redact": sorted(x for x in redact if len(x) >= 4)}
 
 

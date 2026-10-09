@@ -111,6 +111,36 @@ class DeepSWEReflectionHookTests(unittest.TestCase):
         self.assertNotIn("TestParseWidgetRoundtrip", text)
         self.assertNotIn("parser_test.go", text)
 
+    def test_case_files_hide_test_names_under_both_exposures(self) -> None:
+        """Both roles, blind + graded turns, the full-text exposure and the per-test-case
+        files: a hidden test name the agent quotes never reaches cases/."""
+        from meta_agent.case_reflections import build_case_files
+        from meta_agent.managers.hgm_tree import HGMNode
+        from meta_agent.reflector import Reflector
+
+        def chat(msgs, max_tokens, **kw):
+            if "NEW TURN: self-assessment" in msgs[-1]["content"]:
+                return {"content": "1. UNSURE PARTS:\n- [30] TestParseWidgetRoundtrip edge\n"
+                                   "2. OVERALL_CONFIDENCE: 60\n3. FIRST CHECK: parser_test.go", "finish_reason": "stop"}
+            return {"content": "1. WHERE: x\n2. WHY: y\n3. WHAT WOULD HAVE CAUGHT IT: z\n4. GENERAL LESSON: "
+                               "run TestParseWidgetRoundtrip in pkg/widgets/parser_test.go", "finish_reason": "stop"}
+
+        run = self.root / "run"
+        rd = run / "round_000"
+        Reflector(scorer=self.s, chat_caller=chat).reflect(
+            rd, EvaluationResult(score=0.5, passed=0, failed=1, per_case=[self.case]), node_id=0)
+        self.assertEqual(sorted(p.name for p in (rd / "reflections").glob("*.json")),
+                         ["task.patch.e1.json", "task.verify.e1.json"])
+        node = HGMNode(node_id=0, parent_id=None, round_dir=rd, case_results=[self.case])
+        for exposure in ("lessons_only", "full"):
+            build_case_files(run, [node], exposure=exposure)
+            text = (run / "case_reflections" / "task.md").read_text()
+            self.assertIn("**patch**", text)
+            self.assertIn("**verify**", text)
+            self.assertIn("pass rate: 0/1", text)
+            for secret in ("TestParseWidgetRoundtrip", "parser_test.go"):
+                self.assertNotIn(secret, text, exposure)
+
 
 if __name__ == "__main__":
     unittest.main()
