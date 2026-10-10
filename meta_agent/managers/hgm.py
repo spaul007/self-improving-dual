@@ -1341,19 +1341,34 @@ class HGMManager:
         return [cid for cid in (getattr(st, "focus_targets", None) or []) if cid in cset][:n_take]
 
     def _record_targets_delta(self, node: HGMNode, targets: list[str], result: EvaluationResult) -> None:
-        """Child's score on its targets vs the parent's mean on the same cases (every parent
-        evaluation; excluded cases skipped). Logged and written to ``focus.json``."""
+        """Child's score on its targets vs (a) the parent's mean on the same cases and (b) the
+        case's mean over EVERY earlier evaluation in the tree (all other nodes). (b) is the
+        steadier reference: the parent often has one run per case, and that run may be the
+        contrast's high side. Excluded cases skipped. Logged and written to ``focus.json``."""
         parent = self._tree.nodes.get(node.parent_id) if node.parent_id is not None else None
         child = {c.case_id: c.score for c in (result.per_case or [])
                  if c.case_id in targets and not (c.details or {}).get("excluded")}
+
+        def scores(nodes, cid):
+            return [c.score for n in nodes for c in n.case_results
+                    if c.case_id == cid and not (c.details or {}).get("excluded")]
+
+        others = [n for nid, n in self._tree.nodes.items() if nid != node.node_id]
         per: dict[str, dict] = {}
         for cid in targets:
-            ps = [c.score for c in (parent.case_results if parent else [])
-                  if c.case_id == cid and not (c.details or {}).get("excluded")]
-            if cid in child and ps:
-                per[cid] = {"child": child[cid], "parent_mean": sum(ps) / len(ps), "parent_n": len(ps)}
-        delta = (sum(v["child"] - v["parent_mean"] for v in per.values()) / len(per)) if per else None
-        td = {"mean_delta": delta, "n": len(per), "per_case": per}
+            if cid not in child:
+                continue
+            ps, cs = scores([parent] if parent else [], cid), scores(others, cid)
+            per[cid] = {"child": child[cid],
+                        "parent_mean": (sum(ps) / len(ps)) if ps else None, "parent_n": len(ps),
+                        "case_mean": (sum(cs) / len(cs)) if cs else None, "case_n": len(cs)}
+
+        def mean_delta(key):
+            d = [v["child"] - v[key] for v in per.values() if v[key] is not None]
+            return (sum(d) / len(d)) if d else None
+
+        delta, delta_case = mean_delta("parent_mean"), mean_delta("case_mean")
+        td = {"mean_delta": delta, "mean_delta_vs_case": delta_case, "n": len(per), "per_case": per}
         prev = {}
         try:
             prev = json.loads((node.round_dir / "focus.json").read_text())
@@ -1361,9 +1376,9 @@ class HGMManager:
             pass
         self._write_focus_record(node.round_dir, "reliability", prev.get("targets") or
                                  [{"case_id": t} for t in targets], node.parent_id, td)
-        print(f"node {node.node_id}: focus targets_delta="
-              + ("n/a" if delta is None else f"{delta:+.3f}") + f" over {len(per)}/{len(targets)} target(s)",
-              flush=True)
+        fmt = lambda v: "n/a" if v is None else f"{v:+.3f}"  # noqa: E731
+        print(f"node {node.node_id}: focus targets_delta={fmt(delta)} vs parent, {fmt(delta_case)} vs case mean "
+              f"over {len(per)}/{len(targets)} target(s)", flush=True)
 
     # ------------------------------------------------------------------ #
     # Block selection — swappable seam
