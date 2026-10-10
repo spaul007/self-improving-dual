@@ -144,3 +144,23 @@ class DeepSWEReflectionHookTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DeepSWELimitedByBudgetTests(unittest.TestCase):
+    """Only a trial cut short as a whole (or whose LAST role hit its wall) is budget-limited;
+    a mid-run role wall that a later attempt recovered from is a behavioural outcome."""
+
+    def test_narrow_rule(self) -> None:
+        from projects.deepswe_seedling.adapter.scorer_impl import DeepSWESeedlingScorer
+
+        s = DeepSWESeedlingScorer.__new__(DeepSWESeedlingScorer)
+        C = lambda **d: CaseResult(case_id="t", passed=False, score=0.0, details=d)  # noqa: E731
+        walls = [{"role": "patch", "wall_terminated": True}, {"role": "verify", "wall_terminated": False}]
+        self.assertIsNone(s.limited_by_budget(C(agent_outcome="completed", roles=walls,
+                                                failure_classes=["role_wall"])))
+        self.assertIn("last role (verify)", s.limited_by_budget(C(
+            agent_outcome="completed", roles=walls[:1] + [{"role": "verify", "wall_terminated": True}])))
+        self.assertIn("contained:ValueError", s.limited_by_budget(C(agent_outcome="contained:ValueError")))
+        self.assertIn("timed out", s.limited_by_budget(C(agent_outcome="completed",
+                                                         exception_type="AgentTimeoutError")))
+        self.assertIsNone(s.limited_by_budget(C()))

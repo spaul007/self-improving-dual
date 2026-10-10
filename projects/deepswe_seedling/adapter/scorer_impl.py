@@ -20,7 +20,7 @@ import os
 import re
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from meta_agent.registry import register
 
@@ -164,6 +164,23 @@ class DeepSWESeedlingScorer:
                 out[role] = {"messages": conv["messages"], "format": "chat",
                              "preamble": self._WHO.get(role, f"You are the {role.upper()} role.")}
         return out
+
+    def limited_by_budget(self, case: Any) -> Optional[str]:
+        """Why this trial was cut short by a budget rather than by the agents' behaviour, or
+        ``None`` (meta_agent/case_reflections.py: such a run is never the low side of a pass/fail
+        contrast). Deliberately narrow: a role hitting its wall mid-run is common (~2/3 of
+        failures carry ``role_wall``) and the next attempt can still finish, so only a run whose
+        LAST role was cut off, or that did not complete / timed out as a whole, counts."""
+        d = getattr(case, "details", None) or {}
+        outcome = d.get("agent_outcome")
+        if outcome and outcome != "completed":
+            return f"agent outcome {outcome}"
+        if "Timeout" in str(d.get("exception_type") or ""):
+            return f"trial timed out ({d.get('exception_type')})"
+        roles = d.get("roles") or []
+        if roles and (roles[-1] or {}).get("wall_terminated"):
+            return f"last role ({roles[-1].get('role')}) hit its wall"
+        return None
 
     def grading_outcome(self, case: Any, detail: str) -> dict[str, Any]:
         d = case.details or {}
