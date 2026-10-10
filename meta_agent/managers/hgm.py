@@ -52,6 +52,8 @@ from ..implementation_strategy_bandit import (
     AdaptiveImplementationStrategy,
     ImplementationStrategyBandit,
 )
+from ..focus import FOCUS_VALUES, focus_body, reliability_targets
+from ..focus_bandit import AdaptiveFocus, FocusBandit
 from ..evaluator import Evaluator, load_cases
 from ..feedback_gatherer import FeedbackGatherer, persist_round_artifacts, render_metrics
 from .. import root_cache
@@ -385,6 +387,17 @@ class HGMManager:
         # implementation_strategy_initial_ranking. Only meaningful when
         # that's set.
         implementation_strategy_initial_rank_strength: float = 2.0,
+        # Focus axis (meta_agent/focus.py): WHICH EVIDENCE steers an EXPAND. None (default):
+        # off -- no steering text, no change to task sampling, EvolutionStrategy.focus stays
+        # None. "reliability"/"default" are fixed; "adaptive" Thompson-samples via a
+        # FocusBandit (meta_agent/focus_bandit.py). A "reliability" EXPAND targets up to
+        # focus_targets_k unstable cases (a pass/fail contrast exists in the per-case files,
+        # >= focus_min_evals evaluations) and puts them into the child's first batch; with
+        # no eligible case it falls back to "default". Requires a reflector writing case files.
+        focus_selection_strategy: Optional[str] = None,
+        focus_reward_metric: str = "boolean_increase",
+        focus_targets_k: int = 3,
+        focus_min_evals: int = 3,
     ) -> None:
         self.eval_budget = eval_budget
         self.init_expansions = init_expansions
@@ -458,6 +471,17 @@ class HGMManager:
         self.implementation_strategy_reward_metric = implementation_strategy_reward_metric
         self.implementation_strategy_initial_ranking = implementation_strategy_initial_ranking
         self.implementation_strategy_initial_rank_strength = implementation_strategy_initial_rank_strength
+        if focus_selection_strategy is not None and focus_selection_strategy not in ("adaptive", *FOCUS_VALUES):
+            raise ValueError(
+                "focus_selection_strategy must be None or one of "
+                f"{sorted(('adaptive', *FOCUS_VALUES))}, got {focus_selection_strategy!r}"
+            )
+        if int(focus_targets_k) < 1 or int(focus_min_evals) < 2:
+            raise ValueError("focus_targets_k must be >= 1 and focus_min_evals >= 2")
+        self.focus_selection_strategy = focus_selection_strategy
+        self.focus_reward_metric = focus_reward_metric
+        self.focus_targets_k = int(focus_targets_k)
+        self.focus_min_evals = int(focus_min_evals)
         # Fail fast on a block pool that some EXPAND could find empty (an empty pool
         # used to surface mid-run as IndexError/ValueError from rng.choice / max).
         if block_selection_strategy in ("non_adaptive", "adaptive"):
@@ -596,6 +620,14 @@ class HGMManager:
             initial_rank_strength=implementation_strategy_initial_rank_strength,
         )
         self._last_implementation_strategy_selection: Optional[AdaptiveImplementationStrategy] = None
+        # Focus axis: its own RNG (distinct seed string) so turning focus on does not perturb
+        # block / implementation-strategy draws or task sampling.
+        self._focus_rng: random.Random = random.Random(f"{seed}-focus")
+        self._focus_bandit: FocusBandit = FocusBandit(
+            beta_prior=beta_prior, rng=self._focus_rng, reward_metric=focus_reward_metric)
+        self._last_focus_selection: Optional[AdaptiveFocus] = None
+        # Latest build_case_files() summary (pure function of the run dir; rebuilt on resume).
+        self._case_summary: dict[str, dict] = {}
         # Whether _render_expand_context's most recent call actually
         # produced a block-scoped suggestion (see block_suggester.py) --
         # same "most-recent-result-of-a-helper-call" pattern as
@@ -717,6 +749,15 @@ class HGMManager:
             initial_rank_strength=self.implementation_strategy_initial_rank_strength,
         )
         self._last_implementation_strategy_selection = None
+        self._focus_rng = random.Random(f"{self.seed}-focus")
+        self._focus_bandit = FocusBandit(beta_prior=self.beta_prior, rng=self._focus_rng,
+                                         reward_metric=self.focus_reward_metric)
+        self._last_focus_selection = None
+        self._case_summary = {}
+        if self.focus_selection_strategy is not None and (
+                reflector is None or not getattr(reflector, "case_files", False)):
+            raise ValueError("focus_selection_strategy needs a reflector with case_files: true "
+                             "(the reliability focus reads the per-case pass/fail contrasts)")
         self._last_suggestion_produced = False
         self._curriculum = None
         self._snapshotter = TreeSnapshotWriter(
@@ -1001,9 +1042,16 @@ class HGMManager:
             (out_dir / "curriculum_status.json").write_text(
                 json.dumps(curriculum_snapshot, indent=2)
             )
+        focus, focus_targets = self._select_focus(parent)
+        if self._last_focus_selection is not None:
+            (out_dir / "focus_adaptive.json").write_text(
+                json.dumps(dataclasses.asdict(self._last_focus_selection), indent=2))
+        if focus is not None:
+            self._write_focus_record(out_dir, focus, focus_targets, parent.node_id)
         context = self._render_expand_context(
             parent, block, out_dir, node_id, curriculum_directive=curriculum_directive,
             implementation_strategy=impl_strategy,
+            focus_directive=focus_body(focus, focus_targets) or None,
         )
         edit_result = editor.apply(
             self._feedback.get(parent_id), parent.round_dir, out_dir,
@@ -1013,6 +1061,10 @@ class HGMManager:
         strategy = edit_result.strategy or fallback_strategy()
         strategy.block = block
         strategy.implementation_strategy = impl_strategy
+        strategy.focus = focus
+        strategy.focus_targets = [str(t["case_id"]) for t in focus_targets]
+        focus_note = "" if focus is None else (
+            f" focus={focus}" + (f" targets={strategy.focus_targets}" if strategy.focus_targets else ""))
         node = HGMNode(node_id=node_id, parent_id=parent_id, round_dir=out_dir)
 
         if not edit_result.success:
@@ -1024,7 +1076,7 @@ class HGMManager:
             self._write_node_sidecar(node)
             print(
                 f"node {node_id}: EXPAND from {parent_id} — edit FAILED "
-                f"({edit_result.errors[0][:80] if edit_result.errors else '?'})",
+                f"({edit_result.errors[0][:80] if edit_result.errors else '?'}){focus_note}",
                 flush=True,
             )
             return node_id
@@ -1036,7 +1088,7 @@ class HGMManager:
             node_id, parent_id, strategy, self._empty_eval(), out_dir
         )
         self._write_node_sidecar(node)
-        print(f"node {node_id}: EXPAND from {parent_id}", flush=True)
+        print(f"node {node_id}: EXPAND from {parent_id}{focus_note}", flush=True)
         return node_id
 
     def _record_batch(self, node: HGMNode, result: EvaluationResult) -> None:
@@ -1140,7 +1192,12 @@ class HGMManager:
         n_take = min(self.eval_batch_size, len(unevaluated), max(remaining, 0))
         if n_take <= 0:
             return 0
-        batch = self._task_rng.sample(unevaluated, n_take)
+        targets = self._first_batch_targets(node, unevaluated, n_take)
+        if targets:
+            rest = [cid for cid in unevaluated if cid not in targets]
+            batch = targets + self._task_rng.sample(rest, n_take - len(targets))
+        else:
+            batch = self._task_rng.sample(unevaluated, n_take)
         self._current_action = (
             f"evaluating node {node_id} on {len(batch)} task(s) "
             f"(has {node.n_attempted}/{len(self._train_case_ids)})"
@@ -1149,6 +1206,8 @@ class HGMManager:
 
         result = evaluator.run(node.round_dir, self._benchmark_dir, case_ids=batch)
         self._record_batch(node, result)
+        if targets:
+            self._record_targets_delta(node, targets, result)
 
         self._refresh_node_feedback(node, gatherer)
         print(
@@ -1226,6 +1285,85 @@ class HGMManager:
             "unhandled implementation_strategy_selection_strategy="
             f"{self.implementation_strategy_selection_strategy!r}"
         )
+
+    # ------------------------------------------------------------------ #
+    # Focus selection (meta_agent/focus.py) — third axis next to block and
+    # implementation strategy
+    # ------------------------------------------------------------------ #
+
+    def _select_focus(self, parent: HGMNode) -> tuple[Optional[str], list[dict]]:
+        """``(focus, targets)`` for this EXPAND. ``(None, [])`` when the axis is off. The
+        reliability targets come from the latest case-file summary (train cases only, the
+        parent's cases first); with none eligible the focus is ``"default"`` -- for
+        "adaptive" WITHOUT a bandit draw, so the draw sequence only advances on a real choice."""
+        self._last_focus_selection = None
+        if self.focus_selection_strategy is None:
+            return None, []
+        train = set(self._train_case_ids)
+        summary = {cid: s for cid, s in self._case_summary.items() if cid in train}
+        targets = reliability_targets(summary, k=self.focus_targets_k, min_evals=self.focus_min_evals,
+                                      prefer=parent.evaluated_case_ids)
+        if self.focus_selection_strategy == "default" or not targets:
+            if self.focus_selection_strategy == "reliability":
+                print(f"[focus] reliability forced but no unstable train case with "
+                      f">= {self.focus_min_evals} evals yet -- this EXPAND uses default", flush=True)
+            return "default", []
+        if self.focus_selection_strategy == "adaptive":
+            adaptive = self._focus_bandit.select(self._tree, self._feedback)
+            self._last_focus_selection = adaptive
+            if adaptive.focus != "reliability":
+                return adaptive.focus, []
+        return "reliability", targets
+
+    def _write_focus_record(self, round_dir: Path, focus: str, targets: list[dict],
+                            parent_id: int, targets_delta: Optional[dict] = None) -> None:
+        """``<round>/focus.json``: the focus, its targets (with the evidence they were chosen
+        on) and, after the first batch, ``targets_delta``. Read by status_report."""
+        try:
+            atomic_write_text(round_dir / "focus.json", json.dumps({
+                "focus": focus, "parent_id": parent_id,
+                "targets": [{k: t.get(k) for k in ("case_id", "file", "evals", "passes", "spread", "mean",
+                                                     "contrast")} for t in targets],
+                "targets_delta": targets_delta}, indent=2, default=str))
+        except OSError as exc:
+            print(f"[focus] could not write {round_dir / 'focus.json'}: {exc!r}", flush=True)
+
+    def _first_batch_targets(self, node: HGMNode, candidates: list[str], n_take: int) -> list[str]:
+        """A reliability child's target cases for its FIRST batch (same batch size, same
+        budget: the targets replace random picks). ``[]`` otherwise."""
+        if node.n_evals > 0 or n_take <= 0:
+            return []
+        fb = self._feedback.get(node.node_id)
+        st = getattr(fb, "strategy", None)
+        if getattr(st, "focus", None) != "reliability":
+            return []
+        cset = set(candidates)
+        return [cid for cid in (getattr(st, "focus_targets", None) or []) if cid in cset][:n_take]
+
+    def _record_targets_delta(self, node: HGMNode, targets: list[str], result: EvaluationResult) -> None:
+        """Child's score on its targets vs the parent's mean on the same cases (every parent
+        evaluation; excluded cases skipped). Logged and written to ``focus.json``."""
+        parent = self._tree.nodes.get(node.parent_id) if node.parent_id is not None else None
+        child = {c.case_id: c.score for c in (result.per_case or [])
+                 if c.case_id in targets and not (c.details or {}).get("excluded")}
+        per: dict[str, dict] = {}
+        for cid in targets:
+            ps = [c.score for c in (parent.case_results if parent else [])
+                  if c.case_id == cid and not (c.details or {}).get("excluded")]
+            if cid in child and ps:
+                per[cid] = {"child": child[cid], "parent_mean": sum(ps) / len(ps), "parent_n": len(ps)}
+        delta = (sum(v["child"] - v["parent_mean"] for v in per.values()) / len(per)) if per else None
+        td = {"mean_delta": delta, "n": len(per), "per_case": per}
+        prev = {}
+        try:
+            prev = json.loads((node.round_dir / "focus.json").read_text())
+        except (OSError, ValueError):
+            pass
+        self._write_focus_record(node.round_dir, "reliability", prev.get("targets") or
+                                 [{"case_id": t} for t in targets], node.parent_id, td)
+        print(f"node {node.node_id}: focus targets_delta="
+              + ("n/a" if delta is None else f"{delta:+.3f}") + f" over {len(per)}/{len(targets)} target(s)",
+              flush=True)
 
     # ------------------------------------------------------------------ #
     # Block selection — swappable seam
@@ -1318,6 +1456,7 @@ class HGMManager:
         self, parent: HGMNode, block: str, out_dir: Path, node_id: int,
         *, curriculum_directive: Optional[str] = None,
         implementation_strategy: Optional[str] = None,
+        focus_directive: Optional[str] = None,
     ) -> str:
         """Build the manager's steering context for an EXPAND: the parent's
         edit lineage, performance + clade metaproductivity, the best node
@@ -1433,6 +1572,9 @@ class HGMManager:
             parts.append("\n" + _IMPLEMENTATION_STRATEGY_BODIES[implementation_strategy])
         if curriculum_directive:
             parts.append(f"\n## Current curriculum focus\n{curriculum_directive}")
+        if focus_directive:
+            # meta_agent/focus.py -- None unless the focus axis chose "reliability".
+            parts.append("\n" + focus_directive)
         # Tracks whether a real suggestion was actually produced -- stays
         # None both when no suggester is configured AND when a configured
         # suggester's call fails/errors, so the sibling-directive fallback
@@ -1460,6 +1602,7 @@ class HGMManager:
                         for sib in siblings
                     ],
                     curriculum_directive=curriculum_directive,
+                    **({"focus_directive": focus_directive} if focus_directive else {}),
                 )
             except Exception as exc:  # noqa: BLE001
                 print(
@@ -2106,10 +2249,13 @@ class HGMManager:
     # RNGs whose state is persisted in loop_state.json so a resume continues the
     # exact draw sequence of an uninterrupted run.
     _PERSISTED_RNGS = ("_task_rng", "_block_rng", "_implementation_strategy_rng")
+    # Persisted too, but a loop_state.json written before they existed still restores the
+    # RNGs above exactly (these then keep their fresh seed).
+    _OPTIONAL_RNGS = ("_focus_rng",)
 
     def _rng_states(self) -> dict:
         out = {}
-        for name in self._PERSISTED_RNGS:
+        for name in (*self._PERSISTED_RNGS, *self._OPTIONAL_RNGS):
             rng = getattr(self, name, None)
             if rng is not None:
                 v, internal, gauss = rng.getstate()
@@ -2143,6 +2289,8 @@ class HGMManager:
             initial_ranking=self.implementation_strategy_initial_ranking,
             initial_rank_strength=self.implementation_strategy_initial_rank_strength,
         )
+        self._focus_bandit = FocusBandit(beta_prior=self.beta_prior, rng=self._focus_rng,
+                                         reward_metric=self.focus_reward_metric)
 
     def _write_loop_state(self, event: Optional[str] = None) -> None:
         """loop_state.json (budget counters, current action) + the human STATUS
@@ -2301,6 +2449,9 @@ class HGMManager:
         if all(k in saved for k in (*self._PERSISTED_RNGS, "tree")):
             for name in self._PERSISTED_RNGS:
                 setattr(self, name, self._rng_from_state(saved[name]))
+            for name in self._OPTIONAL_RNGS:
+                if name in saved:
+                    setattr(self, name, self._rng_from_state(saved[name]))
             self._tree._rng = self._rng_from_state(saved["tree"])
             rng_note = "RNG state restored exactly"
         else:
@@ -2308,6 +2459,7 @@ class HGMManager:
             self._task_rng = random.Random(rseed)
             self._block_rng = random.Random(rseed + "-block")
             self._implementation_strategy_rng = random.Random(rseed + "-impl")
+            self._focus_rng = random.Random(rseed + "-focus")
             self._tree._rng = random.Random(rseed + "-tree")
             rng_note = f"RNG re-seeded {rseed!r} (no saved state)"
         self._rebuild_bandits()
@@ -2474,16 +2626,22 @@ class HGMManager:
                 or not self._reflector.supported:
             return
         try:
+            limited = getattr(getattr(self._reflector, "scorer", None), "limited_by_budget", None)
             summary = build_case_files(
                 self._experiment_dir, list(self._tree.nodes.values()),
                 exposure=self._reflector.exposure,
                 max_chars_per_case=getattr(self._reflector, "max_case_file_chars", 60000),
-                max_field_chars=getattr(self._reflector, "max_case_field_chars", 400))
+                max_field_chars=getattr(self._reflector, "max_case_field_chars", 400),
+                limited_fn=limited if callable(limited) else None,
+                contrast_min_gap=getattr(self._reflector, "contrast_min_gap", 0.2))
         except Exception as exc:  # noqa: BLE001
             print(f"[reflector] case files rebuild failed: {exc!r}", flush=True)
             return
+        self._case_summary = summary
         print(f"case_files={len(summary)} reflections={sum(v['reflections'] for v in summary.values())} "
-              f"evals={sum(v['evals'] for v in summary.values())}", flush=True)
+              f"evals={sum(v['evals'] for v in summary.values())} "
+              f"contrasts={sum(1 for v in summary.values() if v.get('contrast'))} "
+              f"unstable={sum(1 for v in summary.values() if v.get('unstable'))}", flush=True)
 
     def _reflections_for(self, round_dir: Path, consumer: str) -> str:
         """Rendered reflections of the node at ``round_dir`` for one consumer

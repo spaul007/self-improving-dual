@@ -789,6 +789,7 @@ class BlockSuggester:
         failure_summary: Optional[str] = None,
         siblings: Optional[list[tuple[Optional[str], str]]] = None,
         curriculum_directive: Optional[str] = None,
+        focus_directive: Optional[str] = None,
     ) -> Optional[str]:
         """Produce a block-scoped suggestion, persisted into ``out_dir``.
 
@@ -836,6 +837,7 @@ class BlockSuggester:
                 failure_summary=failure_summary,
                 siblings=siblings,
                 curriculum_directive=curriculum_directive,
+                focus_directive=focus_directive,
                 sources=sources,
             )
 
@@ -844,6 +846,7 @@ class BlockSuggester:
             + self._render_strategies(block)
             + self._render_skills()
             + self._render_curriculum_focus(curriculum_directive)
+            + self._render_focus(focus_directive)
             + _SYSTEM_CLOSING
         )
 
@@ -959,6 +962,12 @@ class BlockSuggester:
         if not parts:
             return ""
         return "\n\n## Strategies to consider\n\n" + "\n\n".join(parts)
+
+    @staticmethod
+    def _render_focus(focus_directive: Optional[str]) -> str:
+        """The manager's focus steer (meta_agent/focus.py; ``hgm.py::_select_focus``) -- ""
+        unless this EXPAND's focus is "reliability", so off/default leave the prompt unchanged."""
+        return "\n\n" + focus_directive.strip() if focus_directive else ""
 
     def _render_curriculum_focus(self, curriculum_directive: Optional[str]) -> str:
         """Splice the manager's curriculum directive (see
@@ -1081,6 +1090,7 @@ class BlockSuggester:
         siblings: Optional[list[tuple[Optional[str], str]]],
         curriculum_directive: Optional[str],
         sources: dict[str, str],
+        focus_directive: Optional[str] = None,
     ) -> Optional[str]:
         """Agentic analogue of ``suggest()``: instead of dumping every
         mutable source file's full content upfront, the model gets
@@ -1100,6 +1110,7 @@ class BlockSuggester:
             + self._render_strategies(block)
             + self._render_skills()
             + self._render_curriculum_focus(curriculum_directive)
+            + self._render_focus(focus_directive)
             + self._agentic_closing()
         )
 

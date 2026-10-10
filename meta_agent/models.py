@@ -63,6 +63,13 @@ class EvolutionStrategy(BaseModel):
     # is None, the default) -- zero behavior change for every existing
     # config/run.
     implementation_strategy: Optional[str] = None
+    # Which EVIDENCE this EXPAND was steered by (meta_agent/focus.py): "default" or
+    # "reliability" (make the high-scoring run's behaviour on unstable cases mandatory).
+    # Stamped by the MANAGER, same convention as `block`; None when the focus axis is off
+    # (HGMManager focus_selection_strategy=None, the default). `focus_targets` are the case
+    # ids a reliability EXPAND targeted -- they are put into the child's first batch.
+    focus: Optional[str] = None
+    focus_targets: list[str] = Field(default_factory=list)
     # 0-3 questions the editor wrote to test its OWN hypothesis about this
     # edit; the reflector asks them in this node's post-grading reflections
     # (reflector.probe_questions). Empty for the seed and when the editor

@@ -33,7 +33,9 @@ def _rec(node, parent, case, role, k, passed, score, *, lesson="", keep="", conf
                       {"name": "graded", "question": "q", "response": {"content": "FULL graded"}}]}
 
 
-class CaseFileBuilderTests(unittest.TestCase):
+class _CaseFixture:
+    """Three nodes and case A/B/C results + records (shared with tests/test_case_contrast.py)."""
+
     def setUp(self) -> None:
         self.run = Path(tempfile.mkdtemp(prefix="casefiles_"))
         self.addCleanup(shutil.rmtree, self.run, True)
@@ -74,6 +76,8 @@ class CaseFileBuilderTests(unittest.TestCase):
 
         return build_case_files(self.run, self.nodes, **kw)
 
+
+class CaseFileBuilderTests(_CaseFixture, unittest.TestCase):
     def test_one_file_per_case_linked_to_nodes_with_pass_rates(self) -> None:
         from meta_agent.case_reflections import case_file_name
 
@@ -98,7 +102,8 @@ class CaseFileBuilderTests(unittest.TestCase):
         self.assertIn("probe questions (written by the editor for this node's edit): [1] (all roles) Did you use the checklist?", a)
         self.assertIn("probe 1: yes, step 3", a)
         self.assertLess(a.index("### node 0"), a.index("### node 1"))       # oldest first
-        self.assertLess(a.index("· eval 1 · score 0.60"), a.index("· eval 2 ·"))
+        self.assertLess(a.index("### node 2 (parent 1) · eval 1 · score 0.60"),
+                        a.index("### node 2 (parent 1) · eval 2 ·"))  # (the contrast header also names runs)
         idx = (out / "INDEX.md").read_text()
         self.assertLess(idx.index("| A |"), idx.index("| B/x y |"))       # hardest first
 

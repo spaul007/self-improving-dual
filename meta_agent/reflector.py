@@ -345,6 +345,7 @@ class Reflector:
         case_files: bool = True,
         max_case_file_chars: int = 60000,
         max_case_field_chars: Optional[int] = 400,
+        contrast_min_gap: float = 0.2,
         seed: int = 0,
         chat_caller: Optional[Callable[..., dict]] = None,
     ) -> None:
@@ -376,6 +377,9 @@ class Reflector:
         self.probe_questions, self.case_files = bool(probe_questions), bool(case_files)
         self.max_case_file_chars = max_case_file_chars
         self.max_case_field_chars = max_case_field_chars
+        if not 0.0 < float(contrast_min_gap) <= 1.0:
+            raise ValueError(f"reflector.contrast_min_gap must be in (0, 1], got {contrast_min_gap!r}")
+        self.contrast_min_gap = float(contrast_min_gap)
         self._rng = random.Random(seed)
         self._chat_caller = chat_caller or self._openai_chat
         self._warned_unsupported = False
