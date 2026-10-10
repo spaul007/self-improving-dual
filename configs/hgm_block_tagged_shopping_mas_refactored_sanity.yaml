@@ -1,0 +1,195 @@
+# Small sanity-check Block-HGM (hgm_block_tagged) run against
+# shopping_mas_refactored -- a NEW SIBLING of
+# configs/hgm_dual_shopping_mas_refactored_sanity.yaml, not a replacement:
+# hgm_dual's own Stage-A/B variant mechanism + category_selection stays
+# available as a separate, still-working search strategy. This config
+# exercises the OTHER manager family instead (adaptive block selection +
+# curriculum + block_suggester + a failure_summarizer), which needed real
+# signal added to this project first -- see the three new/changed files
+# this config depends on:
+#   - adapter/error_semantics.json / harness_error_semantics.json (new)
+#   - adapter/scorer_impl.py's aggregate()/full_metrics() (upgraded to emit
+#     top_failed_checks/harness_checks/dimension_means/check_semantics,
+#     named failure_cause:*/budget:*/coupon:* -- see that file's own
+#     module docstring for the full naming convention)
+#   - shopping_mas/mas_workflow.py's new boolean harness flags (crashed/
+#     budget_exhausted/scout_any_crashed/optimizer_no_plan/
+#     executor_failed_final), tallied generically into harness_checks the
+#     same way travel_mas_refactored's own harness_checks works (any
+#     True-valued agent_metadata flag, not hardcoded to these 5 names).
+#
+# Important architectural note, confirmed by reading meta_agent/block_bandit.py
+# directly: WHICH block gets selected each EXPAND (block_selection_strategy:
+# "adaptive") is a pure Beta-Bernoulli bandit over each block's own historical
+# score deltas -- it is completely blind to everything below (check_semantics/
+# full_metrics/error_bucket_analysis/curriculum). None of this config's new
+# signal machinery can change WHICH block gets picked; it only changes the
+# QUALITY of the fix block_suggester/editor propose once a block is already
+# chosen. That's the entire point of this config.
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_block_tagged_shopping_mas_refactored_sanity.yaml
+#
+# Same NOT-wired-through-platform_core.llm_wrapper reasoning as the hgm_dual
+# sibling config -- model/endpoint/sampling set entirely via `env:`.
+
+experiment_name: "shopping_mas_refactored_hgm_block_tagged_sanity"
+
+project: "shopping_mas_refactored"
+seed_dir_name: "shopping_mas"
+
+mutable_exclude:
+  - "workflow.py"
+  - "config.py"
+  - "llm_client.py"
+  - "tools/immutable/"
+  - "eval/"
+  - "agents/immutable/"
+
+tool_source_dirs:
+  - "tools/immutable"
+  - "tools/mutable"
+
+loop:
+  max_rounds: 7
+  score_target: 0.95
+
+manager:
+  type: "hgm_block_tagged"
+  config:
+    eval_budget: 12
+    init_expansions: 5
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 4
+    finalize_top_k: 1
+    seed: 42
+
+    block_selection_strategy: "adaptive"
+    # No "llm_backbone_selection" -- shopping_mas_refactored has no
+    # per-agent backbone-swap mechanism to exercise yet (that's travel's
+    # own mas_llm_backbone.yaml convention; nothing analogous exists here).
+    # No "skills" -- that block only makes sense for a seed with an actual
+    # skill library, which this project doesn't have.
+    active_blocks:
+      - "individual_subagent"
+      - "collaboration_workflow"
+      - "foundation_capability"
+      - "verifiers"
+      - "mixed"
+    implementation_strategy_selection_strategy: "adaptive"
+
+    # curriculum_granularity stays at its default "check", not "unit" --
+    # "unit" mode is the one genuinely hard-required path in this whole
+    # stack (curriculum_units_path must point at a valid, non-empty map
+    # or the manager fails to construct at all). Proving out check-level
+    # curriculum against the new top_failed_checks first; a units.json
+    # grouping failure_cause:*/budget:*/coupon:* into coarse units is a
+    # natural fast-follow once this is validated, not done here.
+    curriculum_enabled: true
+    curriculum_check_descriptions_path: "projects/shopping_mas_refactored/adapter/error_semantics.json"
+    curriculum_harness_error_descriptions_path: "projects/shopping_mas_refactored/adapter/harness_error_semantics.json"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 8192
+    parallelism: 2
+    scorer: "shopping_mas_refactored_default"
+
+gatherer:
+  type: "shopping_mas_refactored_default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "high"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    max_attempts: 2
+    # Agentic, matching travel_mas_refactored's own editor config shape --
+    # works identically regardless of shopping_mas_refactored's own LLM-
+    # client/tool conventions, since these tools operate on the seed's own
+    # files directly (read_file/write_file/str_replace_file/
+    # run_code_validators/run_python/list_cases/show_case/evaluate_variant),
+    # never through the project's internal LLM-calling path.
+    agentic_editing: true
+    agentic_max_turns: 100
+    evaluate_variant_max_calls: 2
+    tools_dir_alias_enabled: true
+    agentic_tools:
+      - "read_file"
+      - "write_file"
+      - "str_replace_file"
+      - "grep"
+      - "run_code_validators"
+      - "run_python"
+      - "list_cases"
+      - "show_case"
+      - "submit_self_improvement_summary"
+      - "evaluate_variant"
+
+# Already fully generic/project-agnostic (meta_agent/failure_summarizer.py
+# reads only the harness-injected query/raw_result/error -- no project
+# override hook exists or is needed). This block alone turns it on; it
+# was already a no-op without it (absent from the hgm_dual sibling config).
+failure_summarizer:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "high"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+# strategies_path points at the SHARED repo-root strategies.md -- confirmed
+# generic/framework-level (organized by capability-tier x failure-bucket-
+# type, explicitly "not project-specific facts" per its own header), the
+# same file every travel_mas_refactored block_suggester config points at.
+# No shopping_mas_refactored-specific copy needed or created.
+block_suggester:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "high"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    strategies_path: "strategies.md"
+    agentic_access: true
+    agentic_max_turns: 100
+    agentic_tools:
+      - "read_file"
+      - "grep"
+      - "list_cases"
+      - "show_case"
+      - "run_python"
+
+summarizer:
+  type: "shopping_mas_refactored_default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "high"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+env:
+  MAS_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  MAS_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+  MAS_API_KEY: "EMPTY"
+  MAS_TEMPERATURE: "0.2"
+  MAS_MAX_TOKENS: "16384"
+  MAS_MAX_TOOL_ROUNDS: "12"
+  MAS_MAX_LLM_CALLS: "240"
+  MAS_TOP_K: "8"
+  MAS_WORKERS: "2"
+  MAS_SCOUT_WORKERS: "2"
+  SHOPPING_DATABASE_ROOT: "/groups/AIC-MV/v.kulkarni1/unified_framework/self-improving-dual/projects/shopping_mas_refactored/data"
+
+split:
+  seed: 42
+  train_size: 8
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "immutable_files"
+  - type: "load_test"

@@ -1,0 +1,114 @@
+# Full-120-case BASELINE measurement of shopping_mas_refactored's unedited
+# seed against Qwen/Qwen3.8-27B (node-3's load-balanced pool, confirmed
+# healthy), thinking forced OFF via MAS_ENABLE_THINKING -- mirrors
+# travel_mas_refactored's seed_qwen27b_nothink baseline convention (same
+# model family, same explicit nothink choice), applied here via the new
+# force_enable_thinking knob in this project's own config.py/llm_client.py
+# (see those files' docstrings -- unset is a zero-behavior-change no-op,
+# this run is the first thing to actually set MAS_ENABLE_THINKING=false).
+#
+# Sibling of configs/eval_local_shopping_mas_qwen35b_implicit.yaml (the
+# original shopping_mas's own 35B/implicit-thinking baseline) and
+# configs/hgm_dual_shopping_mas_refactored_sanity.yaml (same project/
+# registration wiring as this config, scaled down for a wiring check
+# instead of a real baseline measurement).
+#
+#   PYTHONPATH=. python3 evaluate_task_agent.py \
+#       --config configs/eval_local_shopping_mas_refactored_qwen27b_nothink.yaml \
+#       --agent-dir projects/shopping_mas_refactored/shopping_mas \
+#       --repeats 3 --label baseline_full_27b_nothink
+
+experiment_name: "shopping_mas_refactored_baseline_full_27b_nothink"
+
+project: "shopping_mas_refactored"
+seed_dir_name: "shopping_mas"
+
+mutable_exclude:
+  - "workflow.py"
+  - "config.py"
+  - "llm_client.py"
+  - "tools/immutable/"
+  - "eval/"
+  - "agents/immutable/"
+
+tool_source_dirs:
+  - "tools/immutable"
+  - "tools/mutable"
+
+loop:
+  max_rounds: 1
+  score_target: 1.0
+
+manager:
+  type: "hill_climbing"
+  config:
+    branch_policy: "best"
+    strategy_history_window: 5
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    # See shopping_mas's own 35B config comment: rank_bm25 -> numpy
+    # (search_products_tool.py) needs headroom under RLIMIT_AS.
+    memory_mb: 8192
+    parallelism: 4
+    scorer: "shopping_mas_refactored_default"
+
+# error_bucket_model/error_bucket_base_url: without these, error_bucket_
+# analysis falls back to call_llm's generic LLM_MODEL/LLM_BASE_URL env-var
+# defaults -- which shopping_mas_refactored never sets (no task_agent:
+# block; it doesn't use platform_core.llm_wrapper for its own task agent
+# at all), so the fallback chain bottoms out at platform_core/llm_wrapper.py's
+# hardcoded DEFAULT_MODEL_FALLBACK="gpt-5.4-mini" against REAL api.openai.com
+# -- confirmed live this session: sends this run's OpenRouter-formatted key
+# there, which OpenAI correctly rejects ("Incorrect API key provided...").
+# Fixed by routing explicitly through OpenRouter + DeepSeek v4 Pro, the
+# same backbone every meta-agent role in this repo uses by default.
+gatherer:
+  type: "shopping_mas_refactored_default"
+  config:
+    error_bucket_model: "deepseek/deepseek-v4-pro"
+    error_bucket_base_url: "https://openrouter.ai/api/v1"
+    error_bucket_reasoning_effort: "low"
+
+# Required by FrameworkConfig's schema even though evaluate_task_agent.py
+# never invokes the editor (it doesn't call manager.evolve()).
+# node-5:8000 (the local vLLM endpoint this used to point at) is down --
+# confirmed live this session (connection refused) -- switched to
+# OpenRouter + DeepSeek v4 Pro, the framework's own standard meta-agent
+# backbone, per explicit instruction to always use this going forward.
+editor:
+  type: "default"
+  config:
+    model: "deepseek/deepseek-v4-pro"
+    reasoning_effort: "high"
+    base_url: "https://openrouter.ai/api/v1"
+    max_attempts: 2
+
+env:
+  MAS_MODEL: "Qwen/Qwen3.8-27B"
+  MAS_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-3:8010/v1"
+  MAS_API_KEY: "EMPTY"
+  MAS_ENABLE_THINKING: "false"
+  MAS_TEMPERATURE: "0.2"
+  MAS_MAX_TOKENS: "16384"
+  MAS_MAX_TOOL_ROUNDS: "12"
+  MAS_MAX_LLM_CALLS: "240"
+  MAS_TOP_K: "8"
+  MAS_SCOUT_WORKERS: "3"    # per-case internal fan-out; MAS_WORKERS is irrelevant here --
+                            # workflow.py calls MASWorkflow.run_task directly (one case per
+                            # subprocess), never run_many, so it never reads MAS_WORKERS
+  SHOPPING_DATABASE_ROOT: "/groups/AIC-MV/v.kulkarni1/unified_framework/self-improving-dual/projects/shopping_mas_refactored/data"
+
+split:
+  seed: 42
+  train_size: 120   # irrelevant to evaluate_task_agent.py (evaluates the full benchmark
+                     # by default with no --case-ids/--eval-split/--limit), kept only so
+                     # this config validates against the same schema as the sanity config
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "immutable_files"
+  - type: "load_test"

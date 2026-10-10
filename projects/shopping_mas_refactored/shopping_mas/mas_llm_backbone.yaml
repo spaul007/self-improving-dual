@@ -1,0 +1,25 @@
+# Per-agent backbone LLM config, read by agents/llm_backbone.py. Mirrors
+# travel_mas_refactored's own mas_llm_backbone.yaml convention; fields
+# adapted to this project's own LLMClient knobs (no reasoning_effort --
+# that's an OpenAI-Responses-API-only concept this project's raw
+# Chat-Completions llm_client.py never had).
+#
+# Every field starts null -- meaning "no override, fall back to this
+# run's single global MASConfig.server/temperature/max_tokens/
+# force_enable_thinking (env vars MAS_MODEL/MAS_BASE_URL/MAS_TEMPERATURE/
+# MAS_MAX_TOKENS/MAS_ENABLE_THINKING)", i.e. today's exact behavior.
+# Per-agent entries under "agents" override the matching "default" field;
+# anything left out (including a whole missing agent section) falls back
+# to "default". Fields here only take effect once something (a human, or
+# the HGM's llm_backbone_selection block) fills them in.
+default:
+  model: null
+  base_url: null
+  temperature: null
+  max_tokens: null
+  enable_thinking: null
+agents:
+  requirement_parser: {}
+  product_scout: {}
+  cart_optimizer: {}
+  cart_executor: {}

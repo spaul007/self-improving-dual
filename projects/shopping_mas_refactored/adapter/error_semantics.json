@@ -1,0 +1,33 @@
+{
+  "_comment": "Human-readable descriptions for the named checks shopping_mas_refactored's own scorer_impl.py::aggregate()/full_metrics() tally (top_failed_checks/check_semantics/full_metrics.json keys), plus the HGM curriculum's check_descriptions path. Extracted directly from the real decision-tree logic in scorer_impl.py (feature_mismatch/user_info_mismatch/not_cheapest/missing_product/ambiguous computed at lines ~892-950; budget_check at ~952-991; coupon_ownership at ~993-1010), not guessed. Category names for failure_cause:feature_mismatch:* come from _FIELD_TO_CATEGORY plus a few dynamic prefix rules (review_distribution/sales_volume/rating_score) and a slugified-field-name fallback for anything not listed here -- an unlisted category simply renders with no description (same 'never fabricate' convention travel_mas_refactored's own file uses), it does not mean the check doesn't exist.",
+
+  "failure_cause:feature_mismatch:brand": "Fires when the agent's best substitute for a missing gold product violates the query's stated brand requirement -- the closest thing it picked isn't even the right brand.",
+  "failure_cause:feature_mismatch:color": "Fires when the substitute violates a stated color requirement.",
+  "failure_cause:feature_mismatch:name": "Fires when the substitute violates a stated name/keyword requirement (the query named a specific product characteristic by name that the pick doesn't match).",
+  "failure_cause:feature_mismatch:size": "Fires when the substitute violates a stated size requirement explicitly given in the query (distinct from failure_cause:user_info_mismatch:size, which is about an INFERRED size from the user's own profile, not a stated one).",
+  "failure_cause:feature_mismatch:stock": "Fires when the substitute violates a stated stock-quantity requirement (e.g. the query asked for an item with at least N in stock and the pick has fewer).",
+  "failure_cause:feature_mismatch:season": "Fires when the substitute violates a stated suitable_season requirement.",
+  "failure_cause:feature_mismatch:demographic": "Fires when the substitute violates a stated target_demographic requirement given explicitly in the query text (distinct from the profile-inferred gender/size mismatches below).",
+  "failure_cause:feature_mismatch:delivery_time": "Fires when the substitute violates a stated delivery-time constraint, using the REAL computed transport-time estimate (ported delivery model, not a placeholder) between the user's shipping province and the product's warehouse -- so this is a genuine logistics miss, not a proxy.",
+  "failure_cause:feature_mismatch:price": "Fires when the substitute violates a stated price constraint given explicitly in the query (e.g. 'under $50') -- distinct from failure_cause:not_cheapest, which is about the pick costing more than gold with no stated price ceiling being violated.",
+  "failure_cause:feature_mismatch:rating_score": "Fires when the substitute violates a stated minimum/maximum average-rating requirement.",
+  "failure_cause:feature_mismatch:review_count": "Fires when the substitute violates a stated minimum total-review-count requirement.",
+  "failure_cause:feature_mismatch:sales_volume": "Fires when the substitute violates a stated monthly or total sales-volume requirement.",
+  "failure_cause:feature_mismatch:review_distribution": "Fires when the substitute violates a stated constraint on the star-by-star review distribution (e.g. 'fewer than 10 one-star reviews'), recovered from the sub-query text when the operator isn't natively present in the structured requirement.",
+
+  "failure_cause:user_info_mismatch:gender": "Fires only when the substitute already satisfies every EXPLICITLY STATED query constraint (feature_mismatch did not fire) but still violates a gender inference the gold product itself does satisfy -- i.e. the agent ignored an inferable-but-unstated profile requirement it should have picked up from user_info.demographics.gender. This is the 'disambiguation guard': if the gold product ALSO violates the same gender check, it doesn't count here (the violation isn't attributable to the agent's choice).",
+  "failure_cause:user_info_mismatch:size": "Same disambiguation-guard logic as gender, but for a size inferred from the user's own body_profile.standard_sizes rather than a size the query stated outright.",
+
+  "failure_cause:not_cheapest": "Fires only when feature_mismatch and user_info_mismatch both did NOT fire (the substitute is otherwise fully valid) and its price is strictly higher than the gold product's. Checked per-item at levels 1 and 3 only -- at level 2, cost is a CART-level property (cheapest valid combination within a budget band), so per-item price comparison is deliberately skipped there in favor of the cart-level budget_check.frame=='not_cheapest_cart_level' signal instead.",
+
+  "failure_cause:missing_product": "Fires in the one case where the agent added NO comparable candidate at all for a missing gold product -- not a wrong pick, a total miss with nothing to even compare against.",
+
+  "failure_cause:ambiguous": "The residual catch-all: the substitute satisfies every checkable stated feature AND every checkable profile constraint AND isn't pricier than gold, yet still isn't the gold product itself. Deliberately treated as unactionable noise by shopping_mas_error_categorizer.py (excluded from its 6 clubbed categories) -- there's no concrete constraint the editor could act on here.",
+
+  "budget:over": "The cart's total price (from cart.summary.total_price, or a manual line-item sum as fallback) exceeds the query's stated maximum budget.",
+  "budget:under": "The cart's total price falls below the query's stated minimum budget.",
+  "budget:unparsed": "A budget phrase was detected in the query text, but fewer than two numbers could be extracted from it, or the extracted [min,max] band doesn't actually contain the known-good gold-cart total -- treated as evidence the parser grabbed the wrong numbers from the text, not as a genuine over/under violation.",
+
+  "coupon:applied_not_owned": "The cart applies a coupon by name that doesn't appear anywhere in the user's actual owned-coupons dict -- the agent invented or misattributed a coupon the user never had.",
+  "coupon:over_owned_qty": "The cart applies a coupon the user DOES own, but in a quantity greater than how many of it they actually own."
+}

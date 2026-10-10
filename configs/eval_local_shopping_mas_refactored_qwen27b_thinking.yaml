@@ -1,0 +1,115 @@
+# Full-120-case measurement of shopping_mas_refactored's unedited seed
+# against Qwen/Qwen3.8-27B (node-3's load-balanced pool), thinking forced
+# ON EVERYWHERE via MAS_ENABLE_THINKING -- sibling of
+# configs/eval_local_shopping_mas_refactored_qwen27b_nothink.yaml, same
+# model/endpoint, flipped force_enable_thinking value.
+#
+# Originally scoped as a graduated "reasoning_effort=medium" experiment,
+# but confirmed live this session that's not achievable here: this
+# project's llm_client.py deliberately stays on the Chat Completions API
+# (not platform_core.llm_wrapper's Responses API) specifically to avoid a
+# confirmed bug where the Responses API double-encodes array-typed tool
+# arguments as JSON strings -- the exact bug that scored the sibling
+# single-agent `shopping` project a flat 0.0 before its own llm_client.py
+# fix, and shopping_mas_refactored's tools are if anything MORE
+# array-argument-heavy (get_product_details(product_ids=[...]), cart
+# mutations, etc.). A live probe of this vLLM 0.28.0 deployment with
+# reasoning_effort inside chat_template_kwargs (low/medium/high) showed
+# NO monotonic token-count relationship (148/617/150/546 reasoning
+# tokens respectively on an identical prompt) -- consistent with the
+# field being silently ignored, not actually graduated. So this config
+# only has the one real, confirmed-working lever: enable_thinking
+# True/False, no granularity -- "thinking" here means full default
+# reasoning on every call (including cart_executor's own mechanical
+# turn, which normally defaults to thinking=False by design), not a
+# calibrated medium effort level.
+#
+# Staged per explicit request: run repeat 1 alone first
+# (--repeats 1 --label qwen27b_thinking_r1); only if that looks
+# promising, fire 2 more as a separate invocation
+# (--repeats 2 --label qwen27b_thinking_r2and3) and average all 3
+# case-level scores together by hand (evaluate_task_agent.py has no
+# resume/append mechanism -- each invocation's --repeats always starts
+# counting from run_1 under its own --label).
+#
+#   PYTHONPATH=. python3 evaluate_task_agent.py \
+#       --config configs/eval_local_shopping_mas_refactored_qwen27b_thinking.yaml \
+#       --agent-dir projects/shopping_mas_refactored/shopping_mas \
+#       --repeats 1 --label qwen27b_thinking_r1
+
+experiment_name: "shopping_mas_refactored_baseline_full_27b_thinking"
+
+project: "shopping_mas_refactored"
+seed_dir_name: "shopping_mas"
+
+mutable_exclude:
+  - "workflow.py"
+  - "config.py"
+  - "llm_client.py"
+  - "tools/immutable/"
+  - "eval/"
+  - "agents/immutable/"
+
+tool_source_dirs:
+  - "tools/immutable"
+  - "tools/mutable"
+
+loop:
+  max_rounds: 1
+  score_target: 1.0
+
+manager:
+  type: "hill_climbing"
+  config:
+    branch_policy: "best"
+    strategy_history_window: 5
+
+evaluator:
+  type: "subprocess"
+  config:
+    # Thinking turns run meaningfully longer than nothink ones (seen
+    # elsewhere this session: ~739s for a single thinking-on case vs.
+    # much faster nothink cases) -- same cap as the nothink sibling for
+    # now, revisit if cases start timing out rather than completing slow.
+    wall_time_s_per_case: 1800
+    memory_mb: 8192
+    parallelism: 4
+    scorer: "shopping_mas_refactored_default"
+
+gatherer:
+  type: "shopping_mas_refactored_default"
+  config:
+    error_bucket_model: "deepseek/deepseek-v4-pro"
+    error_bucket_base_url: "https://openrouter.ai/api/v1"
+    error_bucket_reasoning_effort: "low"
+
+editor:
+  type: "default"
+  config:
+    model: "deepseek/deepseek-v4-pro"
+    reasoning_effort: "high"
+    base_url: "https://openrouter.ai/api/v1"
+    max_attempts: 2
+
+env:
+  MAS_MODEL: "Qwen/Qwen3.8-27B"
+  MAS_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-3:8010/v1"
+  MAS_API_KEY: "EMPTY"
+  MAS_ENABLE_THINKING: "true"
+  MAS_TEMPERATURE: "0.2"
+  MAS_MAX_TOKENS: "16384"
+  MAS_MAX_TOOL_ROUNDS: "12"
+  MAS_MAX_LLM_CALLS: "240"
+  MAS_TOP_K: "8"
+  MAS_SCOUT_WORKERS: "3"
+  SHOPPING_DATABASE_ROOT: "/groups/AIC-MV/v.kulkarni1/unified_framework/self-improving-dual/projects/shopping_mas_refactored/data"
+
+split:
+  seed: 42
+  train_size: 120
+
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "immutable_files"
+  - type: "load_test"

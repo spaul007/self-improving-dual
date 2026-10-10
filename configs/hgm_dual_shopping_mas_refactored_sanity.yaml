@@ -1,0 +1,130 @@
+# Small sanity-check HGM-dual run against shopping_mas_refactored -- a fork
+# of shopping_mas (see that project's own config comment for the pipeline
+# shape and provenance) adopting ONE structural change from
+# travel_mas_refactored's own refactor: stages hand off results via a frozen
+# AgentMessage/inbox contract (agents/immutable/message.py) instead of a
+# shared mutable State object. shopping_mas's own llm_client.py and vendored
+# tools/immutable/ BaseShoppingTool system are deliberately UNCHANGED (see
+# that project's config comment for why: avoids a confirmed
+# platform_core.llm_wrapper Responses-API array-tool-arg double-encoding bug
+# on this model/endpoint). projects/shopping_mas/ itself is untouched;
+# shopping_mas_refactored is meant to supersede it as the project to
+# actively develop/run HGM search against going forward.
+#
+#   PYTHONPATH=. python3 main_loop.py --config configs/hgm_dual_shopping_mas_refactored_sanity.yaml
+#
+# NOT wired through platform_core.llm_wrapper -- same reasoning as
+# shopping_mas's own config: model/endpoint/sampling are set entirely via
+# `env:` (MAS_MODEL/MAS_BASE_URL/MAS_API_KEY/MAS_TEMPERATURE/...), which this
+# project's own config.py (unchanged, copied verbatim) reads directly.
+
+experiment_name: "shopping_mas_refactored_hgm_dual_sanity"
+
+project: "shopping_mas_refactored"
+seed_dir_name: "shopping_mas"
+
+# Same exclude list as shopping_mas's own config, plus agents/immutable/ --
+# the one new frozen file this fork introduces (mirrors how
+# travel_mas_refactored's own list adds that exact entry on top of its
+# otherwise-identical base). Everything else (mas_workflow.py,
+# mas_prompt_cfg.py, every agents/*/{prompt.py,workflow.py}, tools/mutable/)
+# stays editable.
+mutable_exclude:
+  - "workflow.py"
+  - "config.py"
+  - "llm_client.py"
+  - "tools/immutable/"
+  - "eval/"
+  - "agents/immutable/"
+
+tool_source_dirs:
+  - "tools/immutable"
+  - "tools/mutable"
+
+loop:
+  # See shopping_mas's own config comment: max_rounds must exceed
+  # 1 + init_expansions or HGMManager.evolve() asserts.
+  max_rounds: 7
+  score_target: 0.95
+
+manager:
+  type: "hgm_dual"
+  config:
+    eval_budget: 12
+    init_expansions: 5
+    alpha: 0.5
+    epsilon: 0.25
+    beta_prior: 1.0
+    clade_pseudo_count: 10000
+    eval_batch_size: 4
+    finalize_top_k: 1
+    seed: 42
+
+    num_variants: 2
+    intra_expand_eval_size: 3
+    variant_parallelism: 2
+    select_metric: "mean"
+    category_selection: "balanced_by_type"
+    categorizer_max_representative_errors: 5
+    min_remaining_budget_for_dual: 6
+    # Copied verbatim into this project (same categorizer logic, new import
+    # path) -- see shopping_mas_error_categorizer.py's own docstring.
+    error_categorizer: "projects.shopping_mas_refactored.shopping_mas_error_categorizer:categorize_errors"
+
+evaluator:
+  type: "subprocess"
+  config:
+    wall_time_s_per_case: 1800
+    memory_mb: 8192
+    parallelism: 2
+    scorer: "shopping_mas_refactored_default"
+
+gatherer:
+  type: "shopping_mas_refactored_default"
+  config: {}
+
+editor:
+  type: "default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "high"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+    max_attempts: 2
+
+summarizer:
+  type: "shopping_mas_refactored_default"
+  config:
+    model: "Qwen/Qwen3.5-122B-A10B"
+    reasoning_effort: "high"
+    base_url: "http://gpu-aic-mv-02-st-p5-node-5:8000/v1"
+
+# shopping_mas_refactored's own llm_client.py reads these directly (see
+# projects/shopping_mas_refactored/shopping_mas/config.py, unchanged from
+# shopping_mas's own) -- this is the actual task-agent model, used for all 4
+# pipeline agents' real LLM calls. Re-check these endpoints are still live
+# before launching -- they rotate (see memory: vllm_endpoint).
+env:
+  MAS_MODEL: "Qwen/Qwen3.5-35B-A3B"
+  MAS_BASE_URL: "http://gpu-aic-mv-02-st-p5-node-6:8000/v1"
+  MAS_API_KEY: "EMPTY"
+  MAS_TEMPERATURE: "0.2"
+  MAS_MAX_TOKENS: "16384"
+  MAS_MAX_TOOL_ROUNDS: "12"
+  MAS_MAX_LLM_CALLS: "240"
+  MAS_TOP_K: "8"
+  MAS_WORKERS: "2"
+  MAS_SCOUT_WORKERS: "2"
+  SHOPPING_DATABASE_ROOT: "/groups/AIC-MV/v.kulkarni1/unified_framework/self-improving-dual/projects/shopping_mas_refactored/data"
+
+# Same reasoning as shopping_mas's own sanity config.
+split:
+  seed: 42
+  train_size: 8
+
+# Vendored-MAS validator set, same as shopping_mas -- immutable_files now
+# also covers the new agents/immutable/ entry above.
+validators:
+  - type: "syntax"
+  - type: "signature"
+  - type: "immutable_files"
+  - type: "load_test"
