@@ -390,11 +390,13 @@ class ReflectorUnitTests(unittest.TestCase):
 class ProbeQuestionEditorTests(unittest.TestCase):
     def test_strategy_field_and_both_editor_parse_paths(self) -> None:
         from meta_agent.agent_editor import (AGENTIC_SUBMIT_SUMMARY_TOOL, SELF_IMPROVEMENT_TOOL,
-                                             AgentEditor)
+                                             AgentEditor, with_probe_field)
         from meta_agent.models import EvolutionStrategy
 
         self.assertEqual(EvolutionStrategy(optimization_goal="g", proposed_changes="p").probe_questions, [])
-        for tool in (SELF_IMPROVEMENT_TOOL, AGENTIC_SUBMIT_SUMMARY_TOOL):
+        for base in (SELF_IMPROVEMENT_TOOL, AGENTIC_SUBMIT_SUMMARY_TOOL):
+            self.assertNotIn("probe_questions", base["input_schema"]["properties"])   # no reflector: unchanged
+            tool = with_probe_field(base)
             props = tool["input_schema"]["properties"]
             self.assertEqual(props["probe_questions"]["type"], "array")
             self.assertNotIn("probe_questions", tool["input_schema"]["required"])
@@ -412,7 +414,7 @@ class ProbeQuestionEditorTests(unittest.TestCase):
                                                "probe_questions": [{"question": "V?", "roles": ["verify"]},
                                                                    {"q": "P?", "role": "patch"}]})
         self.assertEqual(strat.probe_questions, [{"q": "V?", "roles": ["verify"]}, {"q": "P?", "roles": ["patch"]}])
-        items = SELF_IMPROVEMENT_TOOL["input_schema"]["properties"]["probe_questions"]["items"]
+        items = with_probe_field(SELF_IMPROVEMENT_TOOL)["input_schema"]["properties"]["probe_questions"]["items"]
         self.assertEqual((items["type"], items["required"]), ("object", ["question"]))
         self.assertIn("roles", items["properties"])
         # strategy.json written before role targeting (plain strings) still loads

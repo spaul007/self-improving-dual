@@ -16,6 +16,7 @@ for logging), not an input.
 """
 from __future__ import annotations
 
+import copy
 import json
 import re
 from pathlib import Path
@@ -114,24 +115,6 @@ SELF_IMPROVEMENT_TOOL: dict[str, Any] = {
             "optimization_goal": {"type": "string"},
             "proposed_changes": {"type": "string"},
             "rationale": {"type": "string"},
-            "probe_questions": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "question": {"type": "string"},
-                        "roles": {"type": "array", "items": {"type": "string"},
-                                  "description": "Task-agent roles to ask; omit or [] to ask every role."},
-                    },
-                    "required": ["question"],
-                },
-                "description": (
-                    "Optional, at most 3: short questions to ask the task agent after its next "
-                    "evaluated runs, whose answers would show whether this edit changed its "
-                    "behaviour as intended (about its own steps, never hidden tests). Name the "
-                    "role(s) each question is for, so roles the edit does not touch are not asked."
-                ),
-            },
             "files": {
                 "type": "array",
                 "items": {
@@ -207,24 +190,6 @@ AGENTIC_SUBMIT_SUMMARY_TOOL: dict[str, Any] = {
             "optimization_goal": {"type": "string"},
             "proposed_changes": {"type": "string"},
             "rationale": {"type": "string"},
-            "probe_questions": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "question": {"type": "string"},
-                        "roles": {"type": "array", "items": {"type": "string"},
-                                  "description": "Task-agent roles to ask; omit or [] to ask every role."},
-                    },
-                    "required": ["question"],
-                },
-                "description": (
-                    "Optional, at most 3: short questions to ask the task agent after its next "
-                    "evaluated runs, whose answers would show whether this edit changed its "
-                    "behaviour as intended (about its own steps, never hidden tests). Name the "
-                    "role(s) each question is for, so roles the edit does not touch are not asked."
-                ),
-            },
         },
         "required": ["optimization_goal", "proposed_changes", "rationale"],
     },
@@ -273,9 +238,7 @@ AGENTIC_LOG_READ_FILE_TOOL: dict[str, Any] = {
         "Read a file. Editable/reference source files: pass their path as listed "
         "(returns the whole file). Evaluation evidence of the PARENT agent you are "
         "improving: 'logs/<rel>' (per-case logs, dossiers, transcripts) or "
-        "'eval_result.json'; per-test-case reflections across every node of the run: "
-        "'cases/INDEX.md' and 'cases/<file>' (when listed) -- paged by line: use "
-        "offset/limit (default 200 lines)."
+        "'eval_result.json' -- paged by line: use offset/limit (default 200 lines)."
     ),
     "input_schema": {
         "type": "object",
@@ -291,8 +254,8 @@ AGENTIC_LOG_READ_FILE_TOOL: dict[str, Any] = {
 AGENTIC_GREP_TOOL: dict[str, Any] = {
     "name": "grep",
     "description": (
-        "Regex-search ONE file (a source file path as listed, 'logs/<rel>', "
-        "'cases/<file>' or 'eval_result.json'); returns a window centred on each match."
+        "Regex-search ONE file (a source file path as listed, 'logs/<rel>' or "
+        "'eval_result.json'); returns a window centred on each match."
     ),
     "input_schema": {
         "type": "object",
@@ -303,6 +266,54 @@ AGENTIC_GREP_TOOL: dict[str, Any] = {
         },
         "required": ["path", "pattern"],
     },
+}
+
+# Reflection variants (meta_agent/reflector.py): used only when a reflector is configured.
+PROBE_QUESTIONS_FIELD: dict[str, Any] = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "question": {"type": "string"},
+            "roles": {"type": "array", "items": {"type": "string"},
+                      "description": "Task-agent roles to ask; omit or [] to ask every role."},
+        },
+        "required": ["question"],
+    },
+    "description": (
+        "Optional, at most 3: short questions to ask the task agent after its next "
+        "evaluated runs, whose answers would show whether this edit changed its "
+        "behaviour as intended (about its own steps, never hidden tests). Name the "
+        "role(s) each question is for, so roles the edit does not touch are not asked."
+    ),
+}
+
+
+def with_probe_field(tool: dict[str, Any]) -> dict[str, Any]:
+    """A copy of a submit tool whose schema also takes ``probe_questions``."""
+    t = copy.deepcopy(tool)
+    t["input_schema"]["properties"]["probe_questions"] = copy.deepcopy(PROBE_QUESTIONS_FIELD)
+    return t
+
+
+AGENTIC_LOG_READ_FILE_TOOL_CASES: dict[str, Any] = {
+    **AGENTIC_LOG_READ_FILE_TOOL,
+    "description": (
+        "Read a file. Editable/reference source files: pass their path as listed "
+        "(returns the whole file). Evaluation evidence of the PARENT agent you are "
+        "improving: 'logs/<rel>' (per-case logs, dossiers, transcripts) or "
+        "'eval_result.json'; per-test-case reflections across every node of the run: "
+        "'cases/INDEX.md' and 'cases/<file>' (when listed) -- paged by line: use "
+        "offset/limit (default 200 lines)."
+    ),
+}
+
+AGENTIC_GREP_TOOL_CASES: dict[str, Any] = {
+    **AGENTIC_GREP_TOOL,
+    "description": (
+        "Regex-search ONE file (a source file path as listed, 'logs/<rel>', "
+        "'cases/<file>' or 'eval_result.json'); returns a window centred on each match."
+    ),
 }
 
 _AGENTIC_LOG_EVIDENCE = (
@@ -753,7 +764,7 @@ class AgentEditor:
                 {"role": "system", "content": system},
                 {"role": "user", "content": "\n".join(user_parts)},
             ],
-            "tools": [SELF_IMPROVEMENT_TOOL],
+            "tools": [self._self_improvement_tool()],
         }
         if self.model:
             llm_kwargs["model"] = self.model
@@ -1074,14 +1085,26 @@ class AgentEditor:
         "a proposed_changes summary, and a rationale to finish."
     )
 
+    # Set by build_components only when a reflector is configured (meta_agent/reflector.py):
+    # the per-test-case files and probe questions are then mentioned in the tool
+    # definitions. Without a reflector the tools are byte-identical to the pre-reflection ones.
+    reflection_case_files: bool = False
+    reflection_probes: bool = False
+
+    def _self_improvement_tool(self) -> dict[str, Any]:
+        return with_probe_field(SELF_IMPROVEMENT_TOOL) if self.reflection_probes else SELF_IMPROVEMENT_TOOL
+
     def _agentic_tool_list(self) -> list[dict[str, Any]]:
         tools = list(_AGENTIC_TOOLS)
+        if self.reflection_probes:
+            tools = [with_probe_field(t) if t is AGENTIC_SUBMIT_SUMMARY_TOOL else t for t in tools]
         if self.agentic_log_access:
-            tools = [AGENTIC_LOG_READ_FILE_TOOL if t is AGENTIC_READ_FILE_TOOL else t for t in tools]
+            read = AGENTIC_LOG_READ_FILE_TOOL_CASES if self.reflection_case_files else AGENTIC_LOG_READ_FILE_TOOL
+            tools = [read if t is AGENTIC_READ_FILE_TOOL else t for t in tools]
         if self.agentic_edit_file:
             tools.append(AGENTIC_EDIT_FILE_TOOL)
         if self.agentic_log_access:
-            tools.append(AGENTIC_GREP_TOOL)
+            tools.append(AGENTIC_GREP_TOOL_CASES if self.reflection_case_files else AGENTIC_GREP_TOOL)
         return tools
 
     @staticmethod
@@ -1120,8 +1143,9 @@ class AgentEditor:
             return log_access.grep({}, base_dir, args)
         rel = raw[len("harness/"):] if raw.startswith("harness/") else raw
         if not (self._is_path_allowed(rel) or rel in readonly_paths):
+            cases = "'cases/<file>', " if self.reflection_case_files else ""
             return (f"ERROR: {raw!r} is not readable here -- use a listed source file, "
-                    "'logs/<rel>', 'cases/<file>' or 'eval_result.json'.")
+                    f"'logs/<rel>', {cases}or 'eval_result.json'.")
         f = agent_dir / rel
         if not f.is_file():
             return f"(file not found: {raw})"
