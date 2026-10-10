@@ -141,12 +141,18 @@ def grep(sources: dict[str, str], round_dir: Path, args: dict[str, Any]) -> str:
     return grep_text(text, args.get("pattern") or "", max_matches)
 
 
-def cases_listing(round_dir: Path, cap: int = 40) -> str:
-    """Prompt lines pointing at ``cases/INDEX.md`` and the case files of the cases the node at
-    ``round_dir`` was evaluated on (from its ``eval_result.json``); ``""`` when the run has no
-    per-test-case files."""
+def cases_listing(round_dir: Path, cap: int = 40, max_index_chars: int = 3000) -> str:
+    """Prompt text for the run's per-test-case reflection files (meta_agent/case_reflections.py):
+    the INDEX table INLINE (every case's pass rate across all evaluated nodes, hardest first --
+    capped at ``max_index_chars``), the case files of the cases the node at ``round_dir`` was
+    evaluated on, and the instruction to read the targeted cases' files before editing. ``""``
+    when the run has no per-test-case files.
+
+    Inlined because a pointer alone was read in only 4 of 7 EXPANDs of the live smoke (and cited
+    in 2): the cross-node pass rates are cheap and should always be seen."""
     root = Path(round_dir).parent / CASES_DIR
-    if not (root / "INDEX.md").is_file():
+    index = root / "INDEX.md"
+    if not index.is_file():
         return ""
     try:
         ids = [c.get("case_id") for c in
@@ -156,11 +162,29 @@ def cases_listing(round_dir: Path, cap: int = 40) -> str:
     from .reflector import _safe  # lazy: keeps this module importable on its own
     names = [n for n in dict.fromkeys(f"{_safe(i)}.md" for i in ids if i is not None) if (root / n).is_file()]
     more = f" ... (+{len(names) - cap} more)" if len(names) > cap else ""
+    try:
+        rows = [ln for ln in index.read_text(encoding="utf-8").splitlines() if ln.startswith("|")]
+    except OSError:
+        rows = []
+    table, used = [], 0
+    for ln in rows:
+        if used + len(ln) + 1 > max_index_chars:
+            table.append(f"| ... {len(rows) - len(table)} more rows in cases/INDEX.md |")
+            break
+        table.append(ln)
+        used += len(ln) + 1
     return ("  - cases/INDEX.md -- every test case of this run, hardest first: its pass rate across ALL "
             "evaluated nodes and the task agent's reflections on each evaluation, linked to the node "
             "(which edit it carried). Self-reported and fallible; the pass rates are measured.\n"
             + (("  cases/ files for the parent's evaluated cases: " + ", ".join(names[:cap]) + more + "\n")
-               if names else ""))
+               if names else "")
+            + ("\n### Per-test-case history across all nodes (cases/INDEX.md)\n" + "\n".join(table) + "\n"
+               if table else "")
+            + "\nBEFORE YOU DECIDE WHAT TO CHANGE: read `cases/<file>` for each case you are targeting. It shows "
+              "how every earlier node fared on that case, which edit each node carried, and what the task agent "
+              "said about its own run -- an earlier node may already have tried the same fix and failed. In your "
+              "rationale, cite what you used (e.g. `cases/112.md: nodes 1 and 4 added a check for this; still "
+              "failing, the agent says it skipped the final check`).\n")
 
 
 def load_logs_guide(path: Optional[str]) -> str:

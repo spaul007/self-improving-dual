@@ -233,6 +233,22 @@ class CasesAccessTests(unittest.TestCase):
         self.assertIn("A.md", text)
         self.assertNotIn("Z.md", text)   # no file for Z
 
+    def test_listing_inlines_index_and_asks_to_read_before_editing(self) -> None:
+        from meta_agent import log_access
+
+        (self.run / "case_reflections" / "INDEX.md").write_text(
+            "# Per-test-case reflections\n\n| case | file | evals | passed | pass rate | nodes | reflections |\n"
+            "|---|---|---|---|---|---|---|\n| A | A.md | 4 | 1 | 25% | 3 | 8 |\n")
+        text = log_access.cases_listing(self.rd)
+        self.assertIn("| A | A.md | 4 | 1 | 25% | 3 | 8 |", text)          # the table itself, not a pointer
+        self.assertIn("BEFORE YOU DECIDE WHAT TO CHANGE", text)
+        self.assertIn("cite what you used", text)
+        rows = "".join(f"| c{i} | c{i}.md | 1 | 0 | 0% | 1 | 1 |\n" for i in range(400))
+        (self.run / "case_reflections" / "INDEX.md").write_text("| case | file |\n|---|---|\n" + rows)
+        capped = log_access.cases_listing(self.rd, max_index_chars=500)
+        self.assertIn("more rows in cases/INDEX.md", capped)
+        self.assertLess(len(capped), 2500)
+
     def test_editor_reads_cases_and_refuses_writes(self) -> None:
         from meta_agent.agent_editor import AGENTIC_GREP_TOOL, AGENTIC_LOG_READ_FILE_TOOL, AgentEditor
 
