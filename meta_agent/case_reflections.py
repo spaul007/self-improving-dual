@@ -17,11 +17,11 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any, Callable, Iterable, Optional
 
 from .log_access import CASES_DIR
 from .models import normalize_probes
-from .reflector import _atomic_write, _oneline, _safe, load_records, redact, render_record
+from .reflector import _atomic_write, _field, _oneline, _safe, load_records, redact, render_record
 
 INDEX = "INDEX.md"
 
@@ -51,21 +51,35 @@ def _usable(c: Any) -> bool:
     return not (getattr(c, "details", None) or {}).get("excluded") and not getattr(c, "error", None)
 
 
-def collect(run_dir: Path, nodes: Iterable[Any]) -> dict[str, dict]:
-    """``{case_id: {"evals": [(node_id, passed, score)], "records": [...]}}`` over every node."""
+def collect(run_dir: Path, nodes: Iterable[Any],
+            limited_fn: Optional[Callable[[Any], Optional[str]]] = None) -> dict[str, dict]:
+    """``{case_id: {"evals": [(node_id, passed, score)], "runs": [...], "records": [...]}}``
+    over every node. ``runs`` carries each scored evaluation's node, parent, per-node
+    evaluation index ``k`` (the reflector's ``eval_index``: the k-th scored evaluation of
+    that case on that node) and ``limited`` -- why the run was cut short by a budget, per
+    the project's optional ``limited_by_budget`` hook (``None`` = a behavioural outcome)."""
     run_dir = Path(run_dir)
     cases: dict[str, dict] = {}
     for n in nodes:
+        seen: dict[str, int] = {}
         for c in getattr(n, "case_results", None) or []:
-            ent = cases.setdefault(c.case_id, {"evals": [], "records": []})
+            ent = cases.setdefault(c.case_id, {"evals": [], "runs": [], "records": []})
             if _usable(c):
                 ent["evals"].append((n.node_id, bool(c.passed), float(c.score or 0.0)))
+                seen[c.case_id] = seen.get(c.case_id, 0) + 1
+                try:
+                    limited = limited_fn(c) if limited_fn is not None else None
+                except Exception:  # noqa: BLE001 -- a project hook must never break the rebuild
+                    limited = None
+                ent["runs"].append({"node": n.node_id, "parent": n.parent_id, "k": seen[c.case_id],
+                                    "passed": bool(c.passed), "score": float(c.score or 0.0),
+                                    "limited": limited or None})
         for rec in load_records(Path(n.round_dir)):
             rec.setdefault("node_id", n.node_id)
             rec.setdefault("parent_id", n.parent_id)
             cid = rec.get("case_id")
             if cid is not None:
-                cases.setdefault(cid, {"evals": [], "records": []})["records"].append(rec)
+                cases.setdefault(cid, {"evals": [], "runs": [], "records": []})["records"].append(rec)
     return cases
 
 
@@ -81,8 +95,86 @@ def _node_rows(nodes: list[Any]) -> dict[int, dict]:
     return rows
 
 
+def find_contrast(runs: list[dict], min_gap: float = 0.2) -> Optional[dict]:
+    """The best pass/fail contrast among one case's scored runs, or ``None``.
+
+    A pair (high, low) qualifies when the high run passed and the low did not, or their scores
+    differ by at least ``min_gap``. A low run that was cut short by a budget (``limited``) is
+    never the low side -- its outcome says nothing about behaviour. Preference: the SAME node
+    (repeats), then PARENT -> CHILD (one edit apart), then any two nodes; within a tier the
+    largest gap, then the newest nodes. No extra evaluations are needed."""
+    best, best_key = None, None
+    for hi in runs:
+        for lo in runs:
+            if hi is lo or lo.get("limited"):
+                continue
+            gap = hi["score"] - lo["score"]
+            if not ((hi["passed"] and not lo["passed"]) or gap >= min_gap) or gap < 0:
+                continue
+            if hi["node"] == lo["node"]:
+                tier, rel = 0, "same node"
+            elif hi.get("parent") == lo["node"] or lo.get("parent") == hi["node"]:
+                tier, rel = 1, "parent -> child"
+            else:
+                tier, rel = 2, "different nodes -- the edit may explain the difference"
+            key = (tier, -gap, -max(hi["node"], lo["node"]))
+            if best_key is None or key < best_key:
+                best_key, best = key, {"high": hi, "low": lo, "gap": gap, "relation": rel, "tier": tier}
+    return best
+
+
+def _run_label(run: dict) -> str:
+    par = run.get("parent")
+    return (f"node {run['node']} (parent {par if par is not None else '-'}) · eval {run['k']} · "
+            f"score {run['score']:.2f} {'PASSED' if run['passed'] else 'FAILED'}")
+
+
+def render_contrast(c: dict, recs: list[dict], rows: dict[int, dict], terms: list[str],
+                    max_field_chars: Optional[int]) -> list[str]:
+    """Lines of the ``## Pass/fail contrast`` section: the two runs, how they relate, and per
+    role the high run's ESSENTIAL / CLOSE CALLS / KEEP beside the low run's WHERE / WHY / WHAT
+    WOULD HAVE CAUGHT IT (redacted with the case's union of terms, each field clipped)."""
+    hi, lo = c["high"], c["low"]
+
+    def mine(run: dict) -> dict[str, dict]:
+        return {str(r.get("role")): (r.get("parsed") or {}) for r in recs
+                if r.get("node_id") == run["node"] and (r.get("eval_index") or 1) == run["k"]}
+
+    rh, rl = mine(hi), mine(lo)
+    rel = c["relation"]
+    if c["tier"] == 1:
+        child = hi if hi.get("parent") == lo["node"] else lo
+        goal = redact(rows.get(child["node"], {}).get("goal", ""), terms)
+        rel = f"parent -> child; node {child['node']}'s edit: {goal or '-'}"
+    out = ["## Pass/fail contrast", "",
+           f"high: {_run_label(hi)}", f"low:  {_run_label(lo)}", f"relation: {rel} · gap {c['gap']:.2f}", ""]
+
+    def cell(p: dict, keys: tuple) -> str:
+        parts = [f"{k.replace('_', ' ')}: {_field(p[k], terms, max_field_chars)}" for k in keys if p.get(k)]
+        return " / ".join(parts).replace("|", "/") or "-"
+
+    roles = sorted(set(rh) | set(rl))
+    if roles:
+        out += ["| role | high run: essential / close calls / keep | low run: where / why / would have caught it |",
+                "|---|---|---|"]
+        for role in roles:
+            h = cell(rh.get(role, {}), ("essential", "close_calls", "keep")) if rh.get(role) else "-"
+            if h == "-" and rh.get(role):
+                h = cell(rh[role], ("lesson",))
+            lo_cell = cell(rl.get(role, {}), ("where", "why", "catch")) if rl.get(role) else "-"
+            out.append(f"| {role} | {h} | {lo_cell} |")
+        ch = [p.get("overall_confidence") for p in rh.values() if isinstance(p.get("overall_confidence"), (int, float))]
+        cl = [p.get("overall_confidence") for p in rl.values() if isinstance(p.get("overall_confidence"), (int, float))]
+        if ch or cl:
+            fmt = lambda v: f"{sum(v) / len(v):.0f}" if v else "-"  # noqa: E731
+            out.append(f"\nblind confidence: high {fmt(ch)}, low {fmt(cl)}")
+    else:
+        out.append("(no reflections recorded for these two runs)")
+    return out
+
+
 def render_case(case_id: str, ent: dict, rows: dict[int, dict], exposure: str, max_chars: int,
-                max_field_chars: Optional[int] = 400) -> str:
+                max_field_chars: Optional[int] = 400, contrast_min_gap: float = 0.2) -> str:
     evals = ent["evals"]
     recs = sorted(ent["records"], key=lambda r: (float(r.get("ts") or 0), r.get("node_id") or 0,
                                                   r.get("eval_index") or 0, str(r.get("role"))))
@@ -111,6 +203,13 @@ def render_case(case_id: str, ent: dict, rows: dict[int, dict], exposure: str, m
         head.append(f"| {nid} | {r.get('parent') if r.get('parent') is not None else '-'} | {r.get('depth', '?')} "
                     f"| {r.get('block') or '-'} | {goal or '-'} | {len(mine)} | {sum(p for p, _ in mine)} "
                     f"| {', '.join(f'{s:.2f}' for _, s in mine) or '-'} |")
+    limited = [r for r in ent.get("runs") or [] if r.get("limited")]
+    if limited:
+        head += ["", "runs cut short by a budget (not counted as behavioural lows): " + "; ".join(
+            f"node {r['node']} eval {r['k']}: {_oneline(r['limited'])[:120]}" for r in limited[:6])]
+    c = find_contrast(ent.get("runs") or [], contrast_min_gap)
+    if c is not None and exposure != "off":
+        head += [""] + render_contrast(c, recs, rows, terms, max_field_chars)
     header = "\n".join(head)
     if exposure == "off" or not recs:
         return header + ("\n" if exposure == "off" else "\n\n## Reflections\n\n(none recorded yet)\n")
@@ -155,34 +254,49 @@ def render_case(case_id: str, ent: dict, rows: dict[int, dict], exposure: str, m
 
 def build_case_files(run_dir: Path, nodes: Iterable[Any], *, exposure: str = "lessons_only",
                      max_chars_per_case: int = 60000,
-                     max_field_chars: Optional[int] = 400) -> dict[str, dict]:
+                     max_field_chars: Optional[int] = 400,
+                     limited_fn: Optional[Callable[[Any], Optional[str]]] = None,
+                     contrast_min_gap: float = 0.2) -> dict[str, dict]:
     """Rebuild ``<run_dir>/case_reflections/``. Returns ``{case_id: {"evals", "passes",
-    "file"}}``. Never raises past an OSError on the directory itself."""
+    "nodes", "reflections", "file", "spread", "unstable", "contrast"}}`` -- ``unstable``: the
+    case has a pass/fail contrast whose low run was not cut short by a budget (the reliability
+    focus's candidates; meta_agent/focus.py). Never raises past an OSError on the directory."""
     nodes = list(nodes)
     out = Path(run_dir) / CASES_DIR
     out.mkdir(parents=True, exist_ok=True)
-    cases = collect(Path(run_dir), nodes)
+    cases = collect(Path(run_dir), nodes, limited_fn)
     rows = _node_rows(nodes)
     summary: dict[str, dict] = {}
     written: set[str] = set()
     for cid, ent in cases.items():
         name = case_file_name(cid)
         _atomic_write(out / name, render_case(cid, ent, rows, exposure, max_chars_per_case,
-                                                       max_field_chars))
+                                                       max_field_chars, contrast_min_gap))
         written.add(name)
+        scores = [s for _, _, s in ent["evals"]]
+        c = find_contrast(ent["runs"], contrast_min_gap)
         summary[cid] = {"evals": len(ent["evals"]), "passes": sum(p for _, p, _ in ent["evals"]),
                         "nodes": len({n for n, _, _ in ent["evals"]}), "reflections": len(ent["records"]),
-                        "file": name}
+                        "file": name, "spread": (max(scores) - min(scores)) if scores else 0.0,
+                        "mean": (sum(scores) / len(scores)) if scores else 0.0,
+                        "unstable": c is not None,
+                        "contrast": None if c is None else {"high": (c["high"]["node"], c["high"]["k"]),
+                                                            "low": (c["low"]["node"], c["low"]["k"]),
+                                                            "relation": c["relation"], "gap": round(c["gap"], 3)}}
     idx = ["# Per-test-case reflections", "",
            "One file per test case: its pass rate across every evaluated node, a per-node table (which edit",
            "each node made), and the task agent's reflections on each evaluation, linked to the node.",
            "Hardest cases first. Read one with read_file('cases/<file>').", "",
-           "| case | file | evals | passed | pass rate | nodes | reflections |", "|---|---|---|---|---|---|---|"]
+           "`unstable` = the case has both a high and a low run (see its Pass/fail contrast); `spread` = max - min score.",
+           "",
+           "| case | file | evals | passed | pass rate | nodes | reflections | unstable | spread |",
+           "|---|---|---|---|---|---|---|---|---|"]
     order = sorted(summary.items(), key=lambda kv: ((kv[1]["passes"] / kv[1]["evals"]) if kv[1]["evals"] else 2.0,
                                                     -kv[1]["evals"], str(kv[0])))
     for cid, s in order:
         rate = f"{100 * s['passes'] / s['evals']:.0f}%" if s["evals"] else "-"
-        idx.append(f"| {cid} | {s['file']} | {s['evals']} | {s['passes']} | {rate} | {s['nodes']} | {s['reflections']} |")
+        idx.append(f"| {cid} | {s['file']} | {s['evals']} | {s['passes']} | {rate} | {s['nodes']} | {s['reflections']} "
+                   f"| {'yes' if s['unstable'] else '-'} | {s['spread']:.2f} |")
     _atomic_write(out / INDEX, "\n".join(idx) + "\n")
     written.add(INDEX)
     for f in out.glob("*.md"):

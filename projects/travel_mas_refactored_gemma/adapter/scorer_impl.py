@@ -642,6 +642,23 @@ class TravelCompositeScorer:
             return {}
         return sessions_from_log(round_dir, case, role_by_keyword(self._REFLECTION_ROLES))
 
+    def limited_by_budget(self, case: Any) -> Optional[str]:
+        """Why this run was cut short by a budget rather than by the agents' behaviour, or
+        ``None`` (meta_agent/case_reflections.py: such a run is never the low side of a
+        pass/fail contrast). Reads only what the run itself recorded: the case timeout, a
+        stage's own ``<stage>_budget_exhausted`` flag (mas_workflow.py), or a grader-side
+        conversion failure."""
+        d = getattr(case, "details", None) or {}
+        err = str(getattr(case, "error", None) or d.get("error") or "")
+        if "timeout after" in err:
+            return err[:120]
+        if d.get("conversion_error_type"):
+            return f"grader conversion failed ({d.get('conversion_error_type')})"
+        meta = d.get("agent_metadata") or {}
+        hit = sorted(k[: -len("_budget_exhausted")] for k, v in meta.items()
+                     if k.endswith("_budget_exhausted") and v)
+        return f"{', '.join(hit)} hit its iteration cap" if hit else None
+
     def grading_outcome(self, case: Any, detail: str) -> dict[str, Any]:
         d = case.details or {}
         if detail == "numeric":

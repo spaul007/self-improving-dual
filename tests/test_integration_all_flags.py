@@ -59,8 +59,9 @@ class AllFlagsIntegrationTests(unittest.TestCase):
         rows = {}
         for line in (exp / "case_reflections" / "INDEX.md").read_text().splitlines():
             cells = [c.strip() for c in line.strip("|").split("|")]
-            if len(cells) == 7 and cells[2].isdigit():
+            if len(cells) == 9 and cells[2].isdigit():
                 rows[cells[0]] = (int(cells[2]), int(cells[3]))   # evals, passed
+        assert rows, "INDEX.md parsed to no rows -- column layout changed?"
         return rows
 
     def _pause_at(self, n):

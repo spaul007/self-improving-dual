@@ -92,6 +92,9 @@ def collect(run: Path) -> dict[str, Any]:
         nodes.append({
             "node_id": side["node_id"], "parent_id": side.get("parent_id"), "round": rd.name,
             "block": strat.get("block"),
+            # meta_agent/focus.py: None when the focus axis is off; targets_delta after the first batch.
+            "focus": strat.get("focus"),
+            "targets_delta": ((_read(rd / "focus.json") or {}).get("targets_delta") or {}).get("mean_delta"),
             "change": _one_line(strat.get("optimization_goal")),
             "edit_failed": side.get("edit_failed", False),
             "n": side.get("n_evals", 0), "n_excluded": side.get("n_excluded", 0),
@@ -147,6 +150,14 @@ def _eta(state: dict[str, Any], rate_per_h: Optional[float]) -> str:
     return f"~{left / rate_per_h:.0f} h of evaluation left (at {rate_per_h:.1f} tasks/h), plus editor time"
 
 
+def _focus_note(nd: dict[str, Any]) -> str:
+    """`` · reliability (targets Δ +0.120)`` for a reliability-focus node, else ""."""
+    if nd.get("focus") != "reliability":
+        return ""
+    td = nd.get("targets_delta")
+    return " · reliability" + ("" if td is None else f" (targets Δ {td:+.3f})")
+
+
 def render(info: dict[str, Any], repo: str = "<worktree>") -> str:
     st, run = info["state"], info["run"]
     rate = None
@@ -183,7 +194,7 @@ def render(info: dict[str, Any], repo: str = "<worktree>") -> str:
         lcb = f"{nd['lcb']:.3f}" if nd.get("lcb") is not None else "—"
         L.append(
             f"| {nd['node_id']}{warn} | {'' if nd['parent_id'] is None else nd['parent_id']} | "
-            f"{nd.get('block') or ('seed' if nd['node_id'] == 0 else '?')} | {nd['n']}"
+            f"{nd.get('block') or ('seed' if nd['node_id'] == 0 else '?')}{_focus_note(nd)} | {nd['n']}"
             f"{'+' + str(nd['n_excluded']) + 'x' if nd.get('n_excluded') else ''} | {nd['mean']:.3f} | "
             f"{nd['resolved']}/{nd['n']} | {lcb} | {ps} | {nd['status']} | {nd.get('change', '')} |")
     fr = repo
