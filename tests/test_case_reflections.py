@@ -250,22 +250,49 @@ class CasesAccessTests(unittest.TestCase):
         self.assertLess(len(capped), 2500)
 
     def test_editor_reads_cases_and_refuses_writes(self) -> None:
-        from meta_agent.agent_editor import AGENTIC_GREP_TOOL, AGENTIC_LOG_READ_FILE_TOOL, AgentEditor
+        from meta_agent.agent_editor import (AGENTIC_GREP_TOOL, AGENTIC_GREP_TOOL_CASES, AGENTIC_LOG_READ_FILE_TOOL,
+                                             AGENTIC_LOG_READ_FILE_TOOL_CASES, AgentEditor)
 
         self.assertTrue(AgentEditor._is_log_path("cases/A.md"))
         self.assertTrue(AgentEditor._is_log_path("cases"))
         self.assertFalse(AgentEditor._is_log_path("casesX/A.md"))
-        self.assertIn("cases/", AGENTIC_LOG_READ_FILE_TOOL["description"])
-        self.assertIn("cases/", AGENTIC_GREP_TOOL["description"])
+        self.assertIn("cases/", AGENTIC_LOG_READ_FILE_TOOL_CASES["description"])
+        self.assertIn("cases/", AGENTIC_GREP_TOOL_CASES["description"])
+        self.assertNotIn("cases/", AGENTIC_LOG_READ_FILE_TOOL["description"])   # no reflector: unchanged
+        self.assertNotIn("cases/", AGENTIC_GREP_TOOL["description"])
         self.assertIn("cases/INDEX.md", AgentEditor._cases_listing(self.rd))
         ed = AgentEditor.__new__(AgentEditor)
         out = ed._agentic_grep(self.rd / "task_agent", self.rd, {"path": "cases/A.md", "pattern": "three"}, [])
         self.assertIn("line three", out)
 
     def test_block_suggester_tool_description(self) -> None:
-        from meta_agent.block_suggester import AGENTIC_READ_FILE_TOOL
+        from meta_agent.block_suggester import AGENTIC_READ_FILE_TOOL, AGENTIC_READ_FILE_TOOL_CASES
 
-        self.assertIn("cases/", AGENTIC_READ_FILE_TOOL["description"])
+        self.assertIn("cases/", AGENTIC_READ_FILE_TOOL_CASES["description"])
+        self.assertNotIn("cases/", AGENTIC_READ_FILE_TOOL["description"])
+
+    def test_no_reflector_means_no_reflection_text_in_meta_agent_tools(self) -> None:
+        """Without a ``reflector:`` section the editor's and suggester's tool definitions must
+        not mention case files or probe questions; with one, build_components switches them on."""
+        import json
+
+        from meta_agent.config import ComponentSpec, build_components, load
+        from tests.test_smoke import REPO_ROOT
+
+        cfg = load(REPO_ROOT / "configs" / "default.yaml")
+        fw = build_components(cfg)
+        ed = fw.editor
+        ed.agentic_log_access = ed.agentic_edit_file = True
+        text = json.dumps(ed._agentic_tool_list()) + json.dumps(ed._self_improvement_tool())
+        self.assertNotIn("cases/", text)
+        self.assertNotIn("probe_questions", text)
+        cfg2 = load(REPO_ROOT / "configs" / "default.yaml")
+        cfg2.reflector = ComponentSpec(type="default", config={"phases": ["expand"]})
+        ed2 = build_components(cfg2).editor
+        ed2.agentic_log_access = ed2.agentic_edit_file = True
+        text2 = json.dumps(ed2._agentic_tool_list()) + json.dumps(ed2._self_improvement_tool())
+        self.assertIn("cases/", text2)
+        self.assertIn("probe_questions", text2)
 
 
 if __name__ == "__main__":

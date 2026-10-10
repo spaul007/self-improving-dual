@@ -167,7 +167,7 @@ _SYSTEM_CLOSING_AGENTIC = _SYSTEM_CLOSING_AGENTIC_TEMPLATE.replace(
 
 AGENTIC_READ_FILE_TOOL: dict[str, Any] = {
     "name": "read_file",
-    "description": "Read a text file. Paths are alias-rooted: 'harness/<rel>', 'logs/<rel>', 'cases/<file>' (per-test-case reflections, when listed), or 'eval_result.json'.",
+    "description": "Read a text file. Paths are alias-rooted: 'harness/<rel>', 'logs/<rel>', or 'eval_result.json'.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -194,6 +194,12 @@ AGENTIC_GREP_TOOL: dict[str, Any] = {
 }
 
 _AGENTIC_TOOLS: list[dict[str, Any]] = [AGENTIC_READ_FILE_TOOL, AGENTIC_GREP_TOOL]
+
+# Used only when a reflector is configured (BlockSuggester.reflection_case_files).
+AGENTIC_READ_FILE_TOOL_CASES: dict[str, Any] = {
+    **AGENTIC_READ_FILE_TOOL,
+    "description": "Read a text file. Paths are alias-rooted: 'harness/<rel>', 'logs/<rel>', 'cases/<file>' (per-test-case reflections, when listed), or 'eval_result.json'.",
+}
 
 
 def _parse_strategies_md(text: str) -> dict[str, str]:
@@ -694,6 +700,9 @@ class BlockSuggester:
     suggestion is grounded in the same reference material the editor sees.
     """
 
+    # Set by build_components only when a reflector writes per-test-case files.
+    reflection_case_files: bool = False
+
     def __init__(
         self,
         llm_caller: Callable[..., object],
@@ -1133,7 +1142,9 @@ class BlockSuggester:
 
         text = ""
         for turn in range(self.agentic_max_turns):
-            kwargs: dict[str, Any] = {"messages": history, "tools": _AGENTIC_TOOLS}
+            tools = ([AGENTIC_READ_FILE_TOOL_CASES, AGENTIC_GREP_TOOL] if self.reflection_case_files
+                     else _AGENTIC_TOOLS)
+            kwargs: dict[str, Any] = {"messages": history, "tools": tools}
             if self.model:
                 kwargs["model"] = self.model
             if self.reasoning_effort:

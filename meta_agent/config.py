@@ -492,6 +492,14 @@ def build_components(cfg: FrameworkConfig) -> AssembledFramework:
             "reflector",
             {"llm_caller": call_llm, "scorer": scorer_obj, "task_agent": cfg.task_agent},
         )
+        # Tell the meta-agents about the reflection files / probe questions only now: without
+        # a reflector their tool definitions stay byte-identical to the pre-reflection ones.
+        for meta in (editor_obj, block_suggester_obj):
+            if meta is not None:
+                meta.reflection_case_files = bool(getattr(reflector_obj, "case_files", False))
+        if editor_obj is not None:
+            editor_obj.reflection_probes = bool(getattr(reflector_obj, "probe_questions", False)) \
+                and reflector_obj.wants("expand")
 
     skills = resolve_skills(cfg)
     manager_config = apply_blocks_to_manager_config(
