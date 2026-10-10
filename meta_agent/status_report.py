@@ -95,6 +95,7 @@ def collect(run: Path) -> dict[str, Any]:
             # meta_agent/focus.py: None when the focus axis is off; targets_delta after the first batch.
             "focus": strat.get("focus"),
             "targets_delta": ((_read(rd / "focus.json") or {}).get("targets_delta") or {}).get("mean_delta"),
+            "targets_delta_case": ((_read(rd / "focus.json") or {}).get("targets_delta") or {}).get("mean_delta_vs_case"),
             "change": _one_line(strat.get("optimization_goal")),
             "edit_failed": side.get("edit_failed", False),
             "n": side.get("n_evals", 0), "n_excluded": side.get("n_excluded", 0),
@@ -151,11 +152,13 @@ def _eta(state: dict[str, Any], rate_per_h: Optional[float]) -> str:
 
 
 def _focus_note(nd: dict[str, Any]) -> str:
-    """`` · reliability (targets Δ +0.120)`` for a reliability-focus node, else ""."""
+    """`` · reliability (targets Δ +0.120 vs case mean, -0.083 vs parent)`` for a reliability-focus
+    node, else "". The case-mean delta comes first: it is the steadier reference."""
     if nd.get("focus") != "reliability":
         return ""
-    td = nd.get("targets_delta")
-    return " · reliability" + ("" if td is None else f" (targets Δ {td:+.3f})")
+    parts = [f"{v:+.3f} vs {lbl}" for v, lbl in ((nd.get("targets_delta_case"), "case mean"),
+                                                 (nd.get("targets_delta"), "parent")) if v is not None]
+    return " · reliability" + (f" (targets Δ {', '.join(parts)})" if parts else "")
 
 
 def render(info: dict[str, Any], repo: str = "<worktree>") -> str:

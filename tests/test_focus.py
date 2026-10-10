@@ -80,6 +80,33 @@ class FocusBanditTests(unittest.TestCase):
                              "default")
 
 
+class TargetsDeltaTests(unittest.TestCase):
+    def test_delta_vs_parent_and_vs_case_mean(self) -> None:
+        from meta_agent.managers.hgm import HGMManager
+        from meta_agent.models import CaseResult, EvaluationResult
+
+        def node(nid, parent, scores):
+            return SimpleNamespace(node_id=nid, parent_id=parent, round_dir=Path("/nonexistent"),
+                                   case_results=[CaseResult(case_id=c, passed=s >= 1, score=s) for c, s in scores])
+
+        # case a: parent 1.0 (the contrast's HIGH run), root and a sibling 0.0 -> case mean 1/3
+        nodes = {0: node(0, None, [("a", 0.0), ("b", 0.5)]), 1: node(1, 0, [("a", 1.0), ("b", 0.5)]),
+                 2: node(2, 0, [("a", 0.0)]), 3: node(3, 1, [("a", 0.5), ("b", 0.5)])}
+        nodes[3].case_results.append(CaseResult(case_id="a", passed=False, score=0.0, details={"excluded": True}))
+        written = []
+        fake = SimpleNamespace(_tree=SimpleNamespace(nodes=nodes),
+                               _write_focus_record=lambda *a, **k: written.append(a))
+        batch = EvaluationResult(score=0.5, passed=0, failed=2, per_case=nodes[3].case_results[:2])
+        HGMManager._record_targets_delta(fake, nodes[3], ["a", "b", "c"], batch)
+        td = written[0][-1]
+        self.assertEqual(td["n"], 2)                                   # "c" was not in the batch
+        self.assertEqual((td["per_case"]["a"]["parent_mean"], td["per_case"]["a"]["parent_n"]), (1.0, 1))
+        self.assertAlmostEqual(td["per_case"]["a"]["case_mean"], 1 / 3)
+        self.assertEqual(td["per_case"]["a"]["case_n"], 3)             # the child's own runs are not pooled
+        self.assertAlmostEqual(td["mean_delta"], ((0.5 - 1.0) + 0.0) / 2)
+        self.assertAlmostEqual(td["mean_delta_vs_case"], ((0.5 - 1 / 3) + 0.0) / 2)
+
+
 class _VaryingEvaluator(_HookEvaluator):
     """Scores depend on (case, node) so cases flip between nodes -> pass/fail contrasts exist."""
 
@@ -167,6 +194,9 @@ class FocusManagerTests(unittest.TestCase):
             self.assertEqual([t["case_id"] for t in rec["targets"]], st.focus_targets)
             self.assertIsNotNone(rec["targets_delta"])
             self.assertGreater(rec["targets_delta"]["n"], 0)
+            self.assertIsNotNone(rec["targets_delta"]["mean_delta_vs_case"])
+            for v in rec["targets_delta"]["per_case"].values():
+                self.assertGreaterEqual(v["case_n"], v["parent_n"])   # the case mean pools every other node
             self.assertTrue(json.loads((node.round_dir / "strategy.json").read_text()).get("focus"))
         status = (self.tmp / "rel" / "STATUS.md").read_text()
         self.assertIn("· reliability (targets Δ", status)
